@@ -8,7 +8,11 @@ use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
 #[derive(Parser)]
-#[command(name = "little", version, about = "A little static documentation site generator")]
+#[command(
+    name = "little",
+    version,
+    about = "A little static documentation site generator"
+)]
 struct Cli {
     /// Project directory (defaults to the current directory)
     #[arg(short = 'C', long, default_value = ".", global = true)]
