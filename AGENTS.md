@@ -24,7 +24,7 @@ cargo fmt                   # format — run before committing
 Content and theme live outside `src/`:
 - `docs/` — the example/dogfood site content. This is little's **input**, not
   project documentation — don't put meta docs here.
-- `theme/` — the default theme: `templates/` (MiniJinja) + `assets/` + `theme.yml`.
+- `theme/` — the default theme: `templates/` (MiniJinja) + `assets/` + `little.yml`.
 - `little.yml` — example site config.
 - Project meta (`VISION.md`, `AGENTS.md`, `decisions/`) lives at the repo root.
 

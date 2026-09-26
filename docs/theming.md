@@ -19,8 +19,8 @@ The theme receives three objects:
 The accent color of this site is declared at **all three levels**, and the *last* one wins:
 
 1. **little** default — `#2563eb` (blue), in `src/config.rs`
-2. **theme** override — in `theme/theme.yml`
+2. **theme** override — in `theme/little.yml`
 3. **site** override — in `little.yml`
 
-Open `theme/theme.yml` and `little.yml` and change `accent`. Save. The color updates live —
+Open `theme/little.yml` and `little.yml` and change `accent`. Save. The color updates live —
 and if you delete the site's value, the theme's value takes over. That's the cascade.
