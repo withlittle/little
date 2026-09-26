@@ -39,10 +39,10 @@ fn read_yaml(path: &Path) -> Result<Option<Value>> {
     if !path.exists() {
         return Ok(None);
     }
-    let raw = std::fs::read_to_string(path)
-        .with_context(|| format!("reading {}", path.display()))?;
-    let value = serde_yaml::from_str(&raw)
-        .with_context(|| format!("parsing {}", path.display()))?;
+    let raw =
+        std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
+    let value =
+        serde_yaml::from_str(&raw).with_context(|| format!("parsing {}", path.display()))?;
     Ok(Some(value))
 }
 

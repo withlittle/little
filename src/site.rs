@@ -1,7 +1,7 @@
 //! The build pipeline: docs/ + theme/ + config -> dist/.
 
 use anyhow::{Context, Result};
-use minijinja::{context, Environment, Value as MjValue};
+use minijinja::{Environment, Value as MjValue, context};
 use serde::Serialize;
 use serde_yaml::Value;
 use std::collections::BTreeMap;

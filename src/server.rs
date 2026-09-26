@@ -4,10 +4,10 @@
 //! inject a small polling script into every HTML page. A file watcher rebuilds
 //! the site and bumps the counter, so open browsers reload themselves.
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 use tiny_http::{Header, Response, Server};
 
