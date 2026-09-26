@@ -9,7 +9,7 @@ use std::path::Path;
 fn builtin_defaults() -> Value {
     serde_yaml::from_str(
         r##"
-title: "A little site"
+name: "Documentation"
 lang: en
 theme: default
 accent: "#2563eb"
@@ -64,5 +64,53 @@ fn deep_merge(base: &mut Value, over: Value) {
             }
         }
         other => *base = other,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn get<'a>(cfg: &'a Value, key: &str) -> Option<&'a str> {
+        cfg.get(key).and_then(Value::as_str)
+    }
+
+    #[test]
+    fn builtin_default_name_is_documentation() {
+        let cfg = builtin_defaults();
+        assert_eq!(get(&cfg, "name"), Some("Documentation"));
+        assert_eq!(get(&cfg, "accent"), Some("#2563eb"));
+    }
+
+    #[test]
+    fn later_level_overrides_earlier() {
+        let mut cfg = builtin_defaults();
+        // Theme sets accent + font; site overrides accent and name.
+        deep_merge(
+            &mut cfg,
+            serde_yaml::from_str("accent: \"#7c3aed\"\nfont: serif\n").unwrap(),
+        );
+        deep_merge(
+            &mut cfg,
+            serde_yaml::from_str("name: My Docs\naccent: \"#e11d48\"\n").unwrap(),
+        );
+
+        assert_eq!(get(&cfg, "name"), Some("My Docs"));
+        assert_eq!(get(&cfg, "accent"), Some("#e11d48")); // last writer wins
+        assert_eq!(get(&cfg, "font"), Some("serif")); // theme value survives
+        assert_eq!(get(&cfg, "lang"), Some("en")); // builtin survives
+    }
+
+    #[test]
+    fn deep_merge_recurses_into_mappings() {
+        let mut base = serde_yaml::from_str("a:\n  x: 1\n  y: 2\n").unwrap();
+        deep_merge(
+            &mut base,
+            serde_yaml::from_str("a:\n  y: 20\n  z: 30\n").unwrap(),
+        );
+        let a = base.get("a").unwrap();
+        assert_eq!(a.get("x").and_then(Value::as_u64), Some(1));
+        assert_eq!(a.get("y").and_then(Value::as_u64), Some(20));
+        assert_eq!(a.get("z").and_then(Value::as_u64), Some(30));
     }
 }
