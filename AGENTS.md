@@ -1,0 +1,54 @@
+# AGENTS.md — working conventions for little
+
+Read this before making changes. **little** is a static documentation site
+generator written in Rust. Its mission is **authoring experience** — see
+[`VISION.md`](./VISION.md).
+
+## Commands
+```sh
+cargo run -- build          # build the example site (docs/) into dist/
+cargo run -- serve          # live-reloading dev server at http://127.0.0.1:8080
+cargo build --release       # produce the release binary (target/release/little)
+cargo test                  # run tests
+cargo clippy --all-targets  # lint — keep it clean
+cargo fmt                   # format — run before committing
+```
+
+## Architecture (keep the core small)
+- `src/main.rs` — CLI (clap): `build`, `serve`.
+- `src/config.rs` — the 3-level cascading config (little → theme → site).
+- `src/render.rs` — Markdown (comrak) + YAML frontmatter → HTML fragment.
+- `src/site.rs` — build pipeline: walk `docs/`, render, apply theme, write `dist/`.
+- `src/server.rs` — dev server + file watcher + live reload.
+
+Content and theme live outside `src/`:
+- `docs/` — the example/dogfood site content. This is little's **input**, not
+  project documentation — don't put meta docs here.
+- `theme/` — the default theme: `templates/` (MiniJinja) + `assets/` + `theme.yml`.
+- `little.yml` — example site config.
+- Project meta (`VISION.md`, `AGENTS.md`, `decisions/`) lives at the repo root.
+
+## Core principles (do not violate)
+1. **The theme owns 100% of the markup.** The core never emits baked-in HTML; it
+   passes structured `site` / `page` / `nav` data to the theme. Keep it that way.
+2. **Config cascades: little → theme → site, last writer wins.** New config
+   belongs in this cascade, with a sensible built-in default in `config.rs`.
+3. **Keep the core small; push features to plugins.** Sphinx-style API extraction,
+   niche renderers, etc. are plugins (planned WASM API), not core code.
+4. **No mandatory Node toolchain.** Never add a build step that requires Node.
+5. **Authoring experience wins ties.** When unsure, pick what makes writing docs
+   simpler.
+
+## Conventions
+- Errors: `anyhow::Result` at boundaries; add context with `.context()`.
+- Format with `cargo fmt`; keep `cargo clippy` clean.
+- Prefer small, well-maintained crates; justify any heavy dependency.
+- Comment the *why*, not the *what*; don't over-comment.
+- Add unit tests for parsing/merging logic (frontmatter, config cascade).
+- Commits: imperative subject; include the Copilot co-author trailer.
+
+## Decisions
+Record notable choices as short ADRs in `decisions/`. Locked so far:
+- **Language:** Rust — see [`decisions/0001-language-rust.md`](./decisions/0001-language-rust.md).
+- **Markdown:** comrak. **Templating:** minijinja. **Config:** cascading YAML.
+- **Plugins:** sandboxed WASM (planned).
