@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="{{ site.lang | default('en') }}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ page.title }} · {{ site.title }}</title>
+  <link rel="stylesheet" href="/assets/style.css">
+  <style>
+    :root {
+      --accent: {{ site.accent | safe }};
+      --font: {{ site.font | default('system-ui, sans-serif') | safe }};
+    }
+  </style>
+</head>
+<body>
+  <header class="site-header">
+    <a class="brand" href="/">{{ site.title }}</a>
+    {% if site.tagline %}<span class="tagline">{{ site.tagline }}</span>{% endif %}
+  </header>
+
+  <div class="layout">
+    <nav class="sidebar">
+      <ul>
+        {% for item in nav %}
+        <li><a href="{{ item.url | safe }}"{% if item.active %} class="active"{% endif %}>{{ item.title }}</a></li>
+        {% endfor %}
+      </ul>
+    </nav>
+
+    <main class="content">
+      {{ page.content | safe }}
+    </main>
+  </div>
+
+  <footer class="site-footer">
+    Built with <strong>little</strong> — this theme owns 100% of the markup.
+  </footer>
+</body>
+</html>
