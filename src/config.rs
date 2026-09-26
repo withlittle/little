@@ -23,7 +23,7 @@ pub fn load_cascade(theme_dir: &Path, project_dir: &Path) -> Result<Value> {
     let mut cfg = builtin_defaults();
 
     // Level 2: the theme's config.
-    if let Some(theme_cfg) = read_yaml(&theme_dir.join("theme.yml"))? {
+    if let Some(theme_cfg) = read_yaml(&theme_dir.join("little.yml"))? {
         deep_merge(&mut cfg, theme_cfg);
     }
 
