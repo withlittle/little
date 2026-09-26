@@ -45,6 +45,11 @@ a:hover { text-decoration: underline; }
   margin: 0 auto;
   padding: 2rem 1.5rem 4rem;
 }
+/* When a page has an in-page TOC, add a third column for it. */
+.layout.has-toc {
+  grid-template-columns: 240px minmax(0, 1fr) 180px;
+  max-width: 1240px;
+}
 
 /* Sidebar nav */
 .sidebar { position: sticky; top: 5rem; align-self: start; }
@@ -63,6 +68,42 @@ a:hover { text-decoration: underline; }
   color: var(--accent);
   font-weight: 600;
 }
+/* Nested sections (subfolders). */
+.sidebar ul ul {
+  margin-left: 0.5rem;
+  padding-left: 0.5rem;
+  border-left: 1px solid #ebedf0;
+}
+.nav-section {
+  display: block;
+  padding: 0.4rem 0.7rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #8a909a;
+}
+
+/* In-page table of contents */
+.toc {
+  position: sticky;
+  top: 5rem;
+  align-self: start;
+  font-size: 0.85rem;
+}
+.toc-title {
+  margin: 0 0 0.4rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #8a909a;
+}
+.toc ul { list-style: none; margin: 0; padding: 0; }
+.toc li { margin: 0.1rem 0; }
+.toc a { color: #4a515a; display: block; padding: 0.15rem 0; }
+.toc a:hover { color: var(--accent); text-decoration: none; }
+.toc-d3 { padding-left: 0.8rem; font-size: 0.95em; }
 
 /* Content */
 .content { min-width: 0; }
@@ -123,7 +164,10 @@ a:hover { text-decoration: underline; }
 }
 
 @media (max-width: 720px) {
-  .layout { grid-template-columns: 1fr; gap: 1rem; }
+  .layout,
+  .layout.has-toc { grid-template-columns: 1fr; gap: 1rem; }
   .sidebar { position: static; }
-  .sidebar ul { display: flex; flex-wrap: wrap; gap: 0.3rem; }
+  .sidebar > ul { display: flex; flex-wrap: wrap; gap: 0.3rem; }
+  .sidebar ul ul { border-left: 0; margin-left: 0; padding-left: 0; }
+  .toc { position: static; }
 }

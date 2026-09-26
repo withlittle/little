@@ -3,7 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{{ page.title }} · {{ site.title }}</title>
+  <title>{{ page.title }} · {{ site.name }}</title>
+  {% if page.description %}<meta name="description" content="{{ page.description }}">{% endif %}
   <link rel="stylesheet" href="/assets/style.css">
   <style>
     :root {
@@ -14,15 +15,24 @@
 </head>
 <body>
   <header class="site-header">
-    <a class="brand" href="/">{{ site.title }}</a>
+    <a class="brand" href="/">{{ site.name }}</a>
     {% if site.tagline %}<span class="tagline">{{ site.tagline }}</span>{% endif %}
   </header>
 
-  <div class="layout">
-    <nav class="sidebar">
+  <div class="layout{% if page.nav %} has-toc{% endif %}">
+    <nav class="sidebar" aria-label="Main navigation">
+      {# site.nav is shared across pages; the active item is the one whose url
+         matches page.url. Folders without a README render as plain labels. #}
       <ul>
-        {% for item in nav %}
-        <li><a href="{{ item.url | safe }}"{% if item.active %} class="active"{% endif %}>{{ item.title }}</a></li>
+        {% for item in site.nav recursive %}
+        <li>
+          {% if item.url %}
+          <a href="{{ item.url | safe }}"{% if item.url == page.url %} class="active" aria-current="page"{% endif %}>{{ item.title }}</a>
+          {% else %}
+          <span class="nav-section">{{ item.title }}</span>
+          {% endif %}
+          {% if item.children %}<ul>{{ loop(item.children) }}</ul>{% endif %}
+        </li>
         {% endfor %}
       </ul>
     </nav>
@@ -30,6 +40,17 @@
     <main class="content">
       {{ page.content | safe }}
     </main>
+
+    {% if page.nav %}
+    <aside class="toc" aria-label="On this page">
+      <p class="toc-title">On this page</p>
+      <ul>
+        {% for item in page.nav %}
+        <li class="toc-d{{ item.depth }}"><a href="{{ item.anchor | safe }}">{{ item.title }}</a></li>
+        {% endfor %}
+      </ul>
+    </aside>
+    {% endif %}
   </div>
 
   <footer class="site-footer">

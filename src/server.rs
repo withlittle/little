@@ -73,22 +73,13 @@ fn spawn_watcher(project_dir: PathBuf, version: Arc<AtomicU64>) {
 }
 
 fn serve_file(dist_dir: &Path, request: tiny_http::Request) {
-    let raw = request.url().split('?').next().unwrap_or("/");
-    let mut rel = raw.trim_start_matches('/').to_string();
-    if rel.is_empty() || rel.ends_with('/') {
-        rel.push_str("index.html");
-    }
-
-    let mut full = dist_dir.join(&rel);
-    if full.is_dir() {
-        full = full.join("index.html");
-    }
-
-    // Basic traversal guard for a local dev server.
-    if !full.starts_with(dist_dir) {
-        let _ = request.respond(Response::from_string("forbidden").with_status_code(403));
-        return;
-    }
+    let full = match resolve_route(dist_dir, request.url()) {
+        Some(path) => path,
+        None => {
+            let _ = request.respond(Response::from_string("404 Not Found").with_status_code(404));
+            return;
+        }
+    };
 
     match std::fs::read(&full) {
         Ok(bytes) => {
@@ -105,6 +96,34 @@ fn serve_file(dist_dir: &Path, request: tiny_http::Request) {
             let _ = request.respond(Response::from_string("404 Not Found").with_status_code(404));
         }
     }
+}
+
+/// Resolve a request URL to a file under `dist/`, understanding the pretty,
+/// extensionless routes the build emits (`/getting-started` ->
+/// `getting-started/index.html`). Returns `None` for anything that doesn't
+/// resolve to a real file, and rejects `..` traversal.
+fn resolve_route(dist_dir: &Path, url: &str) -> Option<PathBuf> {
+    let path = url.split(['?', '#']).next().unwrap_or("");
+    let trimmed = path.trim_start_matches('/');
+
+    if trimmed.split('/').any(|segment| segment == "..") {
+        return None;
+    }
+
+    let base = if trimmed.is_empty() {
+        dist_dir.to_path_buf()
+    } else {
+        dist_dir.join(trimmed)
+    };
+
+    // Directory index first (covers "/", "/guide/", and extensionless routes),
+    // then an exact file (assets), then a sibling ".html" as a fallback.
+    let candidates = [
+        base.join("index.html"),
+        base.clone(),
+        dist_dir.join(format!("{trimmed}.html")),
+    ];
+    candidates.into_iter().find(|candidate| candidate.is_file())
 }
 
 fn content_type(path: &Path) -> &'static str {
@@ -134,5 +153,59 @@ fn inject_livereload(html: String) -> String {
             out
         }
         None => html + SCRIPT,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Build a throwaway `dist/` tree mirroring the pretty-URL output layout.
+    fn scratch_dist() -> PathBuf {
+        let root = std::env::temp_dir().join(format!("little-server-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        for file in [
+            "index.html",
+            "getting-started/index.html",
+            "guide/index.html",
+            "guide/install/index.html",
+            "assets/style.css",
+        ] {
+            let path = root.join(file);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(&path, b"x").unwrap();
+        }
+        root
+    }
+
+    #[test]
+    fn resolves_pretty_and_asset_routes() {
+        let dist = scratch_dist();
+        let at = |url: &str| resolve_route(&dist, url);
+
+        assert_eq!(at("/"), Some(dist.join("index.html")));
+        assert_eq!(
+            at("/getting-started"),
+            Some(dist.join("getting-started/index.html"))
+        );
+        assert_eq!(
+            at("/getting-started/"),
+            Some(dist.join("getting-started/index.html"))
+        );
+        assert_eq!(at("/guide/"), Some(dist.join("guide/index.html")));
+        assert_eq!(
+            at("/guide/install"),
+            Some(dist.join("guide/install/index.html"))
+        );
+        assert_eq!(at("/assets/style.css"), Some(dist.join("assets/style.css")));
+        assert_eq!(
+            at("/getting-started?v=2"),
+            Some(dist.join("getting-started/index.html"))
+        );
+
+        assert_eq!(at("/does-not-exist"), None);
+        assert_eq!(at("/../secret"), None);
+
+        let _ = std::fs::remove_dir_all(&dist);
     }
 }
