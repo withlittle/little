@@ -34,8 +34,10 @@ itself.
 
 ### Start your own site
 
-A site needs a `docs/` folder for content and a `theme/` folder for templates.
-Until `little init` lands, copy the default theme from this repo:
+A site needs a `docs/` folder for content and a theme for templates, which
+little looks for in the site's `theme/` folder unless you
+[choose another](#choosing-a-theme). Until `little init` lands, copy the
+default theme from this repo:
 
 ```sh
 mkdir my-docs && cd my-docs
@@ -58,8 +60,9 @@ little --help                        # list every command and option
 
 - `build` wipes and regenerates `dist/` every time, so don't keep anything
   there by hand.
-- `serve` builds first, then watches `docs/`, `theme/`, and `little.yml`,
-  rebuilding and refreshing open browser tabs whenever you save.
+- `serve` builds first, then watches `docs/`, the theme, and `little.yml`,
+  rebuilding and refreshing open browser tabs whenever you save. If you switch
+  themes, it starts watching the new one.
 
 ## Site layout
 
@@ -72,7 +75,7 @@ my-docs/
 │   └── guide/
 │       ├── README.md       # → /guide/
 │       └── install.md      # → /guide/install
-├── theme/
+├── theme/                  # the theme, unless little.yml chooses another
 │   ├── little.yml          # theme config (optional)
 │   ├── templates/
 │   │   └── page.html       # renders every page (required)
@@ -110,9 +113,9 @@ my-docs/
 ## Configuration
 
 Config is YAML that cascades through three levels: **little's built-in
-defaults → `theme/little.yml` → `little.yml`**. Each level is deep-merged over
-the one before, so the last writer wins. Both files are optional (an empty file
-is fine), so a site sets only what it wants to change:
+defaults → the theme's `little.yml` → the site's `little.yml`**. Each level is
+deep-merged over the one before, so the last writer wins. Both files are
+optional (an empty file is fine), so a site sets only what it wants to change:
 
 ```yaml
 # little.yml
@@ -133,12 +136,29 @@ and the site. The default theme uses these keys, with defaults from its
 | `font` | a system UI font stack | Body text `font-family` |
 | `lang` | `en` | The page's `lang` attribute |
 
+### Choosing a theme
+
+little uses the theme in the site's `theme/` folder unless `little.yml` points
+`theme` at another folder, such as a theme shared by several sites:
+
+```yaml
+# little.yml
+theme: ../shared/my-theme
+```
+
+- A theme path starts with `./`, `../`, or `/`. Relative paths start from the
+  folder holding `little.yml`, not from where you run `little`.
+- `theme: default`, little's built-in default, means the site's `theme/`
+  folder.
+- Only a site chooses its theme, so a theme's own `little.yml` can't set
+  `theme`.
+
 ## Theming
 
 The theme owns 100% of the markup; little bakes in no HTML. For each page it
-renders `theme/templates/page.html`, a [MiniJinja](https://docs.rs/minijinja)
-(Jinja2-style) template, with this data (little loads just this one template
-for now):
+renders the theme's `templates/page.html`, a
+[MiniJinja](https://docs.rs/minijinja) (Jinja2-style) template, with this data
+(little loads just this one template for now):
 
 | Variable | Contents |
 | -------- | -------- |
@@ -150,8 +170,8 @@ for now):
 | `page.content` | The rendered Markdown as HTML; output it with the `safe` filter |
 | `page.nav` | The page's table of contents (its `##`/`###` headings): a list of `{ title, anchor, depth }` |
 
-Everything in `theme/assets/` is copied to `dist/assets/`, so reference it from
-the site root (`/assets/style.css`). The default
+Everything in the theme's `assets/` folder is copied to `dist/assets/`, so
+reference it from the site root (`/assets/style.css`). The default
 [`page.html`](./theme/templates/page.html) is a complete working example.
 
 ## Deploying

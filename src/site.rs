@@ -1,4 +1,4 @@
-//! The build pipeline: docs/ + theme/ + config -> dist/.
+//! The build pipeline: docs/ + the theme + config -> dist/.
 
 use anyhow::{Context, Result};
 use minijinja::{Environment, Value as MjValue, context};
@@ -41,10 +41,12 @@ struct NavItem {
 /// Build the site rooted at `site_dir`.
 pub fn build(site_dir: &Path) -> Result<()> {
     let docs_dir = site_dir.join("docs");
-    let theme_dir = site_dir.join("theme");
     let dist_dir = site_dir.join("dist");
 
-    let cfg = config::load_cascade(&theme_dir, site_dir)?;
+    let config::Config {
+        values: cfg,
+        theme_dir,
+    } = config::load(site_dir)?;
 
     if dist_dir.exists() {
         fs::remove_dir_all(&dist_dir).context("clearing dist/")?;
@@ -111,8 +113,9 @@ pub fn build(site_dir: &Path) -> Result<()> {
 
     // The theme owns 100% of the markup; little only hands it structured data.
     let mut env = Environment::new();
-    let template_src = fs::read_to_string(theme_dir.join("templates/page.html"))
-        .context("theme/templates/page.html not found")?;
+    let template_path = theme_dir.join("templates/page.html");
+    let template_src = fs::read_to_string(&template_path)
+        .with_context(|| format!("reading {}", template_path.display()))?;
     env.add_template_owned("page.html".to_string(), template_src)?;
     let template = env.get_template("page.html")?;
 
@@ -483,5 +486,35 @@ mod tests {
         assert_eq!(fs::read(dst.join("style.css")).unwrap(), b"body {}\n");
         assert_eq!(fs::read(dst.join("img/logo.png")).unwrap(), png);
         let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn builds_with_a_local_theme() {
+        let site =
+            std::env::temp_dir().join(format!("little-site-test-theme-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&site);
+        for (file, contents) in [
+            ("little.yml", "theme: ./path/to/my/theme\n"),
+            ("docs/README.md", "# Home\n"),
+            ("theme/templates/page.html", "the default theme"),
+            (
+                "path/to/my/theme/templates/page.html",
+                "{{ site.greeting }} from my theme",
+            ),
+            ("path/to/my/theme/little.yml", "greeting: Hello\n"),
+            ("path/to/my/theme/assets/style.css", "body {}\n"),
+        ] {
+            let path = site.join(file);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(&path, contents).unwrap();
+        }
+
+        build(&site).unwrap();
+
+        let home = fs::read_to_string(site.join("dist/index.html")).unwrap();
+        assert_eq!(home, "Hello from my theme");
+        let css = fs::read(site.join("dist/assets/style.css")).unwrap();
+        assert_eq!(css, b"body {}\n");
+        let _ = fs::remove_dir_all(&site);
     }
 }
