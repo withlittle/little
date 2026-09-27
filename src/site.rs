@@ -38,13 +38,13 @@ struct NavItem {
     children: Vec<NavItem>,
 }
 
-/// Build the site rooted at `project_dir`.
-pub fn build(project_dir: &Path) -> Result<()> {
-    let docs_dir = project_dir.join("docs");
-    let theme_dir = project_dir.join("theme");
-    let dist_dir = project_dir.join("dist");
+/// Build the site rooted at `site_dir`.
+pub fn build(site_dir: &Path) -> Result<()> {
+    let docs_dir = site_dir.join("docs");
+    let theme_dir = site_dir.join("theme");
+    let dist_dir = site_dir.join("dist");
 
-    let cfg = config::load_cascade(&theme_dir, project_dir)?;
+    let cfg = config::load_cascade(&theme_dir, site_dir)?;
 
     if dist_dir.exists() {
         fs::remove_dir_all(&dist_dir).context("clearing dist/")?;

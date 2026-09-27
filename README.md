@@ -61,7 +61,7 @@ little --help                        # list every command and option
 - `serve` builds first, then watches `docs/`, `theme/`, and `little.yml`,
   rebuilding and refreshing open browser tabs whenever you save.
 
-## Project layout
+## Site layout
 
 ```text
 my-docs/

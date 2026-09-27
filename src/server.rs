@@ -16,14 +16,14 @@ use tiny_http::{Header, Response, Server};
 
 use crate::{config, site};
 
-pub fn serve(project_dir: &Path, addr: &str) -> Result<()> {
-    let project_dir = project_dir.to_path_buf();
-    let dist_dir = project_dir.join("dist");
+pub fn serve(site_dir: &Path, addr: &str) -> Result<()> {
+    let site_dir = site_dir.to_path_buf();
+    let dist_dir = site_dir.join("dist");
 
-    site::build(&project_dir)?;
+    site::build(&site_dir)?;
 
     let version = Arc::new(AtomicU64::new(1));
-    spawn_watcher(project_dir.clone(), version.clone());
+    spawn_watcher(site_dir.clone(), version.clone());
 
     let server = Server::http(addr).map_err(|e| anyhow!("failed to bind {addr}: {e}"))?;
     println!("little serving http://{addr}  (live reload on — edit docs/ or theme/)");
@@ -39,11 +39,11 @@ pub fn serve(project_dir: &Path, addr: &str) -> Result<()> {
     Ok(())
 }
 
-fn spawn_watcher(project_dir: PathBuf, version: Arc<AtomicU64>) {
+fn spawn_watcher(site_dir: PathBuf, version: Arc<AtomicU64>) {
     std::thread::spawn(move || {
         let (tx, rx) = std::sync::mpsc::channel();
         // Bound to a name (not `_`) so the watchers live as long as this loop.
-        let _watchers = match watch_sources(&project_dir, tx) {
+        let _watchers = match watch_sources(&site_dir, tx) {
             Ok(watchers) => watchers,
             Err(e) => {
                 eprintln!("watcher error: {e}");
@@ -56,7 +56,7 @@ fn spawn_watcher(project_dir: PathBuf, version: Arc<AtomicU64>) {
             std::thread::sleep(Duration::from_millis(150));
             while rx.try_recv().is_ok() {}
 
-            match site::build(&project_dir) {
+            match site::build(&site_dir) {
                 Ok(()) => {
                     version.fetch_add(1, Ordering::SeqCst);
                     println!("rebuilt");
@@ -69,7 +69,7 @@ fn spawn_watcher(project_dir: PathBuf, version: Arc<AtomicU64>) {
 
 /// Watch everything a build reads, sending events to `tx` as it changes.
 fn watch_sources(
-    project_dir: &Path,
+    site_dir: &Path,
     tx: Sender<notify::Result<Event>>,
 ) -> notify::Result<[RecommendedWatcher; 2]> {
     // docs/ and theme/ — the latter includes the theme's optional config.
@@ -80,18 +80,18 @@ fn watch_sources(
         }
     })?;
     for sub in ["docs", "theme"] {
-        let _ = content.watch(&project_dir.join(sub), RecursiveMode::Recursive);
+        let _ = content.watch(&site_dir.join(sub), RecursiveMode::Recursive);
     }
 
-    // The site's config is optional and may not exist yet, so watch the project
-    // root rather than the file, forwarding only changes to the config (the
-    // root also holds dist/, which every build recreates).
+    // The site's config is optional and may not exist yet, so watch the site's
+    // root folder rather than the file, forwarding only changes to the config
+    // (the root also holds dist/, which every build recreates).
     let mut root = notify::recommended_watcher(move |res: notify::Result<Event>| {
         if res.as_ref().is_ok_and(changes_site_config) {
             let _ = tx.send(res);
         }
     })?;
-    let _ = root.watch(project_dir, RecursiveMode::NonRecursive);
+    let _ = root.watch(site_dir, RecursiveMode::NonRecursive);
 
     Ok([content, root])
 }
@@ -103,7 +103,7 @@ fn is_read(event: &Event) -> bool {
     event.kind.is_access()
 }
 
-/// Does this project-root event change the site's config file?
+/// Does this root-folder event change the site's config file?
 fn changes_site_config(event: &Event) -> bool {
     !is_read(event)
         && event
@@ -281,8 +281,8 @@ mod tests {
         )));
     }
 
-    /// A throwaway project containing every kind of file a build reads.
-    fn scratch_project(label: &str) -> PathBuf {
+    /// A throwaway site containing every kind of file a build reads.
+    fn scratch_site(label: &str) -> PathBuf {
         let root =
             std::env::temp_dir().join(format!("little-server-test-{label}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
@@ -303,27 +303,27 @@ mod tests {
 
     #[test]
     fn a_build_does_not_retrigger_the_watcher() {
-        let project = scratch_project("watch");
-        site::build(&project).unwrap(); // `serve` builds once before watching
+        let site_dir = scratch_site("watch");
+        site::build(&site_dir).unwrap(); // `serve` builds once before watching
 
         let (tx, rx) = std::sync::mpsc::channel();
-        let _watchers = watch_sources(&project, tx).unwrap();
-        // Let any late events from creating the project arrive first.
+        let _watchers = watch_sources(&site_dir, tx).unwrap();
+        // Let any late events from creating the site arrive first.
         while rx.recv_timeout(Duration::from_millis(300)).is_ok() {}
 
         // A rebuild must not wake the watcher, or each one would trigger the next.
-        site::build(&project).unwrap();
+        site::build(&site_dir).unwrap();
         let event = rx.recv_timeout(Duration::from_millis(500));
         assert!(event.is_err(), "a build woke the watcher: {event:?}");
 
         std::fs::write(
-            project.join("theme/assets/style.css"),
+            site_dir.join("theme/assets/style.css"),
             "body { margin: 0 }\n",
         )
         .unwrap();
         let event = rx.recv_timeout(Duration::from_secs(5));
         assert!(event.is_ok(), "editing an asset didn't wake the watcher");
 
-        let _ = std::fs::remove_dir_all(&project);
+        let _ = std::fs::remove_dir_all(&site_dir);
     }
 }

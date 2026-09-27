@@ -14,7 +14,7 @@ use std::path::PathBuf;
     about = "A little static documentation site generator"
 )]
 struct Cli {
-    /// Project directory (defaults to the current directory)
+    /// Site directory (defaults to the current directory)
     #[arg(short = 'C', long, default_value = ".", global = true)]
     dir: PathBuf,
 
