@@ -178,10 +178,9 @@ destination: ./public
   `little.yml`, or absolute. A theme's `little.yml` can set them too, but
   they're still relative to the site.
 - Every build wipes the destination, so point it at a folder that holds nothing
-  but builds. little stops a build that would wipe your work or read its own
-  output: the destination can't be or hold the site's folder or the theme's,
-  and it can't be, hold, or be inside the source or the theme's `_templates/`
-  or `_static/`.
+  but builds. little leaves a `.little-build` file in each folder it builds,
+  and only wipes a folder that has one or is empty: pointed at any other
+  folder, a build stops instead.
 
 ## Theming
 

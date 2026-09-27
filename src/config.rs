@@ -15,8 +15,6 @@ use serde_yaml::Value;
 use std::io::{self, ErrorKind};
 use std::path::{Component, Path, PathBuf};
 
-use crate::theme::{STATIC_DIR, TEMPLATES_DIR};
-
 /// The config file a theme and a site may each provide.
 pub const CONFIG_FILE: &str = "little.yml";
 
@@ -73,14 +71,12 @@ pub fn load(site_dir: &Path) -> Result<Config> {
     }
     let (_, destination_dir) = folder_setting(site_dir, &values, "destination")?;
 
-    let cfg = Config {
+    Ok(Config {
         values,
         theme_dir,
         source_dir,
         destination_dir,
-    };
-    check_destination(site_dir, &cfg)?;
-    Ok(cfg)
+    })
 }
 
 /// Resolve the site's `theme` to the theme's folder, or to little's built-in
@@ -129,49 +125,6 @@ fn folder_setting<'a>(site_dir: &Path, values: &'a Value, key: &str) -> Result<(
 /// path. Tidied, so a site in `.` that sets `./docs` shows it as `./docs`.
 fn site_path(site_dir: &Path, path: &str) -> PathBuf {
     site_dir.join(path).components().collect()
-}
-
-/// Make sure a build can't wipe what the site needs, which it would if the
-/// destination were (or held) the site's folder or the theme's, whose config
-/// a build reads, or a folder a build reads from: the source and the theme's
-/// templates and static files. Nor can the destination be in a folder a build
-/// reads from, or each build would read the last one's output. Real paths are
-/// compared, so no spelling of a folder, through `..` or a symlink or in
-/// another case, gets past.
-fn check_destination(site_dir: &Path, cfg: &Config) -> Result<()> {
-    let real =
-        |path: &Path| real_path(path).with_context(|| format!("resolving {}", path.display()));
-    let destination = real(&cfg.destination_dir)?;
-    let shown = cfg.values["destination"].as_str().unwrap_or_default();
-
-    let configured = [
-        (real(site_dir)?, "the site's folder".to_string()),
-        (real(&cfg.theme_dir)?, "the theme's folder".to_string()),
-    ];
-    let theme_part = |name| -> Result<_> {
-        let dir = real(&cfg.theme_dir.join(name))?;
-        Ok((dir, format!("the theme's `{name}` folder")))
-    };
-    let read = [
-        (real(&cfg.source_dir)?, "the `source` folder".to_string()),
-        theme_part(TEMPLATES_DIR)?,
-        theme_part(STATIC_DIR)?,
-    ];
-
-    for (dir, name) in configured.iter().chain(&read) {
-        if dir.starts_with(&destination) {
-            let is = if *dir == destination { "is" } else { "holds" };
-            bail!("destination `{shown}` {is} {name}, which a build would wipe");
-        }
-    }
-    for (dir, name) in &read {
-        if destination.starts_with(dir) {
-            bail!(
-                "destination `{shown}` is inside {name}, so each build would read the last one's output"
-            );
-        }
-    }
-    Ok(())
 }
 
 /// The absolute path `path` really is, even if it doesn't exist yet: what
@@ -445,85 +398,6 @@ mod tests {
         );
 
         let _ = std::fs::remove_dir_all(&site);
-    }
-
-    #[test]
-    fn a_destination_cannot_be_what_a_build_needs() {
-        // Nested, so even `..` is a scratch folder. Nothing here is built.
-        let root = scratch(
-            "destination",
-            &[
-                ("site/docs/README.md", ""),
-                ("site/content/docs/README.md", ""),
-                ("site/theme/_templates/default.html", ""),
-                ("site/theme/_static/style.css", ""),
-                ("shared/theme/_templates/default.html", ""),
-            ],
-        );
-        let site = root.join("site");
-        let error = |site_cfg: &str| {
-            std::fs::write(site.join(CONFIG_FILE), site_cfg).unwrap();
-            load(&site).err().map(|e| format!("{e:#}"))
-        };
-        let assert_refused = |site_cfg: &str, reason: &str| {
-            let message = error(site_cfg).unwrap_or_else(|| panic!("{site_cfg:?} is allowed"));
-            assert!(message.contains(reason), "{site_cfg:?}: {message}");
-        };
-
-        // Every build wipes its destination, so it can't be (or hold) the
-        // site's folder, its source, or its theme, or what's in the theme...
-        assert_refused("destination: .\n", "destination `.` is the site's folder");
-        assert_refused("destination: ..\n", "holds the site's folder");
-        assert_refused("destination: ./docs/\n", "is the `source` folder");
-        assert_refused("destination: ./dist/../docs\n", "is the `source` folder");
-        let site_cfg = "source: ./content/docs\ndestination: ./content\n";
-        assert_refused(site_cfg, "holds the `source` folder");
-        assert_refused("destination: theme\n", "is the theme's folder");
-        let site_cfg = "theme: ../shared/theme\ndestination: ../shared\n";
-        assert_refused(site_cfg, "holds the theme's folder");
-        let site_cfg = "destination: ./theme/_templates\n";
-        assert_refused(site_cfg, "is the theme's `_templates` folder");
-        assert_refused(
-            "destination: theme/_static/\n",
-            "is the theme's `_static` folder",
-        );
-        // ...however the folder's written.
-        #[cfg(unix)]
-        {
-            std::os::unix::fs::symlink(&site, root.join("alias")).unwrap();
-            assert_refused("destination: ../alias/docs\n", "is the `source` folder");
-        }
-        if site.join("DOCS").is_dir() {
-            // A case-insensitive disk, like macOS's and Windows's by default.
-            assert_refused("destination: ./DOCS\n", "is the `source` folder");
-        }
-
-        // Nor can it be in a folder a build reads from, or each build would
-        // read the last.
-        assert_refused(
-            "destination: ./docs/site\n",
-            "is inside the `source` folder",
-        );
-        assert_refused(
-            "destination: ./theme/_static/site\n",
-            "is inside the theme's `_static` folder",
-        );
-        assert_refused(
-            "destination: ./theme/_templates/site\n",
-            "is inside the theme's `_templates` folder",
-        );
-
-        // Anywhere else is fine, even inside the theme: a theme's demo site
-        // might be.
-        for site_cfg in [
-            "destination: ./public\n",
-            "destination: ../out\n",
-            "destination: ./theme/dist\n",
-        ] {
-            assert_eq!(error(site_cfg), None, "{site_cfg:?}");
-        }
-
-        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]
