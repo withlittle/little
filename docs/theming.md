@@ -14,7 +14,7 @@ The theme receives two structured objects:
 
 The merged config (little → theme → site), plus a derived nav:
 
-- `site.name` — the site title (little's built-in default is `"Documentation"`)
+- `site.name` — the site title (this theme defaults it to `"Documentation"`)
 - `site.nav` — the main navigation, derived from the files and folders under `docs/`.
   Each item is `{ title, url, children }`. A folder with a `README.md` links to that
   landing page; a folder without one is a plain section label (`url` is null).
@@ -32,15 +32,17 @@ The merged config (little → theme → site), plus a derived nav:
 
 ## The cascading config, made visible
 
-The accent color of this site is declared at **all three levels**, and the *last* one wins:
+Config cascades through three levels — **little** → **theme** → **site** — and the *last*
+writer wins. little's own defaults (in `src/config.rs`) leave a site's name to the theme and
+the site, so the name of this site is declared by the other two:
 
-1. **little** default — `#2563eb` (blue), in `src/config.rs`
-2. **theme** override — in `theme/little.yml`
-3. **site** override — in `little.yml`
+1. **theme** default — in `theme/little.yml`
+2. **site** override — in `little.yml`
 
-Open `theme/little.yml` and `little.yml` and change `accent`. Save. The color updates live —
+Open `theme/little.yml` and `little.yml` and change `name`. Save. The header updates live —
 and if you delete the site's value, the theme's value takes over. That's the cascade.
 
-Both files are optional. A theme or site with nothing to override can leave out its
-`little.yml` (an empty one is fine too), and the levels before it still apply — with
-neither file, you simply get little's defaults.
+Both files are optional. A theme or site with nothing to set can leave out its
+`little.yml` (an empty one is fine too), and the levels before it still apply. Because
+little doesn't default a site's name, language, or look, a theme without a `little.yml`
+should give its templates their own fallbacks, e.g. `{{ site.lang | default('en') }}`.

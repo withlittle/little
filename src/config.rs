@@ -11,13 +11,13 @@ use std::path::Path;
 pub const CONFIG_FILE: &str = "little.yml";
 
 /// little's built-in defaults. This is level 1 of the cascade.
+///
+/// Only settings little itself owns belong here. A site's name, language, and
+/// look are the theme's to default and the site's to set.
 fn builtin_defaults() -> Value {
     serde_yaml::from_str(
         r##"
-name: "Documentation"
-lang: en
 theme: default
-accent: "#2563eb"
 "##,
     )
     .expect("built-in defaults are valid YAML")
@@ -108,23 +108,24 @@ mod tests {
 
     #[test]
     fn theme_and_site_configs_are_optional() {
-        let theme = Some("accent: \"#7c3aed\"\n");
+        let theme = Some("font: serif\n");
         let site = Some("name: My Docs\n");
 
         // No config files at all: little's defaults stand on their own.
         assert_eq!(cascade("neither", None, None), builtin_defaults());
 
         let cfg = cascade("theme-only", theme, None);
-        assert_eq!(get(&cfg, "accent"), Some("#7c3aed"));
-        assert_eq!(get(&cfg, "name"), Some("Documentation"));
+        assert_eq!(get(&cfg, "font"), Some("serif"));
+        assert_eq!(get(&cfg, "theme"), Some("default"));
 
         let cfg = cascade("site-only", None, site);
         assert_eq!(get(&cfg, "name"), Some("My Docs"));
-        assert_eq!(get(&cfg, "accent"), Some("#2563eb"));
+        assert_eq!(get(&cfg, "theme"), Some("default"));
 
         let cfg = cascade("both", theme, site);
         assert_eq!(get(&cfg, "name"), Some("My Docs"));
-        assert_eq!(get(&cfg, "accent"), Some("#7c3aed"));
+        assert_eq!(get(&cfg, "font"), Some("serif"));
+        assert_eq!(get(&cfg, "theme"), Some("default"));
     }
 
     #[test]
@@ -135,29 +136,27 @@ mod tests {
     }
 
     #[test]
-    fn builtin_default_name_is_documentation() {
+    fn builtin_defaults_leave_presentation_to_theme_and_site() {
         let cfg = builtin_defaults();
-        assert_eq!(get(&cfg, "name"), Some("Documentation"));
-        assert_eq!(get(&cfg, "accent"), Some("#2563eb"));
+        assert_eq!(get(&cfg, "theme"), Some("default"));
+        for key in ["name", "lang"] {
+            assert_eq!(cfg.get(key), None, "little shouldn't default `{key}`");
+        }
     }
 
     #[test]
     fn later_level_overrides_earlier() {
         let mut cfg = builtin_defaults();
-        // Theme sets accent + font; site overrides accent and name.
+        // Theme sets name + font; site overrides the name.
         deep_merge(
             &mut cfg,
-            serde_yaml::from_str("accent: \"#7c3aed\"\nfont: serif\n").unwrap(),
+            serde_yaml::from_str("name: Documentation\nfont: serif\n").unwrap(),
         );
-        deep_merge(
-            &mut cfg,
-            serde_yaml::from_str("name: My Docs\naccent: \"#e11d48\"\n").unwrap(),
-        );
+        deep_merge(&mut cfg, serde_yaml::from_str("name: My Docs\n").unwrap());
 
-        assert_eq!(get(&cfg, "name"), Some("My Docs"));
-        assert_eq!(get(&cfg, "accent"), Some("#e11d48")); // last writer wins
+        assert_eq!(get(&cfg, "name"), Some("My Docs")); // last writer wins
         assert_eq!(get(&cfg, "font"), Some("serif")); // theme value survives
-        assert_eq!(get(&cfg, "lang"), Some("en")); // builtin survives
+        assert_eq!(get(&cfg, "theme"), Some("default")); // builtin survives
     }
 
     #[test]
