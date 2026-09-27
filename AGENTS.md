@@ -21,12 +21,15 @@ cargo fmt                   # format — run before committing
 - `src/little.yml` — little's own defaults (level 1), compiled into the binary.
 - `src/render.rs` — Markdown (comrak) + YAML frontmatter → HTML fragment.
 - `src/site.rs` — build pipeline: walk `docs/`, render, apply theme, write `dist/`.
+- `src/theme.rs` — a theme's templates and static files; picks each page's
+  template by its type (`home`, `section`, `page`, `404`).
 - `src/server.rs` — dev server + file watcher + live reload.
 
 Content and theme live outside `src/`:
 - `docs/` — the example/dogfood site content. This is little's **input**, not
   project documentation — don't put meta docs here.
-- `theme/` — the default theme: `templates/` (MiniJinja) + `assets/` + an optional `little.yml`.
+- `theme/` — the default theme: `_templates/` (MiniJinja; `default.html` is
+  required) + `_static/` (copied to the site's root) + an optional `little.yml`.
 - `little.yml` — example site config (optional).
 - Project meta (`VISION.md`, `AGENTS.md`, `decisions/`) lives at the repo root.
 
@@ -58,4 +61,6 @@ Content and theme live outside `src/`:
 Record notable choices as short ADRs in `decisions/`. Locked so far:
 - **Language:** Rust — see [`decisions/0001-language-rust.md`](./decisions/0001-language-rust.md).
 - **Markdown:** comrak. **Templating:** minijinja. **Config:** cascading YAML.
+- **Themes:** `_templates/` + `_static/`, a template per type of page — see
+  [`decisions/0002-theme-structure.md`](./decisions/0002-theme-structure.md).
 - **Plugins:** sandboxed WASM (planned).

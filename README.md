@@ -59,10 +59,11 @@ little --help                        # list every command and option
 ```
 
 - `build` wipes and regenerates `dist/` every time, so don't keep anything
-  there by hand.
+  there by hand. A build that fails leaves the last one in `dist/`.
 - `serve` builds first, then watches `docs/`, the theme, and `little.yml`,
   rebuilding and refreshing open browser tabs whenever you save. If you switch
-  themes, it starts watching the new one.
+  themes, it starts watching the new one. If a save breaks the build, `serve`
+  prints why and keeps serving the last build.
 
 ## Site layout
 
@@ -76,10 +77,9 @@ my-docs/
 │       ├── README.md       # → /guide/
 │       └── install.md      # → /guide/install
 ├── theme/                  # the theme, unless little.yml chooses another
-│   ├── little.yml          # theme config (optional)
-│   ├── templates/
-│   │   └── page.html       # renders every page (required)
-│   └── assets/             # copied as-is to dist/assets/
+│   ├── _static/            # copied as-is to the site's root (optional)
+│   ├── _templates/         # the templates; default.html is required
+│   └── little.yml          # theme config (optional)
 └── dist/                   # build output (generated)
 ```
 
@@ -157,30 +157,63 @@ theme: ../shared/my-theme
 
 ## Theming
 
-The theme owns 100% of the markup; little bakes in no HTML. For each page it
-renders the theme's `templates/page.html`, a
-[MiniJinja](https://docs.rs/minijinja) (Jinja2-style) template, with this data
-(little loads just this one template for now):
+The theme owns 100% of the markup; little bakes in no HTML. A theme is a
+folder:
+
+```text
+my-theme/
+├── _static/      # optional: copied as-is to the site's root
+├── _templates/   # the templates; default.html is required
+└── little.yml    # optional: the theme's config
+```
+
+Templates are [MiniJinja](https://docs.rs/minijinja) (Jinja2-style). little
+renders each page with the template for its type, or with `default.html` if
+the theme doesn't have that template:
+
+| Page type | Pages | Template |
+| --------- | ----- | -------- |
+| `home` | `docs/README.md` | `home.html`, else `default.html` |
+| `section` | a folder's `README.md`, like `docs/guide/README.md` | `section.html`, else `default.html` |
+| `page` | every other `.md` file | `page.html`, else `default.html` |
+| `404` | the page a host shows for a URL with no page | `404.html`, else none |
+
+A 404 page has no content for `default.html` to show, so a theme without a
+`404.html` gets no 404 page, and the host shows its own. Templates can
+`{% extends %}` and `{% include %}` any others in `_templates/`, in subfolders
+too, so `default.html` can be a layout that the rest extend.
+
+Each template gets this data. A page leaves out anything it doesn't have,
+rather than setting it to null, so `{% if page.description %}` and
+`{{ page.description | default("…") }}` both work:
 
 | Variable | Contents |
 | -------- | -------- |
 | `site` | The merged config: `site.name`, `site.tagline`, and any keys you add |
-| `site.nav` | The nav tree: a list of `{ title, url, children }`; `url` is null for folders without a `README.md` |
-| `page.title` | The page title |
+| `site.nav` | The nav tree: a list of `{ title, url, children }`; a folder without a `README.md` has no `url` |
+| `page.type` | The page's type: `home`, `section`, `page`, or `404` |
 | `page.url` | The page's URL, e.g. `/guide/install`; compare it with `item.url` to mark the current nav item |
-| `page.description` | Frontmatter `description`, or null |
+| `page.title` | The page title |
+| `page.description` | Frontmatter `description`, if the page has one |
 | `page.content` | The rendered Markdown as HTML; output it with the `safe` filter |
 | `page.nav` | The page's table of contents (its `##`/`###` headings): a list of `{ title, anchor, depth }` |
+| `page.children` | Home and section pages only: what else is in the page's folder, shaped like `site.nav` |
 
-Everything in the theme's `assets/` folder is copied to `dist/assets/`, so
-reference it from the site root (`/assets/style.css`). The default
-[`page.html`](./theme/templates/page.html) is a complete working example.
+A 404 page has just `page.type` and `page.url` (`/404.html`).
+
+Everything in `_static/` is copied to the site's root as it is, so
+`_static/assets/style.css` becomes `/assets/style.css`. If a static file would
+take the place of a page, the build stops and names both. The default theme's
+[`default.html`](./theme/_templates/default.html) and
+[`404.html`](./theme/_templates/404.html) are complete working examples.
 
 ## Deploying
 
 `dist/` is plain static HTML: upload it to any static host. Page links and
 assets are root-relative (`/guide/install`, `/assets/style.css`), so serve the
-site from the root of a domain rather than a subpath.
+site from the root of a domain rather than a subpath. A theme's 404 page is
+built to `dist/404.html`, where GitHub Pages, Netlify, and most other static
+hosts look for one; `little serve` uses it too.
 
 ## Development
 

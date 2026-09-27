@@ -2,6 +2,7 @@ mod config;
 mod render;
 mod server;
 mod site;
+mod theme;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};

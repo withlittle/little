@@ -4,9 +4,10 @@ title: Theming
 
 # Theming is the whole point
 
-Every byte of HTML on this page comes from `theme/templates/page.html`. little passes
-the theme **structured data** — never pre-rendered markup — so you can build a theme with
-plain HTML, Tailwind, Bootstrap, or anything else. That's the Jekyll superpower, kept.
+Every byte of HTML on this page comes from the theme's templates, here
+`theme/_templates/default.html`. little passes the theme **structured data** — never
+pre-rendered markup — so you can build a theme with plain HTML, Tailwind, Bootstrap, or
+anything else. That's the Jekyll superpower, kept.
 
 The theme receives two structured objects:
 
@@ -17,18 +18,39 @@ The merged config (little → theme → site), plus a derived nav:
 - `site.name` — the site title (this theme defaults it to `"Documentation"`)
 - `site.nav` — the main navigation, derived from the files and folders under `docs/`.
   Each item is `{ title, url, children }`. A folder with a `README.md` links to that
-  landing page; a folder without one is a plain section label (`url` is null).
+  landing page; a folder without one is a plain section label, with no `url`.
   `site.nav` is shared by every page, so the theme marks the current item by comparing
   `item.url` with `page.url`.
 
 ### `page`
 
-- `page.title` — frontmatter `title`, else the first `<h1>`, else a name derived from the file
+- `page.type` — the type of page: `home`, `section`, `page`, or `404` (see below)
 - `page.url` — the page's clean, extensionless URL (`/`, `/getting-started`, `/guide/install`)
-- `page.description` — frontmatter `description`, or null
+- `page.title` — frontmatter `title`, else the first `<h1>`, else a name derived from the file
+- `page.description` — frontmatter `description`, if the page has one
 - `page.content` — the rendered Markdown (HTML)
 - `page.nav` — an in-page table of contents built from the page's `h2`–`h3` headings;
   each item is `{ title, anchor, depth }`, where `anchor` is a `#fragment` link
+- `page.children` — on home and section pages, what else is in the page's folder, shaped
+  like `site.nav`: handy for listing a section's pages
+
+A page leaves out what it doesn't have, rather than setting it to null, so
+`{% if page.description %}` and `{{ page.description | default("…") }}` both work.
+
+## A template for each type of page
+
+little renders each page with the theme's template for its type, or with `default.html`
+if the theme doesn't have one:
+
+- `home.html` — the site's home page, `docs/README.md`
+- `section.html` — a folder's home page, like `docs/guide/README.md`
+- `page.html` — every other page, like this one
+- `404.html` — the page shown for a URL with no page. It has no content, just `page.type`
+  and `page.url`, so a theme without this template gets no 404 page.
+
+This theme has just `default.html` and `404.html`. Its `404.html` extends `default.html`
+and replaces only the title and content; templates can extend and include any others in
+`_templates/`, in subfolders too. Try it: visit a [page that isn't here](/no-such-page).
 
 ## The cascading config, made visible
 
@@ -50,10 +72,19 @@ should give its templates their own fallbacks, e.g. `{{ site.lang | default('en'
 
 ## Bring your own theme
 
-A theme is just a folder: `templates/page.html`, plus an optional `assets/` folder and
-`little.yml`. This site doesn't set `theme`, so it gets little's built-in theme, the one in
-`theme/`. To use a theme kept somewhere else, point `theme` at its folder in the site's
-`little.yml`:
+A theme is just a folder:
+
+```text
+my-theme/
+├── _static/      optional: copied as-is to the site's root
+├── _templates/   the templates; default.html is required
+└── little.yml    optional: the theme's config
+```
+
+This theme keeps its stylesheet at `_static/assets/style.css`, so its pages link to
+`/assets/style.css`. This site doesn't set `theme`, so it gets little's built-in theme, the
+one in `theme/`. To use a theme kept somewhere else, point `theme` at its folder in the
+site's `little.yml`:
 
 ```yaml
 theme: ./path/to/my/theme

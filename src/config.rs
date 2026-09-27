@@ -216,8 +216,8 @@ mod tests {
             "paths",
             &[
                 ("site/docs/README.md", ""),
-                ("site/themes/mine/templates/page.html", ""),
-                ("shared/theme/templates/page.html", ""),
+                ("site/themes/mine/_templates/default.html", ""),
+                ("shared/theme/_templates/default.html", ""),
             ],
         );
         let (site, shared) = (root.join("site"), root.join("shared/theme"));
@@ -243,7 +243,7 @@ mod tests {
 
     #[test]
     fn bad_theme_choices_explain_themselves() {
-        let site = scratch("bad-theme", &[("theme/templates/page.html", "")]);
+        let site = scratch("bad-theme", &[("theme/_templates/default.html", "")]);
         let error = |site_cfg: &str| {
             std::fs::write(site.join(CONFIG_FILE), site_cfg).unwrap();
             format!("{:#}", load(&site).unwrap_err())

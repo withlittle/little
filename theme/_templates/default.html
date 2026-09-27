@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{{ page.title }} · {{ site.name }}</title>
+  <title>{% block title %}{{ page.title }} · {{ site.name }}{% endblock %}</title>
   {% if page.description %}<meta name="description" content="{{ page.description }}">{% endif %}
   <link rel="stylesheet" href="/assets/style.css">
   <style>
@@ -37,7 +37,7 @@
     </nav>
 
     <main class="content">
-      {{ page.content | safe }}
+      {% block content %}{{ page.content | safe }}{% endblock %}
     </main>
 
     {% if page.nav %}
