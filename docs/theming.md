@@ -33,8 +33,9 @@ The merged config (little → theme → site), plus a derived nav:
 ## The cascading config, made visible
 
 Config cascades through three levels — **little** → **theme** → **site** — and the *last*
-writer wins. little's own defaults (in `src/config.rs`) leave a site's name to the theme and
-the site, so the name of this site is declared by the other two:
+writer wins. Each level is a `little.yml`. little's own is built into little (it's
+`src/little.yml` in little's source), and it leaves a site's name to the theme and the site,
+so the name of this site is declared by the other two:
 
 1. **theme** default — in `theme/little.yml`
 2. **site** override — in `little.yml`

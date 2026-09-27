@@ -121,9 +121,10 @@ tagline: "Docs that just work"
 ```
 
 Every key reaches the theme as `site.<key>`, so you can add your own. little's
-built-in defaults cover only little's own settings; a site's name, language,
-and look are up to the theme and the site. The default theme uses these keys,
-with defaults from its `theme/little.yml`:
+built-in defaults (see [`src/little.yml`](./src/little.yml)) cover only
+little's own settings; a site's name, language, and look are up to the theme
+and the site. The default theme uses these keys, with defaults from its
+`theme/little.yml`:
 
 | Key | Default | Used for |
 | --- | ------- | -------- |

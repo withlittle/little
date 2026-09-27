@@ -1,0 +1,5 @@
+# little's config — the FIRST level of the cascade (little -> theme -> site).
+# It's compiled into the binary, and the theme and the site can override any
+# of it. Only settings little itself owns belong here: a site's name, language,
+# and look are the theme's to default and the site's to set.
+theme: default
