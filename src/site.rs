@@ -347,7 +347,11 @@ fn copy_dir(src: &Path, dst: &Path) -> Result<()> {
             if let Some(parent) = target.parent() {
                 fs::create_dir_all(parent)?;
             }
-            fs::copy(path, &target)?;
+            // Not `fs::copy`: on macOS it clones the file, and FSEvents then
+            // reports the *source* as changed, so `little serve` would rebuild
+            // forever. A build must only ever read its sources.
+            let bytes = fs::read(path).with_context(|| format!("reading {}", path.display()))?;
+            fs::write(&target, bytes).with_context(|| format!("writing {}", target.display()))?;
         }
     }
     Ok(())
@@ -461,5 +465,23 @@ mod tests {
         assert_eq!(api.children.len(), 1);
         assert_eq!(api.children[0].title, "Reference");
         assert_eq!(api.children[0].url.as_deref(), Some("/api/reference"));
+    }
+
+    #[test]
+    fn copies_nested_assets_byte_for_byte() {
+        let root =
+            std::env::temp_dir().join(format!("little-site-test-assets-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        let (src, dst) = (root.join("assets"), root.join("dist/assets"));
+        let png: &[u8] = &[0x89, b'P', b'N', b'G', 0x00, 0xff];
+        fs::create_dir_all(src.join("img")).unwrap();
+        fs::write(src.join("style.css"), "body {}\n").unwrap();
+        fs::write(src.join("img/logo.png"), png).unwrap();
+
+        copy_dir(&src, &dst).unwrap();
+
+        assert_eq!(fs::read(dst.join("style.css")).unwrap(), b"body {}\n");
+        assert_eq!(fs::read(dst.join("img/logo.png")).unwrap(), png);
+        let _ = fs::remove_dir_all(&root);
     }
 }
