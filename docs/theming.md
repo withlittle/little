@@ -47,3 +47,20 @@ Both files are optional. A theme or site with nothing to set can leave out its
 `little.yml` (an empty one is fine too), and the levels before it still apply. Because
 little doesn't default a site's name, language, or look, a theme without a `little.yml`
 should give its templates their own fallbacks, e.g. `{{ site.lang | default('en') }}`.
+
+## Bring your own theme
+
+A theme is just a folder: `templates/page.html`, plus an optional `assets/` folder and
+`little.yml`. This site doesn't set `theme`, so it gets little's built-in theme, the one in
+`theme/`. To use a theme kept somewhere else, point `theme` at its folder in the site's
+`little.yml`:
+
+```yaml
+theme: ./path/to/my/theme
+```
+
+The path is relative to the site's folder, or absolute, like `/Users/you/my-theme` on macOS
+or `C:\Users\you\my-theme` on Windows. (Leave a Windows path unquoted or use single quotes:
+inside double quotes, YAML reads `\` as an escape.) Only the site chooses its theme, so a
+theme's own `little.yml` can't set `theme`. `little serve` watches whichever theme the site
+uses, so theme edits reload live too.

@@ -16,7 +16,8 @@ cargo fmt                   # format — run before committing
 
 ## Architecture (keep the core small)
 - `src/main.rs` — CLI (clap): `build`, `serve`.
-- `src/config.rs` — the 3-level cascading config (little → theme → site).
+- `src/config.rs` — the 3-level cascading config (little → theme → site), and
+  which theme folder a site uses.
 - `src/little.yml` — little's own defaults (level 1), compiled into the binary.
 - `src/render.rs` — Markdown (comrak) + YAML frontmatter → HTML fragment.
 - `src/site.rs` — build pipeline: walk `docs/`, render, apply theme, write `dist/`.
@@ -37,7 +38,8 @@ Content and theme live outside `src/`:
    default in `src/little.yml`; a site's name, language, and look are the
    theme's to default (in its `little.yml`) and the site's to set. The theme's
    and site's `little.yml` are optional — a missing or empty file just
-   contributes nothing.
+   contributes nothing. `theme` is the exception: it chooses level 2, so only
+   the site can set it, and a site that doesn't gets little's built-in theme.
 3. **Keep the core small; push features to plugins.** Sphinx-style API extraction,
    niche renderers, etc. are plugins (planned WASM API), not core code.
 4. **No mandatory Node toolchain.** Never add a build step that requires Node.
