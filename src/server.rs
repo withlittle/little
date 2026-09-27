@@ -74,8 +74,10 @@ fn watch_sources(
 ) -> notify::Result<[RecommendedWatcher; 2]> {
     // docs/ and theme/ — the latter includes the theme's optional config.
     let content_tx = tx.clone();
-    let mut content = notify::recommended_watcher(move |res| {
-        let _ = content_tx.send(res);
+    let mut content = notify::recommended_watcher(move |res: notify::Result<Event>| {
+        if !res.as_ref().is_ok_and(is_read) {
+            let _ = content_tx.send(res);
+        }
     })?;
     for sub in ["docs", "theme"] {
         let _ = content.watch(&project_dir.join(sub), RecursiveMode::Recursive);
@@ -94,10 +96,16 @@ fn watch_sources(
     Ok([content, root])
 }
 
-/// Does this project-root event change the site's config file? Reads don't
-/// count: every build opens the file, so they'd trigger endless rebuilds.
+/// Is this event just a read? Every build opens the files it uses, and some
+/// platforms report opens (Linux's inotify does), so a watcher that counted
+/// reads as changes would trigger endless rebuilds.
+fn is_read(event: &Event) -> bool {
+    event.kind.is_access()
+}
+
+/// Does this project-root event change the site's config file?
 fn changes_site_config(event: &Event) -> bool {
-    !event.kind.is_access()
+    !is_read(event)
         && event
             .paths
             .iter()
@@ -271,5 +279,51 @@ mod tests {
             EventKind::Create(CreateKind::File),
             ".little.yml.swp"
         )));
+    }
+
+    /// A throwaway project containing every kind of file a build reads.
+    fn scratch_project(label: &str) -> PathBuf {
+        let root =
+            std::env::temp_dir().join(format!("little-server-test-{label}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        for (file, contents) in [
+            ("little.yml", "name: Test\n"),
+            ("docs/README.md", "# Home\n"),
+            ("docs/guide/install.md", "# Install\n"),
+            ("theme/little.yml", "accent: \"#7c3aed\"\n"),
+            ("theme/templates/page.html", "{{ page.content | safe }}"),
+            ("theme/assets/style.css", "body {}\n"),
+        ] {
+            let path = root.join(file);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(&path, contents).unwrap();
+        }
+        root
+    }
+
+    #[test]
+    fn a_build_does_not_retrigger_the_watcher() {
+        let project = scratch_project("watch");
+        site::build(&project).unwrap(); // `serve` builds once before watching
+
+        let (tx, rx) = std::sync::mpsc::channel();
+        let _watchers = watch_sources(&project, tx).unwrap();
+        // Let any late events from creating the project arrive first.
+        while rx.recv_timeout(Duration::from_millis(300)).is_ok() {}
+
+        // A rebuild must not wake the watcher, or each one would trigger the next.
+        site::build(&project).unwrap();
+        let event = rx.recv_timeout(Duration::from_millis(500));
+        assert!(event.is_err(), "a build woke the watcher: {event:?}");
+
+        std::fs::write(
+            project.join("theme/assets/style.css"),
+            "body { margin: 0 }\n",
+        )
+        .unwrap();
+        let event = rx.recv_timeout(Duration::from_secs(5));
+        assert!(event.is_ok(), "editing an asset didn't wake the watcher");
+
+        let _ = std::fs::remove_dir_all(&project);
     }
 }
