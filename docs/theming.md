@@ -33,13 +33,13 @@ The merged config (little → theme → site), plus a derived nav:
 ## The cascading config, made visible
 
 Config cascades through three levels — **little** → **theme** → **site** — and the *last*
-writer wins. little's own defaults (in `src/config.rs`) don't touch a site's look, so the
-accent color of this site is declared by the other two:
+writer wins. little's own defaults (in `src/config.rs`) leave a site's name to the theme and
+the site, so the name of this site is declared by the other two:
 
 1. **theme** default — in `theme/little.yml`
 2. **site** override — in `little.yml`
 
-Open `theme/little.yml` and `little.yml` and change `accent`. Save. The color updates live —
+Open `theme/little.yml` and `little.yml` and change `name`. Save. The header updates live —
 and if you delete the site's value, the theme's value takes over. That's the cascade.
 
 Both files are optional. A theme or site with nothing to set can leave out its

@@ -118,7 +118,6 @@ is fine), so a site sets only what it wants to change:
 # little.yml
 name: "My Project Docs"
 tagline: "Docs that just work"
-accent: "#e11d48"
 ```
 
 Every key reaches the theme as `site.<key>`, so you can add your own. little's
@@ -130,7 +129,6 @@ with defaults from its `theme/little.yml`:
 | --- | ------- | -------- |
 | `name` | `Documentation` | Site title (header and browser tab) |
 | `tagline` | none | Text beside the site title |
-| `accent` | `#7c3aed` | Links and highlights |
 | `font` | a system UI font stack | Body text `font-family` |
 | `lang` | `en` | The page's `lang` attribute |
 
@@ -143,7 +141,7 @@ for now):
 
 | Variable | Contents |
 | -------- | -------- |
-| `site` | The merged config: `site.name`, `site.accent`, and any keys you add |
+| `site` | The merged config: `site.name`, `site.tagline`, and any keys you add |
 | `site.nav` | The nav tree: a list of `{ title, url, children }`; `url` is null for folders without a `README.md` |
 | `page.title` | The page title |
 | `page.url` | The page's URL, e.g. `/guide/install`; compare it with `item.url` to mark the current nav item |

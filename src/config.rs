@@ -108,14 +108,14 @@ mod tests {
 
     #[test]
     fn theme_and_site_configs_are_optional() {
-        let theme = Some("accent: \"#7c3aed\"\n");
+        let theme = Some("font: serif\n");
         let site = Some("name: My Docs\n");
 
         // No config files at all: little's defaults stand on their own.
         assert_eq!(cascade("neither", None, None), builtin_defaults());
 
         let cfg = cascade("theme-only", theme, None);
-        assert_eq!(get(&cfg, "accent"), Some("#7c3aed"));
+        assert_eq!(get(&cfg, "font"), Some("serif"));
         assert_eq!(get(&cfg, "theme"), Some("default"));
 
         let cfg = cascade("site-only", None, site);
@@ -124,7 +124,7 @@ mod tests {
 
         let cfg = cascade("both", theme, site);
         assert_eq!(get(&cfg, "name"), Some("My Docs"));
-        assert_eq!(get(&cfg, "accent"), Some("#7c3aed"));
+        assert_eq!(get(&cfg, "font"), Some("serif"));
         assert_eq!(get(&cfg, "theme"), Some("default"));
     }
 
@@ -139,7 +139,7 @@ mod tests {
     fn builtin_defaults_leave_presentation_to_theme_and_site() {
         let cfg = builtin_defaults();
         assert_eq!(get(&cfg, "theme"), Some("default"));
-        for key in ["name", "lang", "accent"] {
+        for key in ["name", "lang"] {
             assert_eq!(cfg.get(key), None, "little shouldn't default `{key}`");
         }
     }
@@ -147,18 +147,14 @@ mod tests {
     #[test]
     fn later_level_overrides_earlier() {
         let mut cfg = builtin_defaults();
-        // Theme sets accent + font; site overrides accent and adds a name.
+        // Theme sets name + font; site overrides the name.
         deep_merge(
             &mut cfg,
-            serde_yaml::from_str("accent: \"#7c3aed\"\nfont: serif\n").unwrap(),
+            serde_yaml::from_str("name: Documentation\nfont: serif\n").unwrap(),
         );
-        deep_merge(
-            &mut cfg,
-            serde_yaml::from_str("name: My Docs\naccent: \"#e11d48\"\n").unwrap(),
-        );
+        deep_merge(&mut cfg, serde_yaml::from_str("name: My Docs\n").unwrap());
 
-        assert_eq!(get(&cfg, "name"), Some("My Docs"));
-        assert_eq!(get(&cfg, "accent"), Some("#e11d48")); // last writer wins
+        assert_eq!(get(&cfg, "name"), Some("My Docs")); // last writer wins
         assert_eq!(get(&cfg, "font"), Some("serif")); // theme value survives
         assert_eq!(get(&cfg, "theme"), Some("default")); // builtin survives
     }

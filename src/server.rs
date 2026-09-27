@@ -290,7 +290,7 @@ mod tests {
             ("little.yml", "name: Test\n"),
             ("docs/README.md", "# Home\n"),
             ("docs/guide/install.md", "# Install\n"),
-            ("theme/little.yml", "accent: \"#7c3aed\"\n"),
+            ("theme/little.yml", "font: serif\n"),
             ("theme/templates/page.html", "{{ page.content | safe }}"),
             ("theme/assets/style.css", "body {}\n"),
         ] {
