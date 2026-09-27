@@ -39,7 +39,7 @@ Content and theme live outside `src/`:
    theme's to default (in its `little.yml`) and the site's to set. The theme's
    and site's `little.yml` are optional — a missing or empty file just
    contributes nothing. `theme` is the exception: it chooses level 2, so only
-   little and the site can set it.
+   the site can set it, and a site that doesn't gets little's built-in theme.
 3. **Keep the core small; push features to plugins.** Sphinx-style API extraction,
    niche renderers, etc. are plugins (planned WASM API), not core code.
 4. **No mandatory Node toolchain.** Never add a build step that requires Node.

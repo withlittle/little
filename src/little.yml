@@ -2,4 +2,6 @@
 # It's compiled into the binary, and the theme and the site can override any
 # of it. Only settings little itself owns belong here: a site's name, language,
 # and look are the theme's to default and the site's to set.
-theme: default
+#
+# There's deliberately no `theme` here: a site that doesn't choose one gets
+# little's built-in theme.

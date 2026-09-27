@@ -3,8 +3,8 @@
 //! little's own file is compiled in; the theme's and the site's are optional.
 //!
 //! Which theme fills level 2 is itself a setting, `theme`. A theme's config
-//! can only be found once the theme has been chosen, so only little and the
-//! site get a say in it.
+//! can only be found once the theme has been chosen, so only the site gets a
+//! say in it; a site that doesn't choose gets little's built-in theme.
 
 use anyhow::{Context, Result, bail};
 use serde_yaml::Value;
@@ -26,7 +26,14 @@ pub struct Config {
 /// `src/little.yml`, compiled into the binary so little stays a single file
 /// with nothing to install alongside it.
 fn builtin_defaults() -> Value {
-    serde_yaml::from_str(include_str!("little.yml")).expect("src/little.yml is valid YAML")
+    let defaults: Value =
+        serde_yaml::from_str(include_str!("little.yml")).expect("src/little.yml is valid YAML");
+    // With no settings in it, the file parses as null, but every other level
+    // (and the theme's `site`) needs a mapping to merge into.
+    match defaults {
+        Value::Null => Value::Mapping(Default::default()),
+        defaults => defaults,
+    }
 }
 
 /// Choose a site's theme, then load and merge the cascade.
@@ -63,30 +70,34 @@ pub fn theme_dir(site_dir: &Path) -> Result<PathBuf> {
     choose_theme(site_dir, site_cfg.as_ref())
 }
 
-/// Resolve the site's `theme` (or little's default) to the theme's folder.
+/// Resolve the site's `theme` to the theme's folder, or to little's built-in
+/// theme if the site doesn't choose one.
 fn choose_theme(site_dir: &Path, site_cfg: Option<&Value>) -> Result<PathBuf> {
-    let builtin = builtin_defaults();
-    let setting = site_cfg
-        .and_then(|cfg| cfg.get("theme"))
-        .or(builtin.get("theme"));
-    let Some(theme) = setting.and_then(Value::as_str) else {
-        bail!("`theme` must be a string: `default` or the path to a theme folder");
-    };
-
-    let dir = if theme == "default" {
-        // little's default theme lives in the site's `theme/` folder until
-        // it's built into little.
-        site_dir.join("theme")
-    } else {
-        // Anything else is a path, relative to the site like the config that
-        // sets it. Joining an absolute path just gives that path.
-        site_dir.join(theme)
-    };
-
-    if !dir.is_dir() {
-        bail!("theme `{theme}` not found: no folder at {}", dir.display());
+    match site_cfg.and_then(|cfg| cfg.get("theme")) {
+        // `theme:` with nothing after it is as good as leaving it out.
+        None | Some(Value::Null) => {
+            // little's built-in theme lives in the site's `theme/` folder
+            // until it's built into little.
+            let dir = site_dir.join("theme");
+            if !dir.is_dir() {
+                bail!(
+                    "no theme: point `theme` in {CONFIG_FILE} at a theme folder, or add one at {}",
+                    dir.display()
+                );
+            }
+            Ok(dir)
+        }
+        Some(Value::String(theme)) => {
+            // Relative to the site, like the config that sets it. Joining an
+            // absolute path just gives that path.
+            let dir = site_dir.join(theme);
+            if !dir.is_dir() {
+                bail!("theme `{theme}` not found: no folder at {}", dir.display());
+            }
+            Ok(dir)
+        }
+        Some(_) => bail!("`theme` must be the path to a theme folder, like `./my-theme`"),
     }
-    Ok(dir)
 }
 
 /// Read one level's config. A missing file isn't an error — that level just
@@ -177,10 +188,16 @@ mod tests {
             ],
         );
 
-        // Left unset, `theme` is little's `default`: the site's `theme/` folder.
-        let cfg = load(&site).unwrap();
-        assert_eq!(cfg.theme_dir, site.join("theme"));
-        assert_eq!(get(&cfg.values, "font"), Some("mono"));
+        // Without a `theme`, little uses its built-in theme: for now, the
+        // site's `theme/` folder. `theme:` with no value counts as without.
+        for site_cfg in [None, Some("name: My Docs\n"), Some("theme:\n")] {
+            if let Some(yaml) = site_cfg {
+                std::fs::write(site.join(CONFIG_FILE), yaml).unwrap();
+            }
+            let cfg = load(&site).unwrap();
+            assert_eq!(cfg.theme_dir, site.join("theme"), "with {site_cfg:?}");
+            assert_eq!(get(&cfg.values, "font"), Some("mono"));
+        }
 
         let site_cfg = "theme: ./path/to/my/theme\nname: My Docs\n";
         std::fs::write(site.join(CONFIG_FILE), site_cfg).unwrap();
@@ -232,14 +249,20 @@ mod tests {
             format!("{:#}", load(&site).unwrap_err())
         };
 
-        // Any value but `default` is a path, so a typo is a missing folder.
-        assert!(error("theme: defualt\n").contains("theme `defualt` not found"));
-        assert!(error("theme: [a, b]\n").contains("`theme` must be a string"));
+        assert!(error("theme: ./missing\n").contains("theme `./missing` not found"));
+        assert!(error("theme: [a, b]\n").contains("`theme` must be the path to a theme folder"));
+        // `default` is a folder name like any other, not little's built-in theme.
+        assert!(error("theme: default\n").contains("theme `default` not found"));
 
         // A theme can't choose the theme; only the site can.
         std::fs::write(site.join("theme").join(CONFIG_FILE), "theme: ./other\n").unwrap();
         let message = error("name: My Docs\n");
         assert!(message.contains("only a site's little.yml can choose the theme"));
+
+        // Neither a `theme` nor the built-in theme: nothing to build with.
+        std::fs::remove_dir_all(site.join("theme")).unwrap();
+        let message = error("name: My Docs\n");
+        assert!(message.contains("no theme: point `theme` in little.yml at a theme folder"));
 
         let _ = std::fs::remove_dir_all(&site);
     }
@@ -254,16 +277,13 @@ mod tests {
 
         let cfg = cascade("theme-only", theme, None);
         assert_eq!(get(&cfg, "font"), Some("serif"));
-        assert_eq!(get(&cfg, "theme"), Some("default"));
 
         let cfg = cascade("site-only", None, site);
         assert_eq!(get(&cfg, "name"), Some("My Docs"));
-        assert_eq!(get(&cfg, "theme"), Some("default"));
 
         let cfg = cascade("both", theme, site);
         assert_eq!(get(&cfg, "name"), Some("My Docs"));
         assert_eq!(get(&cfg, "font"), Some("serif"));
-        assert_eq!(get(&cfg, "theme"), Some("default"));
     }
 
     #[test]
@@ -274,10 +294,11 @@ mod tests {
     }
 
     #[test]
-    fn builtin_defaults_leave_presentation_to_theme_and_site() {
+    fn builtin_defaults_set_no_theme_or_presentation() {
         let cfg = builtin_defaults();
-        assert_eq!(get(&cfg, "theme"), Some("default"));
-        for key in ["name", "lang"] {
+        assert!(cfg.is_mapping(), "every other level merges into it");
+        // No `theme`, so a site that doesn't choose one gets the built-in theme.
+        for key in ["theme", "name", "lang"] {
             assert_eq!(cfg.get(key), None, "little shouldn't default `{key}`");
         }
     }
@@ -294,7 +315,6 @@ mod tests {
 
         assert_eq!(get(&cfg, "name"), Some("My Docs")); // last writer wins
         assert_eq!(get(&cfg, "font"), Some("serif")); // theme value survives
-        assert_eq!(get(&cfg, "theme"), Some("default")); // builtin survives
     }
 
     #[test]

@@ -138,8 +138,9 @@ and the site. The default theme uses these keys, with defaults from its
 
 ### Choosing a theme
 
-little uses the theme in the site's `theme/` folder unless `little.yml` points
-`theme` at another folder, such as a theme shared by several sites:
+A site that doesn't set `theme` gets little's built-in theme, which for now is
+the one in the site's `theme/` folder. To use another theme, such as one shared
+by several sites, point `theme` at its folder:
 
 ```yaml
 # little.yml
@@ -151,8 +152,6 @@ theme: ../shared/my-theme
 - Absolute paths work too, like `/Users/you/my-theme` on macOS or
   `C:\Users\you\my-theme` on Windows. YAML reads `\` as an escape inside
   double quotes, so leave Windows paths unquoted or use single quotes.
-- `theme: default`, little's built-in default, means the site's `theme/`
-  folder. For a folder that's really called `default`, write `./default`.
 - Only a site chooses its theme, so a theme's own `little.yml` can't set
   `theme`.
 
