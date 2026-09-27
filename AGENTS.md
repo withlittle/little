@@ -24,8 +24,8 @@ cargo fmt                   # format — run before committing
 Content and theme live outside `src/`:
 - `docs/` — the example/dogfood site content. This is little's **input**, not
   project documentation — don't put meta docs here.
-- `theme/` — the default theme: `templates/` (MiniJinja) + `assets/` + `little.yml`.
-- `little.yml` — example site config.
+- `theme/` — the default theme: `templates/` (MiniJinja) + `assets/` + an optional `little.yml`.
+- `little.yml` — example site config (optional).
 - Project meta (`VISION.md`, `AGENTS.md`, `decisions/`) lives at the repo root.
 
 ## Core principles (do not violate)
@@ -33,6 +33,8 @@ Content and theme live outside `src/`:
    passes structured `site` / `page` / `nav` data to the theme. Keep it that way.
 2. **Config cascades: little → theme → site, last writer wins.** New config
    belongs in this cascade, with a sensible built-in default in `config.rs`.
+   The theme's and site's `little.yml` are optional — a missing or empty file
+   just contributes nothing.
 3. **Keep the core small; push features to plugins.** Sphinx-style API extraction,
    niche renderers, etc. are plugins (planned WASM API), not core code.
 4. **No mandatory Node toolchain.** Never add a build step that requires Node.

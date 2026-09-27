@@ -40,3 +40,7 @@ The accent color of this site is declared at **all three levels**, and the *last
 
 Open `theme/little.yml` and `little.yml` and change `accent`. Save. The color updates live —
 and if you delete the site's value, the theme's value takes over. That's the cascade.
+
+Both files are optional. A theme or site with nothing to override can leave out its
+`little.yml` (an empty one is fine too), and the levels before it still apply — with
+neither file, you simply get little's defaults.

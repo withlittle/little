@@ -1,4 +1,5 @@
 # Site config — the LAST word in the cascade (little -> theme -> site).
+# Optional: without this file, the theme's config and little's defaults apply.
 name: "My Project Docs"
 tagline: "Docs that just work"
 accent: "#e11d48" # rose — overrides both little's blue and the theme's purple
