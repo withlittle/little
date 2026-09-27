@@ -7,6 +7,7 @@ use serde::Serialize;
 use serde_yaml::Value;
 use std::collections::BTreeMap;
 use std::fs;
+use std::io::ErrorKind;
 use std::path::{Component, Path, PathBuf};
 use walkdir::WalkDir;
 
@@ -16,6 +17,10 @@ use crate::{config, render};
 /// Where a site's 404 page is written: the root of the destination, which is
 /// where static hosts look for it.
 pub const NOT_FOUND_FILE: &str = "404.html";
+
+/// The file a build leaves in its destination, so the next build knows the
+/// folder is little's to wipe.
+const MARKER_FILE: &str = ".little-build";
 
 /// A rendered content page.
 struct Page {
@@ -208,11 +213,7 @@ pub fn build(site_dir: &Path) -> Result<PathBuf> {
         check_static_files(static_dir, &destination_dir, &outputs)?;
     }
 
-    if destination_dir.exists() {
-        fs::remove_dir_all(&destination_dir)
-            .with_context(|| format!("clearing {}", destination_dir.display()))?;
-    }
-    fs::create_dir_all(&destination_dir)?;
+    clear_destination(&destination_dir)?;
     for output in &outputs {
         if let Some(parent) = output.path.parent() {
             fs::create_dir_all(parent)?;
@@ -232,6 +233,37 @@ pub fn build(site_dir: &Path) -> Result<PathBuf> {
         destination_dir.display()
     );
     Ok(destination_dir)
+}
+
+/// Empty the destination for a new build, and mark it as little's. Only a
+/// folder that's empty or that little built can be wiped, so a destination
+/// that points at anything else (the site's folder, say) stops the build
+/// instead of losing its files.
+fn clear_destination(destination: &Path) -> Result<()> {
+    if destination.join(MARKER_FILE).is_file() {
+        fs::remove_dir_all(destination)
+            .with_context(|| format!("clearing {}", destination.display()))?;
+    } else {
+        let has_files = match fs::read_dir(destination) {
+            Ok(mut entries) => entries.next().is_some(),
+            Err(e) if e.kind() == ErrorKind::NotFound => false,
+            Err(e) => return Err(e).with_context(|| format!("reading {}", destination.display())),
+        };
+        if has_files {
+            bail!(
+                "destination {} isn't empty and wasn't built by little (it has no {MARKER_FILE} file): empty it, or choose another folder",
+                destination.display()
+            );
+        }
+    }
+    fs::create_dir_all(destination)
+        .with_context(|| format!("creating {}", destination.display()))?;
+    let marker = destination.join(MARKER_FILE);
+    fs::write(
+        &marker,
+        "Built by little, which wipes this folder on every build.\n",
+    )
+    .with_context(|| format!("writing {}", marker.display()))
 }
 
 /// Fail if a theme's static file would land on a page in the destination: on
@@ -748,30 +780,41 @@ mod tests {
     }
 
     #[test]
-    fn a_build_never_wipes_the_sites_own_files() {
+    fn a_build_only_wipes_a_folder_it_built() {
         let files = [
-            ("docs/README.md", "# Home\n"),
-            ("theme/_templates/default.html", "{{ page.title }}"),
-            ("theme/_static/style.css", "body {}\n"),
+            ("site/docs/README.md", "# Home\n"),
+            ("site/theme/_templates/default.html", "{{ page.title }}"),
+            ("site/theme/_static/style.css", "body {}\n"),
+            ("other/notes.txt", "mine\n"),
         ];
-        let site = scratch_site("wipe", &files);
-        let destinations = [
-            ".",
-            "./docs",
-            "./theme",
-            "./theme/_templates",
-            "./theme/_static",
-        ];
-        for destination in destinations {
+        let root = scratch_site("wipe", &files);
+        let site = root.join("site");
+        let build_into = |destination: &str| {
             let site_cfg = format!("destination: {destination}\n");
             fs::write(site.join("little.yml"), site_cfg).unwrap();
-            let message = format!("{:#}", build(&site).unwrap_err());
-            assert!(message.contains("which a build would wipe"), "{message}");
-            for (file, contents) in files {
-                assert_eq!(fs::read_to_string(site.join(file)).unwrap(), contents);
-            }
+            build(&site)
+        };
+
+        // A folder with files little didn't build stops the build, untouched.
+        for destination in [".", "..", "./docs", "./theme", "../other"] {
+            let message = format!("{:#}", build_into(destination).unwrap_err());
+            assert!(message.contains("wasn't built by little"), "{message}");
         }
-        let _ = fs::remove_dir_all(&site);
+        for (file, contents) in files {
+            assert_eq!(fs::read_to_string(root.join(file)).unwrap(), contents);
+        }
+
+        // A missing or empty folder is fine, and from then on it's little's:
+        // the next build leaves nothing of the last.
+        fs::create_dir_all(root.join("empty")).unwrap();
+        for destination in ["./dist", "../empty", "./docs/_build"] {
+            let dir = build_into(destination).unwrap();
+            fs::write(dir.join("stale.html"), "old").unwrap();
+            build_into(destination).unwrap();
+            assert!(!dir.join("stale.html").exists(), "{destination}");
+            assert_eq!(fs::read_to_string(dir.join("index.html")).unwrap(), "Home");
+        }
+        let _ = fs::remove_dir_all(&root);
     }
 
     #[test]

@@ -79,10 +79,9 @@ struct Sources {
     tx: Sender<notify::Result<Event>>,
     /// The site's config, which chooses the folders below.
     _config: RecommendedWatcher,
-    /// The source folder.
-    source: Option<(PathBuf, RecommendedWatcher)>,
-    /// The theme's folder, which can live anywhere, and the destination,
-    /// which can be inside it.
+    /// The source folder and the theme's folder, each watched with the
+    /// destination, which can be inside either.
+    source: Option<((PathBuf, PathBuf), RecommendedWatcher)>,
     theme: Option<((PathBuf, PathBuf), RecommendedWatcher)>,
 }
 
@@ -105,13 +104,14 @@ impl Sources {
         let Ok(cfg) = config::load(site_dir) else {
             return Ok(());
         };
+        let source = (cfg.source_dir, cfg.destination_dir.clone());
         if self
             .source
             .as_ref()
-            .is_none_or(|(watched, _)| *watched != cfg.source_dir)
+            .is_none_or(|(watched, _)| *watched != source)
         {
-            let watcher = watch_source(&cfg.source_dir, self.tx.clone())?;
-            self.source = Some((cfg.source_dir, watcher));
+            let watcher = watch_folder(&source.0, &source.1, self.tx.clone())?;
+            self.source = Some((source, watcher));
         }
         let theme = (cfg.theme_dir, cfg.destination_dir);
         if self
@@ -119,7 +119,7 @@ impl Sources {
             .as_ref()
             .is_none_or(|(watched, _)| *watched != theme)
         {
-            let watcher = watch_theme(&theme.0, &theme.1, self.tx.clone())?;
+            let watcher = watch_folder(&theme.0, &theme.1, self.tx.clone())?;
             self.theme = Some((theme, watcher));
         }
         Ok(())
@@ -142,25 +142,12 @@ fn watch_config(
     Ok(watcher)
 }
 
-/// Watch the site's source folder, where its Markdown files are.
-fn watch_source(
-    source_dir: &Path,
-    tx: Sender<notify::Result<Event>>,
-) -> notify::Result<RecommendedWatcher> {
-    let mut watcher = notify::recommended_watcher(move |res: notify::Result<Event>| {
-        if !res.as_ref().is_ok_and(is_read) {
-            let _ = tx.send(res);
-        }
-    })?;
-    watcher.watch(source_dir, RecursiveMode::Recursive)?;
-    Ok(watcher)
-}
-
-/// Watch a theme's folder, its optional config included. The folder can hold
-/// the site that uses it (a theme's demo site might set `theme: ..`), so the
-/// build's own output is ignored, or each build would trigger the next.
-fn watch_theme(
-    theme_dir: &Path,
+/// Watch a folder a build reads: the source, or a theme's folder, its
+/// optional config included. Either can hold the destination (`docs/_build`,
+/// or a theme's demo site that sets `theme: ..`), so the build's own output is
+/// ignored, or each build would trigger the next.
+fn watch_folder(
+    dir: &Path,
     destination: &Path,
     tx: Sender<notify::Result<Event>>,
 ) -> notify::Result<RecommendedWatcher> {
@@ -174,7 +161,7 @@ fn watch_theme(
             let _ = tx.send(res);
         }
     })?;
-    watcher.watch(&theme_dir.canonicalize()?, RecursiveMode::Recursive)?;
+    watcher.watch(&dir.canonicalize()?, RecursiveMode::Recursive)?;
     Ok(watcher)
 }
 
@@ -448,23 +435,35 @@ mod tests {
     }
 
     /// Check that rebuilding the site doesn't wake the watcher (or each build
-    /// would trigger the next), but that editing `theme_file` does.
-    fn assert_only_edits_wake(site_dir: &Path, theme_file: &Path) {
+    /// would trigger the next), but that editing `file` does.
+    fn assert_only_edits_wake(site_dir: &Path, file: &Path) {
         let (_sources, rx) = watch_built_site(site_dir);
 
         site::build(site_dir).unwrap();
         let event = rx.recv_timeout(Duration::from_millis(500));
         assert!(event.is_err(), "a build woke the watcher: {event:?}");
 
-        std::fs::write(theme_file, "body { margin: 0 }\n").unwrap();
+        std::fs::write(file, "body { margin: 0 }\n").unwrap();
         let event = rx.recv_timeout(Duration::from_secs(5));
-        assert!(event.is_ok(), "editing the theme didn't wake the watcher");
+        assert!(
+            event.is_ok(),
+            "editing {} didn't wake the watcher",
+            file.display()
+        );
     }
 
     #[test]
     fn a_build_does_not_retrigger_the_watcher() {
         let site_dir = scratch_site("watch");
         assert_only_edits_wake(&site_dir, &site_dir.join("theme/_static/style.css"));
+        let _ = std::fs::remove_dir_all(&site_dir);
+    }
+
+    #[test]
+    fn a_source_can_hold_the_destination() {
+        let site_dir = scratch_site("inside");
+        std::fs::write(site_dir.join("little.yml"), "destination: ./docs/_build\n").unwrap();
+        assert_only_edits_wake(&site_dir, &site_dir.join("docs/guide/install.md"));
         let _ = std::fs::remove_dir_all(&site_dir);
     }
 
