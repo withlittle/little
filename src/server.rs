@@ -5,13 +5,16 @@
 //! the site and bumps the counter, so open browsers reload themselves.
 
 use anyhow::{Result, anyhow};
+use notify::{Event, RecommendedWatcher, RecursiveMode, Watcher};
+use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::mpsc::Sender;
 use std::time::Duration;
 use tiny_http::{Header, Response, Server};
 
-use crate::site;
+use crate::{config, site};
 
 pub fn serve(project_dir: &Path, addr: &str) -> Result<()> {
     let project_dir = project_dir.to_path_buf();
@@ -38,23 +41,15 @@ pub fn serve(project_dir: &Path, addr: &str) -> Result<()> {
 
 fn spawn_watcher(project_dir: PathBuf, version: Arc<AtomicU64>) {
     std::thread::spawn(move || {
-        use notify::{RecursiveMode, Watcher};
-
         let (tx, rx) = std::sync::mpsc::channel();
-        let mut watcher = match notify::recommended_watcher(move |res| {
-            let _ = tx.send(res);
-        }) {
-            Ok(w) => w,
+        // Bound to a name (not `_`) so the watchers live as long as this loop.
+        let _watchers = match watch_sources(&project_dir, tx) {
+            Ok(watchers) => watchers,
             Err(e) => {
                 eprintln!("watcher error: {e}");
                 return;
             }
         };
-
-        for sub in ["docs", "theme"] {
-            let _ = watcher.watch(&project_dir.join(sub), RecursiveMode::Recursive);
-        }
-        let _ = watcher.watch(&project_dir.join("little.yml"), RecursiveMode::NonRecursive);
 
         // Debounce: wake on the first event, then swallow the burst.
         while rx.recv().is_ok() {
@@ -70,6 +65,43 @@ fn spawn_watcher(project_dir: PathBuf, version: Arc<AtomicU64>) {
             }
         }
     });
+}
+
+/// Watch everything a build reads, sending events to `tx` as it changes.
+fn watch_sources(
+    project_dir: &Path,
+    tx: Sender<notify::Result<Event>>,
+) -> notify::Result<[RecommendedWatcher; 2]> {
+    // docs/ and theme/ — the latter includes the theme's optional config.
+    let content_tx = tx.clone();
+    let mut content = notify::recommended_watcher(move |res| {
+        let _ = content_tx.send(res);
+    })?;
+    for sub in ["docs", "theme"] {
+        let _ = content.watch(&project_dir.join(sub), RecursiveMode::Recursive);
+    }
+
+    // The site's config is optional and may not exist yet, so watch the project
+    // root rather than the file, forwarding only changes to the config (the
+    // root also holds dist/, which every build recreates).
+    let mut root = notify::recommended_watcher(move |res: notify::Result<Event>| {
+        if res.as_ref().is_ok_and(changes_site_config) {
+            let _ = tx.send(res);
+        }
+    })?;
+    let _ = root.watch(project_dir, RecursiveMode::NonRecursive);
+
+    Ok([content, root])
+}
+
+/// Does this project-root event change the site's config file? Reads don't
+/// count: every build opens the file, so they'd trigger endless rebuilds.
+fn changes_site_config(event: &Event) -> bool {
+    !event.kind.is_access()
+        && event
+            .paths
+            .iter()
+            .any(|path| path.file_name() == Some(OsStr::new(config::CONFIG_FILE)))
 }
 
 fn serve_file(dist_dir: &Path, request: tiny_http::Request) {
@@ -207,5 +239,37 @@ mod tests {
         assert_eq!(at("/../secret"), None);
 
         let _ = std::fs::remove_dir_all(&dist);
+    }
+
+    #[test]
+    fn only_site_config_changes_trigger_root_rebuilds() {
+        use notify::EventKind;
+        use notify::event::{AccessKind, CreateKind, ModifyKind, RemoveKind};
+
+        let event = |kind, name: &str| Event::new(kind).add_path(Path::new("/site").join(name));
+
+        // Creating, editing, or deleting little.yml rebuilds — including a
+        // config that didn't exist when `little serve` started.
+        for kind in [
+            EventKind::Create(CreateKind::File),
+            EventKind::Modify(ModifyKind::Any),
+            EventKind::Remove(RemoveKind::File),
+        ] {
+            assert!(changes_site_config(&event(kind, "little.yml")));
+        }
+
+        // Reading it (every build does) and other root churn don't.
+        assert!(!changes_site_config(&event(
+            EventKind::Access(AccessKind::Any),
+            "little.yml"
+        )));
+        assert!(!changes_site_config(&event(
+            EventKind::Remove(RemoveKind::Folder),
+            "dist"
+        )));
+        assert!(!changes_site_config(&event(
+            EventKind::Create(CreateKind::File),
+            ".little.yml.swp"
+        )));
     }
 }
