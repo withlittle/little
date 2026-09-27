@@ -1,4 +1,5 @@
-//! The build pipeline: docs/ + the theme + config -> dist/.
+//! The build pipeline: the source (`docs/`) + the theme + config -> the
+//! destination (`dist/`).
 
 use anyhow::{Context, Result, bail};
 use minijinja::{Value as MjValue, context};
@@ -12,13 +13,13 @@ use walkdir::WalkDir;
 use crate::theme::{self, PageType, Theme};
 use crate::{config, render};
 
-/// Where a site's 404 page is written: the root of `dist/`, which is where
-/// static hosts look for it.
+/// Where a site's 404 page is written: the root of the destination, which is
+/// where static hosts look for it.
 pub const NOT_FOUND_FILE: &str = "404.html";
 
 /// A rendered content page.
 struct Page {
-    /// Path relative to `docs/` (e.g. `guide/install.md`).
+    /// Path relative to the source folder (e.g. `guide/install.md`).
     rel: PathBuf,
     /// Pretty, extensionless URL (`/`, `/getting-started`, `/guide/install`).
     url: String,
@@ -78,25 +79,25 @@ struct Output {
     source: PathBuf,
 }
 
-/// Build the site rooted at `site_dir`.
-pub fn build(site_dir: &Path) -> Result<()> {
-    let docs_dir = site_dir.join("docs");
-    let dist_dir = site_dir.join("dist");
-
+/// Build the site rooted at `site_dir`, and return the folder it was built
+/// into.
+pub fn build(site_dir: &Path) -> Result<PathBuf> {
     let config::Config {
         values: cfg,
         theme_dir,
+        source_dir,
+        destination_dir,
     } = config::load(site_dir)?;
     let theme = Theme::load(&theme_dir)?;
 
-    // Collect and render every Markdown file under docs/.
+    // Collect and render every Markdown file in the source folder.
     let mut pages = Vec::new();
-    for entry in WalkDir::new(&docs_dir).into_iter().filter_map(Result::ok) {
+    for entry in WalkDir::new(&source_dir).into_iter().filter_map(Result::ok) {
         let path = entry.path();
         if path.extension().and_then(|s| s.to_str()) != Some("md") {
             continue;
         }
-        let rel = path.strip_prefix(&docs_dir)?.to_path_buf();
+        let rel = path.strip_prefix(&source_dir)?.to_path_buf();
         let raw =
             fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
         let rendered = render::parse_document(&raw)
@@ -121,7 +122,7 @@ pub fn build(site_dir: &Path) -> Result<()> {
             .map(str::to_string);
 
         let url = derive_url(&rel);
-        let out_path = out_path_for_url(&dist_dir, &url);
+        let out_path = out_path_for_url(&destination_dir, &url);
         let page_type = page_type(&rel);
 
         pages.push(Page {
@@ -150,8 +151,8 @@ pub fn build(site_dir: &Path) -> Result<()> {
     let site_value = MjValue::from_serialize(&site_cfg);
 
     // The theme owns 100% of the markup; little only hands it structured data.
-    // Every page is rendered before dist/ is touched, so a build that fails
-    // leaves the last one in place.
+    // Every page is rendered before the destination is touched, so a build
+    // that fails leaves the last one in place.
     let render = |page_type: PageType, page: &PageData| {
         theme.render(
             page_type,
@@ -173,7 +174,7 @@ pub fn build(site_dir: &Path) -> Result<()> {
             nav: Some(&page.toc),
             children: children.as_deref(),
         };
-        let source = docs_dir.join(&page.rel);
+        let source = source_dir.join(&page.rel);
         if let Some(html) = render(page.page_type, &data)
             .with_context(|| format!("rendering {}", source.display()))?
         {
@@ -199,18 +200,19 @@ pub fn build(site_dir: &Path) -> Result<()> {
     if let Some(html) = render(PageType::NotFound, &data)
         .with_context(|| format!("rendering {}", source.display()))?
     {
-        let path = dist_dir.join(NOT_FOUND_FILE);
+        let path = destination_dir.join(NOT_FOUND_FILE);
         outputs.push(Output { path, html, source });
     }
 
     if let Some(static_dir) = theme.static_dir() {
-        check_static_files(static_dir, &dist_dir, &outputs)?;
+        check_static_files(static_dir, &destination_dir, &outputs)?;
     }
 
-    if dist_dir.exists() {
-        fs::remove_dir_all(&dist_dir).context("clearing dist/")?;
+    if destination_dir.exists() {
+        fs::remove_dir_all(&destination_dir)
+            .with_context(|| format!("clearing {}", destination_dir.display()))?;
     }
-    fs::create_dir_all(&dist_dir)?;
+    fs::create_dir_all(&destination_dir)?;
     for output in &outputs {
         if let Some(parent) = output.path.parent() {
             fs::create_dir_all(parent)?;
@@ -221,21 +223,25 @@ pub fn build(site_dir: &Path) -> Result<()> {
 
     // The theme's static files (css/js/images) go verbatim to the site's root.
     if let Some(static_dir) = theme.static_dir() {
-        copy_dir(static_dir, &dist_dir)?;
+        copy_dir(static_dir, &destination_dir)?;
     }
 
-    println!("built {} page(s) -> {}", pages.len(), dist_dir.display());
-    Ok(())
+    println!(
+        "built {} page(s) -> {}",
+        pages.len(),
+        destination_dir.display()
+    );
+    Ok(destination_dir)
 }
 
-/// Fail if a theme's static file would land on a page in `dist/`: on the page
-/// itself, or on the folder it's in.
-fn check_static_files(static_dir: &Path, dist_dir: &Path, outputs: &[Output]) -> Result<()> {
+/// Fail if a theme's static file would land on a page in the destination: on
+/// the page itself, or on the folder it's in.
+fn check_static_files(static_dir: &Path, destination: &Path, outputs: &[Output]) -> Result<()> {
     for entry in WalkDir::new(static_dir).into_iter().filter_map(Result::ok) {
         if entry.file_type().is_dir() {
             continue;
         }
-        let target = dist_dir.join(entry.path().strip_prefix(static_dir)?);
+        let target = destination.join(entry.path().strip_prefix(static_dir)?);
         if let Some(page) = outputs.iter().find(|page| page.path.starts_with(&target)) {
             bail!(
                 "{} clashes with the page built from {}",
@@ -308,13 +314,13 @@ fn derive_url(rel: &Path) -> String {
     }
 }
 
-/// Map a pretty URL to its directory-index output file under `dist/`.
-fn out_path_for_url(dist_dir: &Path, url: &str) -> PathBuf {
+/// Map a pretty URL to its directory-index output file in the destination.
+fn out_path_for_url(destination: &Path, url: &str) -> PathBuf {
     let trimmed = url.trim_matches('/');
     if trimmed.is_empty() {
-        dist_dir.join("index.html")
+        destination.join("index.html")
     } else {
-        dist_dir.join(trimmed).join("index.html")
+        destination.join(trimmed).join("index.html")
     }
 }
 
@@ -369,7 +375,7 @@ struct DirNode {
     index: Option<NavLeaf>,
 }
 
-/// Arrange the pages in their folders under `docs/`.
+/// Arrange the pages in their folders in the source.
 fn build_tree(pages: &[Page]) -> DirNode {
     let mut root = DirNode::default();
     for page in pages {
@@ -378,7 +384,7 @@ fn build_tree(pages: &[Page]) -> DirNode {
     root
 }
 
-/// Build the site-wide navigation tree from the folder structure under `docs/`.
+/// Build the site-wide navigation tree from the source's folder structure.
 fn build_nav(root: &DirNode) -> Vec<NavItem> {
     // Top-level: the site home (root README) first, then pages/sections.
     let mut items = Vec::new();
@@ -715,6 +721,56 @@ mod tests {
         assert_eq!(css, b"body {}\n");
         // No 404.html template, no 404 page.
         assert!(!site.join("dist").join(NOT_FOUND_FILE).exists());
+        let _ = fs::remove_dir_all(&site);
+    }
+
+    #[test]
+    fn builds_from_and_into_the_folders_the_config_chooses() {
+        let site = scratch_site(
+            "folders",
+            &[
+                ("little.yml", "source: ./content\ndestination: ./public\n"),
+                ("content/README.md", "# Home\n"),
+                ("content/guide/install.md", "# Install\n"),
+                ("docs/README.md", "# Not the source\n"),
+                ("theme/_templates/default.html", "{{ page.title }}"),
+            ],
+        );
+
+        let destination = build(&site).unwrap();
+
+        assert_eq!(destination, site.join("public"));
+        let read = |path: &str| fs::read_to_string(destination.join(path)).unwrap();
+        assert_eq!(read("index.html"), "Home");
+        assert_eq!(read("guide/install/index.html"), "Install");
+        assert!(!site.join("dist").exists());
+        let _ = fs::remove_dir_all(&site);
+    }
+
+    #[test]
+    fn a_build_never_wipes_the_sites_own_files() {
+        let files = [
+            ("docs/README.md", "# Home\n"),
+            ("theme/_templates/default.html", "{{ page.title }}"),
+            ("theme/_static/style.css", "body {}\n"),
+        ];
+        let site = scratch_site("wipe", &files);
+        let destinations = [
+            ".",
+            "./docs",
+            "./theme",
+            "./theme/_templates",
+            "./theme/_static",
+        ];
+        for destination in destinations {
+            let site_cfg = format!("destination: {destination}\n");
+            fs::write(site.join("little.yml"), site_cfg).unwrap();
+            let message = format!("{:#}", build(&site).unwrap_err());
+            assert!(message.contains("which a build would wipe"), "{message}");
+            for (file, contents) in files {
+                assert_eq!(fs::read_to_string(site.join(file)).unwrap(), contents);
+            }
+        }
         let _ = fs::remove_dir_all(&site);
     }
 

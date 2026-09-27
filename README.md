@@ -35,9 +35,9 @@ itself.
 ### Start your own site
 
 A site needs a `docs/` folder for content and a theme for templates, which
-little looks for in the site's `theme/` folder unless you
-[choose another](#choosing-a-theme). Until `little init` lands, copy the
-default theme from this repo:
+little looks for in the site's `theme/` folder. You can choose
+[other folders](#choosing-folders) and [another theme](#choosing-a-theme).
+Until `little init` lands, copy the default theme from this repo:
 
 ```sh
 mkdir my-docs && cd my-docs
@@ -58,19 +58,20 @@ little -C path/to/site build         # work on a site in another directory
 little --help                        # list every command and option
 ```
 
-- `build` wipes and regenerates `dist/` every time, so don't keep anything
-  there by hand. A build that fails leaves the last one in `dist/`.
-- `serve` builds first, then watches `docs/`, the theme, and `little.yml`,
-  rebuilding and refreshing open browser tabs whenever you save. If you switch
-  themes, it starts watching the new one. If a save breaks the build, `serve`
-  prints why and keeps serving the last build.
+- `build` wipes and regenerates `dist/` (or your
+  [destination](#choosing-folders)) every time, so don't keep anything there by
+  hand. A build that fails leaves the last one in place.
+- `serve` builds first, then watches the source folder, the theme, and
+  `little.yml`, rebuilding and refreshing open browser tabs whenever you save.
+  If you switch folders or themes, it follows. If a save breaks the build,
+  `serve` prints why and keeps serving the last build.
 
 ## Site layout
 
 ```text
 my-docs/
 ├── little.yml              # site config (optional)
-├── docs/                   # content: every .md file becomes a page
+├── docs/                   # the source: every .md file becomes a page
 │   ├── README.md           # → /
 │   ├── getting-started.md  # → /getting-started
 │   └── guide/
@@ -80,7 +81,7 @@ my-docs/
 │   ├── _static/            # copied as-is to the site's root (optional)
 │   ├── _templates/         # the templates; default.html is required
 │   └── little.yml          # theme config (optional)
-└── dist/                   # build output (generated)
+└── dist/                   # the destination: build output (generated)
 ```
 
 ## Writing docs
@@ -125,8 +126,9 @@ tagline: "Docs that just work"
 
 Every key reaches the theme as `site.<key>`, so you can add your own. little's
 built-in defaults (see [`src/little.yml`](./src/little.yml)) cover only
-little's own settings; a site's name, language, and look are up to the theme
-and the site. The default theme uses these keys, with defaults from its
+little's own settings, like the [folders](#choosing-folders) a site is built
+from and into; a site's name, language, and look are up to the theme and the
+site. The default theme uses these keys, with defaults from its
 `theme/little.yml`:
 
 | Key | Default | Used for |
@@ -154,6 +156,32 @@ theme: ../shared/my-theme
   double quotes, so leave Windows paths unquoted or use single quotes.
 - Only a site chooses its theme, so a theme's own `little.yml` can't set
   `theme`.
+
+### Choosing folders
+
+A site is built from its `source` folder into its `destination` folder:
+
+| Key | Default | The folder… |
+| --- | ------- | ----------- |
+| `source` | `./docs` | whose `.md` files become the site's pages |
+| `destination` | `./dist` | the site is built into |
+
+To use others, set them in `little.yml`:
+
+```yaml
+# little.yml
+source: ./content
+destination: ./public
+```
+
+- Paths work as they do for `theme`: relative to the folder holding the site's
+  `little.yml`, or absolute. A theme's `little.yml` can set them too, but
+  they're still relative to the site.
+- Every build wipes the destination, so point it at a folder that holds nothing
+  but builds. little stops a build that would wipe your work or read its own
+  output: the destination can't be or hold the site's folder or the theme's,
+  and it can't be, hold, or be inside the source or the theme's `_templates/`
+  or `_static/`.
 
 ## Theming
 
@@ -209,11 +237,12 @@ take the place of a page, the build stops and names both. The default theme's
 
 ## Deploying
 
-`dist/` is plain static HTML: upload it to any static host. Page links and
-assets are root-relative (`/guide/install`, `/assets/style.css`), so serve the
-site from the root of a domain rather than a subpath. A theme's 404 page is
-built to `dist/404.html`, where GitHub Pages, Netlify, and most other static
-hosts look for one; `little serve` uses it too.
+`dist/` (or your [destination](#choosing-folders)) is plain static HTML: upload
+it to any static host. Page links and assets are root-relative
+(`/guide/install`, `/assets/style.css`), so serve the site from the root of a
+domain rather than a subpath. A theme's 404 page is built to `dist/404.html`,
+where GitHub Pages, Netlify, and most other static hosts look for one;
+`little serve` uses it too.
 
 ## Development
 

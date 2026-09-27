@@ -24,7 +24,7 @@ const DEFAULT_TEMPLATE: &str = "default.html";
 /// template, named after the type.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum PageType {
-    /// `docs/README.md`: the site's home page.
+    /// The source folder's `README.md`: the site's home page.
     Home,
     /// A subfolder's `README.md`: that folder's home page.
     Section,
@@ -68,8 +68,9 @@ pub struct Theme {
 }
 
 impl Theme {
-    /// Load the theme in `dir`. A build does this before it touches `dist/`,
-    /// so a theme that can't build the site doesn't cost it its last build.
+    /// Load the theme in `dir`. A build does this before it touches its
+    /// destination, so a theme that can't build the site doesn't cost it its
+    /// last build.
     pub fn load(dir: &Path) -> Result<Self> {
         let templates_dir = dir.join(TEMPLATES_DIR);
         let mut env = Environment::new();
