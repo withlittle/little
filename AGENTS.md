@@ -50,6 +50,14 @@ Content and theme live outside `src/`:
 5. **Authoring experience wins ties.** When unsure, pick what makes writing docs
    simpler.
 
+## Working rules
+- **Agree the scope first.** Before building anything beyond a small, obvious
+  change, say briefly what you'll change, list the edge cases you've found and
+  how you'd handle each, and wait for a go-ahead. Don't fix edge cases nobody
+  asked about.
+- **Handle the common case.** For a rare edge case, prefer a clear error or a
+  documented limitation over new code.
+
 ## Conventions
 - Errors: `anyhow::Result` at boundaries; add context with `.context()`.
 - Format with `cargo fmt`; keep `cargo clippy` clean.
