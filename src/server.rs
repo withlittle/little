@@ -182,8 +182,8 @@ fn changes_site_config(event: &Event) -> bool {
 }
 
 fn serve_file(dist_dir: &Path, request: tiny_http::Request) {
-    let full = match resolve_route(dist_dir, request.url()) {
-        Some(path) => path,
+    let (full, status) = match respond_with(dist_dir, request.url()) {
+        Some(found) => found,
         None => {
             let _ = request.respond(Response::from_string("404 Not Found").with_status_code(404));
             return;
@@ -196,15 +196,28 @@ fn serve_file(dist_dir: &Path, request: tiny_http::Request) {
             let header = Header::from_bytes(&b"Content-Type"[..], content_type.as_bytes()).unwrap();
             if content_type == "text/html" {
                 let html = inject_livereload(String::from_utf8_lossy(&bytes).into_owned());
-                let _ = request.respond(Response::from_string(html).with_header(header));
+                let response = Response::from_string(html).with_header(header);
+                let _ = request.respond(response.with_status_code(status));
             } else {
-                let _ = request.respond(Response::from_data(bytes).with_header(header));
+                let response = Response::from_data(bytes).with_header(header);
+                let _ = request.respond(response.with_status_code(status));
             }
         }
         Err(_) => {
             let _ = request.respond(Response::from_string("404 Not Found").with_status_code(404));
         }
     }
+}
+
+/// The file to answer a request for `url` with, and the status to send: the
+/// file at that URL, or else the site's 404 page, as a static host would.
+/// `None` if there's neither.
+fn respond_with(dist_dir: &Path, url: &str) -> Option<(PathBuf, u16)> {
+    if let Some(path) = resolve_route(dist_dir, url) {
+        return Some((path, 200));
+    }
+    let not_found = dist_dir.join(site::NOT_FOUND_FILE);
+    not_found.is_file().then_some((not_found, 404))
 }
 
 /// Resolve a request URL to a file under `dist/`, understanding the pretty,
@@ -226,7 +239,7 @@ fn resolve_route(dist_dir: &Path, url: &str) -> Option<PathBuf> {
     };
 
     // Directory index first (covers "/", "/guide/", and extensionless routes),
-    // then an exact file (assets), then a sibling ".html" as a fallback.
+    // then an exact file (a static file), then a sibling ".html" as a fallback.
     let candidates = [
         base.join("index.html"),
         base.clone(),
@@ -320,6 +333,33 @@ mod tests {
     }
 
     #[test]
+    fn unknown_urls_get_the_sites_404_page() {
+        let dist = scratch("not-found", &[("index.html", "Home")]);
+        let not_found = dist.join(site::NOT_FOUND_FILE);
+
+        // Without a 404 page, there's nothing to send...
+        assert_eq!(respond_with(&dist, "/nowhere"), None);
+
+        // ...and with one, it's sent for any URL that has no file.
+        std::fs::write(&not_found, "Not found").unwrap();
+        assert_eq!(
+            respond_with(&dist, "/nowhere"),
+            Some((not_found.clone(), 404))
+        );
+        assert_eq!(
+            respond_with(&dist, "/../secret"),
+            Some((not_found.clone(), 404))
+        );
+        assert_eq!(
+            respond_with(&dist, "/"),
+            Some((dist.join("index.html"), 200))
+        );
+        assert_eq!(respond_with(&dist, "/404.html"), Some((not_found, 200)));
+
+        let _ = std::fs::remove_dir_all(&dist);
+    }
+
+    #[test]
     fn only_site_config_changes_trigger_root_rebuilds() {
         use notify::EventKind;
         use notify::event::{AccessKind, CreateKind, ModifyKind, RemoveKind};
@@ -373,8 +413,8 @@ mod tests {
                 ("docs/README.md", "# Home\n"),
                 ("docs/guide/install.md", "# Install\n"),
                 ("theme/little.yml", "font: serif\n"),
-                ("theme/templates/page.html", "{{ page.content | safe }}"),
-                ("theme/assets/style.css", "body {}\n"),
+                ("theme/_templates/default.html", "{{ page.content | safe }}"),
+                ("theme/_static/style.css", "body {}\n"),
             ],
         )
     }
@@ -406,7 +446,7 @@ mod tests {
     #[test]
     fn a_build_does_not_retrigger_the_watcher() {
         let site_dir = scratch_site("watch");
-        assert_only_edits_wake(&site_dir, &site_dir.join("theme/assets/style.css"));
+        assert_only_edits_wake(&site_dir, &site_dir.join("theme/_static/style.css"));
         let _ = std::fs::remove_dir_all(&site_dir);
     }
 
@@ -418,13 +458,16 @@ mod tests {
             "demo",
             &[
                 ("little.yml", "font: serif\n"),
-                ("templates/page.html", "{{ page.content | safe }}"),
-                ("assets/style.css", "body {}\n"),
+                ("_templates/default.html", "{{ page.content | safe }}"),
+                ("_static/style.css", "body {}\n"),
                 ("demo/little.yml", "theme: ..\n"),
                 ("demo/docs/README.md", "# Home\n"),
             ],
         );
-        assert_only_edits_wake(&theme_dir.join("demo"), &theme_dir.join("assets/style.css"));
+        assert_only_edits_wake(
+            &theme_dir.join("demo"),
+            &theme_dir.join("_static/style.css"),
+        );
         let _ = std::fs::remove_dir_all(&theme_dir);
     }
 
@@ -432,8 +475,8 @@ mod tests {
     fn the_watcher_follows_the_site_to_another_theme() {
         let site_dir = scratch_site("switch");
         for (file, contents) in [
-            ("other/templates/page.html", "{{ page.content | safe }}"),
-            ("other/assets/style.css", "body {}\n"),
+            ("other/_templates/default.html", "{{ page.content | safe }}"),
+            ("other/_static/style.css", "body {}\n"),
         ] {
             let path = site_dir.join(file);
             std::fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -446,11 +489,11 @@ mod tests {
         while rx.recv_timeout(Duration::from_millis(300)).is_ok() {}
 
         let edit = |file: &str| std::fs::write(site_dir.join(file), "body { margin: 0 }\n");
-        edit("theme/assets/style.css").unwrap();
+        edit("theme/_static/style.css").unwrap();
         let event = rx.recv_timeout(Duration::from_millis(500));
         assert!(event.is_err(), "the old theme is still watched: {event:?}");
 
-        edit("other/assets/style.css").unwrap();
+        edit("other/_static/style.css").unwrap();
         let event = rx.recv_timeout(Duration::from_secs(5));
         assert!(event.is_ok(), "the new theme isn't watched");
 
