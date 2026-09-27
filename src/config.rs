@@ -9,7 +9,7 @@
 use anyhow::{Context, Result, bail};
 use serde_yaml::Value;
 use std::io::ErrorKind;
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
 
 /// The config file a theme and a site may each provide.
 pub const CONFIG_FILE: &str = "little.yml";
@@ -70,39 +70,23 @@ fn choose_theme(site_dir: &Path, site_cfg: Option<&Value>) -> Result<PathBuf> {
         .and_then(|cfg| cfg.get("theme"))
         .or(builtin.get("theme"));
     let Some(theme) = setting.and_then(Value::as_str) else {
-        bail!("`theme` must be a string, like `./my-theme`");
+        bail!("`theme` must be a string: `default` or the path to a theme folder");
     };
 
     let dir = if theme == "default" {
         // little's default theme lives in the site's `theme/` folder until
         // it's built into little.
         site_dir.join("theme")
-    } else if is_path(theme) {
-        // Relative paths start from the site, like the config that sets them.
-        // Joining an absolute path just gives that path.
-        let path = Path::new(theme);
-        site_dir.join(path.strip_prefix(".").unwrap_or(path))
     } else {
-        bail!(
-            "unknown theme `{theme}`: `theme` must be `default` or the path to a \
-             theme folder, either absolute or starting with ./ or ../"
-        );
+        // Anything else is a path, relative to the site like the config that
+        // sets it. Joining an absolute path just gives that path.
+        site_dir.join(theme)
     };
 
     if !dir.is_dir() {
         bail!("theme `{theme}` not found: no folder at {}", dir.display());
     }
     Ok(dir)
-}
-
-/// Is this `theme` value a path? Relative paths start with `./` or `../`,
-/// which keeps them apart from theme names like `default`. Absolute paths are
-/// the OS's own, so `C:\themes\mine` is one on Windows but not elsewhere.
-fn is_path(theme: &str) -> bool {
-    matches!(
-        Path::new(theme).components().next(),
-        Some(Component::CurDir | Component::ParentDir | Component::RootDir | Component::Prefix(_))
-    )
 }
 
 /// Read one level's config. A missing file isn't an error — that level just
@@ -215,6 +199,7 @@ mod tests {
             "paths",
             &[
                 ("site/docs/README.md", ""),
+                ("site/themes/mine/templates/page.html", ""),
                 ("shared/theme/templates/page.html", ""),
             ],
         );
@@ -224,51 +209,19 @@ mod tests {
             std::fs::write(site.join(CONFIG_FILE), format!("theme: {theme}\n")).unwrap();
             theme_dir(&site).unwrap().canonicalize().unwrap()
         };
-        let expected = shared.canonicalize().unwrap();
+        let mine = site.join("themes/mine").canonicalize().unwrap();
+        let theirs = shared.canonicalize().unwrap();
 
         // Relative to the site, not to wherever little runs.
-        assert_eq!(chosen("../shared/theme"), expected);
+        assert_eq!(chosen("themes/mine"), mine);
+        assert_eq!(chosen("./themes/mine"), mine);
+        assert_eq!(chosen("../shared/theme"), theirs);
 
         // Absolute: the temp dir is /… on macOS and Linux, C:\… on Windows.
-        let absolute = shared.display().to_string();
-        assert!(shared.is_absolute(), "`{absolute}` should be absolute");
-        assert_eq!(chosen(&absolute), expected);
-
-        // Windows takes either separator.
-        if cfg!(windows) {
-            assert_eq!(chosen(r"..\shared\theme"), expected);
-            assert_eq!(chosen(&absolute.replace('/', r"\")), expected);
-            assert_eq!(chosen(&absolute.replace('\\', "/")), expected);
-        }
+        assert!(shared.is_absolute());
+        assert_eq!(chosen(&shared.display().to_string()), theirs);
 
         let _ = std::fs::remove_dir_all(&root);
-    }
-
-    #[test]
-    fn theme_values_are_paths_or_names() {
-        let mut paths = vec!["./theme", "../themes/fancy", "/srv/themes/fancy", ".", ".."];
-        if cfg!(windows) {
-            paths.extend([
-                r"C:\themes\fancy",
-                "C:/themes/fancy",
-                r"\\server\share\fancy",
-                r".\theme",
-                r"..\themes\fancy",
-            ]);
-        }
-        for path in paths {
-            assert!(is_path(path), "`{path}` is a path");
-        }
-        for name in [
-            "default",
-            "fancy",
-            "themes/fancy",
-            ".fancy",
-            "https://x.io/t.zip",
-            "",
-        ] {
-            assert!(!is_path(name), "`{name}` isn't a path");
-        }
     }
 
     #[test]
@@ -279,8 +232,8 @@ mod tests {
             format!("{:#}", load(&site).unwrap_err())
         };
 
-        assert!(error("theme: fancy\n").contains("unknown theme `fancy`"));
-        assert!(error("theme: ./missing\n").contains("theme `./missing` not found"));
+        // Any value but `default` is a path, so a typo is a missing folder.
+        assert!(error("theme: defualt\n").contains("theme `defualt` not found"));
         assert!(error("theme: [a, b]\n").contains("`theme` must be a string"));
 
         // A theme can't choose the theme; only the site can.
