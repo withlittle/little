@@ -5,35 +5,38 @@
 //! Which theme fills level 2 is itself a setting, `theme`. A theme's config
 //! can only be found once the theme has been chosen, so only the site gets a
 //! say in it; a site that doesn't choose gets little's built-in theme.
+//!
+//! Two more settings name the folders a site is built from and into, `source`
+//! and `destination`. Any level can set them, but they're always relative to
+//! the site.
 
 use anyhow::{Context, Result, bail};
 use serde_yaml::Value;
-use std::io::ErrorKind;
-use std::path::{Path, PathBuf};
+use std::io::{self, ErrorKind};
+use std::path::{Component, Path, PathBuf};
+
+use crate::theme::{STATIC_DIR, TEMPLATES_DIR};
 
 /// The config file a theme and a site may each provide.
 pub const CONFIG_FILE: &str = "little.yml";
 
-/// A site's merged config, and the folder of the theme it chose.
+/// A site's merged config, and the folders it chose.
 #[derive(Debug)]
 pub struct Config {
     /// The merged cascade, which the theme sees as `site`.
     pub values: Value,
     pub theme_dir: PathBuf,
+    /// The folder of Markdown files the site is built from.
+    pub source_dir: PathBuf,
+    /// The folder the site is built into, which every build wipes.
+    pub destination_dir: PathBuf,
 }
 
 /// little's built-in defaults: level 1 of the cascade. They live in
 /// `src/little.yml`, compiled into the binary so little stays a single file
 /// with nothing to install alongside it.
 fn builtin_defaults() -> Value {
-    let defaults: Value =
-        serde_yaml::from_str(include_str!("little.yml")).expect("src/little.yml is valid YAML");
-    // With no settings in it, the file parses as null, but every other level
-    // (and the theme's `site`) needs a mapping to merge into.
-    match defaults {
-        Value::Null => Value::Mapping(Default::default()),
-        defaults => defaults,
-    }
+    serde_yaml::from_str(include_str!("little.yml")).expect("src/little.yml is valid YAML")
 }
 
 /// Choose a site's theme, then load and merge the cascade.
@@ -61,13 +64,23 @@ pub fn load(site_dir: &Path) -> Result<Config> {
         deep_merge(&mut values, site_cfg);
     }
 
-    Ok(Config { values, theme_dir })
-}
+    let (source, source_dir) = folder_setting(site_dir, &values, "source")?;
+    if !source_dir.is_dir() {
+        bail!(
+            "source `{source}` not found: no folder at {}",
+            source_dir.display()
+        );
+    }
+    let (_, destination_dir) = folder_setting(site_dir, &values, "destination")?;
 
-/// The folder of the theme a site chooses, without loading the whole cascade.
-pub fn theme_dir(site_dir: &Path) -> Result<PathBuf> {
-    let site_cfg = read_yaml(&site_dir.join(CONFIG_FILE))?;
-    choose_theme(site_dir, site_cfg.as_ref())
+    let cfg = Config {
+        values,
+        theme_dir,
+        source_dir,
+        destination_dir,
+    };
+    check_destination(site_dir, &cfg)?;
+    Ok(cfg)
 }
 
 /// Resolve the site's `theme` to the theme's folder, or to little's built-in
@@ -88,9 +101,7 @@ fn choose_theme(site_dir: &Path, site_cfg: Option<&Value>) -> Result<PathBuf> {
             Ok(dir)
         }
         Some(Value::String(theme)) => {
-            // Relative to the site, like the config that sets it. Joining an
-            // absolute path just gives that path.
-            let dir = site_dir.join(theme);
+            let dir = site_path(site_dir, theme);
             if !dir.is_dir() {
                 bail!("theme `{theme}` not found: no folder at {}", dir.display());
             }
@@ -98,6 +109,95 @@ fn choose_theme(site_dir: &Path, site_cfg: Option<&Value>) -> Result<PathBuf> {
         }
         Some(_) => bail!("`theme` must be the path to a theme folder, like `./my-theme`"),
     }
+}
+
+/// The folder a setting names, and the setting as written. It's relative to
+/// the site even when a theme sets it: it's the site that's built.
+fn folder_setting<'a>(site_dir: &Path, values: &'a Value, key: &str) -> Result<(&'a str, PathBuf)> {
+    match values.get(key) {
+        Some(Value::String(path)) => Ok((path, site_path(site_dir, path))),
+        _ => {
+            let defaults = builtin_defaults();
+            let example = defaults[key].as_str().unwrap_or_default();
+            bail!("`{key}` must be the path to a folder, like `{example}`")
+        }
+    }
+}
+
+/// Resolve a path a config names against the site's folder: it's relative to
+/// the site, not to wherever little runs, and an absolute path is just that
+/// path. Tidied, so a site in `.` that sets `./docs` shows it as `./docs`.
+fn site_path(site_dir: &Path, path: &str) -> PathBuf {
+    site_dir.join(path).components().collect()
+}
+
+/// Make sure a build can't wipe what the site needs, which it would if the
+/// destination were (or held) the site's folder or the theme's, whose config
+/// a build reads, or a folder a build reads from: the source and the theme's
+/// templates and static files. Nor can the destination be in a folder a build
+/// reads from, or each build would read the last one's output. Real paths are
+/// compared, so no spelling of a folder, through `..` or a symlink or in
+/// another case, gets past.
+fn check_destination(site_dir: &Path, cfg: &Config) -> Result<()> {
+    let real =
+        |path: &Path| real_path(path).with_context(|| format!("resolving {}", path.display()));
+    let destination = real(&cfg.destination_dir)?;
+    let shown = cfg.values["destination"].as_str().unwrap_or_default();
+
+    let configured = [
+        (real(site_dir)?, "the site's folder".to_string()),
+        (real(&cfg.theme_dir)?, "the theme's folder".to_string()),
+    ];
+    let theme_part = |name| -> Result<_> {
+        let dir = real(&cfg.theme_dir.join(name))?;
+        Ok((dir, format!("the theme's `{name}` folder")))
+    };
+    let read = [
+        (real(&cfg.source_dir)?, "the `source` folder".to_string()),
+        theme_part(TEMPLATES_DIR)?,
+        theme_part(STATIC_DIR)?,
+    ];
+
+    for (dir, name) in configured.iter().chain(&read) {
+        if dir.starts_with(&destination) {
+            let is = if *dir == destination { "is" } else { "holds" };
+            bail!("destination `{shown}` {is} {name}, which a build would wipe");
+        }
+    }
+    for (dir, name) in &read {
+        if destination.starts_with(dir) {
+            bail!(
+                "destination `{shown}` is inside {name}, so each build would read the last one's output"
+            );
+        }
+    }
+    Ok(())
+}
+
+/// The absolute path `path` really is, even if it doesn't exist yet: what
+/// exists is resolved as the system would (following `..` and symlinks, and
+/// spelled as on disk), and the rest is taken as written.
+pub fn real_path(path: &Path) -> io::Result<PathBuf> {
+    if let Ok(real) = path.canonicalize() {
+        return Ok(real);
+    }
+    let mut real = PathBuf::new();
+    for component in std::path::absolute(path)?.components() {
+        match component {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                real.pop();
+            }
+            Component::Normal(name) => {
+                real.push(name);
+                if let Ok(canonical) = real.canonicalize() {
+                    real = canonical;
+                }
+            }
+            root => real.push(root),
+        }
+    }
+    Ok(real)
 }
 
 /// Read one level's config. A missing file isn't an error — that level just
@@ -114,6 +214,13 @@ fn read_yaml(path: &Path) -> Result<Option<Value>> {
     // replace (wipe out) every level beneath it.
     if value.is_null() {
         return Ok(None);
+    }
+    // Anything else but settings would replace them all, too.
+    if !value.is_mapping() {
+        bail!(
+            "{} must hold settings, like `name: My Docs`",
+            path.display()
+        );
     }
     Ok(Some(value))
 }
@@ -164,7 +271,7 @@ mod tests {
     /// Run the real cascade against a scratch site. Each `Some` is written
     /// as that level's config file; each `None` leaves the file out entirely.
     fn cascade(label: &str, theme_cfg: Option<&str>, site_cfg: Option<&str>) -> Value {
-        let site = scratch(label, &[]);
+        let site = scratch(label, &[("docs/README.md", "")]);
         let theme = site.join("theme");
         std::fs::create_dir_all(&theme).unwrap();
         for (dir, cfg) in [(&theme, theme_cfg), (&site, site_cfg)] {
@@ -183,6 +290,7 @@ mod tests {
         let site = scratch(
             "choose",
             &[
+                ("docs/README.md", ""),
                 ("theme/little.yml", "font: mono\n"),
                 ("path/to/my/theme/little.yml", "name: Mine\nfont: serif\n"),
             ],
@@ -224,7 +332,7 @@ mod tests {
         // Unquoted, as people usually write them.
         let chosen = |theme: &str| {
             std::fs::write(site.join(CONFIG_FILE), format!("theme: {theme}\n")).unwrap();
-            theme_dir(&site).unwrap().canonicalize().unwrap()
+            load(&site).unwrap().theme_dir.canonicalize().unwrap()
         };
         let mine = site.join("themes/mine").canonicalize().unwrap();
         let theirs = shared.canonicalize().unwrap();
@@ -265,6 +373,157 @@ mod tests {
         assert!(message.contains("no theme: point `theme` in little.yml at a theme folder"));
 
         let _ = std::fs::remove_dir_all(&site);
+    }
+
+    #[test]
+    fn folders_are_relative_to_the_site_wherever_theyre_set() {
+        let root = scratch(
+            "folders",
+            &[
+                ("site/docs/README.md", ""),
+                ("site/content/README.md", ""),
+                ("site/themes/mine/_templates/default.html", ""),
+                ("shared/docs/README.md", ""),
+            ],
+        );
+        let site = root.join("site");
+        let folders = |theme_cfg: &str, site_cfg: &str| {
+            std::fs::write(site.join("themes/mine").join(CONFIG_FILE), theme_cfg).unwrap();
+            let site_cfg = format!("theme: ./themes/mine\n{site_cfg}");
+            std::fs::write(site.join(CONFIG_FILE), site_cfg).unwrap();
+            let cfg = load(&site).unwrap();
+            (cfg.source_dir, cfg.destination_dir)
+        };
+
+        // little's own defaults.
+        assert_eq!(folders("", ""), (site.join("docs"), site.join("dist")));
+
+        // A theme can set them, but they're still relative to the site...
+        let theme = "source: content\ndestination: ./public\n";
+        let expected = (site.join("content"), site.join("public"));
+        assert_eq!(folders(theme, ""), expected);
+
+        // ...and the site has the last word, of course.
+        let site_cfg = "source: ../shared/docs\n";
+        let expected = (site.join("../shared/docs"), site.join("public"));
+        assert_eq!(folders(theme, site_cfg), expected);
+
+        // Absolute paths work too.
+        let out = root.join("out");
+        let site_cfg = format!("destination: {}\n", out.display());
+        assert_eq!(folders("", &site_cfg), (site.join("docs"), out));
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn bad_folders_explain_themselves() {
+        let site = scratch(
+            "bad-folders",
+            &[
+                ("docs/README.md", ""),
+                ("theme/_templates/default.html", ""),
+            ],
+        );
+        let error = |site_cfg: &str| {
+            std::fs::write(site.join(CONFIG_FILE), site_cfg).unwrap();
+            format!("{:#}", load(&site).unwrap_err())
+        };
+
+        assert!(error("source: ./missing\n").contains("source `./missing` not found"));
+        let message = error("source: [a, b]\n");
+        assert!(message.contains("`source` must be the path to a folder, like `./docs`"));
+        // With no value, it's not a path at all: nothing to build from or into.
+        let message = error("destination:\n");
+        assert!(message.contains("`destination` must be the path to a folder, like `./dist`"));
+
+        // Settings are keys and values: anything else would replace them all.
+        let message = error("- source: ./docs\n");
+        assert!(
+            message.contains("little.yml must hold settings"),
+            "{message}"
+        );
+
+        let _ = std::fs::remove_dir_all(&site);
+    }
+
+    #[test]
+    fn a_destination_cannot_be_what_a_build_needs() {
+        // Nested, so even `..` is a scratch folder. Nothing here is built.
+        let root = scratch(
+            "destination",
+            &[
+                ("site/docs/README.md", ""),
+                ("site/content/docs/README.md", ""),
+                ("site/theme/_templates/default.html", ""),
+                ("site/theme/_static/style.css", ""),
+                ("shared/theme/_templates/default.html", ""),
+            ],
+        );
+        let site = root.join("site");
+        let error = |site_cfg: &str| {
+            std::fs::write(site.join(CONFIG_FILE), site_cfg).unwrap();
+            load(&site).err().map(|e| format!("{e:#}"))
+        };
+        let assert_refused = |site_cfg: &str, reason: &str| {
+            let message = error(site_cfg).unwrap_or_else(|| panic!("{site_cfg:?} is allowed"));
+            assert!(message.contains(reason), "{site_cfg:?}: {message}");
+        };
+
+        // Every build wipes its destination, so it can't be (or hold) the
+        // site's folder, its source, or its theme, or what's in the theme...
+        assert_refused("destination: .\n", "destination `.` is the site's folder");
+        assert_refused("destination: ..\n", "holds the site's folder");
+        assert_refused("destination: ./docs/\n", "is the `source` folder");
+        assert_refused("destination: ./dist/../docs\n", "is the `source` folder");
+        let site_cfg = "source: ./content/docs\ndestination: ./content\n";
+        assert_refused(site_cfg, "holds the `source` folder");
+        assert_refused("destination: theme\n", "is the theme's folder");
+        let site_cfg = "theme: ../shared/theme\ndestination: ../shared\n";
+        assert_refused(site_cfg, "holds the theme's folder");
+        let site_cfg = "destination: ./theme/_templates\n";
+        assert_refused(site_cfg, "is the theme's `_templates` folder");
+        assert_refused(
+            "destination: theme/_static/\n",
+            "is the theme's `_static` folder",
+        );
+        // ...however the folder's written.
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(&site, root.join("alias")).unwrap();
+            assert_refused("destination: ../alias/docs\n", "is the `source` folder");
+        }
+        if site.join("DOCS").is_dir() {
+            // A case-insensitive disk, like macOS's and Windows's by default.
+            assert_refused("destination: ./DOCS\n", "is the `source` folder");
+        }
+
+        // Nor can it be in a folder a build reads from, or each build would
+        // read the last.
+        assert_refused(
+            "destination: ./docs/site\n",
+            "is inside the `source` folder",
+        );
+        assert_refused(
+            "destination: ./theme/_static/site\n",
+            "is inside the theme's `_static` folder",
+        );
+        assert_refused(
+            "destination: ./theme/_templates/site\n",
+            "is inside the theme's `_templates` folder",
+        );
+
+        // Anywhere else is fine, even inside the theme: a theme's demo site
+        // might be.
+        for site_cfg in [
+            "destination: ./public\n",
+            "destination: ../out\n",
+            "destination: ./theme/dist\n",
+        ] {
+            assert_eq!(error(site_cfg), None, "{site_cfg:?}");
+        }
+
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]

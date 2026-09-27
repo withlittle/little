@@ -25,7 +25,7 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Build the site into dist/
+    /// Build the site into its destination folder (dist/ by default)
     Build,
     /// Serve the site locally with live reload
     Serve {
@@ -38,7 +38,9 @@ enum Commands {
 fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.command {
-        Commands::Build => site::build(&cli.dir)?,
+        Commands::Build => {
+            site::build(&cli.dir)?;
+        }
         Commands::Serve { addr } => server::serve(&cli.dir, &addr)?,
     }
     Ok(())

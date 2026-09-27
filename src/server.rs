@@ -1,16 +1,17 @@
 //! A tiny dev server with live reload.
 //!
-//! Strategy: serve dist/ over HTTP, expose a `/__little/version` counter, and
-//! inject a small polling script into every HTML page. A file watcher rebuilds
-//! the site and bumps the counter, so open browsers reload themselves.
+//! Strategy: serve the site's destination over HTTP, expose a
+//! `/__little/version` counter, and inject a small polling script into every
+//! HTML page. A file watcher rebuilds the site and bumps the counter, so open
+//! browsers reload themselves.
 
 use anyhow::{Result, anyhow};
 use notify::{Event, RecommendedWatcher, RecursiveMode, Watcher};
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::Sender;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tiny_http::{Header, Response, Server};
 
@@ -18,15 +19,15 @@ use crate::{config, site};
 
 pub fn serve(site_dir: &Path, addr: &str) -> Result<()> {
     let site_dir = site_dir.to_path_buf();
-    let dist_dir = site_dir.join("dist");
 
-    site::build(&site_dir)?;
+    // The folder of the last build that worked, which a rebuild can move.
+    let destination = Arc::new(Mutex::new(site::build(&site_dir)?));
 
     let version = Arc::new(AtomicU64::new(1));
-    spawn_watcher(site_dir.clone(), version.clone());
+    spawn_watcher(site_dir.clone(), destination.clone(), version.clone());
 
     let server = Server::http(addr).map_err(|e| anyhow!("failed to bind {addr}: {e}"))?;
-    println!("little serving http://{addr}  (live reload on — edit docs/ or the theme)");
+    println!("little serving http://{addr}  (live reload on — edit your docs or the theme)");
 
     for request in server.incoming_requests() {
         if request.url().starts_with("/__little/version") {
@@ -34,12 +35,13 @@ pub fn serve(site_dir: &Path, addr: &str) -> Result<()> {
             let _ = request.respond(Response::from_string(body));
             continue;
         }
-        serve_file(&dist_dir, request);
+        let destination = destination.lock().unwrap().clone();
+        serve_file(&destination, request);
     }
     Ok(())
 }
 
-fn spawn_watcher(site_dir: PathBuf, version: Arc<AtomicU64>) {
+fn spawn_watcher(site_dir: PathBuf, destination: Arc<Mutex<PathBuf>>, version: Arc<AtomicU64>) {
     std::thread::spawn(move || {
         let (tx, rx) = std::sync::mpsc::channel();
         let mut sources = match Sources::watch(&site_dir, tx) {
@@ -55,13 +57,14 @@ fn spawn_watcher(site_dir: PathBuf, version: Arc<AtomicU64>) {
             std::thread::sleep(Duration::from_millis(150));
             while rx.try_recv().is_ok() {}
 
-            // The edit may have switched the site to another theme.
-            if let Err(e) = sources.follow_theme(&site_dir) {
+            // The edit may have moved the site's folders or switched its theme.
+            if let Err(e) = sources.follow(&site_dir) {
                 eprintln!("watcher error: {e}");
             }
 
             match site::build(&site_dir) {
-                Ok(()) => {
+                Ok(built) => {
+                    *destination.lock().unwrap() = built;
                     version.fetch_add(1, Ordering::SeqCst);
                     println!("rebuilt");
                 }
@@ -74,84 +77,99 @@ fn spawn_watcher(site_dir: PathBuf, version: Arc<AtomicU64>) {
 /// Watchers on everything a build reads, sending events as it changes.
 struct Sources {
     tx: Sender<notify::Result<Event>>,
-    /// `docs/` and the site's config.
-    _site: [RecommendedWatcher; 2],
-    /// The theme's folder. It can live anywhere, and the site's config can
-    /// switch to another one at any time.
-    theme: Option<(PathBuf, RecommendedWatcher)>,
+    /// The site's config, which chooses the folders below.
+    _config: RecommendedWatcher,
+    /// The source folder.
+    source: Option<(PathBuf, RecommendedWatcher)>,
+    /// The theme's folder, which can live anywhere, and the destination,
+    /// which can be inside it.
+    theme: Option<((PathBuf, PathBuf), RecommendedWatcher)>,
 }
 
 impl Sources {
     fn watch(site_dir: &Path, tx: Sender<notify::Result<Event>>) -> notify::Result<Self> {
         let mut sources = Self {
-            _site: watch_site(site_dir, tx.clone())?,
+            _config: watch_config(site_dir, tx.clone())?,
             tx,
+            source: None,
             theme: None,
         };
-        sources.follow_theme(site_dir)?;
+        sources.follow(site_dir)?;
         Ok(sources)
     }
 
-    /// Watch the theme the site's config chooses, unless it already is.
-    fn follow_theme(&mut self, site_dir: &Path) -> notify::Result<()> {
-        // A config that doesn't choose a usable theme fails the build, which
-        // says why; keep watching the last theme until it's fixed.
-        let Ok(theme_dir) = config::theme_dir(site_dir) else {
+    /// Watch the folders the site's config chooses, unless they already are.
+    fn follow(&mut self, site_dir: &Path) -> notify::Result<()> {
+        // A config that doesn't work fails the build, which says why; keep
+        // watching the last folders until it's fixed.
+        let Ok(cfg) = config::load(site_dir) else {
             return Ok(());
         };
         if self
+            .source
+            .as_ref()
+            .is_none_or(|(watched, _)| *watched != cfg.source_dir)
+        {
+            let watcher = watch_source(&cfg.source_dir, self.tx.clone())?;
+            self.source = Some((cfg.source_dir, watcher));
+        }
+        let theme = (cfg.theme_dir, cfg.destination_dir);
+        if self
             .theme
             .as_ref()
-            .is_some_and(|(watched, _)| *watched == theme_dir)
+            .is_none_or(|(watched, _)| *watched != theme)
         {
-            return Ok(());
+            let watcher = watch_theme(&theme.0, &theme.1, self.tx.clone())?;
+            self.theme = Some((theme, watcher));
         }
-        let watcher = watch_theme(site_dir, &theme_dir, self.tx.clone())?;
-        self.theme = Some((theme_dir, watcher));
         Ok(())
     }
 }
 
-/// Watch the site's own sources: `docs/` and the site's config.
-fn watch_site(
+/// Watch the site's config. It's optional and may not exist yet, so watch the
+/// site's folder rather than the file, forwarding only changes to the config
+/// (the folder may hold the destination too, which every build recreates).
+fn watch_config(
     site_dir: &Path,
     tx: Sender<notify::Result<Event>>,
-) -> notify::Result<[RecommendedWatcher; 2]> {
-    let docs_tx = tx.clone();
-    let mut docs = notify::recommended_watcher(move |res: notify::Result<Event>| {
-        if !res.as_ref().is_ok_and(is_read) {
-            let _ = docs_tx.send(res);
-        }
-    })?;
-    let _ = docs.watch(&site_dir.join("docs"), RecursiveMode::Recursive);
-
-    // The site's config is optional and may not exist yet, so watch the site's
-    // root folder rather than the file, forwarding only changes to the config
-    // (the root also holds dist/, which every build recreates).
-    let mut root = notify::recommended_watcher(move |res: notify::Result<Event>| {
+) -> notify::Result<RecommendedWatcher> {
+    let mut watcher = notify::recommended_watcher(move |res: notify::Result<Event>| {
         if res.as_ref().is_ok_and(changes_site_config) {
             let _ = tx.send(res);
         }
     })?;
-    let _ = root.watch(site_dir, RecursiveMode::NonRecursive);
+    watcher.watch(site_dir, RecursiveMode::NonRecursive)?;
+    Ok(watcher)
+}
 
-    Ok([docs, root])
+/// Watch the site's source folder, where its Markdown files are.
+fn watch_source(
+    source_dir: &Path,
+    tx: Sender<notify::Result<Event>>,
+) -> notify::Result<RecommendedWatcher> {
+    let mut watcher = notify::recommended_watcher(move |res: notify::Result<Event>| {
+        if !res.as_ref().is_ok_and(is_read) {
+            let _ = tx.send(res);
+        }
+    })?;
+    watcher.watch(source_dir, RecursiveMode::Recursive)?;
+    Ok(watcher)
 }
 
 /// Watch a theme's folder, its optional config included. The folder can hold
 /// the site that uses it (a theme's demo site might set `theme: ..`), so the
 /// build's own output is ignored, or each build would trigger the next.
 fn watch_theme(
-    site_dir: &Path,
     theme_dir: &Path,
+    destination: &Path,
     tx: Sender<notify::Result<Event>>,
 ) -> notify::Result<RecommendedWatcher> {
     // Real paths on both sides: some platforms (macOS) report events by them.
-    let dist_dir = site_dir.canonicalize()?.join("dist");
+    let destination = config::real_path(destination)?;
     let mut watcher = notify::recommended_watcher(move |res: notify::Result<Event>| {
         if !res
             .as_ref()
-            .is_ok_and(|event| is_read(event) || is_within(event, &dist_dir))
+            .is_ok_and(|event| is_read(event) || is_within(event, &destination))
         {
             let _ = tx.send(res);
         }
@@ -181,8 +199,8 @@ fn changes_site_config(event: &Event) -> bool {
             .any(|path| path.file_name() == Some(OsStr::new(config::CONFIG_FILE)))
 }
 
-fn serve_file(dist_dir: &Path, request: tiny_http::Request) {
-    let (full, status) = match respond_with(dist_dir, request.url()) {
+fn serve_file(destination: &Path, request: tiny_http::Request) {
+    let (full, status) = match respond_with(destination, request.url()) {
         Some(found) => found,
         None => {
             let _ = request.respond(Response::from_string("404 Not Found").with_status_code(404));
@@ -212,19 +230,19 @@ fn serve_file(dist_dir: &Path, request: tiny_http::Request) {
 /// The file to answer a request for `url` with, and the status to send: the
 /// file at that URL, or else the site's 404 page, as a static host would.
 /// `None` if there's neither.
-fn respond_with(dist_dir: &Path, url: &str) -> Option<(PathBuf, u16)> {
-    if let Some(path) = resolve_route(dist_dir, url) {
+fn respond_with(destination: &Path, url: &str) -> Option<(PathBuf, u16)> {
+    if let Some(path) = resolve_route(destination, url) {
         return Some((path, 200));
     }
-    let not_found = dist_dir.join(site::NOT_FOUND_FILE);
+    let not_found = destination.join(site::NOT_FOUND_FILE);
     not_found.is_file().then_some((not_found, 404))
 }
 
-/// Resolve a request URL to a file under `dist/`, understanding the pretty,
-/// extensionless routes the build emits (`/getting-started` ->
+/// Resolve a request URL to a file in the destination, understanding the
+/// pretty, extensionless routes the build emits (`/getting-started` ->
 /// `getting-started/index.html`). Returns `None` for anything that doesn't
 /// resolve to a real file, and rejects `..` traversal.
-fn resolve_route(dist_dir: &Path, url: &str) -> Option<PathBuf> {
+fn resolve_route(destination: &Path, url: &str) -> Option<PathBuf> {
     let path = url.split(['?', '#']).next().unwrap_or("");
     let trimmed = path.trim_start_matches('/');
 
@@ -233,9 +251,9 @@ fn resolve_route(dist_dir: &Path, url: &str) -> Option<PathBuf> {
     }
 
     let base = if trimmed.is_empty() {
-        dist_dir.to_path_buf()
+        destination.to_path_buf()
     } else {
-        dist_dir.join(trimmed)
+        destination.join(trimmed)
     };
 
     // Directory index first (covers "/", "/guide/", and extensionless routes),
@@ -243,7 +261,7 @@ fn resolve_route(dist_dir: &Path, url: &str) -> Option<PathBuf> {
     let candidates = [
         base.join("index.html"),
         base.clone(),
-        dist_dir.join(format!("{trimmed}.html")),
+        destination.join(format!("{trimmed}.html")),
     ];
     candidates.into_iter().find(|candidate| candidate.is_file())
 }
@@ -453,22 +471,45 @@ mod tests {
     #[test]
     fn a_theme_can_hold_the_site_that_uses_it() {
         // A theme's repo with a demo site inside, which uses the theme around
-        // it, so the site's dist/ is inside the watched theme.
-        let theme_dir = scratch(
-            "demo",
-            &[
-                ("little.yml", "font: serif\n"),
-                ("_templates/default.html", "{{ page.content | safe }}"),
-                ("_static/style.css", "body {}\n"),
-                ("demo/little.yml", "theme: ..\n"),
-                ("demo/docs/README.md", "# Home\n"),
-            ],
-        );
-        assert_only_edits_wake(
-            &theme_dir.join("demo"),
-            &theme_dir.join("_static/style.css"),
-        );
-        let _ = std::fs::remove_dir_all(&theme_dir);
+        // it, so the site's destination is inside the watched theme: beside
+        // the site's docs, or anywhere else in the theme.
+        for destination in ["./dist", "../site"] {
+            let demo_cfg = format!("theme: ..\ndestination: {destination}\n");
+            let theme_dir = scratch(
+                "demo",
+                &[
+                    ("little.yml", "font: serif\n"),
+                    ("_templates/default.html", "{{ page.content | safe }}"),
+                    ("_static/style.css", "body {}\n"),
+                    ("demo/little.yml", &demo_cfg),
+                    ("demo/docs/README.md", "# Home\n"),
+                ],
+            );
+            assert_only_edits_wake(
+                &theme_dir.join("demo"),
+                &theme_dir.join("_static/style.css"),
+            );
+            let _ = std::fs::remove_dir_all(&theme_dir);
+        }
+    }
+
+    /// Check that once the site's config is `site_cfg`, the watcher ignores
+    /// edits to the `old` file but wakes for edits to the `new` one.
+    fn assert_follows(site_dir: &Path, site_cfg: &str, old: &str, new: &str) {
+        let (mut sources, rx) = watch_built_site(site_dir);
+
+        std::fs::write(site_dir.join("little.yml"), site_cfg).unwrap();
+        sources.follow(site_dir).unwrap();
+        while rx.recv_timeout(Duration::from_millis(300)).is_ok() {}
+
+        let edit = |file: &str| std::fs::write(site_dir.join(file), "edited\n");
+        edit(old).unwrap();
+        let event = rx.recv_timeout(Duration::from_millis(500));
+        assert!(event.is_err(), "{old} is still watched: {event:?}");
+
+        edit(new).unwrap();
+        let event = rx.recv_timeout(Duration::from_secs(5));
+        assert!(event.is_ok(), "{new} isn't watched");
     }
 
     #[test]
@@ -482,21 +523,26 @@ mod tests {
             std::fs::create_dir_all(path.parent().unwrap()).unwrap();
             std::fs::write(&path, contents).unwrap();
         }
-        let (mut sources, rx) = watch_built_site(&site_dir);
+        assert_follows(
+            &site_dir,
+            "theme: ./other\n",
+            "theme/_static/style.css",
+            "other/_static/style.css",
+        );
+        let _ = std::fs::remove_dir_all(&site_dir);
+    }
 
-        std::fs::write(site_dir.join("little.yml"), "theme: ./other\n").unwrap();
-        sources.follow_theme(&site_dir).unwrap();
-        while rx.recv_timeout(Duration::from_millis(300)).is_ok() {}
-
-        let edit = |file: &str| std::fs::write(site_dir.join(file), "body { margin: 0 }\n");
-        edit("theme/_static/style.css").unwrap();
-        let event = rx.recv_timeout(Duration::from_millis(500));
-        assert!(event.is_err(), "the old theme is still watched: {event:?}");
-
-        edit("other/_static/style.css").unwrap();
-        let event = rx.recv_timeout(Duration::from_secs(5));
-        assert!(event.is_ok(), "the new theme isn't watched");
-
+    #[test]
+    fn the_watcher_follows_the_site_to_another_source() {
+        let site_dir = scratch_site("move");
+        std::fs::create_dir_all(site_dir.join("pages")).unwrap();
+        std::fs::write(site_dir.join("pages/README.md"), "# Home\n").unwrap();
+        assert_follows(
+            &site_dir,
+            "source: ./pages\n",
+            "docs/README.md",
+            "pages/README.md",
+        );
         let _ = std::fs::remove_dir_all(&site_dir);
     }
 }
