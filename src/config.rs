@@ -1,6 +1,6 @@
-//! The 3-level cascading config: little defaults -> theme -> site.
+//! The 3-level cascading config: little -> theme -> site, each a `little.yml`.
 //! Each level deep-merges over the previous, so the *last* writer wins.
-//! The theme's and the site's config files are both optional.
+//! little's own file is compiled in; the theme's and the site's are optional.
 
 use anyhow::{Context, Result};
 use serde_yaml::Value;
@@ -10,17 +10,11 @@ use std::path::Path;
 /// The config file a theme and a site may each provide.
 pub const CONFIG_FILE: &str = "little.yml";
 
-/// little's built-in defaults. This is level 1 of the cascade.
-///
-/// Only settings little itself owns belong here. A site's name, language, and
-/// look are the theme's to default and the site's to set.
+/// little's built-in defaults: level 1 of the cascade. They live in
+/// `src/little.yml`, compiled into the binary so little stays a single file
+/// with nothing to install alongside it.
 fn builtin_defaults() -> Value {
-    serde_yaml::from_str(
-        r##"
-theme: default
-"##,
-    )
-    .expect("built-in defaults are valid YAML")
+    serde_yaml::from_str(include_str!("little.yml")).expect("src/little.yml is valid YAML")
 }
 
 /// Load and merge the cascade for a project.
