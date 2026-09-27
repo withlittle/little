@@ -58,6 +58,8 @@ A theme is just a folder: `templates/page.html`, plus an optional `assets/` fold
 theme: ./path/to/my/theme
 ```
 
-The path starts with `./`, `../`, or `/` and is relative to the site's folder. Only the
-site chooses its theme, so a theme's own `little.yml` can't set `theme`. `little serve`
-watches whichever theme the site uses, so theme edits reload live too.
+The path is either relative to the site's folder, starting with `./` or `../`, or absolute,
+like `/Users/you/my-theme` on macOS or `C:\Users\you\my-theme` on Windows. (Leave a Windows
+path unquoted or use single quotes: inside double quotes, YAML reads `\` as an escape.)
+Only the site chooses its theme, so a theme's own `little.yml` can't set `theme`.
+`little serve` watches whichever theme the site uses, so theme edits reload live too.

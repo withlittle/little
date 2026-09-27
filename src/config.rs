@@ -78,13 +78,14 @@ fn choose_theme(site_dir: &Path, site_cfg: Option<&Value>) -> Result<PathBuf> {
         // it's built into little.
         site_dir.join("theme")
     } else if is_path(theme) {
-        // Relative to the site, like the site's config that sets it.
+        // Relative paths start from the site, like the config that sets them.
+        // Joining an absolute path just gives that path.
         let path = Path::new(theme);
         site_dir.join(path.strip_prefix(".").unwrap_or(path))
     } else {
         bail!(
             "unknown theme `{theme}`: `theme` must be `default` or the path to a \
-             theme folder, starting with ./, ../ or /"
+             theme folder, either absolute or starting with ./ or ../"
         );
     };
 
@@ -94,8 +95,9 @@ fn choose_theme(site_dir: &Path, site_cfg: Option<&Value>) -> Result<PathBuf> {
     Ok(dir)
 }
 
-/// Is this `theme` value a path? Paths start with `./`, `../` or `/`, which
-/// keeps them apart from theme names like `default`.
+/// Is this `theme` value a path? Relative paths start with `./` or `../`,
+/// which keeps them apart from theme names like `default`. Absolute paths are
+/// the OS's own, so `C:\themes\mine` is one on Windows but not elsewhere.
 fn is_path(theme: &str) -> bool {
     matches!(
         Path::new(theme).components().next(),
@@ -208,7 +210,7 @@ mod tests {
     }
 
     #[test]
-    fn theme_paths_are_relative_to_the_site() {
+    fn theme_paths_can_be_relative_or_absolute() {
         let root = scratch(
             "paths",
             &[
@@ -217,21 +219,44 @@ mod tests {
             ],
         );
         let (site, shared) = (root.join("site"), root.join("shared/theme"));
+        // Unquoted, as people usually write them.
         let chosen = |theme: &str| {
-            std::fs::write(site.join(CONFIG_FILE), format!("theme: '{theme}'\n")).unwrap();
+            std::fs::write(site.join(CONFIG_FILE), format!("theme: {theme}\n")).unwrap();
             theme_dir(&site).unwrap().canonicalize().unwrap()
         };
-
         let expected = shared.canonicalize().unwrap();
+
+        // Relative to the site, not to wherever little runs.
         assert_eq!(chosen("../shared/theme"), expected);
-        assert_eq!(chosen(&shared.display().to_string()), expected);
+
+        // Absolute: the temp dir is /… on macOS and Linux, C:\… on Windows.
+        let absolute = shared.display().to_string();
+        assert!(shared.is_absolute(), "`{absolute}` should be absolute");
+        assert_eq!(chosen(&absolute), expected);
+
+        // Windows takes either separator.
+        if cfg!(windows) {
+            assert_eq!(chosen(r"..\shared\theme"), expected);
+            assert_eq!(chosen(&absolute.replace('/', r"\")), expected);
+            assert_eq!(chosen(&absolute.replace('\\', "/")), expected);
+        }
 
         let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]
     fn theme_values_are_paths_or_names() {
-        for path in ["./theme", "../themes/fancy", "/srv/themes/fancy", ".", ".."] {
+        let mut paths = vec!["./theme", "../themes/fancy", "/srv/themes/fancy", ".", ".."];
+        if cfg!(windows) {
+            paths.extend([
+                r"C:\themes\fancy",
+                "C:/themes/fancy",
+                r"\\server\share\fancy",
+                r".\theme",
+                r"..\themes\fancy",
+            ]);
+        }
+        for path in paths {
             assert!(is_path(path), "`{path}` is a path");
         }
         for name in [

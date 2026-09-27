@@ -146,8 +146,11 @@ little uses the theme in the site's `theme/` folder unless `little.yml` points
 theme: ../shared/my-theme
 ```
 
-- A theme path starts with `./`, `../`, or `/`. Relative paths start from the
-  folder holding `little.yml`, not from where you run `little`.
+- A relative path starts with `./` or `../` and is relative to the folder
+  holding `little.yml`, not to where you run `little`.
+- An absolute path works too, like `/Users/you/my-theme` on macOS or
+  `C:\Users\you\my-theme` on Windows. YAML reads `\` as an escape inside
+  double quotes, so leave Windows paths unquoted or use single quotes.
 - `theme: default`, little's built-in default, means the site's `theme/`
   folder.
 - Only a site chooses its theme, so a theme's own `little.yml` can't set
