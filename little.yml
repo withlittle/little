@@ -2,4 +2,4 @@
 # Optional: without this file, the theme's config and little's defaults apply.
 name: "My Project Docs"
 tagline: "Docs that just work"
-accent: "#e11d48" # rose — overrides both little's blue and the theme's purple
+accent: "#e11d48" # rose — overrides the theme's purple

@@ -121,14 +121,16 @@ tagline: "Docs that just work"
 accent: "#e11d48"
 ```
 
-Every key reaches the theme as `site.<key>`, so you can add your own. The
-default theme uses these:
+Every key reaches the theme as `site.<key>`, so you can add your own. little's
+built-in defaults cover only little's own settings; a site's name, language,
+and look are up to the theme and the site. The default theme uses these keys,
+with defaults from its `theme/little.yml`:
 
 | Key | Default | Used for |
 | --- | ------- | -------- |
 | `name` | `Documentation` | Site title (header and browser tab) |
 | `tagline` | none | Text beside the site title |
-| `accent` | `#7c3aed` (little's own default is `#2563eb`) | Links and highlights |
+| `accent` | `#7c3aed` | Links and highlights |
 | `font` | a system UI font stack | Body text `font-family` |
 | `lang` | `en` | The page's `lang` attribute |
 

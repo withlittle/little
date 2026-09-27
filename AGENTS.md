@@ -32,9 +32,11 @@ Content and theme live outside `src/`:
 1. **The theme owns 100% of the markup.** The core never emits baked-in HTML; it
    passes structured `site` / `page` / `nav` data to the theme. Keep it that way.
 2. **Config cascades: little → theme → site, last writer wins.** New config
-   belongs in this cascade, with a sensible built-in default in `config.rs`.
-   The theme's and site's `little.yml` are optional — a missing or empty file
-   just contributes nothing.
+   belongs in this cascade. Only settings little itself owns get a built-in
+   default in `config.rs`; a site's name, language, and look are the theme's
+   to default (in its `little.yml`) and the site's to set. The theme's and
+   site's `little.yml` are optional — a missing or empty file just contributes
+   nothing.
 3. **Keep the core small; push features to plugins.** Sphinx-style API extraction,
    niche renderers, etc. are plugins (planned WASM API), not core code.
 4. **No mandatory Node toolchain.** Never add a build step that requires Node.
