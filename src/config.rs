@@ -17,8 +17,8 @@ fn builtin_defaults() -> Value {
     serde_yaml::from_str(include_str!("little.yml")).expect("src/little.yml is valid YAML")
 }
 
-/// Load and merge the cascade for a project.
-pub fn load_cascade(theme_dir: &Path, project_dir: &Path) -> Result<Value> {
+/// Load and merge the cascade for a site.
+pub fn load_cascade(theme_dir: &Path, site_dir: &Path) -> Result<Value> {
     let mut cfg = builtin_defaults();
 
     // Level 2: the theme's config.
@@ -27,7 +27,7 @@ pub fn load_cascade(theme_dir: &Path, project_dir: &Path) -> Result<Value> {
     }
 
     // Level 3: the site's config (the final word).
-    if let Some(site_cfg) = read_yaml(&project_dir.join(CONFIG_FILE))? {
+    if let Some(site_cfg) = read_yaml(&site_dir.join(CONFIG_FILE))? {
         deep_merge(&mut cfg, site_cfg);
     }
 
@@ -81,22 +81,22 @@ mod tests {
         cfg.get(key).and_then(Value::as_str)
     }
 
-    /// Run the real cascade against a scratch project. Each `Some` is written
+    /// Run the real cascade against a scratch site. Each `Some` is written
     /// as that level's config file; each `None` leaves the file out entirely.
     fn cascade(label: &str, theme_cfg: Option<&str>, site_cfg: Option<&str>) -> Value {
-        let project =
+        let site =
             std::env::temp_dir().join(format!("little-config-test-{}-{label}", std::process::id()));
-        let theme = project.join("theme");
-        let _ = std::fs::remove_dir_all(&project);
+        let theme = site.join("theme");
+        let _ = std::fs::remove_dir_all(&site);
         std::fs::create_dir_all(&theme).unwrap();
-        for (dir, cfg) in [(&theme, theme_cfg), (&project, site_cfg)] {
+        for (dir, cfg) in [(&theme, theme_cfg), (&site, site_cfg)] {
             if let Some(yaml) = cfg {
                 std::fs::write(dir.join(CONFIG_FILE), yaml).unwrap();
             }
         }
 
-        let cfg = load_cascade(&theme, &project);
-        let _ = std::fs::remove_dir_all(&project);
+        let cfg = load_cascade(&theme, &site);
+        let _ = std::fs::remove_dir_all(&site);
         cfg.expect("cascade loads")
     }
 
