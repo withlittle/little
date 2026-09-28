@@ -45,7 +45,7 @@ tag as a `.zip` and a `.tar.gz`. Each archive holds one folder, like
 - An archive's type comes from its first bytes. Anything that isn't a `.zip`
   or a `.tar.gz` is an error. So is an archive that holds more than one thing
   at its top, a symlink, a hard link, or a path that leads out of it. A failed
-  download or unpack keeps nothing.
+  download or unpack leaves no theme behind, so the next build tries again.
 - A downloaded theme is a theme like any other. Its own `theme` can be a
   path, relative to its folder, or a URL. Loops are still found by comparing
   folders, and reported with the URLs.
@@ -72,7 +72,10 @@ tag as a `.zip` and a `.tar.gz`. Each archive holds one folder, like
     a proxy that inspects HTTPS with a company's own certificate is refused.
     A proxy set in `HTTPS_PROXY` works;
   - links are refused even where a theme wouldn't use them;
-  - a `.zip` must use deflate, as nearly all do, and GitHub's do;
+  - a `.zip` must be compressed with deflate, or not at all, as nearly all
+    are, GitHub's included;
   - files lose their permissions and timestamps, which themes don't need;
   - with `source: .`, `.little/` is inside the source, so a downloaded theme's
-    Markdown becomes pages.
+    Markdown becomes pages;
+  - while a download fails, `little serve` tries it twice each time you save,
+    as it reads the config twice.
