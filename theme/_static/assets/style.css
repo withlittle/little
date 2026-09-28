@@ -154,6 +154,31 @@ a:hover { text-decoration: underline; }
 .content li { margin: 0.25rem 0; }
 .content input[type="checkbox"] { margin-right: 0.4rem; }
 
+/* Previous and next pages */
+.pager {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  margin-top: 3rem;
+}
+.pager a {
+  display: block;
+  padding: 0.75rem 1rem;
+  border: 1px solid #ebedf0;
+  border-radius: 10px;
+  color: #1f2328;
+  font-weight: 600;
+}
+.pager a:hover { border-color: #7c3aed; color: #7c3aed; text-decoration: none; }
+.pager-label {
+  display: block;
+  font-size: 0.8rem;
+  font-weight: 400;
+  color: #6b727c;
+}
+/* Keep "Next" on the right, even on the first page. */
+.pager-next { grid-column: 2; text-align: right; }
+
 /* Footer */
 .site-footer {
   border-top: 1px solid #ebedf0;

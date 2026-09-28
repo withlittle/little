@@ -38,6 +38,25 @@
 
     <main class="content">
       {% block content %}{{ page.content | safe }}{% endblock %}
+
+      {# page.prev and page.next follow site.nav from top to bottom; the first
+         page has no prev, and the last no next. #}
+      {% if page.prev or page.next %}
+      <nav class="pager" aria-label="Previous and next pages">
+        {% if page.prev %}
+        <a class="pager-prev" href="{{ page.prev.url | safe }}" rel="prev">
+          <span class="pager-label">Previous</span>
+          {{ page.prev.title }}
+        </a>
+        {% endif %}
+        {% if page.next %}
+        <a class="pager-next" href="{{ page.next.url | safe }}" rel="next">
+          <span class="pager-label">Next</span>
+          {{ page.next.title }}
+        </a>
+        {% endif %}
+      </nav>
+      {% endif %}
     </main>
 
     {% if page.nav %}

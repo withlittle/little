@@ -5,7 +5,7 @@ use anyhow::{Context, Result, bail};
 use minijinja::{Value as MjValue, context};
 use serde::Serialize;
 use serde_yaml::Value;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fs;
 use std::io::ErrorKind;
 use std::path::{Component, Path, PathBuf};
@@ -64,6 +64,20 @@ struct PageData<'a> {
     /// A home or section page's branch of the nav: what's in its folder.
     #[serde(skip_serializing_if = "Option::is_none")]
     children: Option<&'a [NavItem]>,
+    /// The page before this one in the nav, unless it's the first.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    prev: Option<Link<'a>>,
+    /// The page after this one in the nav, unless it's the last.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    next: Option<Link<'a>>,
+}
+
+/// A link to another page: what a template sees as `page.prev` or
+/// `page.next`.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize)]
+struct Link<'a> {
+    title: &'a str,
+    url: &'a str,
 }
 
 /// One node in the site-wide navigation tree (see `build_nav`).
@@ -155,6 +169,7 @@ pub fn build(site_dir: &Path) -> Result<PathBuf> {
     let nav = build_nav(&tree);
     site_cfg.insert("nav".into(), serde_yaml::to_value(&nav)?);
     let site_value = MjValue::from_serialize(&site_cfg);
+    let neighbours = neighbours_in(&nav);
 
     // The theme owns 100% of the markup; little only hands it structured data.
     // Every page is rendered before the destination is touched, so a build
@@ -171,6 +186,10 @@ pub fn build(site_dir: &Path) -> Result<PathBuf> {
     let mut outputs = Vec::new();
     for page in &pages {
         let children = page.is_index().then(|| children_of(&tree, &page.rel));
+        let (prev, next) = neighbours
+            .get(page.url.as_str())
+            .copied()
+            .unwrap_or_default();
         let data = PageData {
             page_type: page.page_type.name(),
             url: &page.url,
@@ -179,6 +198,8 @@ pub fn build(site_dir: &Path) -> Result<PathBuf> {
             content: Some(&page.html),
             nav: Some(&page.toc),
             children: children.as_deref(),
+            prev,
+            next,
         };
         let source = source_dir.join(&page.rel);
         if let Some(html) = render(page.page_type, &data)
@@ -200,6 +221,8 @@ pub fn build(site_dir: &Path) -> Result<PathBuf> {
         content: None,
         nav: None,
         children: None,
+        prev: None,
+        next: None,
     };
     if let Some(html) = render(PageType::NotFound, &data).context("rendering the 404 page")? {
         let path = destination_dir.join(NOT_FOUND_FILE);
@@ -490,6 +513,38 @@ fn section_item(name: &str, node: &DirNode) -> NavItem {
     }
 }
 
+/// The pages before and after each page, by its URL: its `page.prev` and
+/// `page.next`. They follow the nav from top to bottom, so they agree with the
+/// sidebar: a section's own page, then what's in it, then on to the next item.
+/// A folder without a `README.md` has no page, so it's passed over.
+fn neighbours_in(nav: &[NavItem]) -> HashMap<&str, (Option<Link<'_>>, Option<Link<'_>>)> {
+    let mut order = Vec::new();
+    push_links(nav, &mut order);
+    order
+        .iter()
+        .enumerate()
+        .map(|(i, link)| {
+            let prev = (i > 0).then(|| order[i - 1]);
+            let next = order.get(i + 1).copied();
+            (link.url, (prev, next))
+        })
+        .collect()
+}
+
+/// Add a link to each page in `items`, and in their children, to `links`, in
+/// the order the nav lists them.
+fn push_links<'a>(items: &'a [NavItem], links: &mut Vec<Link<'a>>) {
+    for item in items {
+        if let Some(url) = &item.url {
+            links.push(Link {
+                title: &item.title,
+                url,
+            });
+        }
+        push_links(&item.children, links);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -681,6 +736,44 @@ mod tests {
                 "Install /guide/install",
             ]
         );
+    }
+
+    #[test]
+    fn prev_and_next_follow_the_nav() {
+        let pages = vec![
+            page("README.md", "Home"),
+            page("getting-started.md", "Getting Started"),
+            page("guide/README.md", "Guide"),
+            page("guide/install.md", "Install"),
+            page("guide/advanced/tuning.md", "Tuning"),
+            page("api/reference.md", "Reference"),
+        ];
+        let nav = build_nav(&build_tree(&pages));
+        let neighbours = neighbours_in(&nav);
+
+        // A section's own page comes before what's in it. The folders without
+        // a README.md, api/ and guide/advanced/, have no page to link to.
+        for (page, prev, next) in [
+            ("/", None, Some("/api/reference")),
+            ("/api/reference", Some("/"), Some("/getting-started")),
+            ("/getting-started", Some("/api/reference"), Some("/guide/")),
+            (
+                "/guide/",
+                Some("/getting-started"),
+                Some("/guide/advanced/tuning"),
+            ),
+            (
+                "/guide/advanced/tuning",
+                Some("/guide/"),
+                Some("/guide/install"),
+            ),
+            ("/guide/install", Some("/guide/advanced/tuning"), None),
+        ] {
+            let (before, after) = neighbours[page];
+            assert_eq!(before.map(|link| link.url), prev, "{page}");
+            assert_eq!(after.map(|link| link.url), next, "{page}");
+        }
+        assert_eq!(neighbours.len(), pages.len());
     }
 
     #[test]
@@ -928,28 +1021,62 @@ mod tests {
 
         let dist = site.join("dist");
         let read = |path: &str| fs::read_to_string(dist.join(path)).unwrap();
+        // The first page has no `prev`, and the last no `next`.
         assert_eq!(
             read("index.html"),
-            "home with default.html: children content nav title type url"
+            "home with default.html: children content nav next title type url"
         );
         assert_eq!(
             read("guide/index.html"),
-            "section with section.html: children content description nav title type url"
+            "section with section.html: children content description nav next prev title type url"
         );
         assert_eq!(
             read("guide/install/index.html"),
-            "page with default.html: content nav title type url"
+            "page with default.html: content nav prev title type url"
         );
         // A folder without a README gets no page of its own.
         assert!(!dist.join("api/index.html").exists());
         assert_eq!(
             read("api/reference/index.html"),
-            "page with default.html: content nav title type url"
+            "page with default.html: content nav next prev title type url"
         );
         // A 404 page has no content of its own.
         assert_eq!(
             read(NOT_FOUND_FILE),
             "404 with 404.html: type url = /404.html"
+        );
+        let _ = fs::remove_dir_all(&site);
+    }
+
+    #[test]
+    fn each_page_links_to_the_pages_before_and_after_it() {
+        let site = scratch_site(
+            "pager",
+            &[
+                ("little.yml", "theme: ./theme\n"),
+                ("docs/README.md", "# Home\n"),
+                ("docs/guide/README.md", "# Guide\n"),
+                ("docs/guide/install.md", "# Install\n"),
+                (
+                    "theme/_templates/default.html",
+                    "{% if page.prev %}{{ page.prev.title }} {{ page.prev.url | safe }} {% endif %}\
+                     < {{ page.title }} >\
+                     {% if page.next %} {{ page.next.title }} {{ page.next.url | safe }}{% endif %}",
+                ),
+            ],
+        );
+
+        build(&site).unwrap();
+
+        let read = |path: &str| fs::read_to_string(site.join("dist").join(path)).unwrap();
+        assert_eq!(read("index.html"), "< Home > Guide /guide/");
+        assert_eq!(
+            read("guide/index.html"),
+            "Home / < Guide > Install /guide/install"
+        );
+        assert_eq!(
+            read("guide/install/index.html"),
+            "Guide /guide/ < Install >"
         );
         let _ = fs::remove_dir_all(&site);
     }

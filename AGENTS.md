@@ -89,4 +89,7 @@ Record notable choices as short ADRs in `decisions/`. Locked so far:
   site's `.little/` and never downloaded again; links and paths that leave the
   archive are refused — see
   [`decisions/0004-downloading-themes.md`](./decisions/0004-downloading-themes.md).
+- **Previous and next pages:** `page.prev` and `page.next` follow `site.nav`
+  from top to bottom, and are left out at either end — see
+  [`decisions/0005-previous-and-next-pages.md`](./decisions/0005-previous-and-next-pages.md).
 - **Plugins:** sandboxed WASM (planned).
