@@ -1,4 +1,5 @@
 mod config;
+mod download;
 mod render;
 mod server;
 mod site;

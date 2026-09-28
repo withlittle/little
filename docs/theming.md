@@ -94,9 +94,22 @@ theme: ./path/to/my/theme
 
 The path is relative to the site's folder, or absolute, like `/Users/you/my-theme` on macOS
 or `C:\Users\you\my-theme` on Windows. (Leave a Windows path unquoted or use single quotes:
-inside double quotes, YAML reads `\` as an escape.) `little serve` watches whichever theme
-the site uses, so theme edits reload live too.
+inside double quotes, YAML reads `\` as an escape.) `little serve` watches the theme's
+folder, so theme edits reload live too.
 
-A theme's own `little.yml` can set `theme` too, relative to the theme's folder, to build on
-another theme. Its settings go over that theme's, and so do its templates and static files,
-file by file, so a theme that only changes some colours can be just a `little.yml`.
+Or point `theme` at the URL of a theme's `.zip` or `.tar.gz` archive, like a tag's archive
+on GitHub:
+
+```yaml
+theme: https://github.com/withlittle/theme-bootstrap/archive/refs/tags/0.0.1.tar.gz
+```
+
+The first build downloads it into the site's `.little/` folder, which git ignores, and later
+builds use that copy, so they work offline. little never downloads the same URL again: change
+the URL for another version, or delete `.little/` to download it afresh. A downloaded theme
+never changes, so `little serve` doesn't watch it.
+
+A theme's own `little.yml` can set `theme` too, to build on another theme: a path is relative
+to the theme's folder, and a URL works just as it does for a site. Its settings go over that
+theme's, and so do its templates and static files, file by file, so a company theme that only
+changes some colours can be just a `little.yml` that builds on a downloaded theme.

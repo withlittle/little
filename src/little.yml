@@ -10,5 +10,5 @@ source: ./docs
 destination: ./dist
 
 # The theme a site is built with: `true` for little's built-in theme, `false`
-# for none, or the path to a theme's folder.
+# for none, the path to a theme's folder, or the URL of a theme's archive.
 theme: true

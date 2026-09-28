@@ -25,7 +25,11 @@ cargo fmt                   # format — run before committing
   theme, write the destination (`dist/`).
 - `src/theme.rs` — a theme's templates and static files, layered over those of
   the themes it builds on, and the built-in theme; picks each page's template
-  by its type (`home`, `section`, `page`, `404`).
+  by its type (`home`, `section`, `page`, `404`). A theme is built in, in a
+  folder, or downloaded.
+- `src/download.rs` — a theme downloaded from a URL: fetched over HTTPS,
+  unpacked from its `.zip` or `.tar.gz`, and kept in the site's `.little/`, so
+  it's downloaded only once.
 - `src/server.rs` — dev server + file watcher + live reload.
 
 Content and theme live outside `src/`:
@@ -78,7 +82,11 @@ Record notable choices as short ADRs in `decisions/`. Locked so far:
 - **Markdown:** comrak. **Templating:** minijinja. **Config:** cascading YAML.
 - **Themes:** `_templates/` + `_static/`, a template per type of page — see
   [`decisions/0002-theme-structure.md`](./decisions/0002-theme-structure.md).
-- **Choosing themes:** `theme` is `true` (built-in), `false`, or a folder, and
-  a theme can build on another, file by file — see
+- **Choosing themes:** `theme` is `true` (built-in), `false`, a folder, or a
+  URL, and a theme can build on another, file by file — see
   [`decisions/0003-choosing-and-layering-themes.md`](./decisions/0003-choosing-and-layering-themes.md).
+- **Downloading themes:** an HTTPS `.zip` or `.tar.gz`, unpacked into the
+  site's `.little/` and never downloaded again; links and paths that leave the
+  archive are refused — see
+  [`decisions/0004-downloading-themes.md`](./decisions/0004-downloading-themes.md).
 - **Plugins:** sandboxed WASM (planned).

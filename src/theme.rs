@@ -9,7 +9,8 @@
 //! ```
 //!
 //! A theme can build on another (see `config`). Its files then go over the
-//! other theme's, file by file, so it only needs the ones it changes.
+//! other theme's, file by file, so it only needs the ones it changes. A theme
+//! is built into little, in a folder, or downloaded (see `download`).
 
 use anyhow::{Context, Result, bail};
 use minijinja::{Environment, ErrorKind, Value, path_loader};
@@ -90,6 +91,8 @@ pub enum Location {
     BuiltIn,
     /// A theme in a folder.
     Folder(PathBuf),
+    /// A theme downloaded from `url` and unpacked into `dir`.
+    Downloaded { url: String, dir: PathBuf },
 }
 
 impl Location {
@@ -97,15 +100,17 @@ impl Location {
     pub fn folder(&self) -> Option<&Path> {
         match self {
             Self::BuiltIn => None,
-            Self::Folder(dir) => Some(dir),
+            Self::Folder(dir) | Self::Downloaded { dir, .. } => Some(dir),
         }
     }
 
     /// Name the file at `path` in the theme, for an error.
-    fn describe(&self, path: &str) -> String {
+    pub fn describe(&self, path: &str) -> String {
         match self {
             Self::BuiltIn => format!("{path} in little's built-in theme"),
             Self::Folder(dir) => dir.join(path).display().to_string(),
+            // Its folder is named with a hash, so its URL says more.
+            Self::Downloaded { url, .. } => format!("{path} in the theme from {url}"),
         }
     }
 
@@ -116,7 +121,9 @@ impl Location {
                 .iter()
                 .find(|(builtin, _)| *builtin == name)
                 .map(|(_, source)| source.to_string())),
-            Self::Folder(dir) => path_loader(dir.join(TEMPLATES_DIR))(name),
+            Self::Folder(dir) | Self::Downloaded { dir, .. } => {
+                path_loader(dir.join(TEMPLATES_DIR))(name)
+            }
         }
     }
 
@@ -131,7 +138,7 @@ impl Location {
                 };
                 return Ok(builtin::STATIC.iter().map(file).collect());
             }
-            Self::Folder(dir) => dir.join(STATIC_DIR),
+            Self::Folder(dir) | Self::Downloaded { dir, .. } => dir.join(STATIC_DIR),
         };
         let mut files = Vec::new();
         if !static_dir.is_dir() {
@@ -143,9 +150,10 @@ impl Location {
                 continue;
             }
             let path = entry.path();
+            let rel = path.strip_prefix(&static_dir)?;
             files.push(StaticFile {
-                path: path.strip_prefix(&static_dir)?.to_path_buf(),
-                origin: path.display().to_string(),
+                path: rel.to_path_buf(),
+                origin: self.describe(&Path::new(STATIC_DIR).join(rel).display().to_string()),
                 contents: std::fs::read(path)
                     .with_context(|| format!("reading {}", path.display()))?,
             });
@@ -159,6 +167,7 @@ impl fmt::Display for Location {
         match self {
             Self::BuiltIn => f.write_str("little's built-in theme"),
             Self::Folder(dir) => write!(f, "{}", dir.display()),
+            Self::Downloaded { url, .. } => f.write_str(url),
         }
     }
 }
