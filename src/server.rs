@@ -8,13 +8,15 @@
 use anyhow::{Result, anyhow};
 use notify::{Event, RecommendedWatcher, RecursiveMode, Watcher};
 use std::ffi::OsStr;
-use std::path::{Path, PathBuf};
+use std::io;
+use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::Sender;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tiny_http::{Header, Response, Server};
 
+use crate::theme::Location;
 use crate::{config, site};
 
 pub fn serve(site_dir: &Path, addr: &str) -> Result<()> {
@@ -74,15 +76,17 @@ fn spawn_watcher(site_dir: PathBuf, destination: Arc<Mutex<PathBuf>>, version: A
     });
 }
 
+/// A folder a build reads, and the destination, which can be inside it.
+type Watched = (PathBuf, PathBuf);
+
 /// Watchers on everything a build reads, sending events as it changes.
 struct Sources {
     tx: Sender<notify::Result<Event>>,
     /// The site's config, which chooses the folders below.
     _config: RecommendedWatcher,
-    /// The source folder and the theme's folder, each watched with the
-    /// destination, which can be inside either.
-    source: Option<((PathBuf, PathBuf), RecommendedWatcher)>,
-    theme: Option<((PathBuf, PathBuf), RecommendedWatcher)>,
+    /// The source folder, and the folder of each theme in the chain.
+    source: Option<(Watched, RecommendedWatcher)>,
+    themes: Vec<(Watched, RecommendedWatcher)>,
 }
 
 impl Sources {
@@ -91,7 +95,7 @@ impl Sources {
             _config: watch_config(site_dir, tx.clone())?,
             tx,
             source: None,
-            theme: None,
+            themes: Vec::new(),
         };
         sources.follow(site_dir)?;
         Ok(sources)
@@ -99,28 +103,38 @@ impl Sources {
 
     /// Watch the folders the site's config chooses, unless they already are.
     fn follow(&mut self, site_dir: &Path) -> notify::Result<()> {
-        // A config that doesn't work fails the build, which says why; keep
-        // watching the last folders until it's fixed.
+        // A config that doesn't work, or a source folder that isn't there,
+        // fails the build, which says why; keep watching the last folders
+        // until it's fixed.
         let Ok(cfg) = config::load(site_dir) else {
             return Ok(());
         };
         let source = (cfg.source_dir, cfg.destination_dir.clone());
-        if self
+        let moved = self
             .source
             .as_ref()
-            .is_none_or(|(watched, _)| *watched != source)
-        {
+            .is_none_or(|(watched, _)| *watched != source);
+        if moved && source.0.is_dir() {
             let watcher = watch_folder(&source.0, &source.1, self.tx.clone())?;
             self.source = Some((source, watcher));
         }
-        let theme = (cfg.theme_dir, cfg.destination_dir);
-        if self
-            .theme
-            .as_ref()
-            .is_none_or(|(watched, _)| *watched != theme)
+        // The built-in theme is in the binary, so only theme folders change.
+        let themes: Vec<Watched> = cfg
+            .themes
+            .iter()
+            .filter_map(Location::folder)
+            .map(|dir| (dir.to_path_buf(), cfg.destination_dir.clone()))
+            .collect();
+        if !themes
+            .iter()
+            .eq(self.themes.iter().map(|(watched, _)| watched))
         {
-            let watcher = watch_folder(&theme.0, &theme.1, self.tx.clone())?;
-            self.theme = Some((theme, watcher));
+            let mut watchers = Vec::new();
+            for theme in themes {
+                let watcher = watch_folder(&theme.0, &theme.1, self.tx.clone())?;
+                watchers.push((theme, watcher));
+            }
+            self.themes = watchers;
         }
         Ok(())
     }
@@ -152,7 +166,7 @@ fn watch_folder(
     tx: Sender<notify::Result<Event>>,
 ) -> notify::Result<RecommendedWatcher> {
     // Real paths on both sides: some platforms (macOS) report events by them.
-    let destination = config::real_path(destination)?;
+    let destination = real_path(destination)?;
     let mut watcher = notify::recommended_watcher(move |res: notify::Result<Event>| {
         if !res
             .as_ref()
@@ -163,6 +177,32 @@ fn watch_folder(
     })?;
     watcher.watch(&dir.canonicalize()?, RecursiveMode::Recursive)?;
     Ok(watcher)
+}
+
+/// The absolute path `path` really is, even if it doesn't exist yet: what
+/// exists is resolved as the system would (following `..` and symlinks, and
+/// spelled as on disk), and the rest is taken as written.
+fn real_path(path: &Path) -> io::Result<PathBuf> {
+    if let Ok(real) = path.canonicalize() {
+        return Ok(real);
+    }
+    let mut real = PathBuf::new();
+    for component in std::path::absolute(path)?.components() {
+        match component {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                real.pop();
+            }
+            Component::Normal(name) => {
+                real.push(name);
+                if let Ok(canonical) = real.canonicalize() {
+                    real = canonical;
+                }
+            }
+            root => real.push(root),
+        }
+    }
+    Ok(real)
 }
 
 /// Is this event just a read? Every build opens the files it uses, and some
@@ -414,7 +454,7 @@ mod tests {
         scratch(
             label,
             &[
-                ("little.yml", "name: Test\n"),
+                ("little.yml", "theme: ./theme\nname: Test\n"),
                 ("docs/README.md", "# Home\n"),
                 ("docs/guide/install.md", "# Install\n"),
                 ("theme/little.yml", "font: serif\n"),
@@ -462,8 +502,25 @@ mod tests {
     #[test]
     fn a_source_can_hold_the_destination() {
         let site_dir = scratch_site("inside");
-        std::fs::write(site_dir.join("little.yml"), "destination: ./docs/_build\n").unwrap();
+        let site_cfg = "theme: ./theme\ndestination: ./docs/_build\n";
+        std::fs::write(site_dir.join("little.yml"), site_cfg).unwrap();
         assert_only_edits_wake(&site_dir, &site_dir.join("docs/guide/install.md"));
+        let _ = std::fs::remove_dir_all(&site_dir);
+    }
+
+    #[test]
+    fn the_watcher_watches_every_theme_in_the_chain() {
+        let site_dir = scratch_site("chain");
+        std::fs::write(site_dir.join("little.yml"), "theme: ./company\n").unwrap();
+        let company = site_dir.join("company");
+        std::fs::create_dir_all(&company).unwrap();
+        let company_cfg = company.join("little.yml");
+        std::fs::write(&company_cfg, "theme: ../theme\nfont: mono\n").unwrap();
+
+        // The theme it builds on, and its own config. That edit breaks the
+        // config, so it goes last.
+        assert_only_edits_wake(&site_dir, &site_dir.join("theme/_static/style.css"));
+        assert_only_edits_wake(&site_dir, &company_cfg);
         let _ = std::fs::remove_dir_all(&site_dir);
     }
 
@@ -538,7 +595,7 @@ mod tests {
         std::fs::write(site_dir.join("pages/README.md"), "# Home\n").unwrap();
         assert_follows(
             &site_dir,
-            "source: ./pages\n",
+            "theme: ./theme\nsource: ./pages\n",
             "docs/README.md",
             "pages/README.md",
         );

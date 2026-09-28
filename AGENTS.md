@@ -8,6 +8,7 @@ generator written in Rust. Its mission is **authoring experience** — see
 ```sh
 cargo run -- build          # build the example site (docs/) into dist/
 cargo run -- serve          # live-reloading dev server at http://127.0.0.1:8080
+cargo run -- config         # print the example site's merged config
 cargo build --release       # produce the release binary (target/release/little)
 cargo test                  # run tests
 cargo clippy --all-targets  # lint — keep it clean
@@ -15,23 +16,27 @@ cargo fmt                   # format — run before committing
 ```
 
 ## Architecture (keep the core small)
-- `src/main.rs` — CLI (clap): `build`, `serve`.
-- `src/config.rs` — the 3-level cascading config (little → theme → site), and
-  which theme, source, and destination folders a site uses.
+- `src/main.rs` — CLI (clap): `build`, `serve`, `config`.
+- `src/config.rs` — the 3-level cascading config (little → theme → site): the
+  chain of themes a site uses, and its source and destination folders.
 - `src/little.yml` — little's own defaults (level 1), compiled into the binary.
 - `src/render.rs` — Markdown (comrak) + YAML frontmatter → HTML fragment.
 - `src/site.rs` — build pipeline: walk the source (`docs/`), render, apply
   theme, write the destination (`dist/`).
-- `src/theme.rs` — a theme's templates and static files; picks each page's
-  template by its type (`home`, `section`, `page`, `404`).
+- `src/theme.rs` — a theme's templates and static files, layered over those of
+  the themes it builds on, and the built-in theme; picks each page's template
+  by its type (`home`, `section`, `page`, `404`).
 - `src/server.rs` — dev server + file watcher + live reload.
 
 Content and theme live outside `src/`:
 - `docs/` — the example/dogfood site content. This is little's **input**, not
   project documentation — don't put meta docs here.
-- `theme/` — the default theme: `_templates/` (MiniJinja; `default.html` is
-  required) + `_static/` (copied to the site's root) + an optional `little.yml`.
-- `little.yml` — example site config (optional).
+- `theme/` — little's built-in theme, compiled into the binary: `_templates/`
+  (MiniJinja; `default.html` is required) + `_static/` (copied to the site's
+  root) + an optional `little.yml`. List every file in it in `builtin` in
+  `src/theme.rs`; a test checks.
+- `little.yml` — example site config (optional). It sets `theme: ./theme`, so
+  edits to the built-in theme live-reload.
 - Project meta (`VISION.md`, `AGENTS.md`, `decisions/`) lives at the repo root.
 
 ## Core principles (do not violate)
@@ -42,8 +47,9 @@ Content and theme live outside `src/`:
    default in `src/little.yml`; a site's name, language, and look are the
    theme's to default (in its `little.yml`) and the site's to set. The theme's
    and site's `little.yml` are optional — a missing or empty file just
-   contributes nothing. `theme` is the exception: it chooses level 2, so only
-   the site can set it, and a site that doesn't gets little's built-in theme.
+   contributes nothing. `theme` is the exception: it chooses level 2, and a
+   site that doesn't set it gets little's built-in theme (`theme: true`). A
+   theme that sets it builds on that theme, whose config goes beneath its own.
 3. **Keep the core small; push features to plugins.** Sphinx-style API extraction,
    niche renderers, etc. are plugins (planned WASM API), not core code.
 4. **No mandatory Node toolchain.** Never add a build step that requires Node.
@@ -72,4 +78,7 @@ Record notable choices as short ADRs in `decisions/`. Locked so far:
 - **Markdown:** comrak. **Templating:** minijinja. **Config:** cascading YAML.
 - **Themes:** `_templates/` + `_static/`, a template per type of page — see
   [`decisions/0002-theme-structure.md`](./decisions/0002-theme-structure.md).
+- **Choosing themes:** `theme` is `true` (built-in), `false`, or a folder, and
+  a theme can build on another, file by file — see
+  [`decisions/0003-choosing-and-layering-themes.md`](./decisions/0003-choosing-and-layering-themes.md).
 - **Plugins:** sandboxed WASM (planned).

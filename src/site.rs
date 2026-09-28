@@ -11,7 +11,7 @@ use std::io::ErrorKind;
 use std::path::{Component, Path, PathBuf};
 use walkdir::WalkDir;
 
-use crate::theme::{self, PageType, Theme};
+use crate::theme::{PageType, StaticFile, Theme};
 use crate::{config, render};
 
 /// Where a site's 404 page is written: the root of the destination, which is
@@ -77,23 +77,27 @@ struct NavItem {
     children: Vec<NavItem>,
 }
 
-/// A page the build writes, and the file it's built from.
+/// A page the build writes.
 struct Output {
     path: PathBuf,
     html: String,
-    source: PathBuf,
+    /// Which page it is, for an error: "the page built from docs/README.md".
+    name: String,
 }
 
 /// Build the site rooted at `site_dir`, and return the folder it was built
 /// into.
 pub fn build(site_dir: &Path) -> Result<PathBuf> {
     let config::Config {
-        values: cfg,
-        theme_dir,
+        values: mut site_cfg,
+        themes,
         source_dir,
         destination_dir,
     } = config::load(site_dir)?;
-    let theme = Theme::load(&theme_dir)?;
+    if !source_dir.is_dir() {
+        bail!("there's no source folder at {}", source_dir.display());
+    }
+    let theme = Theme::load(&themes)?;
 
     // Collect and render every Markdown file in the source folder.
     let mut pages = Vec::new();
@@ -149,10 +153,7 @@ pub fn build(site_dir: &Path) -> Result<PathBuf> {
     // every page; the theme marks the active item by matching `page.url`.
     let tree = build_tree(&pages);
     let nav = build_nav(&tree);
-    let mut site_cfg = cfg;
-    if let Value::Mapping(map) = &mut site_cfg {
-        map.insert(Value::String("nav".into()), serde_yaml::to_value(&nav)?);
-    }
+    site_cfg.insert("nav".into(), serde_yaml::to_value(&nav)?);
     let site_value = MjValue::from_serialize(&site_cfg);
 
     // The theme owns 100% of the markup; little only hands it structured data.
@@ -184,7 +185,8 @@ pub fn build(site_dir: &Path) -> Result<PathBuf> {
             .with_context(|| format!("rendering {}", source.display()))?
         {
             let path = page.out_path.clone();
-            outputs.push(Output { path, html, source });
+            let name = format!("the page built from {}", source.display());
+            outputs.push(Output { path, html, name });
         }
     }
 
@@ -199,32 +201,25 @@ pub fn build(site_dir: &Path) -> Result<PathBuf> {
         nav: None,
         children: None,
     };
-    let source = theme_dir
-        .join(theme::TEMPLATES_DIR)
-        .join(PageType::NotFound.template());
-    if let Some(html) = render(PageType::NotFound, &data)
-        .with_context(|| format!("rendering {}", source.display()))?
-    {
+    if let Some(html) = render(PageType::NotFound, &data).context("rendering the 404 page")? {
         let path = destination_dir.join(NOT_FOUND_FILE);
-        outputs.push(Output { path, html, source });
-    }
-
-    if let Some(static_dir) = theme.static_dir() {
-        check_static_files(static_dir, &destination_dir, &outputs)?;
-    }
-
-    clear_destination(&destination_dir)?;
-    for output in &outputs {
-        if let Some(parent) = output.path.parent() {
-            fs::create_dir_all(parent)?;
-        }
-        fs::write(&output.path, &output.html)
-            .with_context(|| format!("writing {}", output.path.display()))?;
+        let name = "the 404 page".to_string();
+        outputs.push(Output { path, html, name });
     }
 
     // The theme's static files (css/js/images) go verbatim to the site's root.
-    if let Some(static_dir) = theme.static_dir() {
-        copy_dir(static_dir, &destination_dir)?;
+    let static_files = theme.static_files()?;
+    check_static_files(&static_files, &destination_dir, &outputs)?;
+
+    clear_destination(&destination_dir)?;
+    for output in &outputs {
+        write_file(&output.path, output.html.as_bytes())?;
+    }
+    // Written from what was read, not with `fs::copy`: on macOS that clones
+    // the file, and FSEvents then reports the *source* as changed, so `little
+    // serve` would rebuild forever. A build must only ever read its sources.
+    for file in &static_files {
+        write_file(&destination_dir.join(&file.path), &file.contents)?;
     }
 
     println!(
@@ -268,21 +263,22 @@ fn clear_destination(destination: &Path) -> Result<()> {
 
 /// Fail if a theme's static file would land on a page in the destination: on
 /// the page itself, or on the folder it's in.
-fn check_static_files(static_dir: &Path, destination: &Path, outputs: &[Output]) -> Result<()> {
-    for entry in WalkDir::new(static_dir).into_iter().filter_map(Result::ok) {
-        if entry.file_type().is_dir() {
-            continue;
-        }
-        let target = destination.join(entry.path().strip_prefix(static_dir)?);
+fn check_static_files(files: &[StaticFile], destination: &Path, outputs: &[Output]) -> Result<()> {
+    for file in files {
+        let target = destination.join(&file.path);
         if let Some(page) = outputs.iter().find(|page| page.path.starts_with(&target)) {
-            bail!(
-                "{} clashes with the page built from {}",
-                entry.path().display(),
-                page.source.display()
-            );
+            bail!("{} clashes with {}", file.origin, page.name);
         }
     }
     Ok(())
+}
+
+/// Write a file, and the folders it's in.
+fn write_file(path: &Path, contents: &[u8]) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).with_context(|| format!("creating {}", parent.display()))?;
+    }
+    fs::write(path, contents).with_context(|| format!("writing {}", path.display()))
 }
 
 /// Is this file a directory's home page? `README.md` is the documentation
@@ -494,28 +490,6 @@ fn section_item(name: &str, node: &DirNode) -> NavItem {
     }
 }
 
-fn copy_dir(src: &Path, dst: &Path) -> Result<()> {
-    fs::create_dir_all(dst)?;
-    for entry in WalkDir::new(src).into_iter().filter_map(Result::ok) {
-        let path = entry.path();
-        let rel = path.strip_prefix(src)?;
-        let target = dst.join(rel);
-        if entry.file_type().is_dir() {
-            fs::create_dir_all(&target)?;
-        } else {
-            if let Some(parent) = target.parent() {
-                fs::create_dir_all(parent)?;
-            }
-            // Not `fs::copy`: on macOS it clones the file, and FSEvents then
-            // reports the *source* as changed, so `little serve` would rebuild
-            // forever. A build must only ever read its sources.
-            let bytes = fs::read(path).with_context(|| format!("reading {}", path.display()))?;
-            fs::write(&target, bytes).with_context(|| format!("writing {}", target.display()))?;
-        }
-    }
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -710,31 +684,12 @@ mod tests {
     }
 
     #[test]
-    fn copies_nested_static_files_byte_for_byte() {
-        let root =
-            std::env::temp_dir().join(format!("little-site-test-static-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&root);
-        let (src, dst) = (root.join("_static"), root.join("dist"));
-        let png: &[u8] = &[0x89, b'P', b'N', b'G', 0x00, 0xff];
-        fs::create_dir_all(src.join("img")).unwrap();
-        fs::write(src.join("style.css"), "body {}\n").unwrap();
-        fs::write(src.join("img/logo.png"), png).unwrap();
-
-        copy_dir(&src, &dst).unwrap();
-
-        assert_eq!(fs::read(dst.join("style.css")).unwrap(), b"body {}\n");
-        assert_eq!(fs::read(dst.join("img/logo.png")).unwrap(), png);
-        let _ = fs::remove_dir_all(&root);
-    }
-
-    #[test]
     fn builds_with_a_local_theme() {
         let site = scratch_site(
             "theme",
             &[
                 ("little.yml", "theme: ./path/to/my/theme\n"),
                 ("docs/README.md", "# Home\n"),
-                ("theme/_templates/default.html", "the default theme"),
                 (
                     "path/to/my/theme/_templates/default.html",
                     "{{ site.greeting }} from my theme",
@@ -743,16 +698,89 @@ mod tests {
                 ("path/to/my/theme/_static/style.css", "body {}\n"),
             ],
         );
+        let png: &[u8] = &[0x89, b'P', b'N', b'G', 0x00, 0xff];
+        let img = site.join("path/to/my/theme/_static/img");
+        fs::create_dir_all(&img).unwrap();
+        fs::write(img.join("logo.png"), png).unwrap();
 
         build(&site).unwrap();
 
         let home = fs::read_to_string(site.join("dist/index.html")).unwrap();
         assert_eq!(home, "Hello from my theme");
-        // Static files go to the site's root, as they are.
+        // Static files go to the site's root, byte for byte.
         let css = fs::read(site.join("dist/style.css")).unwrap();
         assert_eq!(css, b"body {}\n");
+        assert_eq!(fs::read(site.join("dist/img/logo.png")).unwrap(), png);
         // No 404.html template, no 404 page.
         assert!(!site.join("dist").join(NOT_FOUND_FILE).exists());
+        let _ = fs::remove_dir_all(&site);
+    }
+
+    #[test]
+    fn a_site_needs_only_its_docs() {
+        // Without a little.yml or a theme, little's built-in theme builds it.
+        let site = scratch_site("builtin", &[("docs/README.md", "# Home\n")]);
+
+        build(&site).unwrap();
+
+        let dist = site.join("dist");
+        let home = fs::read_to_string(dist.join("index.html")).unwrap();
+        assert!(
+            home.contains("<title>Home · Documentation</title>"),
+            "{home}"
+        );
+        assert!(dist.join(NOT_FOUND_FILE).is_file());
+        let css = fs::read(dist.join("assets/style.css")).unwrap();
+        assert_eq!(css, include_bytes!("../theme/_static/assets/style.css"));
+        let _ = fs::remove_dir_all(&site);
+    }
+
+    #[test]
+    fn builds_with_a_theme_that_builds_on_another() {
+        let site = scratch_site(
+            "chain",
+            &[
+                ("little.yml", "theme: ./company\nname: My Docs\n"),
+                ("docs/README.md", "# Home\n"),
+                ("company/little.yml", "theme: ../base\ngreeting: Hi\n"),
+                ("company/_templates/partials/brand.html", "company"),
+                ("company/_static/logo.svg", "company logo"),
+                ("base/little.yml", "greeting: Hello\nname: Base\n"),
+                (
+                    "base/_templates/default.html",
+                    r#"{% include "partials/brand.html" %}: {{ site.greeting }} from {{ site.name }}"#,
+                ),
+                ("base/_templates/partials/brand.html", "base"),
+                ("base/_static/logo.svg", "base logo"),
+                ("base/_static/style.css", "body {}\n"),
+            ],
+        );
+
+        build(&site).unwrap();
+
+        let read = |path: &str| fs::read_to_string(site.join("dist").join(path)).unwrap();
+        assert_eq!(read("index.html"), "company: Hi from My Docs");
+        assert_eq!(read("logo.svg"), "company logo");
+        assert_eq!(read("style.css"), "body {}\n");
+        let _ = fs::remove_dir_all(&site);
+    }
+
+    #[test]
+    fn a_build_needs_a_source_folder_and_a_theme() {
+        let site = scratch_site("needs", &[("little.yml", "name: My Docs\n")]);
+        let message = format!("{:#}", build(&site).unwrap_err());
+        let expected = format!(
+            "there's no source folder at {}",
+            site.join("docs").display()
+        );
+        assert_eq!(message, expected);
+
+        fs::create_dir_all(site.join("docs")).unwrap();
+        fs::write(site.join("little.yml"), "theme: false\n").unwrap();
+        let message = format!("{:#}", build(&site).unwrap_err());
+        let expected = "little can't build a site without a theme (`theme: false`) yet";
+        assert_eq!(message, expected);
+        assert!(!site.join("dist").exists());
         let _ = fs::remove_dir_all(&site);
     }
 
@@ -761,7 +789,10 @@ mod tests {
         let site = scratch_site(
             "folders",
             &[
-                ("little.yml", "source: ./content\ndestination: ./public\n"),
+                (
+                    "little.yml",
+                    "theme: ./theme\nsource: ./content\ndestination: ./public\n",
+                ),
                 ("content/README.md", "# Home\n"),
                 ("content/guide/install.md", "# Install\n"),
                 ("docs/README.md", "# Not the source\n"),
@@ -790,7 +821,7 @@ mod tests {
         let root = scratch_site("wipe", &files);
         let site = root.join("site");
         let build_into = |destination: &str| {
-            let site_cfg = format!("destination: {destination}\n");
+            let site_cfg = format!("theme: ./theme\ndestination: {destination}\n");
             fs::write(site.join("little.yml"), site_cfg).unwrap();
             build(&site)
         };
@@ -823,6 +854,7 @@ mod tests {
         let site = scratch_site(
             "types",
             &[
+                ("little.yml", "theme: ./theme\n"),
                 ("docs/README.md", "# Home\n"),
                 (
                     "docs/guide/README.md",
@@ -880,6 +912,7 @@ mod tests {
         let site = scratch_site(
             "failed",
             &[
+                ("little.yml", "theme: ./theme\n"),
                 ("docs/README.md", "# Home\n"),
                 ("theme/_templates/default.html", "{{ page.title }}"),
             ],
@@ -912,6 +945,7 @@ mod tests {
         let site = scratch_site(
             "clash",
             &[
+                ("little.yml", "theme: ./theme\n"),
                 ("docs/README.md", "# Home\n"),
                 ("docs/guide/install.md", "# Install\n"),
                 ("theme/_templates/default.html", "{{ page.title }}"),
@@ -925,25 +959,22 @@ mod tests {
 
         // ...but not on one, or where one's folder goes.
         let static_dir = site.join("theme").join("_static");
+        let built_from = |file: &str| {
+            let source = site.join("docs").join(file);
+            format!("the page built from {}", source.display())
+        };
         for (file, page) in [
-            ("index.html", site.join("docs").join("README.md")),
-            ("guide/install", site.join("docs/guide/install.md")),
-            (
-                "guide/install/index.html",
-                site.join("docs/guide/install.md"),
-            ),
-            ("404.html", site.join("theme/_templates/404.html")),
+            ("index.html", built_from("README.md")),
+            ("guide/install", built_from("guide/install.md")),
+            ("guide/install/index.html", built_from("guide/install.md")),
+            ("404.html", "the 404 page".to_string()),
         ] {
             let path = static_dir.join(file);
             fs::create_dir_all(path.parent().unwrap()).unwrap();
             fs::write(&path, "static").unwrap();
             let message = format!("{:#}", build(&site).unwrap_err());
-            let expected = format!(
-                "{} clashes with the page built from {}",
-                path.display(),
-                page.display()
-            );
-            assert!(message.contains(&expected), "{message}");
+            let expected = format!("{} clashes with {page}", path.display());
+            assert_eq!(message, expected);
             fs::remove_file(&path).unwrap();
         }
         let home = fs::read_to_string(site.join("dist/index.html")).unwrap();

@@ -1,5 +1,7 @@
-# Theme config — this theme's defaults. little leaves a site's name, language,
-# and look to the theme, and the site's little.yml can still override any of it.
+# The built-in theme's config — its defaults. little leaves a site's name,
+# language, and look to the theme, and the site's little.yml can still override
+# any of it. This theme is compiled into little, so it builds on nothing: don't
+# set `theme` here.
 name: "Documentation"
 lang: en
 font: "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif"

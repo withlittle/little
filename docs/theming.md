@@ -63,7 +63,8 @@ so the name of this site is declared by the other two:
 2. **site** override — in `little.yml`
 
 Open `theme/little.yml` and `little.yml` and change `name`. Save. The header updates live —
-and if you delete the site's value, the theme's value takes over. That's the cascade.
+and if you delete the site's value, the theme's value takes over. That's the cascade. To see
+the merged result without building, run `little config`.
 
 Both files are optional. A theme or site with nothing to set can leave out its
 `little.yml` (an empty one is fine too), and the levels before it still apply. Because
@@ -82,9 +83,10 @@ my-theme/
 ```
 
 This theme keeps its stylesheet at `_static/assets/style.css`, so its pages link to
-`/assets/style.css`. This site doesn't set `theme`, so it gets little's built-in theme, the
-one in `theme/`. To use a theme kept somewhere else, point `theme` at its folder in the
-site's `little.yml`:
+`/assets/style.css`. It's little's built-in theme, compiled into little from `theme/`, so a
+site that doesn't set `theme` gets it. This site sets `theme: ./theme` to use the folder
+instead, so edits to it reload live. To use a theme kept somewhere else, point `theme` at its
+folder in the site's `little.yml`:
 
 ```yaml
 theme: ./path/to/my/theme
@@ -92,6 +94,9 @@ theme: ./path/to/my/theme
 
 The path is relative to the site's folder, or absolute, like `/Users/you/my-theme` on macOS
 or `C:\Users\you\my-theme` on Windows. (Leave a Windows path unquoted or use single quotes:
-inside double quotes, YAML reads `\` as an escape.) Only the site chooses its theme, so a
-theme's own `little.yml` can't set `theme`. `little serve` watches whichever theme the site
-uses, so theme edits reload live too.
+inside double quotes, YAML reads `\` as an escape.) `little serve` watches whichever theme
+the site uses, so theme edits reload live too.
+
+A theme's own `little.yml` can set `theme` too, relative to the theme's folder, to build on
+another theme. Its settings go over that theme's, and so do its templates and static files,
+file by file, so a theme that only changes some colours can be just a `little.yml`.

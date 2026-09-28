@@ -7,18 +7,43 @@
 //! ├── _templates/   the templates; default.html is required
 //! └── little.yml    optional: the theme's config
 //! ```
+//!
+//! A theme can build on another (see `config`). Its files then go over the
+//! other theme's, file by file, so it only needs the ones it changes.
 
-use anyhow::{Result, bail};
+use anyhow::{Context, Result, bail};
 use minijinja::{Environment, ErrorKind, Value, path_loader};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
+use std::fmt;
 use std::path::{Path, PathBuf};
+use walkdir::WalkDir;
 
 /// The folder of a theme's templates, which can extend and include each other.
-pub const TEMPLATES_DIR: &str = "_templates";
+const TEMPLATES_DIR: &str = "_templates";
 /// The folder of a theme's static files, copied as-is to the site's root.
-pub const STATIC_DIR: &str = "_static";
+const STATIC_DIR: &str = "_static";
 /// The template for any type of page without its own. Every theme has one.
 const DEFAULT_TEMPLATE: &str = "default.html";
+
+/// little's built-in theme: the `theme/` folder, compiled into the binary so a
+/// site needs nothing but its Markdown. Every file in `theme/` is listed here.
+pub mod builtin {
+    /// Its config.
+    pub const CONFIG: &str = include_str!("../theme/little.yml");
+    /// Its templates, by name.
+    pub const TEMPLATES: &[(&str, &str)] = &[
+        ("404.html", include_str!("../theme/_templates/404.html")),
+        (
+            "default.html",
+            include_str!("../theme/_templates/default.html"),
+        ),
+    ];
+    /// Its static files, by their path from `_static/`.
+    pub const STATIC: &[(&str, &[u8])] = &[(
+        "assets/style.css",
+        include_bytes!("../theme/_static/assets/style.css"),
+    )];
+}
 
 /// The types of page little builds. A theme can give each one its own
 /// template, named after the type.
@@ -58,39 +83,144 @@ impl PageType {
     }
 }
 
+/// Where a theme is.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Location {
+    /// little's built-in theme.
+    BuiltIn,
+    /// A theme in a folder.
+    Folder(PathBuf),
+}
+
+impl Location {
+    /// The theme's folder, unless it's built in.
+    pub fn folder(&self) -> Option<&Path> {
+        match self {
+            Self::BuiltIn => None,
+            Self::Folder(dir) => Some(dir),
+        }
+    }
+
+    /// Name the file at `path` in the theme, for an error.
+    fn describe(&self, path: &str) -> String {
+        match self {
+            Self::BuiltIn => format!("{path} in little's built-in theme"),
+            Self::Folder(dir) => dir.join(path).display().to_string(),
+        }
+    }
+
+    /// The source of the theme's template `name`, if it has one.
+    fn template(&self, name: &str) -> Result<Option<String>, minijinja::Error> {
+        match self {
+            Self::BuiltIn => Ok(builtin::TEMPLATES
+                .iter()
+                .find(|(builtin, _)| *builtin == name)
+                .map(|(_, source)| source.to_string())),
+            Self::Folder(dir) => path_loader(dir.join(TEMPLATES_DIR))(name),
+        }
+    }
+
+    /// The theme's own static files.
+    fn static_files(&self) -> Result<Vec<StaticFile>> {
+        let static_dir = match self {
+            Self::BuiltIn => {
+                let file = |&(path, contents): &(&str, &[u8])| StaticFile {
+                    path: PathBuf::from(path),
+                    origin: self.describe(&format!("{STATIC_DIR}/{path}")),
+                    contents: contents.to_vec(),
+                };
+                return Ok(builtin::STATIC.iter().map(file).collect());
+            }
+            Self::Folder(dir) => dir.join(STATIC_DIR),
+        };
+        let mut files = Vec::new();
+        if !static_dir.is_dir() {
+            return Ok(files);
+        }
+        for entry in WalkDir::new(&static_dir) {
+            let entry = entry?;
+            if entry.file_type().is_dir() {
+                continue;
+            }
+            let path = entry.path();
+            files.push(StaticFile {
+                path: path.strip_prefix(&static_dir)?.to_path_buf(),
+                origin: path.display().to_string(),
+                contents: std::fs::read(path)
+                    .with_context(|| format!("reading {}", path.display()))?,
+            });
+        }
+        Ok(files)
+    }
+}
+
+impl fmt::Display for Location {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::BuiltIn => f.write_str("little's built-in theme"),
+            Self::Folder(dir) => write!(f, "{}", dir.display()),
+        }
+    }
+}
+
+/// One of a theme's static files, read and ready to copy to the site's root.
+pub struct StaticFile {
+    /// Its path from `_static/`, and so from the site's root.
+    pub path: PathBuf,
+    /// The file it's read from, to name it in errors.
+    pub origin: String,
+    pub contents: Vec<u8>,
+}
+
 /// A theme, loaded and ready to render pages.
 pub struct Theme {
     env: Environment<'static>,
     /// The template each type of page is rendered with. A type that isn't
     /// here isn't rendered at all.
     templates: HashMap<PageType, &'static str>,
-    static_dir: Option<PathBuf>,
+    /// The theme the site chose, then each theme it builds on in turn.
+    themes: Vec<Location>,
 }
 
 impl Theme {
-    /// Load the theme in `dir`. A build does this before it touches its
-    /// destination, so a theme that can't build the site doesn't cost it its
-    /// last build.
-    pub fn load(dir: &Path) -> Result<Self> {
-        let templates_dir = dir.join(TEMPLATES_DIR);
+    /// Load the first of `themes`, which builds on the rest in turn. A build
+    /// does this before it touches its destination, so a theme that can't
+    /// build the site doesn't cost it its last build.
+    pub fn load(themes: &[Location]) -> Result<Self> {
+        let Some(top) = themes.first() else {
+            bail!("little can't build a site without a theme (`theme: false`) yet");
+        };
         let mut env = Environment::new();
-        // Templates are read as they're needed, by name, so the folder can
-        // hold other files (a README, say) without little trying to parse them.
-        env.set_loader(path_loader(&templates_dir));
+        // Templates are read as they're needed, by name, so a theme's folder
+        // can hold other files (a README, say) without little trying to parse
+        // them. Each comes from the first theme that has it, so a theme can
+        // replace any of the templates of the one it builds on.
+        let chain = themes.to_vec();
+        env.set_loader(move |name| {
+            for theme in &chain {
+                if let Some(source) = theme.template(name)? {
+                    return Ok(Some(source));
+                }
+            }
+            Ok(None)
+        });
         // Loading a template compiles it, so a broken one fails the build now,
         // rather than when the first page needs it.
         let has_template = |name: &str| match env.get_template(name) {
             Ok(_) => Ok(true),
             Err(e) if e.kind() == ErrorKind::TemplateNotFound => Ok(false),
-            Err(e) => Err(anyhow::Error::new(e)
-                .context(format!("loading {}", templates_dir.join(name).display()))),
+            Err(e) => {
+                let origin = themes
+                    .iter()
+                    .find(|theme| !matches!(theme.template(name), Ok(None)))
+                    .unwrap_or(top);
+                let file = origin.describe(&format!("{TEMPLATES_DIR}/{name}"));
+                Err(anyhow::Error::new(e).context(format!("loading {file}")))
+            }
         };
 
         if !has_template(DEFAULT_TEMPLATE)? {
-            bail!(
-                "theme {} has no {TEMPLATES_DIR}/{DEFAULT_TEMPLATE}, which every theme needs",
-                dir.display()
-            );
+            bail!("theme {top} has no {TEMPLATES_DIR}/{DEFAULT_TEMPLATE}, which every theme needs");
         }
         let mut templates = HashMap::new();
         for page_type in PageType::ALL {
@@ -104,11 +234,10 @@ impl Theme {
             }
         }
 
-        let static_dir = dir.join(STATIC_DIR);
         Ok(Self {
             env,
             templates,
-            static_dir: static_dir.is_dir().then_some(static_dir),
+            themes: themes.to_vec(),
         })
     }
 
@@ -121,9 +250,16 @@ impl Theme {
         Ok(Some(self.env.get_template(name)?.render(ctx)?))
     }
 
-    /// The theme's `_static/` folder, if it has one.
-    pub fn static_dir(&self) -> Option<&Path> {
-        self.static_dir.as_deref()
+    /// The static files of every theme, merged: where two have a file at the
+    /// same path, the one nearer the site wins.
+    pub fn static_files(&self) -> Result<Vec<StaticFile>> {
+        let mut files = BTreeMap::new();
+        for theme in &self.themes {
+            for file in theme.static_files()? {
+                files.entry(file.path.clone()).or_insert(file);
+            }
+        }
+        Ok(files.into_values().collect())
     }
 }
 
@@ -146,6 +282,11 @@ mod tests {
         root
     }
 
+    /// Load the theme in `dir`, which builds on nothing.
+    fn load(dir: &Path) -> Result<Theme> {
+        Theme::load(&[Location::Folder(dir.to_path_buf())])
+    }
+
     /// What `theme` renders for each type of page, `None` for types it skips.
     fn render_each(theme: &Theme) -> Vec<Option<String>> {
         PageType::ALL
@@ -153,6 +294,17 @@ mod tests {
             .map(|&page_type| {
                 let ctx = context! { page => context! { type => page_type.name() } };
                 theme.render(page_type, ctx).unwrap()
+            })
+            .collect()
+    }
+
+    /// Each static file's path and contents, as text.
+    fn contents(files: &[StaticFile]) -> Vec<(String, String)> {
+        files
+            .iter()
+            .map(|file| {
+                let path = file.path.to_string_lossy().replace('\\', "/");
+                (path, String::from_utf8_lossy(&file.contents).into_owned())
             })
             .collect()
     }
@@ -166,7 +318,7 @@ mod tests {
                 ("_templates/section.html", "section:{{ page.type }}"),
             ],
         );
-        let rendered = render_each(&Theme::load(&dir).unwrap());
+        let rendered = render_each(&load(&dir).unwrap());
         let expect = |s: &str| Some(s.to_string());
         assert_eq!(
             rendered,
@@ -182,7 +334,7 @@ mod tests {
             let path = dir.join(TEMPLATES_DIR).join(page_type.template());
             std::fs::write(path, "own:{{ page.type }}").unwrap();
         }
-        let rendered = render_each(&Theme::load(&dir).unwrap());
+        let rendered = render_each(&load(&dir).unwrap());
         assert_eq!(
             rendered,
             [
@@ -213,17 +365,65 @@ mod tests {
                 ("_templates/README.md", "How to use {{ this theme"),
             ],
         );
-        let theme = Theme::load(&dir).unwrap();
+        let theme = load(&dir).unwrap();
         let html = theme.render(PageType::Page, context! {}).unwrap();
         assert_eq!(html.as_deref(), Some("<little>default"));
         let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
+    fn a_theme_replaces_the_files_of_the_one_it_builds_on() {
+        let root = scratch(
+            "layers",
+            &[
+                (
+                    "base/_templates/default.html",
+                    r#"<{% include "partials/brand.html" %}>{{ page.type }}"#,
+                ),
+                ("base/_templates/partials/brand.html", "base"),
+                ("base/_static/logo.svg", "base logo"),
+                ("base/_static/css/style.css", "base style"),
+                // Only what it changes.
+                ("company/_templates/partials/brand.html", "company"),
+                ("company/_static/logo.svg", "company logo"),
+            ],
+        );
+        let (company, base) = (root.join("company"), root.join("base"));
+        let chain = [
+            Location::Folder(company.clone()),
+            Location::Folder(base.clone()),
+        ];
+        let theme = Theme::load(&chain).unwrap();
+
+        let ctx = context! { page => context! { type => "page" } };
+        let html = theme.render(PageType::Page, ctx).unwrap();
+        assert_eq!(html.as_deref(), Some("<company>page"));
+        let files = theme.static_files().unwrap();
+        assert_eq!(
+            contents(&files),
+            [
+                ("css/style.css".into(), "base style".into()),
+                ("logo.svg".into(), "company logo".into()),
+            ]
+        );
+        let origin = |dir: &Path, file: &str| dir.join(STATIC_DIR).join(file).display().to_string();
+        assert_eq!(files[0].origin, origin(&base, "css/style.css"));
+        assert_eq!(files[1].origin, origin(&company, "logo.svg"));
+
+        // A broken template is named as the file it's read from.
+        std::fs::write(company.join("_templates/home.html"), "{% if %}").unwrap();
+        let message = format!("{:#}", Theme::load(&chain).err().unwrap());
+        let expected = format!("loading {}", company.join("_templates/home.html").display());
+        assert!(message.starts_with(&expected), "{message}");
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
     fn a_theme_needs_a_working_default_template() {
         let error = |files: &[(&str, &str)]| {
             let dir = scratch("broken", files);
-            let message = format!("{:#}", Theme::load(&dir).err().unwrap());
+            let message = format!("{:#}", load(&dir).err().unwrap());
             let _ = std::fs::remove_dir_all(&dir);
             message
         };
@@ -248,11 +448,49 @@ mod tests {
     #[test]
     fn static_files_are_optional() {
         let dir = scratch("static", &[("_templates/default.html", "")]);
-        assert_eq!(Theme::load(&dir).unwrap().static_dir(), None);
+        assert!(load(&dir).unwrap().static_files().unwrap().is_empty());
 
-        std::fs::create_dir_all(dir.join(STATIC_DIR)).unwrap();
-        let theme = Theme::load(&dir).unwrap();
-        assert_eq!(theme.static_dir(), Some(dir.join(STATIC_DIR).as_path()));
+        let png: &[u8] = &[0x89, b'P', b'N', b'G', 0x00, 0xff];
+        std::fs::create_dir_all(dir.join("_static/img")).unwrap();
+        std::fs::write(dir.join("_static/img/logo.png"), png).unwrap();
+        let files = load(&dir).unwrap().static_files().unwrap();
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].path, Path::new("img").join("logo.png"));
+        assert_eq!(files[0].contents, png); // byte for byte
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn the_builtin_theme_is_the_theme_folder() {
+        // Compiled in, its files are listed by hand: this catches one that's
+        // added to theme/ but not to `builtin`.
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("theme");
+        let mut on_disk: Vec<(PathBuf, Vec<u8>)> = WalkDir::new(&dir)
+            .into_iter()
+            .map(Result::unwrap)
+            .filter(|entry| entry.file_type().is_file())
+            .map(|entry| {
+                let path = entry.path().strip_prefix(&dir).unwrap().to_path_buf();
+                (path, std::fs::read(entry.path()).unwrap())
+            })
+            .collect();
+        let mut listed = vec![(PathBuf::from("little.yml"), builtin::CONFIG.into())];
+        for (name, source) in builtin::TEMPLATES {
+            listed.push((
+                Path::new(TEMPLATES_DIR).join(name),
+                source.as_bytes().into(),
+            ));
+        }
+        for (path, contents) in builtin::STATIC {
+            listed.push((Path::new(STATIC_DIR).join(path), contents.to_vec()));
+        }
+        on_disk.sort();
+        listed.sort();
+
+        let paths = |files: &[(PathBuf, Vec<u8>)]| -> Vec<PathBuf> {
+            files.iter().map(|(path, _)| path.clone()).collect()
+        };
+        assert_eq!(paths(&listed), paths(&on_disk), "list every file in theme/");
+        assert!(listed == on_disk, "a listed file includes another file");
     }
 }

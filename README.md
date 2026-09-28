@@ -34,15 +34,13 @@ itself.
 
 ### Start your own site
 
-A site needs a `docs/` folder for content and a theme for templates, which
-little looks for in the site's `theme/` folder. You can choose
-[other folders](#choosing-folders) and [another theme](#choosing-a-theme).
-Until `little init` lands, copy the default theme from this repo:
+A site needs only a `docs/` folder of Markdown, which little builds with its
+built-in theme. You can choose [other folders](#choosing-folders) and
+[another theme](#choosing-a-theme).
 
 ```sh
-mkdir my-docs && cd my-docs
-cp -r /path/to/little/theme .
-mkdir docs && echo "# Hello, little" > docs/README.md
+mkdir -p my-docs/docs && cd my-docs
+echo "# Hello, little" > docs/README.md
 little serve
 ```
 
@@ -54,6 +52,7 @@ Then add a `little.yml` to name your site. See [Configuration](#configuration).
 little build                         # render the site into dist/
 little serve                         # dev server with live reload at http://127.0.0.1:8080
 little serve --addr 127.0.0.1:3000   # serve on a different address or port
+little config                        # print the site's config, merged
 little -C path/to/site build         # work on a site in another directory
 little --help                        # list every command and option
 ```
@@ -61,10 +60,13 @@ little --help                        # list every command and option
 - `build` wipes and regenerates `dist/` (or your
   [destination](#choosing-folders)) every time, so don't keep anything there by
   hand. A build that fails leaves the last one in place.
-- `serve` builds first, then watches the source folder, the theme, and
+- `serve` builds first, then watches the source folder, the theme's folder
+  (and those of the themes it [builds on](#building-on-another-theme)), and
   `little.yml`, rebuilding and refreshing open browser tabs whenever you save.
   If you switch folders or themes, it follows. If a save breaks the build,
   `serve` prints why and keeps serving the last build.
+- `config` prints the [config](#configuration) the theme gets as `site`
+  (without `site.nav`), so you can check a setting without building.
 
 ## Site layout
 
@@ -77,10 +79,6 @@ my-docs/
 │   └── guide/
 │       ├── README.md       # → /guide/
 │       └── install.md      # → /guide/install
-├── theme/                  # the theme, unless little.yml chooses another
-│   ├── _static/            # copied as-is to the site's root (optional)
-│   ├── _templates/         # the templates; default.html is required
-│   └── little.yml          # theme config (optional)
 └── dist/                   # the destination: build output (generated)
 ```
 
@@ -116,7 +114,8 @@ my-docs/
 Config is YAML that cascades through three levels: **little's built-in
 defaults → the theme's `little.yml` → the site's `little.yml`**. Each level is
 deep-merged over the one before, so the last writer wins. Both files are
-optional (an empty file is fine), so a site sets only what it wants to change:
+optional (an empty file is fine), so a site sets only what it wants to change,
+and `little config` prints the result:
 
 ```yaml
 # little.yml
@@ -126,10 +125,10 @@ tagline: "Docs that just work"
 
 Every key reaches the theme as `site.<key>`, so you can add your own. little's
 built-in defaults (see [`src/little.yml`](./src/little.yml)) cover only
-little's own settings, like the [folders](#choosing-folders) a site is built
-from and into; a site's name, language, and look are up to the theme and the
-site. The default theme uses these keys, with defaults from its
-`theme/little.yml`:
+little's own settings, like the [theme](#choosing-a-theme) and the
+[folders](#choosing-folders) a site is built from and into; a site's name,
+language, and look are up to the theme and the site. The built-in theme uses
+these keys, with defaults from its [`little.yml`](./theme/little.yml):
 
 | Key | Default | Used for |
 | --- | ------- | -------- |
@@ -140,22 +139,52 @@ site. The default theme uses these keys, with defaults from its
 
 ### Choosing a theme
 
-A site that doesn't set `theme` gets little's built-in theme, which for now is
-the one in the site's `theme/` folder. To use another theme, such as one shared
-by several sites, point `theme` at its folder:
+`theme` chooses the theme a site is built with:
+
+| `theme` | The site is built with… |
+| ------- | ----------------------- |
+| `true` (the default) | little's built-in theme |
+| `false` | no theme, which `little build` can't do yet |
+| a path, like `../shared/my-theme` | the theme in that folder |
 
 ```yaml
 # little.yml
 theme: ../shared/my-theme
 ```
 
-- Relative paths start from the folder holding `little.yml`, not from where
-  you run `little`.
+- Relative paths start from the folder holding the `little.yml` that sets
+  them, not from where you run `little`.
 - Absolute paths work too, like `/Users/you/my-theme` on macOS or
   `C:\Users\you\my-theme` on Windows. YAML reads `\` as an escape inside
   double quotes, so leave Windows paths unquoted or use single quotes.
-- Only a site chooses its theme, so a theme's own `little.yml` can't set
-  `theme`.
+- Only unquoted `true` and `false` choose the built-in theme or none:
+  `"true"`, `yes`, and `no` are all folder names.
+- little can't download a theme from a URL yet.
+
+### Building on another theme
+
+A theme's own `little.yml` can set `theme` too, to build on another theme. Its
+settings go over that theme's, and its files go over that theme's, file by
+file, so it needs only what it changes. A company theme can be just a
+`little.yml`:
+
+```yaml
+# company-theme/little.yml
+theme: ../fancy-theme   # relative to company-theme/
+font: "Inter, sans-serif"
+colors:
+  accent: navy
+```
+
+A site that uses it cascades **little → fancy-theme → company-theme → site**.
+Themes can build on themes that build on others, but not in a loop.
+
+- A template in `_templates/` replaces the base theme's template at the same
+  path, and a file in `_static/` replaces its file at the same path. Templates
+  can extend and include the base theme's too.
+- A template can't `{% extends %}` the one it replaces: it would extend
+  itself. To change part of a base theme's template, replace a smaller one it
+  `{% include %}`s instead.
 
 ### Choosing folders
 
@@ -174,9 +203,9 @@ source: ./content
 destination: ./public
 ```
 
-- Paths work as they do for `theme`: relative to the folder holding the site's
-  `little.yml`, or absolute. A theme's `little.yml` can set them too, but
-  they're still relative to the site.
+- Paths are relative to the site's folder, the one holding its `little.yml`,
+  or absolute. A theme's `little.yml` can set them too, but they're still
+  relative to the site.
 - Every build wipes the destination, so point it at a folder that holds nothing
   but builds. little leaves a `.little-build` file in each folder it builds,
   and only wipes a folder that has one or is empty: pointed at any other
@@ -193,6 +222,9 @@ my-theme/
 ├── _templates/   # the templates; default.html is required
 └── little.yml    # optional: the theme's config
 ```
+
+little's built-in theme is this repo's [`theme/`](./theme/) folder, compiled
+into little.
 
 Templates are [MiniJinja](https://docs.rs/minijinja) (Jinja2-style). little
 renders each page with the template for its type, or with `default.html` if
@@ -230,7 +262,7 @@ A 404 page has just `page.type` and `page.url` (`/404.html`).
 
 Everything in `_static/` is copied to the site's root as it is, so
 `_static/assets/style.css` becomes `/assets/style.css`. If a static file would
-take the place of a page, the build stops and names both. The default theme's
+take the place of a page, the build stops and names both. The built-in theme's
 [`default.html`](./theme/_templates/default.html) and
 [`404.html`](./theme/_templates/404.html) are complete working examples.
 

@@ -1,4 +1,8 @@
 # Site config — the LAST word in the cascade (little -> theme -> site).
 # Optional: without this file, the theme's config and little's defaults apply.
+
+# The built-in theme is compiled from ./theme; building with the folder instead
+# means editing it live-reloads. Without this, little uses its built-in copy.
+theme: ./theme
 name: "My Project Docs" # overrides the theme's "Documentation"
 tagline: "Docs that just work"
