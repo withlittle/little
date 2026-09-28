@@ -61,10 +61,11 @@ little --help                        # list every command and option
   [destination](#choosing-folders)) every time, so don't keep anything there by
   hand. A build that fails leaves the last one in place.
 - `serve` builds first, then watches the source folder, the theme's folder
-  (and those of the themes it [builds on](#building-on-another-theme)), and
-  `little.yml`, rebuilding and refreshing open browser tabs whenever you save.
-  If you switch folders or themes, it follows. If a save breaks the build,
-  `serve` prints why and keeps serving the last build.
+  (and those of the themes it [builds on](#building-on-another-theme), unless
+  they're [downloaded](#downloading-a-theme)), and `little.yml`, rebuilding and
+  refreshing open browser tabs whenever you save. If you switch folders or
+  themes, it follows. If a save breaks the build, `serve` prints why and keeps
+  serving the last build.
 - `config` prints the [config](#configuration) the theme gets as `site`
   (without `site.nav`), so you can check a setting without building.
 
@@ -146,6 +147,7 @@ these keys, with defaults from its [`little.yml`](./theme/little.yml):
 | `true` (the default) | little's built-in theme |
 | `false` | no theme, which `little build` can't do yet |
 | a path, like `../shared/my-theme` | the theme in that folder |
+| a URL, like `https://example.com/my-theme.tar.gz` | the theme in that archive, [downloaded](#downloading-a-theme) |
 
 ```yaml
 # little.yml
@@ -159,25 +161,49 @@ theme: ../shared/my-theme
   double quotes, so leave Windows paths unquoted or use single quotes.
 - Only unquoted `true` and `false` choose the built-in theme or none:
   `"true"`, `yes`, and `no` are all folder names.
-- little can't download a theme from a URL yet.
+
+### Downloading a theme
+
+Set `theme` to the URL of a theme's `.zip` or `.tar.gz` archive, and the first
+build downloads it. On GitHub, a tag's archive is at
+`https://github.com/OWNER/REPO/archive/refs/tags/TAG.tar.gz`:
+
+```yaml
+# little.yml
+theme: https://github.com/withlittle/theme-bootstrap/archive/refs/tags/0.0.1.tar.gz
+```
+
+- The archive must hold the theme in a single folder, as GitHub's do.
+- little keeps the theme in the site's `.little/` folder, which git ignores,
+  and never downloads that URL again, so later builds work offline. To use
+  another version, change the URL; to download the same URL again (say, a
+  branch's archive, which changes), delete `.little/`.
+- Downloads are over HTTPS only, and little can't sign in, so a private
+  repository's archive answers 404. For safety, an archive holding symlinks,
+  hard links, or paths that lead out of it is an error.
+- `little serve` doesn't watch a downloaded theme, as it never changes.
+- With `source: .`, `.little/` is inside the source, so the Markdown in a
+  downloaded theme (its README, say) becomes pages too.
 
 ### Building on another theme
 
 A theme's own `little.yml` can set `theme` too, to build on another theme. Its
 settings go over that theme's, and its files go over that theme's, file by
 file, so it needs only what it changes. A company theme can be just a
-`little.yml`:
+`little.yml` that builds on a downloaded theme:
 
 ```yaml
 # company-theme/little.yml
-theme: ../fancy-theme   # relative to company-theme/
+theme: https://github.com/withlittle/theme-bootstrap/archive/refs/tags/0.0.1.tar.gz
 font: "Inter, sans-serif"
 colors:
   accent: navy
 ```
 
-A site that uses it cascades **little → fancy-theme → company-theme → site**.
-Themes can build on themes that build on others, but not in a loop.
+A site that uses it cascades **little → theme-bootstrap → company-theme →
+site**. Themes can build on themes that build on others, but not in a loop. In
+a theme's `little.yml`, a path is relative to the theme's folder, and a URL is
+downloaded into the site's `.little/`.
 
 - A template in `_templates/` replaces the base theme's template at the same
   path, and a file in `_static/` replaces its file at the same path. Templates

@@ -3,18 +3,20 @@
 //! little's own file is compiled in; the theme's and the site's are optional.
 //!
 //! `theme` chooses the theme level: `true` for little's built-in theme,
-//! `false` for none, or the path to a theme's folder. A theme can set it too,
-//! to build on another theme, whose settings go beneath its own: a site whose
-//! theme builds on another cascades little -> that theme -> its theme -> site.
+//! `false` for none, the path to a theme's folder, or the URL of a theme's
+//! archive (see `download`). A theme can set it too, to build on another
+//! theme, whose settings go beneath its own: a site whose theme builds on
+//! another cascades little -> that theme -> its theme -> site.
 //!
 //! `source` and `destination` name the folders a site is built from and
 //! into. Any level can set them, but they're always relative to the site.
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result, anyhow, bail};
 use serde_yaml::{Mapping, Value};
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 
+use crate::download;
 use crate::theme::{self, Location};
 
 /// The config file a theme and a site may each provide.
@@ -47,10 +49,11 @@ fn builtin_defaults() -> Mapping {
 pub fn load(site_dir: &Path) -> Result<Config> {
     let defaults = builtin_defaults();
     let site_file = site_dir.join(CONFIG_FILE);
-    let site_cfg = read_config(&site_file)?;
+    let site_name = site_file.display().to_string();
+    let site_cfg = read_config(&site_file, &site_name)?;
 
     let mut next = match site_cfg.get("theme").or(defaults.get("theme")) {
-        Some(value) => choose_theme(value, site_dir, &site_file)?,
+        Some(value) => choose_theme(value, site_dir, &site_name, site_dir)?,
         None => None,
     };
     let mut themes = Vec::new();
@@ -59,12 +62,12 @@ pub fn load(site_dir: &Path) -> Result<Config> {
     // in a loop however their paths are written.
     let mut seen = Vec::new();
     while let Some(location) = next {
-        let cfg = match &location {
-            Location::BuiltIn => {
-                next = None; // it builds on nothing
+        let cfg = match location.folder() {
+            None => {
+                next = None; // the built-in theme builds on nothing
                 parse_config(theme::builtin::CONFIG).expect("theme/little.yml holds settings")
             }
-            Location::Folder(dir) => {
+            Some(dir) => {
                 let real = dir
                     .canonicalize()
                     .with_context(|| format!("reading {}", dir.display()))?;
@@ -80,10 +83,10 @@ pub fn load(site_dir: &Path) -> Result<Config> {
                     );
                 }
                 seen.push(real);
-                let file = dir.join(CONFIG_FILE);
-                let cfg = read_config(&file)?;
+                let file = location.describe(CONFIG_FILE);
+                let cfg = read_config(&dir.join(CONFIG_FILE), &file)?;
                 next = match cfg.get("theme") {
-                    Some(value) => choose_theme(value, dir, &file)?,
+                    Some(value) => choose_theme(value, dir, &file, site_dir)?,
                     None => None,
                 };
                 cfg
@@ -110,31 +113,43 @@ pub fn load(site_dir: &Path) -> Result<Config> {
     })
 }
 
-/// The theme a `theme` setting chooses, if any. A path is relative to `dir`,
-/// the folder of the `file` that sets it: a theme can't know where the sites
-/// that use it are.
-fn choose_theme(value: &Value, dir: &Path, file: &Path) -> Result<Option<Location>> {
+/// The theme a `theme` setting chooses, if any. `file` names the file that
+/// sets it, and `dir` is its folder: a path is relative to that, as a theme
+/// can't know where the sites that use it are. A theme downloaded from a URL
+/// is kept in the site at `site_dir`.
+fn choose_theme(
+    value: &Value,
+    dir: &Path,
+    file: &str,
+    site_dir: &Path,
+) -> Result<Option<Location>> {
     match value {
         Value::Bool(true) => Ok(Some(Location::BuiltIn)),
         Value::Bool(false) => Ok(None),
-        Value::String(url) if url.starts_with("https://") || url.starts_with("http://") => bail!(
-            "{} sets `theme` to `{url}`, but little can't download themes yet",
-            file.display()
-        ),
+        Value::String(url) if url.starts_with("https://") => {
+            let dir = download::theme(site_dir, url)
+                .map_err(|e| anyhow!("{file} sets `theme` to `{url}`, but {e:#}"))?;
+            Ok(Some(Location::Downloaded {
+                url: url.clone(),
+                dir,
+            }))
+        }
+        Value::String(url) if url.starts_with("http://") => {
+            bail!("{file} sets `theme` to `{url}`, but little only downloads themes over HTTPS")
+        }
         Value::String(path) => {
             let folder = resolve(dir, path);
             if !folder.is_dir() {
                 bail!(
-                    "{} sets `theme` to `{path}`, but there's no folder at {}",
-                    file.display(),
+                    "{file} sets `theme` to `{path}`, but there's no folder at {}",
                     folder.display()
                 );
             }
             Ok(Some(Location::Folder(folder)))
         }
         _ => bail!(
-            "`theme` in {} must be `true`, `false`, or the path to a theme folder",
-            file.display()
+            "`theme` in {file} must be `true`, `false`, the path to a theme folder, \
+             or the URL of a theme's archive"
         ),
     }
 }
@@ -154,13 +169,13 @@ fn resolve(dir: &Path, path: &str) -> PathBuf {
     dir.join(path).components().collect()
 }
 
-/// Read one level's config. A missing file isn't an error: that level just
-/// has nothing to add.
-fn read_config(path: &Path) -> Result<Mapping> {
+/// Read one level's config from `path`, which errors call `name`. A missing
+/// file isn't an error: that level just has nothing to add.
+fn read_config(path: &Path, name: &str) -> Result<Mapping> {
     match std::fs::read_to_string(path) {
-        Ok(raw) => parse_config(&raw).with_context(|| format!("parsing {}", path.display())),
+        Ok(raw) => parse_config(&raw).with_context(|| format!("parsing {name}")),
         Err(e) if e.kind() == ErrorKind::NotFound => Ok(Mapping::new()),
-        Err(e) => Err(e).with_context(|| format!("reading {}", path.display())),
+        Err(e) => Err(e).with_context(|| format!("reading {name}")),
     }
 }
 
@@ -210,6 +225,22 @@ mod tests {
     fn error(site: &Path, site_cfg: &str) -> String {
         std::fs::write(site.join(CONFIG_FILE), site_cfg).unwrap();
         format!("{:#}", load(site).unwrap_err())
+    }
+
+    /// Put `files`, each a (path, contents) pair, where the theme at `url` is
+    /// kept once it's downloaded, so a test needn't download it.
+    fn downloaded(site: &Path, url: &str, files: &[(&str, &str)]) -> Location {
+        let dir = download::folder(site, url);
+        std::fs::create_dir_all(&dir).unwrap();
+        for (file, contents) in files {
+            let path = dir.join(file);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, contents).unwrap();
+        }
+        Location::Downloaded {
+            url: url.to_string(),
+            dir,
+        }
     }
 
     /// little's defaults, with the built-in theme's settings over them.
@@ -341,6 +372,53 @@ mod tests {
     }
 
     #[test]
+    fn a_theme_can_be_downloaded_from_a_url() {
+        let url = "https://example.invalid/fancy-1.0.zip";
+        let site_cfg = format!("theme: {url}\nname: My Docs\n");
+        let site = scratch("url", &[(CONFIG_FILE, &site_cfg)]);
+        let fancy_cfg = "name: Fancy\nfont: serif\nlang: en\n";
+        let fancy = downloaded(&site, url, &[(CONFIG_FILE, fancy_cfg)]);
+
+        // It cascades like any other theme.
+        let cfg = load(&site).unwrap();
+        assert_eq!(cfg.themes, std::slice::from_ref(&fancy));
+        assert_eq!(get(&cfg.values, "font"), Some("serif")); // the theme's
+        assert_eq!(get(&cfg.values, "name"), Some("My Docs")); // the site still wins
+        assert_eq!(get(&cfg.values, "theme"), Some(url));
+
+        // A company's theme can build on it, changing only what it needs to.
+        let company_cfg = format!("theme: {url}\nfont: Inter\n");
+        std::fs::create_dir_all(site.join("company")).unwrap();
+        std::fs::write(site.join("company").join(CONFIG_FILE), company_cfg).unwrap();
+        std::fs::write(site.join(CONFIG_FILE), "theme: ./company\n").unwrap();
+        let company = Location::Folder(site.join("company"));
+        let cfg = load(&site).unwrap();
+        assert_eq!(cfg.themes, [company.clone(), fancy.clone()]);
+        assert_eq!(get(&cfg.values, "font"), Some("Inter")); // the company's
+        assert_eq!(get(&cfg.values, "name"), Some("Fancy")); // the downloaded theme's
+
+        // And it can build on another theme: in its own folder, relative to
+        // that, or downloaded too, or little's built-in theme.
+        let fancy_dir = fancy.folder().unwrap().to_path_buf();
+        let base = Location::Folder(fancy_dir.join("base"));
+        std::fs::create_dir_all(fancy_dir.join("base")).unwrap();
+        let plain_url = "https://example.invalid/plain-2.0.tar.gz";
+        let plain = downloaded(&site, plain_url, &[]);
+        for (theme, beneath) in [
+            ("./base", base),
+            (plain_url, plain),
+            ("true", Location::BuiltIn),
+        ] {
+            let fancy_cfg = format!("theme: {theme}\n");
+            std::fs::write(fancy_dir.join(CONFIG_FILE), fancy_cfg).unwrap();
+            let themes = load(&site).unwrap().themes;
+            assert_eq!(themes, [company.clone(), fancy.clone(), beneath]);
+        }
+
+        let _ = std::fs::remove_dir_all(&site);
+    }
+
+    #[test]
     fn themes_cannot_build_on_each_other_in_a_loop() {
         let site = scratch(
             "loop",
@@ -367,14 +445,30 @@ mod tests {
             "{message}"
         );
 
+        // Downloaded themes are named by their URLs.
+        let (a, b) = (
+            "https://example.invalid/a.zip",
+            "https://example.invalid/b.zip",
+        );
+        downloaded(&site, a, &[(CONFIG_FILE, &format!("theme: {b}\n"))]);
+        downloaded(&site, b, &[(CONFIG_FILE, &format!("theme: {a}\n"))]);
+        let message = error(&site, &format!("theme: {a}\n"));
+        let expected = format!("themes build on each other in a loop: {a} -> {b} -> {a}");
+        assert_eq!(message, expected);
+
         let _ = std::fs::remove_dir_all(&site);
     }
 
     #[test]
     fn bad_theme_choices_explain_themselves() {
         let site = scratch("bad-theme", &[("theme/_templates/default.html", "")]);
-        let file = site.join(CONFIG_FILE);
-        let file = file.display();
+        let file = site.join(CONFIG_FILE).display().to_string();
+        let must_be = |file: &str| {
+            format!(
+                "`theme` in {file} must be `true`, `false`, the path to a theme folder, \
+                 or the URL of a theme's archive"
+            )
+        };
 
         let message = error(&site, "theme: ./missing\n");
         let expected = format!(
@@ -392,26 +486,42 @@ mod tests {
         // Nothing, or anything but `true`, `false`, or text, isn't a theme.
         for theme in ["", " [a, b]", " 1"] {
             let message = error(&site, &format!("theme:{theme}\n"));
-            let expected =
-                format!("`theme` in {file} must be `true`, `false`, or the path to a theme folder");
-            assert_eq!(message, expected);
+            assert_eq!(message, must_be(&file));
         }
 
-        let url = "https://github.com/withlittle/fancy_theme/archive/refs/tags/5.0.4.zip";
+        // Themes are only downloaded over HTTPS.
+        let url = "http://example.invalid/theme.zip";
         let message = error(&site, &format!("theme: {url}\n"));
         let expected =
-            format!("{file} sets `theme` to `{url}`, but little can't download themes yet");
+            format!("{file} sets `theme` to `{url}`, but little only downloads themes over HTTPS");
         assert_eq!(message, expected);
+        // A download that fails says why. Nothing listens on port 1, so this
+        // one fails at once, without the network.
+        let url = "https://127.0.0.1:1/theme.zip";
+        let message = error(&site, &format!("theme: {url}\n"));
+        let expected = format!("{file} sets `theme` to `{url}`, but little couldn't download it: ");
+        assert!(message.starts_with(&expected), "{message}");
 
         // A theme's own `theme` is checked the same way, and named as its.
         let theme_file = site.join("theme").join(CONFIG_FILE);
         std::fs::write(&theme_file, "theme: [a, b]\n").unwrap();
         let message = error(&site, "theme: ./theme\n");
-        let expected = format!(
-            "`theme` in {} must be `true`, `false`, or the path to a theme folder",
-            theme_file.display()
+        assert_eq!(message, must_be(&theme_file.display().to_string()));
+
+        // A downloaded theme's folder is named with a hash, so its files are
+        // named by its URL.
+        let url = "https://example.invalid/fancy-1.0.zip";
+        let fancy_file = format!("{CONFIG_FILE} in the theme from {url}");
+        let fancy = downloaded(&site, url, &[(CONFIG_FILE, "theme: [a, b]\n")]);
+        let message = error(&site, &format!("theme: {url}\n"));
+        assert_eq!(message, must_be(&fancy_file));
+        let fancy_cfg = fancy.folder().unwrap().join(CONFIG_FILE);
+        std::fs::write(fancy_cfg, "- font: serif\n").unwrap();
+        let message = error(&site, &format!("theme: {url}\n"));
+        assert!(
+            message.starts_with(&format!("parsing {fancy_file}: ")),
+            "{message}"
         );
-        assert_eq!(message, expected);
 
         let _ = std::fs::remove_dir_all(&site);
     }

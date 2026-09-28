@@ -766,6 +766,53 @@ mod tests {
     }
 
     #[test]
+    fn builds_with_a_theme_that_builds_on_a_downloaded_one() {
+        let url = "https://example.invalid/fancy-1.0.zip";
+        let company_cfg = format!("theme: {url}\ngreeting: Hi\n");
+        let site = scratch_site(
+            "downloaded",
+            &[
+                ("little.yml", "theme: ./company\n"),
+                ("docs/README.md", "# Home\n"),
+                ("company/little.yml", &company_cfg),
+                ("company/_static/logo.svg", "company logo"),
+            ],
+        );
+        // Where it's kept once it's downloaded, so the test needn't download it.
+        let fancy = crate::download::folder(&site, url);
+        for (file, contents) in [
+            ("little.yml", "greeting: Hello\n"),
+            (
+                "_templates/default.html",
+                "{{ site.greeting }} from {{ page.title }}",
+            ),
+            ("_static/logo.svg", "fancy logo"),
+            ("_static/style.css", "body {}\n"),
+        ] {
+            let path = fancy.join(file);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, contents).unwrap();
+        }
+
+        build(&site).unwrap();
+
+        let read = |path: &str| fs::read_to_string(site.join("dist").join(path)).unwrap();
+        assert_eq!(read("index.html"), "Hi from Home");
+        assert_eq!(read("logo.svg"), "company logo");
+        assert_eq!(read("style.css"), "body {}\n");
+
+        // Its folder is named with a hash, so its files are named by its URL.
+        fs::write(fancy.join("_static/index.html"), "static").unwrap();
+        let message = format!("{:#}", build(&site).unwrap_err());
+        let expected = format!(
+            "_static/index.html in the theme from {url} clashes with the page built from {}",
+            site.join("docs").join("README.md").display()
+        );
+        assert_eq!(message, expected);
+        let _ = fs::remove_dir_all(&site);
+    }
+
+    #[test]
     fn a_build_needs_a_source_folder_and_a_theme() {
         let site = scratch_site("needs", &[("little.yml", "name: My Docs\n")]);
         let message = format!("{:#}", build(&site).unwrap_err());

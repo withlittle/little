@@ -3,6 +3,7 @@
 - Status: accepted
 - Date: 2026-09-28
 - Amends: [0002](./0002-theme-structure.md)
+- Amended by: [0004](./0004-downloading-themes.md)
 
 ## Context
 A site that didn't set `theme` used the theme in its own `theme/` folder, so
@@ -26,8 +27,8 @@ And there was no way to see the merged config without building the site.
 ## Decision
 - `theme` is `true` (little's default: the built-in theme), `false` (no
   theme), or the path to a theme's folder, relative to the folder of the
-  `little.yml` that sets it. Anything else is an error. URLs come next; for
-  now they're an error too.
+  `little.yml` that sets it. Anything else is an error. URLs came next, in
+  [0004](./0004-downloading-themes.md).
 - The built-in theme is this repo's `theme/` folder, compiled into little. It
   builds on nothing.
 - A theme's `little.yml` can set `theme`, to build on another theme. The

@@ -84,7 +84,8 @@ struct Sources {
     tx: Sender<notify::Result<Event>>,
     /// The site's config, which chooses the folders below.
     _config: RecommendedWatcher,
-    /// The source folder, and the folder of each theme in the chain.
+    /// The source folder, and the folder of each theme in the chain that
+    /// isn't built in or downloaded.
     source: Option<(Watched, RecommendedWatcher)>,
     themes: Vec<(Watched, RecommendedWatcher)>,
 }
@@ -118,12 +119,15 @@ impl Sources {
             let watcher = watch_folder(&source.0, &source.1, self.tx.clone())?;
             self.source = Some((source, watcher));
         }
-        // The built-in theme is in the binary, so only theme folders change.
+        // The built-in theme is in the binary, and a downloaded theme never
+        // changes, so only the folders of the other themes are watched.
         let themes: Vec<Watched> = cfg
             .themes
             .iter()
-            .filter_map(Location::folder)
-            .map(|dir| (dir.to_path_buf(), cfg.destination_dir.clone()))
+            .filter_map(|theme| match theme {
+                Location::Folder(dir) => Some((dir.clone(), cfg.destination_dir.clone())),
+                Location::BuiltIn | Location::Downloaded { .. } => None,
+            })
             .collect();
         if !themes
             .iter()
@@ -521,6 +525,33 @@ mod tests {
         // config, so it goes last.
         assert_only_edits_wake(&site_dir, &site_dir.join("theme/_static/style.css"));
         assert_only_edits_wake(&site_dir, &company_cfg);
+        let _ = std::fs::remove_dir_all(&site_dir);
+    }
+
+    #[test]
+    fn the_watcher_skips_downloaded_themes() {
+        // A company's theme that builds on a downloaded one...
+        let site_dir = scratch_site("downloaded");
+        let url = "https://example.invalid/fancy-1.0.zip";
+        std::fs::write(site_dir.join("little.yml"), "theme: ./company\n").unwrap();
+        let company = site_dir.join("company");
+        std::fs::create_dir_all(company.join("_static")).unwrap();
+        std::fs::write(company.join("little.yml"), format!("theme: {url}\n")).unwrap();
+        let company_css = company.join("_static/company.css");
+        std::fs::write(&company_css, "body {}\n").unwrap();
+        // ...kept where it would be once downloaded, so the test needn't
+        // download it.
+        let fancy = crate::download::folder(&site_dir, url);
+        std::fs::create_dir_all(fancy.parent().unwrap()).unwrap();
+        std::fs::rename(site_dir.join("theme"), &fancy).unwrap();
+
+        {
+            let (_sources, rx) = watch_built_site(&site_dir);
+            std::fs::write(fancy.join("_static/style.css"), "body { margin: 0 }\n").unwrap();
+            let event = rx.recv_timeout(Duration::from_millis(500));
+            assert!(event.is_err(), "a downloaded theme is watched: {event:?}");
+        }
+        assert_only_edits_wake(&site_dir, &company_css);
         let _ = std::fs::remove_dir_all(&site_dir);
     }
 
