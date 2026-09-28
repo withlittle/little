@@ -33,6 +33,8 @@ enum Commands {
         #[arg(long, default_value = "127.0.0.1:8080")]
         addr: String,
     },
+    /// Print the site's config: little's, its theme's, and its own, merged
+    Config,
 }
 
 fn main() -> Result<()> {
@@ -42,6 +44,10 @@ fn main() -> Result<()> {
             site::build(&cli.dir)?;
         }
         Commands::Serve { addr } => server::serve(&cli.dir, &addr)?,
+        Commands::Config => {
+            let cfg = config::load(&cli.dir)?;
+            print!("{}", serde_yaml::to_string(&cfg.values)?);
+        }
     }
     Ok(())
 }

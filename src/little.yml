@@ -2,12 +2,13 @@
 # It's compiled into the binary, and the theme and the site can override any
 # of it. Only settings little itself owns belong here: a site's name, language,
 # and look are the theme's to default and the site's to set.
-#
-# There's deliberately no `theme` here: a site that doesn't choose one gets
-# little's built-in theme.
 
 # The folder of Markdown files a site is built from, and the folder it's built
 # into, which every build wipes. Wherever they're set, they're relative to the
 # site's folder.
 source: ./docs
 destination: ./dist
+
+# The theme a site is built with: `true` for little's built-in theme, `false`
+# for none, or the path to a theme's folder.
+theme: true
