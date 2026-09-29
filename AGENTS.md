@@ -18,7 +18,8 @@ cargo fmt                   # format — run before committing
 ## Architecture (keep the core small)
 - `src/main.rs` — CLI (clap): `build`, `serve`, `config`.
 - `src/config.rs` — the 3-level cascading config (little → theme → site): the
-  chain of themes a site uses, and its source and destination folders.
+  chain of themes a site uses, its source and destination folders, and the
+  levels of heading its tables of contents list.
 - `src/little.yml` — little's own defaults (level 1), compiled into the binary.
 - `src/render.rs` — Markdown (comrak) + YAML frontmatter → HTML fragment.
 - `src/site.rs` — build pipeline: walk the source (`docs/`), render, apply
@@ -104,4 +105,9 @@ Record notable choices as short ADRs in `decisions/`. Locked so far:
   authors write the same names in frontmatter: `page.toc`, not `page.nav`,
   beside `page.prev` and `page.next` — see
   [`decisions/0008-page-toc.md`](./decisions/0008-page-toc.md).
+- **Which headings a page's table of contents lists:** the levels from
+  `toc_min_depth` to `toc_max_depth`, which cascade like any config: little
+  sets 2 to 6, every heading but the page's `#` title, and the built-in theme
+  a max of 3 — see
+  [`decisions/0009-toc-depth-in-config.md`](./decisions/0009-toc-depth-in-config.md).
 - **Plugins:** sandboxed WASM (planned).

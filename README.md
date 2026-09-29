@@ -126,7 +126,9 @@ my-docs/
   ```
 
 - **On this page.** Each page's `##` and `###` headings become its table of
-  contents, with each `###` under the `##` above it.
+  contents, with each `###` under the `##` above it. To list other levels of
+  heading, set [`toc_min_depth` and
+  `toc_max_depth`](#choosing-headings-for-tables-of-contents).
 
 ## Configuration
 
@@ -144,10 +146,12 @@ tagline: "Docs that just work"
 
 Every key reaches the theme as `site.<key>`, so you can add your own. little's
 built-in defaults (see [`src/little.yml`](./src/little.yml)) cover only
-little's own settings, like the [theme](#choosing-a-theme) and the
-[folders](#choosing-folders) a site is built from and into; a site's name,
-language, and look are up to the theme and the site. The built-in theme uses
-these keys, with defaults from its [`little.yml`](./theme/little.yml):
+little's own settings, like the [theme](#choosing-a-theme), the
+[folders](#choosing-folders) a site is built from and into, and the
+[headings](#choosing-headings-for-tables-of-contents) its tables of contents
+list; a site's name, language, and look are up to the theme and the site. The
+built-in theme uses these keys, with defaults from its
+[`little.yml`](./theme/little.yml):
 
 | Key | Default | Used for |
 | --- | ------- | -------- |
@@ -255,6 +259,32 @@ destination: ./public
   and only wipes a folder that has one or is empty: pointed at any other
   folder, a build stops instead.
 
+### Choosing headings for tables of contents
+
+Each page's table of contents lists its headings from one level to another, 2
+for `##` to 6 for `######`:
+
+| Key | Default | Lists headings… |
+| --- | ------- | --------------- |
+| `toc_min_depth` | `2`, for `##` | from this level |
+| `toc_max_depth` | `6`, for `######`; `3`, for `###`, in the built-in theme | down to this level |
+
+To list the `####` headings too, say, set it in `little.yml`:
+
+```yaml
+# little.yml
+toc_max_depth: 4
+```
+
+- A page's `#` heading is its title, so tables of contents start at `##`.
+  With `toc_min_depth: 1`, they list it too, and the other headings under it.
+- A theme can set them in its `little.yml`, as the built-in theme does, and
+  the site's `little.yml` has the last word. They're the same for every page:
+  a page can only turn its table of contents off, with `toc: false` in its
+  frontmatter.
+- Each must be a level from 1 to 6, and `toc_min_depth` can't be more than
+  `toc_max_depth`: otherwise, the build stops and says why.
+
 ## Theming
 
 The theme owns 100% of the markup; little bakes in no HTML. A theme is a
@@ -298,7 +328,7 @@ rather than setting it to null, so `{% if page.description %}` and
 | `page.url` | The page's URL, e.g. `/guide/install`; compare it with `item.url` to mark the current nav item |
 | `page.title` | The page title |
 | `page.content` | The rendered Markdown as HTML; output it with the `safe` filter |
-| `page.toc` | The page's table of contents (its `##`/`###` headings), shaped like `site.nav`: a list of `{ title, url, children }`, where `url` is the heading's `#fragment` and each `###` is a child of the `##` above it |
+| `page.toc` | The page's table of contents (its headings from [`toc_min_depth` to `toc_max_depth`](#choosing-headings-for-tables-of-contents)), shaped like `site.nav`: a list of `{ title, url, children }`, where `url` is the heading's `#fragment` and each heading is a child of the nearest one above it with fewer `#`s, like a `###` of the `##` above it |
 | `page.children` | Home and section pages only: what else is in the page's folder, shaped like `site.nav` |
 | `page.prev` | The page before this one in `site.nav`, read from top to bottom: `{ title, url }`. The first page has none |
 | `page.next` | The page after this one in `site.nav`: `{ title, url }`. The last page has none |
