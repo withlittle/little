@@ -10,10 +10,14 @@
 //!
 //! `source` and `destination` name the folders a site is built from and
 //! into. Any level can set them, but they're always relative to the site.
+//!
+//! `toc_min_depth` and `toc_max_depth` are the levels of heading, from 1 for
+//! `#` to 6, that each page's table of contents lists.
 
 use anyhow::{Context, Result, anyhow, bail};
 use serde_yaml::{Mapping, Value};
 use std::io::ErrorKind;
+use std::ops::RangeInclusive;
 use std::path::{Path, PathBuf};
 
 use crate::download;
@@ -35,6 +39,9 @@ pub struct Config {
     pub source_dir: PathBuf,
     /// The folder the site is built into, which every build wipes.
     pub destination_dir: PathBuf,
+    /// The levels of heading each page's table of contents lists, from
+    /// `toc_min_depth` to `toc_max_depth`.
+    pub toc_depths: RangeInclusive<u8>,
 }
 
 /// little's built-in defaults: level 1 of the cascade. They live in
@@ -105,11 +112,13 @@ pub fn load(site_dir: &Path) -> Result<Config> {
 
     let source_dir = folder(site_dir, &values, "source")?;
     let destination_dir = folder(site_dir, &values, "destination")?;
+    let toc_depths = toc_depths(&values)?;
     Ok(Config {
         values,
         themes,
         source_dir,
         destination_dir,
+        toc_depths,
     })
 }
 
@@ -160,6 +169,26 @@ fn folder(site_dir: &Path, values: &Mapping, key: &str) -> Result<PathBuf> {
     match values.get(key) {
         Some(Value::String(path)) => Ok(resolve(site_dir, path)),
         _ => bail!("`{key}` must be the path to a folder"),
+    }
+}
+
+/// The levels of heading a table of contents lists. The min and max can be
+/// set at different levels of the cascade, so a min over the max, which would
+/// leave every table of contents empty, is an error.
+fn toc_depths(values: &Mapping) -> Result<RangeInclusive<u8>> {
+    let min = heading_level(values, "toc_min_depth")?;
+    let max = heading_level(values, "toc_max_depth")?;
+    if min > max {
+        bail!("`toc_min_depth` ({min}) can't be more than `toc_max_depth` ({max})");
+    }
+    Ok(min..=max)
+}
+
+/// The level of heading a setting names, like 2 for `##`.
+fn heading_level(values: &Mapping, key: &str) -> Result<u8> {
+    match values.get(key).and_then(Value::as_u64) {
+        Some(level @ 1..=6) => Ok(level as u8),
+        _ => bail!("`{key}` must be a heading level from 1 to 6, like 3 for `###`"),
     }
 }
 
@@ -357,6 +386,8 @@ mod tests {
             "source: ./docs\n\
              destination: ./dist\n\
              theme: ./company\n\
+             toc_min_depth: 2\n\
+             toc_max_depth: 6\n\
              name: My Docs\n\
              font: Inter\n\
              lang: en\n\
@@ -584,6 +615,47 @@ mod tests {
     }
 
     #[test]
+    fn toc_depths_cascade() {
+        let site = scratch("toc-depths", &[("theme/_templates/default.html", "")]);
+        let depths = |site_cfg: &str| {
+            std::fs::write(site.join(CONFIG_FILE), site_cfg).unwrap();
+            load(&site).unwrap().toc_depths
+        };
+
+        // little lists every heading but a page's `#` title, the built-in
+        // theme only `##` and `###`, and a site has the last word.
+        assert_eq!(depths("theme: ./theme\n"), 2..=6);
+        assert_eq!(depths(""), 2..=3);
+        assert_eq!(depths("toc_min_depth: 1\ntoc_max_depth: 6\n"), 1..=6);
+
+        let _ = std::fs::remove_dir_all(&site);
+    }
+
+    #[test]
+    fn bad_toc_depths_explain_themselves() {
+        let site = scratch("bad-toc-depths", &[]);
+        for key in ["toc_min_depth", "toc_max_depth"] {
+            // There's no `#######`, a heading level is a number, and no value
+            // at all isn't one.
+            for value in [" 0", " 7", " -1", " \"3\"", ""] {
+                let message = error(&site, &format!("{key}:{value}\n"));
+                assert_eq!(
+                    message,
+                    format!("`{key}` must be a heading level from 1 to 6, like 3 for `###`")
+                );
+            }
+        }
+
+        // The built-in theme lists down to `###`.
+        assert_eq!(
+            error(&site, "toc_min_depth: 4\n"),
+            "`toc_min_depth` (4) can't be more than `toc_max_depth` (3)"
+        );
+
+        let _ = std::fs::remove_dir_all(&site);
+    }
+
+    #[test]
     fn config_files_hold_settings() {
         let site = scratch("settings", &[]);
         let parsing = format!("parsing {}: ", site.join(CONFIG_FILE).display());
@@ -633,6 +705,8 @@ mod tests {
         assert_eq!(get(&cfg, "source"), Some("./docs"));
         assert_eq!(get(&cfg, "destination"), Some("./dist"));
         assert_eq!(cfg.get("theme"), Some(&Value::Bool(true)));
+        assert_eq!(cfg.get("toc_min_depth").and_then(Value::as_u64), Some(2));
+        assert_eq!(cfg.get("toc_max_depth").and_then(Value::as_u64), Some(6));
         // A site's name, language, and look are the theme's to default.
         for key in ["name", "lang"] {
             assert_eq!(cfg.get(key), None, "little shouldn't default `{key}`");

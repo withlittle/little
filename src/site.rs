@@ -36,8 +36,8 @@ struct Page {
     /// The page's frontmatter, less any key left blank.
     frontmatter: Mapping,
     html: String,
-    /// In-page table of contents: the page's h2–h3 headings, nested like
-    /// `site.nav`.
+    /// In-page table of contents: the page's headings from `toc_min_depth` to
+    /// `toc_max_depth`, nested like `site.nav`.
     toc: Vec<NavItem>,
     page_type: PageType,
 }
@@ -114,6 +114,7 @@ pub fn build(site_dir: &Path) -> Result<PathBuf> {
         themes,
         source_dir,
         destination_dir,
+        toc_depths,
     } = config::load(site_dir)?;
     if !source_dir.is_dir() {
         bail!("there's no source folder at {}", source_dir.display());
@@ -130,7 +131,7 @@ pub fn build(site_dir: &Path) -> Result<PathBuf> {
         let rel = path.strip_prefix(&source_dir)?.to_path_buf();
         let raw =
             fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
-        let rendered = render::parse_document(&raw)
+        let rendered = render::parse_document(&raw, &toc_depths)
             .with_context(|| format!("rendering {}", path.display()))?;
 
         // A key left blank is as good as not there: a page never holds null,
@@ -537,9 +538,10 @@ fn section_item(name: &str, node: &DirNode) -> NavItem {
 }
 
 /// A page's table of contents, shaped like `site.nav`: each heading links to
-/// its `#fragment`, and each `###` goes in the `children` of the `##` above
-/// it. A heading with nothing above it, like a `###` before the first `##`,
-/// goes at the top.
+/// its `#fragment`, and goes in the `children` of the nearest heading above it
+/// with fewer `#`s, so a `####` goes under the `###` above it, or under the
+/// `##` if there's no `###` between them. A heading with nothing above it,
+/// like a `###` before the first `##`, goes at the top.
 fn nest_headings(headings: &[render::TocItem]) -> Vec<NavItem> {
     nest_under(&mut headings.iter().peekable(), 0)
 }
@@ -788,11 +790,13 @@ mod tests {
 
     #[test]
     fn a_page_toc_nests_its_headings() {
-        let md = "### Before\n\n### Also Before\n\n## One\n\n### One A\n\n### One B\n\n## Two\n";
-        let toc = render::parse_document(md).unwrap().toc;
+        let md = "### Before\n\n### Also Before\n\n## One\n\n### One A\n\n#### One A i\n\n\
+                  ### One B\n\n## Two\n\n#### Two i\n";
+        let toc = render::parse_document(md, &(2..=6)).unwrap().toc;
 
-        // A `###` goes under the `##` above it; before the first `##`, it
-        // goes at the top, beside the others.
+        // A heading goes under the nearest one above it with fewer `#`s, even
+        // two levels up; before the first `##`, it goes at the top, beside the
+        // others.
         assert_eq!(
             outline(&nest_headings(&toc)),
             [
@@ -800,8 +804,10 @@ mod tests {
                 "Also Before #also-before",
                 "One #one",
                 "  One A #one-a",
+                "    One A i #one-a-i",
                 "  One B #one-b",
                 "Two #two",
+                "  Two i #two-i",
             ]
         );
     }
@@ -1207,6 +1213,48 @@ mod tests {
         assert!(read("index.html").contains(toc));
         assert!(!read("guide/index.html").contains(toc));
         let _ = fs::remove_dir_all(&site);
+    }
+
+    #[test]
+    fn a_page_toc_lists_the_headings_its_config_chooses() {
+        // little lists every heading but the title, the built-in theme's
+        // `little.yml` only `##` and `###`, and a site can choose otherwise.
+        let page = "# Home\n\n## Setup\n\n### Install\n\n#### From Source\n";
+        for (label, site_cfg, listed) in [
+            ("toc-theme", "", &["#setup", "#install"][..]),
+            ("toc-max-2", "toc_max_depth: 2\n", &["#setup"]),
+            (
+                "toc-max-4",
+                "toc_max_depth: 4\n",
+                &["#setup", "#install", "#from-source"],
+            ),
+            (
+                "toc-min-1",
+                "toc_min_depth: 1\n",
+                &["#home", "#setup", "#install"],
+            ),
+            (
+                "toc-min-3",
+                "toc_min_depth: 3\ntoc_max_depth: 4\n",
+                &["#install", "#from-source"],
+            ),
+        ] {
+            let site = scratch_site(label, &[("little.yml", site_cfg), ("docs/README.md", page)]);
+
+            build(&site).unwrap();
+
+            // The headings in the content link to themselves, so look only
+            // at the table of contents.
+            let html = fs::read_to_string(site.join("dist/index.html")).unwrap();
+            let (_, toc) = html.split_once(r#"<aside class="toc""#).unwrap();
+            let (toc, _) = toc.split_once("</aside>").unwrap();
+            let links: Vec<&str> = ["#home", "#setup", "#install", "#from-source"]
+                .into_iter()
+                .filter(|url| toc.contains(&format!(r#"href="{url}""#)))
+                .collect();
+            assert_eq!(links, listed, "{label}");
+            let _ = fs::remove_dir_all(&site);
+        }
     }
 
     #[test]

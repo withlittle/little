@@ -5,11 +5,7 @@ use anyhow::{Context, Result};
 use comrak::nodes::{AstNode, NodeValue};
 use comrak::{Anchorizer, Arena, Options};
 use serde_yaml::Mapping;
-
-/// TOC entries are collected for headings between these levels (inclusive).
-/// `<h1>` is the page title; `h4`+ are too granular for a page outline.
-const TOC_MIN_DEPTH: u8 = 2;
-const TOC_MAX_DEPTH: u8 = 3;
+use std::ops::RangeInclusive;
 
 /// One heading in a page's in-page table of contents. They're listed in the
 /// order they come, and the build nests them like `site.nav`.
@@ -19,7 +15,7 @@ pub struct TocItem {
     pub title: String,
     /// Fragment link to the heading, e.g. `#getting-started`.
     pub anchor: String,
-    /// Heading level (2 or 3).
+    /// Heading level, from 1 for `#` to 6.
     pub depth: u8,
 }
 
@@ -35,8 +31,10 @@ pub struct Rendered {
     pub first_h1: Option<String>,
 }
 
-/// Parse a document into its frontmatter, rendered HTML, and outline.
-pub fn parse_document(raw: &str) -> Result<Rendered> {
+/// Parse a document into its frontmatter, rendered HTML, and outline, which
+/// lists its headings at the levels in `toc_depths` (the config's
+/// `toc_min_depth` to `toc_max_depth`).
+pub fn parse_document(raw: &str, toc_depths: &RangeInclusive<u8>) -> Result<Rendered> {
     let (frontmatter_src, body) = split_frontmatter(raw);
 
     // Frontmatter is settings, like a `little.yml`, as each one becomes a key
@@ -50,7 +48,7 @@ pub fn parse_document(raw: &str) -> Result<Rendered> {
     let arena = Arena::new();
     let root = comrak::parse_document(&arena, &body, &options);
 
-    let (toc, first_h1) = outline(root);
+    let (toc, first_h1) = outline(root, toc_depths);
 
     let mut html = String::new();
     comrak::html::format_document(root, &options, &mut html)
@@ -78,13 +76,17 @@ fn render_options() -> Options<'static> {
     options
 }
 
-/// Walk the parsed document once to build the TOC and find the first `<h1>`.
+/// Walk the parsed document once to build the TOC from the headings at the
+/// levels in `toc_depths`, and find the first `<h1>`.
 ///
 /// Every heading is fed to the same `Anchorizer` in document order so the slugs
 /// match the `id`s comrak emits into the HTML (its formatter anchorizes every
 /// heading the same way), including the `-1`, `-2` … suffixes added to
 /// duplicates.
-fn outline<'a>(root: &'a AstNode<'a>) -> (Vec<TocItem>, Option<String>) {
+fn outline<'a>(
+    root: &'a AstNode<'a>,
+    toc_depths: &RangeInclusive<u8>,
+) -> (Vec<TocItem>, Option<String>) {
     let mut anchorizer = Anchorizer::new();
     let mut toc = Vec::new();
     let mut first_h1 = None;
@@ -102,7 +104,7 @@ fn outline<'a>(root: &'a AstNode<'a>) -> (Vec<TocItem>, Option<String>) {
             first_h1 = Some(text.clone());
         }
 
-        if (TOC_MIN_DEPTH..=TOC_MAX_DEPTH).contains(&level) {
+        if toc_depths.contains(&level) {
             toc.push(TocItem {
                 title: text,
                 anchor: format!("#{slug}"),
@@ -174,8 +176,11 @@ mod tests {
     use super::*;
     use serde_yaml::Value;
 
+    /// little's defaults, from `src/little.yml`: every heading but the title.
+    const TOC_DEPTHS: RangeInclusive<u8> = 2..=6;
+
     fn render(md: &str) -> Rendered {
-        parse_document(md).expect("document renders")
+        parse_document(md, &TOC_DEPTHS).expect("document renders")
     }
 
     #[test]
@@ -208,7 +213,7 @@ mod tests {
             "---\n- title: Hi\n---\n# Head\n",
             "---\nJust some words\n---\n# Head\n",
         ] {
-            let message = format!("{:#}", parse_document(md).err().unwrap());
+            let message = format!("{:#}", parse_document(md, &TOC_DEPTHS).err().unwrap());
             assert!(message.starts_with("parsing frontmatter: "), "{message}");
             assert!(message.contains("expected a YAML mapping"), "{message}");
         }
@@ -222,13 +227,35 @@ mod tests {
     }
 
     #[test]
-    fn toc_collects_only_h2_and_h3() {
-        let md = "# Title\n\n## Getting Started\n\n### Install\n\n#### Too Deep\n\n## Usage\n";
-        let r = render(md);
-        let shape: Vec<(u8, &str)> = r.toc.iter().map(|t| (t.depth, t.anchor.as_str())).collect();
+    fn toc_collects_the_headings_at_its_depths() {
+        let md = "# Title\n\n## Getting Started\n\n### Install\n\n#### From Source\n\n\
+                  ##### On Linux\n\n###### With Nix\n\n# Another Title\n\n## Usage\n";
+        let toc = |depths| {
+            let r = parse_document(md, &depths).unwrap();
+            let items = r.toc.iter().map(|t| format!("{} {}", t.depth, t.anchor));
+            items.collect::<Vec<_>>()
+        };
+
         assert_eq!(
-            shape,
-            vec![(2, "#getting-started"), (3, "#install"), (2, "#usage")]
+            toc(TOC_DEPTHS),
+            [
+                "2 #getting-started",
+                "3 #install",
+                "4 #from-source",
+                "5 #on-linux",
+                "6 #with-nix",
+                "2 #usage",
+            ]
+        );
+        assert_eq!(toc(2..=3), ["2 #getting-started", "3 #install", "2 #usage"]);
+        assert_eq!(
+            toc(1..=2),
+            [
+                "1 #title",
+                "2 #getting-started",
+                "1 #another-title",
+                "2 #usage",
+            ]
         );
     }
 

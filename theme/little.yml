@@ -5,3 +5,5 @@
 name: "Documentation"
 lang: en
 font: "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif"
+# List just the `##` and `###` headings in each page's table of contents.
+toc_max_depth: 3

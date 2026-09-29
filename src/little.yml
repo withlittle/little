@@ -12,3 +12,8 @@ destination: ./dist
 # The theme a site is built with: `true` for little's built-in theme, `false`
 # for none, the path to a theme's folder, or the URL of a theme's archive.
 theme: true
+
+# The headings each page's table of contents lists, by level, from `##` (2) to
+# `######` (6): all but a page's `#` heading, its title.
+toc_min_depth: 2
+toc_max_depth: 6
