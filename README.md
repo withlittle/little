@@ -298,7 +298,7 @@ rather than setting it to null, so `{% if page.description %}` and
 | `page.url` | The page's URL, e.g. `/guide/install`; compare it with `item.url` to mark the current nav item |
 | `page.title` | The page title |
 | `page.content` | The rendered Markdown as HTML; output it with the `safe` filter |
-| `page.nav` | The page's table of contents (its `##`/`###` headings), shaped like `site.nav`: a list of `{ title, url, children }`, where `url` is the heading's `#fragment` and each `###` is a child of the `##` above it |
+| `page.toc` | The page's table of contents (its `##`/`###` headings), shaped like `site.nav`: a list of `{ title, url, children }`, where `url` is the heading's `#fragment` and each `###` is a child of the `##` above it |
 | `page.children` | Home and section pages only: what else is in the page's folder, shaped like `site.nav` |
 | `page.prev` | The page before this one in `site.nav`, read from top to bottom: `{ title, url }`. The first page has none |
 | `page.next` | The page after this one in `site.nav`: `{ title, url }`. The last page has none |
@@ -308,8 +308,9 @@ A 404 page has just `page.type` and `page.url` (`/404.html`).
 
 A page's frontmatter has the last word on `page`, even over what little works
 out: it merges over it the way a `little.yml` merges over the level beneath,
-so `prev: { title: Start here }` renames the previous page's link, and
-`next: false` removes the next one. It changes only what the theme sees:
+so `prev: { title: Start here }` renames the previous page's link,
+`next: false` removes the next one, and `toc: false` removes the table of
+contents. It changes only what the theme sees:
 `url` doesn't move the page, and `type` doesn't choose its template. A key
 left blank is ignored.
 

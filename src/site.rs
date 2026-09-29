@@ -38,7 +38,7 @@ struct Page {
     html: String,
     /// In-page table of contents: the page's h2–h3 headings, nested like
     /// `site.nav`.
-    nav: Vec<NavItem>,
+    toc: Vec<NavItem>,
     page_type: PageType,
 }
 
@@ -63,7 +63,7 @@ struct PageData<'a> {
     content: Option<&'a str>,
     /// The page's table of contents, shaped like `site.nav`.
     #[serde(skip_serializing_if = "Option::is_none")]
-    nav: Option<&'a [NavItem]>,
+    toc: Option<&'a [NavItem]>,
     /// A home or section page's branch of the nav: what's in its folder.
     #[serde(skip_serializing_if = "Option::is_none")]
     children: Option<&'a [NavItem]>,
@@ -159,7 +159,7 @@ pub fn build(site_dir: &Path) -> Result<PathBuf> {
             title,
             frontmatter,
             html: rendered.html,
-            nav: nest_headings(&rendered.toc),
+            toc: nest_headings(&rendered.toc),
             page_type,
         });
     }
@@ -205,7 +205,7 @@ pub fn build(site_dir: &Path) -> Result<PathBuf> {
             url: &page.url,
             title: Some(&page.title),
             content: Some(&page.html),
-            nav: Some(&page.nav),
+            toc: Some(&page.toc),
             children: children.as_deref(),
             prev,
             next,
@@ -227,7 +227,7 @@ pub fn build(site_dir: &Path) -> Result<PathBuf> {
         url: &not_found_url,
         title: None,
         content: None,
-        nav: None,
+        toc: None,
         children: None,
         prev: None,
         next: None,
@@ -608,7 +608,7 @@ mod tests {
             title: title.to_string(),
             frontmatter: Mapping::new(),
             html: String::new(),
-            nav: Vec::new(),
+            toc: Vec::new(),
             page_type,
         }
     }
@@ -787,7 +787,7 @@ mod tests {
     }
 
     #[test]
-    fn a_page_nav_nests_its_headings() {
+    fn a_page_toc_nests_its_headings() {
         let md = "### Before\n\n### Also Before\n\n## One\n\n### One A\n\n### One B\n\n## Two\n";
         let toc = render::parse_document(md).unwrap().toc;
 
@@ -1092,21 +1092,21 @@ mod tests {
         // The first page has no `prev`, and the last no `next`.
         assert_eq!(
             read("index.html"),
-            "home with default.html: children content nav next title type url"
+            "home with default.html: children content next title toc type url"
         );
         assert_eq!(
             read("guide/index.html"),
-            "section with section.html: children content description nav next prev title type url"
+            "section with section.html: children content description next prev title toc type url"
         );
         assert_eq!(
             read("guide/install/index.html"),
-            "page with default.html: content nav prev title type url"
+            "page with default.html: content prev title toc type url"
         );
         // A folder without a README gets no page of its own.
         assert!(!dist.join("api/index.html").exists());
         assert_eq!(
             read("api/reference/index.html"),
-            "page with default.html: content nav next prev title type url"
+            "page with default.html: content next prev title toc type url"
         );
         // A 404 page has no content of its own.
         assert_eq!(
@@ -1150,10 +1150,10 @@ mod tests {
     }
 
     #[test]
-    fn a_page_nav_is_shaped_like_the_site_nav() {
+    fn a_page_toc_is_shaped_like_the_site_nav() {
         // So one macro can list both.
         let site = scratch_site(
-            "page-nav",
+            "page-toc",
             &[
                 ("little.yml", "theme: ./theme\n"),
                 (
@@ -1167,7 +1167,7 @@ mod tests {
                     "{% macro list(items) %}{% for item in items %}\
                      [{{ item.title }} {{ item.url | safe }}{% if item.children %} {{ list(item.children) }}{% endif %}]\
                      {% endfor %}{% endmacro %}\
-                     {{ list(site.nav) }} / {{ list(page.nav) }}",
+                     {{ list(site.nav) }} / {{ list(page.toc) }}",
                 ),
             ],
         );
@@ -1180,8 +1180,32 @@ mod tests {
             read("index.html"),
             format!("{nav} / [Setup #setup [Requirements #requirements]][Usage #usage]")
         );
-        // A page without headings has an empty `page.nav`.
+        // A page without headings has an empty `page.toc`.
         assert_eq!(read("guide/install/index.html"), format!("{nav} / "));
+        let _ = fs::remove_dir_all(&site);
+    }
+
+    #[test]
+    fn a_page_can_turn_off_its_toc() {
+        // `toc: false` replaces the table of contents, and the built-in theme
+        // lists one only `{% if page.toc %}`.
+        let site = scratch_site(
+            "no-toc",
+            &[
+                ("docs/README.md", "# Home\n\n## Setup\n"),
+                (
+                    "docs/guide.md",
+                    "---\ntoc: false\n---\n# Guide\n\n## Setup\n",
+                ),
+            ],
+        );
+
+        build(&site).unwrap();
+
+        let read = |path: &str| fs::read_to_string(site.join("dist").join(path)).unwrap();
+        let toc = r#"<aside class="toc""#;
+        assert!(read("index.html").contains(toc));
+        assert!(!read("guide/index.html").contains(toc));
         let _ = fs::remove_dir_all(&site);
     }
 
