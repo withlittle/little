@@ -39,6 +39,12 @@ The merged config (little → theme → site), plus a derived nav:
   headings has none, and a page can turn it off with `toc: false`
 - `page.children` — on home and section pages, what else is in the page's folder, shaped
   like `site.nav`: handy for listing a section's pages
+- `page.breadcrumbs` — what's above this page in `site.nav`, from the top down, so they
+  follow the sidebar: the home page, if `site.nav` lists it at its top, then each section
+  the page is in. Each is `{ title, url }`, and a folder without a `README.md` is a label,
+  with no `url`. This page isn't in the list: it's `page.title` and `page.url`. The home
+  page, and a page that isn't in `site.nav`, have an empty list, and a page can turn them
+  off with `breadcrumbs: false`, so a theme checks `{% if page.breadcrumbs %}` first
 - `page.prev` and `page.next` — the pages before and after this one in `site.nav`, read
   from top to bottom, so they follow the sidebar. Each is `{ title, url }`. The first page
   has no `page.prev`, and the last has no `page.next`. This theme links to them at the foot
@@ -49,9 +55,9 @@ The merged config (little → theme → site), plus a derived nav:
 The page's frontmatter has the last word on `page`, even over what little works out: it
 merges over it the way a `little.yml` merges over the level beneath, so
 `prev: { title: Start here }` renames the previous page's link, `next: false` removes the
-next one, and `toc: false` removes the table of contents. It changes only what the theme
-sees: `url` doesn't move the page, and `type` doesn't choose its template. A key left blank
-is ignored.
+next one, `toc: false` removes the table of contents, and `breadcrumbs: false` removes the
+breadcrumbs. It changes only what the theme sees: `url` doesn't move the page, and `type`
+doesn't choose its template. A key left blank is ignored.
 
 A page leaves out what it doesn't have, rather than setting it to null, so
 `{% if page.description %}` and `{{ page.description | default("…") }}` both work.
