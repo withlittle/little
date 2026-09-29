@@ -93,9 +93,11 @@ my-docs/
   `id`, so you can link straight to a section (`/guide/install#from-source`).
 - **Links.** Link to other pages by URL (`[Install](/guide/install)`), not by
   file name. `.md` links aren't rewritten.
-- **Frontmatter** is an optional YAML block at the very top of a page. little
-  reads `title` (otherwise the first `#` heading, then the file or folder name)
-  and `description` (passed to the theme, e.g. for a meta description):
+- **Frontmatter** is an optional block of YAML settings at the very top of a
+  page. Every setting reaches the theme as `page.<key>`, like `description`
+  for a meta description, and has the last word on what `page` holds. little
+  itself reads `title` for the nav (otherwise the first `#` heading, then the
+  file or folder name):
 
   ```markdown
   ---
@@ -107,7 +109,22 @@ my-docs/
 - **Navigation** is built from the folder structure: the home page first, then
   pages and folders sorted by title. A folder with a `README.md` becomes a
   linked section; without one, it's a plain label. Each page's previous and
-  next pages follow the same order, from top to bottom.
+  next pages follow the same order, from top to bottom. To write the nav
+  yourself, set `nav` in `little.yml` to a list of `{ title, url, children }`.
+  It replaces little's, and previous and next pages follow it instead, so a
+  page that isn't in it has neither. Use each page's URL as little builds it
+  (`/guide/`, not `/guide`), so the theme can mark the current page:
+
+  ```yaml
+  # little.yml
+  nav:
+    - { title: Home, url: / }
+    - title: Guide
+      url: /guide/
+      children:
+        - { title: Install, url: /guide/install }
+  ```
+
 - **On this page.** Each page's `##` and `###` headings become its table of
   contents.
 
@@ -276,18 +293,25 @@ rather than setting it to null, so `{% if page.description %}` and
 | Variable | Contents |
 | -------- | -------- |
 | `site` | The merged config: `site.name`, `site.tagline`, and any keys you add |
-| `site.nav` | The nav tree: a list of `{ title, url, children }`; a folder without a `README.md` has no `url` |
+| `site.nav` | The nav tree: a list of `{ title, url, children }`; a folder without a `README.md` has no `url`. A `nav` in `little.yml` replaces it |
 | `page.type` | The page's type: `home`, `section`, `page`, or `404` |
 | `page.url` | The page's URL, e.g. `/guide/install`; compare it with `item.url` to mark the current nav item |
 | `page.title` | The page title |
-| `page.description` | Frontmatter `description`, if the page has one |
 | `page.content` | The rendered Markdown as HTML; output it with the `safe` filter |
 | `page.nav` | The page's table of contents (its `##`/`###` headings): a list of `{ title, anchor, depth }` |
 | `page.children` | Home and section pages only: what else is in the page's folder, shaped like `site.nav` |
 | `page.prev` | The page before this one in `site.nav`, read from top to bottom: `{ title, url }`. The first page has none |
 | `page.next` | The page after this one in `site.nav`: `{ title, url }`. The last page has none |
+| `page.<key>` | Every other key in the page's frontmatter, as written, like `page.description` |
 
 A 404 page has just `page.type` and `page.url` (`/404.html`).
+
+A page's frontmatter has the last word on `page`, even over what little works
+out: it merges over it the way a `little.yml` merges over the level beneath,
+so `prev: { title: Start here }` renames the previous page's link, and
+`next: false` removes the next one. It changes only what the theme sees:
+`url` doesn't move the page, and `type` doesn't choose its template. A key
+left blank is ignored.
 
 Everything in `_static/` is copied to the site's root as it is, so
 `_static/assets/style.css` becomes `/assets/style.css`. If a static file would

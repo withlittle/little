@@ -92,4 +92,8 @@ Record notable choices as short ADRs in `decisions/`. Locked so far:
 - **Previous and next pages:** `page.prev` and `page.next` follow `site.nav`
   from top to bottom, and are left out at either end — see
   [`decisions/0005-previous-and-next-pages.md`](./decisions/0005-previous-and-next-pages.md).
+- **Frontmatter and config win:** every frontmatter key reaches `page` and
+  merges over what little works out; a `nav` in `little.yml` replaces
+  little's — see
+  [`decisions/0006-frontmatter-and-config-win.md`](./decisions/0006-frontmatter-and-config-win.md).
 - **Plugins:** sandboxed WASM (planned).

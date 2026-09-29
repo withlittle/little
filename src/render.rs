@@ -5,7 +5,7 @@ use anyhow::{Context, Result};
 use comrak::nodes::{AstNode, NodeValue};
 use comrak::{Anchorizer, Arena, Options};
 use serde::Serialize;
-use serde_yaml::Value;
+use serde_yaml::Mapping;
 
 /// TOC entries are collected for headings between these levels (inclusive).
 /// `<h1>` is the page title; `h4`+ are too granular for a page outline.
@@ -25,8 +25,8 @@ pub struct TocItem {
 
 /// The result of rendering one Markdown document.
 pub struct Rendered {
-    /// Parsed YAML frontmatter (or `Value::Null` when absent).
-    pub frontmatter: Value,
+    /// The frontmatter's settings: none when a page has no frontmatter.
+    pub frontmatter: Mapping,
     /// Rendered HTML body.
     pub html: String,
     /// In-page table of contents built from the body's headings.
@@ -39,11 +39,12 @@ pub struct Rendered {
 pub fn parse_document(raw: &str) -> Result<Rendered> {
     let (frontmatter_src, body) = split_frontmatter(raw);
 
-    let frontmatter = if frontmatter_src.trim().is_empty() {
-        Value::Null
-    } else {
-        serde_yaml::from_str(&frontmatter_src).context("parsing frontmatter")?
-    };
+    // Frontmatter is settings, like a `little.yml`, as each one becomes a key
+    // of `page`. Anything else, like a list or plain text, is an error rather
+    // than silently dropped. Empty or comment-only frontmatter has none.
+    let frontmatter = serde_yaml::from_str::<Option<Mapping>>(&frontmatter_src)
+        .context("parsing frontmatter")?
+        .unwrap_or_default();
 
     let options = render_options();
     let arena = Arena::new();
@@ -171,6 +172,7 @@ fn split_frontmatter(raw: &str) -> (String, String) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_yaml::Value;
 
     fn render(md: &str) -> Rendered {
         parse_document(md).expect("document renders")
@@ -188,15 +190,34 @@ mod tests {
     }
 
     #[test]
-    fn missing_frontmatter_is_null() {
-        let r = render("# Head\n");
-        assert!(r.frontmatter.is_null());
+    fn missing_or_empty_frontmatter_has_no_settings() {
+        for md in [
+            "# Head\n",
+            "---\n---\n# Head\n",
+            "---\n# nothing to set yet\n---\n# Head\n",
+        ] {
+            assert!(render(md).frontmatter.is_empty(), "{md}");
+        }
+    }
+
+    #[test]
+    fn frontmatter_holds_settings() {
+        // Each setting becomes a key of `page`: a list, or plain text between
+        // the `---` lines, can't.
+        for md in [
+            "---\n- title: Hi\n---\n# Head\n",
+            "---\nJust some words\n---\n# Head\n",
+        ] {
+            let message = format!("{:#}", parse_document(md).err().unwrap());
+            assert!(message.starts_with("parsing frontmatter: "), "{message}");
+            assert!(message.contains("expected a YAML mapping"), "{message}");
+        }
     }
 
     #[test]
     fn unclosed_frontmatter_is_treated_as_body() {
         let r = render("---\nnot really frontmatter\n# Head\n");
-        assert!(r.frontmatter.is_null());
+        assert!(r.frontmatter.is_empty());
         assert!(r.html.contains("not really frontmatter"));
     }
 
