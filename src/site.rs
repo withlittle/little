@@ -3,8 +3,8 @@
 
 use anyhow::{Context, Result, bail};
 use minijinja::{Value as MjValue, context};
-use serde::Serialize;
-use serde_yaml::Value;
+use serde::{Deserialize, Serialize};
+use serde_yaml::{Mapping, Value};
 use std::collections::{BTreeMap, HashMap};
 use std::fs;
 use std::io::ErrorKind;
@@ -31,7 +31,8 @@ struct Page {
     /// Output file on disk (`dist/guide/install/index.html`).
     out_path: PathBuf,
     title: String,
-    description: Option<String>,
+    /// The page's frontmatter, less any key left blank.
+    frontmatter: Mapping,
     html: String,
     /// In-page table of contents (h2–h3).
     toc: Vec<render::TocItem>,
@@ -45,8 +46,9 @@ impl Page {
     }
 }
 
-/// What a template sees as `page`. Anything a page doesn't have is left out
-/// rather than set to null, which a template would print as "None".
+/// What little works out for `page`, beneath the page's frontmatter (see
+/// `page_value`). Anything a page doesn't have is left out rather than set to
+/// null, which a template would print as "None".
 #[derive(Serialize)]
 struct PageData<'a> {
     #[serde(rename = "type")]
@@ -54,8 +56,6 @@ struct PageData<'a> {
     url: &'a str,
     #[serde(skip_serializing_if = "Option::is_none")]
     title: Option<&'a str>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    description: Option<&'a str>,
     #[serde(skip_serializing_if = "Option::is_none")]
     content: Option<&'a str>,
     /// The page's table of contents.
@@ -80,14 +80,15 @@ struct Link<'a> {
     url: &'a str,
 }
 
-/// One node in the site-wide navigation tree (see `build_nav`).
-#[derive(Debug, Serialize)]
+/// One node in the site-wide navigation tree (see `build_nav`), or in a `nav`
+/// that the config sets instead.
+#[derive(Debug, Deserialize, Serialize)]
 struct NavItem {
     title: String,
     /// `None` for a section folder that has no `README.md` (a plain label).
     #[serde(skip_serializing_if = "Option::is_none")]
     url: Option<String>,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     children: Vec<NavItem>,
 }
 
@@ -103,7 +104,7 @@ struct Output {
 /// into.
 pub fn build(site_dir: &Path) -> Result<PathBuf> {
     let config::Config {
-        values: mut site_cfg,
+        values: site_cfg,
         themes,
         source_dir,
         destination_dir,
@@ -126,23 +127,20 @@ pub fn build(site_dir: &Path) -> Result<PathBuf> {
         let rendered = render::parse_document(&raw)
             .with_context(|| format!("rendering {}", path.display()))?;
 
+        // A key left blank is as good as not there: a page never holds null,
+        // and `title:` shouldn't wipe out the title little finds.
+        let mut frontmatter = rendered.frontmatter;
+        frontmatter.retain(|_, value| !value.is_null());
+
         let is_index = is_readme(&rel);
 
         // Title: frontmatter `title` -> first <h1> -> filename/folder-derived.
-        let title = rendered
-            .frontmatter
+        let title = frontmatter
             .get("title")
             .and_then(Value::as_str)
             .map(str::to_string)
             .or(rendered.first_h1)
             .unwrap_or_else(|| fallback_title(&rel, is_index));
-
-        // Description: frontmatter `description`, if there is one.
-        let description = rendered
-            .frontmatter
-            .get("description")
-            .and_then(Value::as_str)
-            .map(str::to_string);
 
         let url = derive_url(&rel);
         let out_path = out_path_for_url(&destination_dir, &url);
@@ -153,7 +151,7 @@ pub fn build(site_dir: &Path) -> Result<PathBuf> {
             url,
             out_path,
             title,
-            description,
+            frontmatter,
             html: rendered.html,
             toc: rendered.toc,
             page_type,
@@ -163,23 +161,29 @@ pub fn build(site_dir: &Path) -> Result<PathBuf> {
     // Deterministic output order (nav has its own ordering).
     pages.sort_by(|a, b| a.url.cmp(&b.url));
 
-    // The main nav is derived once from the folder structure and shared across
-    // every page; the theme marks the active item by matching `page.url`.
+    // What little works out is the bottom of the cascade: the nav it builds
+    // from the folders goes beneath the config, so a theme or site that sets
+    // `nav` replaces it. `page.prev` and `page.next` follow the nav the theme
+    // gets, so they agree with its sidebar.
     let tree = build_tree(&pages);
-    let nav = build_nav(&tree);
-    site_cfg.insert("nav".into(), serde_yaml::to_value(&nav)?);
-    let site_value = MjValue::from_serialize(&site_cfg);
+    let mut site = Mapping::new();
+    site.insert("nav".into(), serde_yaml::to_value(build_nav(&tree))?);
+    config::merge(&mut site, site_cfg);
+    let nav: Vec<NavItem> = serde_yaml::from_value(site["nav"].clone())
+        .context("`nav` in little.yml must be a list of links, each `{ title, url, children }`")?;
+    let site_value = MjValue::from_serialize(&site);
     let neighbours = neighbours_in(&nav);
 
     // The theme owns 100% of the markup; little only hands it structured data.
     // Every page is rendered before the destination is touched, so a build
     // that fails leaves the last one in place.
-    let render = |page_type: PageType, page: &PageData| {
+    let render = |page_type: PageType, data: &PageData, frontmatter: &Mapping| {
+        let page = page_value(data, frontmatter)?;
         theme.render(
             page_type,
             context! {
                 site => site_value.clone(),
-                page => MjValue::from_serialize(page),
+                page => page,
             },
         )
     };
@@ -194,7 +198,6 @@ pub fn build(site_dir: &Path) -> Result<PathBuf> {
             page_type: page.page_type.name(),
             url: &page.url,
             title: Some(&page.title),
-            description: page.description.as_deref(),
             content: Some(&page.html),
             nav: Some(&page.toc),
             children: children.as_deref(),
@@ -202,7 +205,7 @@ pub fn build(site_dir: &Path) -> Result<PathBuf> {
             next,
         };
         let source = source_dir.join(&page.rel);
-        if let Some(html) = render(page.page_type, &data)
+        if let Some(html) = render(page.page_type, &data, &page.frontmatter)
             .with_context(|| format!("rendering {}", source.display()))?
         {
             let path = page.out_path.clone();
@@ -217,14 +220,15 @@ pub fn build(site_dir: &Path) -> Result<PathBuf> {
         page_type: PageType::NotFound.name(),
         url: &not_found_url,
         title: None,
-        description: None,
         content: None,
         nav: None,
         children: None,
         prev: None,
         next: None,
     };
-    if let Some(html) = render(PageType::NotFound, &data).context("rendering the 404 page")? {
+    if let Some(html) =
+        render(PageType::NotFound, &data, &Mapping::new()).context("rendering the 404 page")?
+    {
         let path = destination_dir.join(NOT_FOUND_FILE);
         let name = "the 404 page".to_string();
         outputs.push(Output { path, html, name });
@@ -251,6 +255,19 @@ pub fn build(site_dir: &Path) -> Result<PathBuf> {
         destination_dir.display()
     );
     Ok(destination_dir)
+}
+
+/// What a template sees as `page`: what little works out for it, with the
+/// page's frontmatter merged over it the way each level of the config merges
+/// over the one beneath, so the author has the last word. It changes only
+/// what the theme sees: a page is built at its own URL, with the template for
+/// its own type, whatever its frontmatter says.
+fn page_value(data: &PageData, frontmatter: &Mapping) -> Result<Mapping> {
+    let Value::Mapping(mut page) = serde_yaml::to_value(data)? else {
+        unreachable!("a struct serializes to a mapping");
+    };
+    config::merge(&mut page, frontmatter.clone());
+    Ok(page)
 }
 
 /// Empty the destination for a new build, and mark it as little's. Only a
@@ -558,7 +575,7 @@ mod tests {
             url,
             out_path: PathBuf::new(),
             title: title.to_string(),
-            description: None,
+            frontmatter: Mapping::new(),
             html: String::new(),
             toc: Vec::new(),
             page_type,
@@ -1078,6 +1095,132 @@ mod tests {
             read("guide/install/index.html"),
             "Guide /guide/ < Install >"
         );
+        let _ = fs::remove_dir_all(&site);
+    }
+
+    #[test]
+    fn every_frontmatter_key_reaches_the_page() {
+        let site = scratch_site(
+            "frontmatter",
+            &[
+                ("little.yml", "theme: ./theme\n"),
+                (
+                    "docs/README.md",
+                    "---\nauthor: Ada\ntags: [setup, cli]\nhero:\n  image: hero.png\ntitle:\ndraft:\n---\n# Home\n",
+                ),
+                (
+                    "theme/_templates/default.html",
+                    r#"{{ page.author }}, {{ page.tags | join("+") }}, {{ page.hero.image }}, {{ page.title }}, {{ page.draft | default("not a draft") }}"#,
+                ),
+            ],
+        );
+
+        build(&site).unwrap();
+
+        // A key left blank is ignored, so `title:` leaves the title little
+        // finds.
+        let home = fs::read_to_string(site.join("dist/index.html")).unwrap();
+        assert_eq!(home, "Ada, setup+cli, hero.png, Home, not a draft");
+
+        // Frontmatter that isn't settings stops the build, naming the page.
+        let readme = site.join("docs").join("README.md");
+        fs::write(&readme, "---\n- author: Ada\n---\n# Home\n").unwrap();
+        let message = format!("{:#}", build(&site).unwrap_err());
+        let expected = format!("rendering {}: parsing frontmatter: ", readme.display());
+        assert!(message.starts_with(&expected), "{message}");
+        let _ = fs::remove_dir_all(&site);
+    }
+
+    #[test]
+    fn frontmatter_has_the_last_word_on_the_page() {
+        let site = scratch_site(
+            "last-word",
+            &[
+                ("little.yml", "theme: ./theme\n"),
+                ("docs/README.md", "# Home\n"),
+                (
+                    "docs/guide.md",
+                    "---\ntype: tutorial\nurl: /elsewhere\nprev:\n  title: Start here\nnext: false\n---\n# Guide\n",
+                ),
+                ("docs/reference.md", "# Reference\n"),
+                (
+                    "theme/_templates/default.html",
+                    "{{ page.type }} {{ page.url | safe }}: \
+                     {% if page.prev %}{{ page.prev.title }} {{ page.prev.url | safe }} {% endif %}\
+                     < {{ page.title }} >\
+                     {% if page.next %} {{ page.next.title }} {{ page.next.url | safe }}{% endif %}",
+                ),
+                ("theme/_templates/tutorial.html", "tutorial.html"),
+            ],
+        );
+
+        build(&site).unwrap();
+
+        let read = |path: &str| fs::read_to_string(site.join("dist").join(path)).unwrap();
+        // Settings merge key by key, so `prev` keeps its URL; anything else,
+        // like `next: false`, replaces what little works out.
+        assert_eq!(
+            read("guide/index.html"),
+            "tutorial /elsewhere: Start here / < Guide >"
+        );
+        // Only the theme sees it: the page is built at its own URL, with the
+        // template for its own type, and the pages beside it link to it there.
+        assert!(!site.join("dist/elsewhere").exists());
+        assert_eq!(read("index.html"), "home /: < Home > Guide /guide");
+        assert_eq!(
+            read("reference/index.html"),
+            "page /reference: Guide /guide < Reference >"
+        );
+        let _ = fs::remove_dir_all(&site);
+    }
+
+    #[test]
+    fn a_nav_in_the_config_replaces_littles() {
+        let site_cfg = "theme: ./theme\nnav:\n\
+                        - { title: Start, url: /guide/install }\n\
+                        - { title: Home, url: /, icon: house }\n\
+                        - { title: GitHub, url: \"https://github.com/withlittle/little\" }\n";
+        let site = scratch_site(
+            "own-nav",
+            &[
+                ("little.yml", site_cfg),
+                ("docs/README.md", "# Home\n"),
+                ("docs/guide/README.md", "# Guide\n"),
+                ("docs/guide/install.md", "# Install\n"),
+                (
+                    "theme/_templates/default.html",
+                    "{% for item in site.nav %}{{ item.title }}{% if item.icon %} ({{ item.icon }}){% endif %}; {% endfor %}\
+                     {% if page.prev %}{{ page.prev.url | safe }} {% endif %}\
+                     < {{ page.title }} >\
+                     {% if page.next %} {{ page.next.url | safe }}{% endif %}",
+                ),
+            ],
+        );
+
+        build(&site).unwrap();
+
+        // The theme gets the nav as the config sets it, and `prev` and `next`
+        // follow it. A page that isn't in it has neither.
+        let read = |path: &str| fs::read_to_string(site.join("dist").join(path)).unwrap();
+        let nav = "Start; Home (house); GitHub; ";
+        assert_eq!(
+            read("guide/install/index.html"),
+            format!("{nav}< Install > /")
+        );
+        assert_eq!(
+            read("index.html"),
+            format!("{nav}/guide/install < Home > https://github.com/withlittle/little")
+        );
+        assert_eq!(read("guide/index.html"), format!("{nav}< Guide >"));
+
+        // A nav that isn't a list of links stops the build.
+        for nav in ["nav: { style: tabs }\n", "nav:\n  - url: /\n"] {
+            let site_cfg = format!("theme: ./theme\n{nav}");
+            fs::write(site.join("little.yml"), site_cfg).unwrap();
+            let message = format!("{:#}", build(&site).unwrap_err());
+            let expected = "`nav` in little.yml must be a list of links";
+            assert!(message.starts_with(expected), "{message}");
+        }
         let _ = fs::remove_dir_all(&site);
     }
 

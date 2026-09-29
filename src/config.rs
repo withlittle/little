@@ -187,8 +187,10 @@ fn parse_config(raw: &str) -> serde_yaml::Result<Mapping> {
 }
 
 /// Merge `over` into `base`, key by key. Where both set a key to settings,
-/// those merge the same way; any other value replaces the one beneath it.
-fn merge(base: &mut Mapping, over: Mapping) {
+/// those merge the same way; any other value replaces the one beneath it. The
+/// build merges a page's frontmatter over `page`, and the config over
+/// `site.nav`, the same way.
+pub fn merge(base: &mut Mapping, over: Mapping) {
     for (key, value) in over {
         match (base.get_mut(&key), value) {
             (Some(Value::Mapping(below)), Value::Mapping(above)) => merge(below, above),

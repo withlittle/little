@@ -20,14 +20,14 @@ The merged config (little → theme → site), plus a derived nav:
   Each item is `{ title, url, children }`. A folder with a `README.md` links to that
   landing page; a folder without one is a plain section label, with no `url`.
   `site.nav` is shared by every page, so the theme marks the current item by comparing
-  `item.url` with `page.url`.
+  `item.url` with `page.url`. A `nav` in a `little.yml` replaces it, to order the
+  sidebar by hand.
 
 ### `page`
 
 - `page.type` — the type of page: `home`, `section`, `page`, or `404` (see below)
 - `page.url` — the page's clean, extensionless URL (`/`, `/getting-started`, `/guide/install`)
 - `page.title` — frontmatter `title`, else the first `<h1>`, else a name derived from the file
-- `page.description` — frontmatter `description`, if the page has one
 - `page.content` — the rendered Markdown (HTML)
 - `page.nav` — an in-page table of contents built from the page's `h2`–`h3` headings;
   each item is `{ title, anchor, depth }`, where `anchor` is a `#fragment` link
@@ -37,6 +37,14 @@ The merged config (little → theme → site), plus a derived nav:
   from top to bottom, so they follow the sidebar. Each is `{ title, url }`. The first page
   has no `page.prev`, and the last has no `page.next`. This theme links to them at the foot
   of each page
+- `page.<key>` — every other key in the page's frontmatter, as written, like
+  `page.description`, which this theme uses for the page's meta description
+
+The page's frontmatter has the last word on `page`, even over what little works out: it
+merges over it the way a `little.yml` merges over the level beneath, so
+`prev: { title: Start here }` renames the previous page's link, and `next: false` removes
+the next one. It changes only what the theme sees: `url` doesn't move the page, and `type`
+doesn't choose its template. A key left blank is ignored.
 
 A page leaves out what it doesn't have, rather than setting it to null, so
 `{% if page.description %}` and `{{ page.description | default("…") }}` both work.
