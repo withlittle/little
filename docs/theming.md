@@ -29,10 +29,11 @@ The merged config (little → theme → site), plus a derived nav:
 - `page.url` — the page's clean, extensionless URL (`/`, `/getting-started`, `/guide/install`)
 - `page.title` — frontmatter `title`, else the first `<h1>`, else a name derived from the file
 - `page.content` — the rendered Markdown (HTML)
-- `page.nav` — an in-page table of contents built from the page's `h2`–`h3` headings,
+- `page.toc` — an in-page table of contents built from the page's `h2`–`h3` headings,
   shaped like `site.nav`: each item is `{ title, url, children }`, where `url` is a
   `#fragment` link, and each `h3` is a child of the `h2` above it. This theme lists it
-  with a recursive loop, as it does its sidebar
+  with a recursive loop, as it does its sidebar, and checks `{% if page.toc %}` first:
+  a page without headings has none, and a page can turn it off with `toc: false`
 - `page.children` — on home and section pages, what else is in the page's folder, shaped
   like `site.nav`: handy for listing a section's pages
 - `page.prev` and `page.next` — the pages before and after this one in `site.nav`, read
@@ -44,9 +45,10 @@ The merged config (little → theme → site), plus a derived nav:
 
 The page's frontmatter has the last word on `page`, even over what little works out: it
 merges over it the way a `little.yml` merges over the level beneath, so
-`prev: { title: Start here }` renames the previous page's link, and `next: false` removes
-the next one. It changes only what the theme sees: `url` doesn't move the page, and `type`
-doesn't choose its template. A key left blank is ignored.
+`prev: { title: Start here }` renames the previous page's link, `next: false` removes the
+next one, and `toc: false` removes the table of contents. It changes only what the theme
+sees: `url` doesn't move the page, and `type` doesn't choose its template. A key left blank
+is ignored.
 
 A page leaves out what it doesn't have, rather than setting it to null, so
 `{% if page.description %}` and `{{ page.description | default("…") }}` both work.

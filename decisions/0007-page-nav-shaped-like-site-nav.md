@@ -1,6 +1,7 @@
 # 0007 — A page's table of contents is shaped like the nav
 
-- Status: accepted
+- Status: accepted; amended by [0008](./0008-page-toc.md), which renames
+  `page.nav` to `page.toc`
 - Date: 2026-09-29
 
 ## Context

@@ -18,7 +18,7 @@
     {% if site.tagline %}<span class="tagline">{{ site.tagline }}</span>{% endif %}
   </header>
 
-  <div class="layout{% if page.nav %} has-toc{% endif %}">
+  <div class="layout{% if page.toc %} has-toc{% endif %}">
     <nav class="sidebar" aria-label="Main navigation">
       {# site.nav is shared across pages; the active item is the one whose url
          matches page.url. Folders without a README render as plain labels. #}
@@ -59,12 +59,12 @@
       {% endif %}
     </main>
 
-    {% if page.nav %}
+    {% if page.toc %}
     <aside class="toc" aria-label="On this page">
       <p class="toc-title">On this page</p>
-      {# page.nav is shaped like site.nav: each ### is a child of the ## above it. #}
+      {# page.toc is shaped like site.nav: each ### is a child of the ## above it. #}
       <ul>
-        {% for item in page.nav recursive %}
+        {% for item in page.toc recursive %}
         <li>
           <a href="{{ item.url | safe }}">{{ item.title }}</a>
           {% if item.children %}<ul>{{ loop(item.children) }}</ul>{% endif %}
