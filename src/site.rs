@@ -85,6 +85,7 @@ struct Link<'a> {
 #[derive(Debug, Deserialize, Serialize)]
 struct NavItem {
     title: String,
+    /// A page's path, or in a config's `nav`, any URL: so `url`, not `path`.
     /// `None` for a section folder that has no `README.md` (a plain label).
     #[serde(skip_serializing_if = "Option::is_none")]
     url: Option<String>,
