@@ -106,7 +106,8 @@ my-docs/
 
 - **Navigation** is built from the folder structure: the home page first, then
   pages and folders sorted by title. A folder with a `README.md` becomes a
-  linked section; without one, it's a plain label.
+  linked section; without one, it's a plain label. Each page's previous and
+  next pages follow the same order, from top to bottom.
 - **On this page.** Each page's `##` and `###` headings become its table of
   contents.
 
@@ -283,6 +284,8 @@ rather than setting it to null, so `{% if page.description %}` and
 | `page.content` | The rendered Markdown as HTML; output it with the `safe` filter |
 | `page.nav` | The page's table of contents (its `##`/`###` headings): a list of `{ title, anchor, depth }` |
 | `page.children` | Home and section pages only: what else is in the page's folder, shaped like `site.nav` |
+| `page.prev` | The page before this one in `site.nav`, read from top to bottom: `{ title, url }`. The first page has none |
+| `page.next` | The page after this one in `site.nav`: `{ title, url }`. The last page has none |
 
 A 404 page has just `page.type` and `page.url` (`/404.html`).
 

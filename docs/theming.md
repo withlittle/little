@@ -33,6 +33,10 @@ The merged config (little → theme → site), plus a derived nav:
   each item is `{ title, anchor, depth }`, where `anchor` is a `#fragment` link
 - `page.children` — on home and section pages, what else is in the page's folder, shaped
   like `site.nav`: handy for listing a section's pages
+- `page.prev` and `page.next` — the pages before and after this one in `site.nav`, read
+  from top to bottom, so they follow the sidebar. Each is `{ title, url }`. The first page
+  has no `page.prev`, and the last has no `page.next`. This theme links to them at the foot
+  of each page
 
 A page leaves out what it doesn't have, rather than setting it to null, so
 `{% if page.description %}` and `{{ page.description | default("…") }}` both work.
