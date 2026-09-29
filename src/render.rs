@@ -4,7 +4,6 @@
 use anyhow::{Context, Result};
 use comrak::nodes::{AstNode, NodeValue};
 use comrak::{Anchorizer, Arena, Options};
-use serde::Serialize;
 use serde_yaml::Mapping;
 
 /// TOC entries are collected for headings between these levels (inclusive).
@@ -12,8 +11,9 @@ use serde_yaml::Mapping;
 const TOC_MIN_DEPTH: u8 = 2;
 const TOC_MAX_DEPTH: u8 = 3;
 
-/// One entry in a page's in-page table of contents.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+/// One heading in a page's in-page table of contents. They're listed in the
+/// order they come, and the build nests them like `site.nav`.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TocItem {
     /// Human-readable heading text.
     pub title: String,

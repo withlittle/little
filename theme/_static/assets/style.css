@@ -103,7 +103,7 @@ a:hover { text-decoration: underline; }
 .toc li { margin: 0.1rem 0; }
 .toc a { color: #4a515a; display: block; padding: 0.15rem 0; }
 .toc a:hover { color: #7c3aed; text-decoration: none; }
-.toc-d3 { padding-left: 0.8rem; font-size: 0.95em; }
+.toc ul ul { padding-left: 0.8rem; font-size: 0.95em; }
 
 /* Content */
 .content { min-width: 0; }

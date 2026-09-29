@@ -96,4 +96,8 @@ Record notable choices as short ADRs in `decisions/`. Locked so far:
   merges over what little works out; a `nav` in `little.yml` replaces
   little's — see
   [`decisions/0006-frontmatter-and-config-win.md`](./decisions/0006-frontmatter-and-config-win.md).
+- **A page's table of contents:** `page.nav` is shaped like `site.nav`,
+  `{ title, url, children }`, with each `###` under the `##` above it and
+  each heading's `#fragment` as its `url` — see
+  [`decisions/0007-page-nav-shaped-like-site-nav.md`](./decisions/0007-page-nav-shaped-like-site-nav.md).
 - **Plugins:** sandboxed WASM (planned).
