@@ -8,7 +8,9 @@ use serde_yaml::{Mapping, Value};
 use std::collections::{BTreeMap, HashMap};
 use std::fs;
 use std::io::ErrorKind;
+use std::iter::Peekable;
 use std::path::{Component, Path, PathBuf};
+use std::slice;
 use walkdir::WalkDir;
 
 use crate::theme::{PageType, StaticFile, Theme};
@@ -34,8 +36,9 @@ struct Page {
     /// The page's frontmatter, less any key left blank.
     frontmatter: Mapping,
     html: String,
-    /// In-page table of contents (h2–h3).
-    toc: Vec<render::TocItem>,
+    /// In-page table of contents: the page's h2–h3 headings, nested like
+    /// `site.nav`.
+    nav: Vec<NavItem>,
     page_type: PageType,
 }
 
@@ -58,9 +61,9 @@ struct PageData<'a> {
     title: Option<&'a str>,
     #[serde(skip_serializing_if = "Option::is_none")]
     content: Option<&'a str>,
-    /// The page's table of contents.
+    /// The page's table of contents, shaped like `site.nav`.
     #[serde(skip_serializing_if = "Option::is_none")]
-    nav: Option<&'a [render::TocItem]>,
+    nav: Option<&'a [NavItem]>,
     /// A home or section page's branch of the nav: what's in its folder.
     #[serde(skip_serializing_if = "Option::is_none")]
     children: Option<&'a [NavItem]>,
@@ -80,12 +83,14 @@ struct Link<'a> {
     url: &'a str,
 }
 
-/// One node in the site-wide navigation tree (see `build_nav`), or in a `nav`
-/// that the config sets instead.
+/// One node in the site-wide navigation tree (see `build_nav`), in a `nav`
+/// that the config sets instead, or in a page's table of contents (see
+/// `nest_headings`).
 #[derive(Debug, Deserialize, Serialize)]
 struct NavItem {
     title: String,
-    /// A page's path, or in a config's `nav`, any URL: so `url`, not `path`.
+    /// A page's path, a heading's `#fragment`, or in a config's `nav`, any
+    /// URL: so `url`, not `path`.
     /// `None` for a section folder that has no `README.md` (a plain label).
     #[serde(skip_serializing_if = "Option::is_none")]
     url: Option<String>,
@@ -154,7 +159,7 @@ pub fn build(site_dir: &Path) -> Result<PathBuf> {
             title,
             frontmatter,
             html: rendered.html,
-            toc: rendered.toc,
+            nav: nest_headings(&rendered.toc),
             page_type,
         });
     }
@@ -200,7 +205,7 @@ pub fn build(site_dir: &Path) -> Result<PathBuf> {
             url: &page.url,
             title: Some(&page.title),
             content: Some(&page.html),
-            nav: Some(&page.toc),
+            nav: Some(&page.nav),
             children: children.as_deref(),
             prev,
             next,
@@ -531,6 +536,31 @@ fn section_item(name: &str, node: &DirNode) -> NavItem {
     }
 }
 
+/// A page's table of contents, shaped like `site.nav`: each heading links to
+/// its `#fragment`, and each `###` goes in the `children` of the `##` above
+/// it. A heading with nothing above it, like a `###` before the first `##`,
+/// goes at the top.
+fn nest_headings(headings: &[render::TocItem]) -> Vec<NavItem> {
+    nest_under(&mut headings.iter().peekable(), 0)
+}
+
+/// The headings that come next, up to the first that isn't deeper than
+/// `depth`, each holding the deeper ones that follow it.
+fn nest_under(
+    headings: &mut Peekable<slice::Iter<'_, render::TocItem>>,
+    depth: u8,
+) -> Vec<NavItem> {
+    let mut items = Vec::new();
+    while let Some(heading) = headings.next_if(|heading| heading.depth > depth) {
+        items.push(NavItem {
+            title: heading.title.clone(),
+            url: Some(heading.anchor.clone()),
+            children: nest_under(headings, heading.depth),
+        });
+    }
+    items
+}
+
 /// The pages before and after each page, by its URL: its `page.prev` and
 /// `page.next`. They follow the nav from top to bottom, so they agree with the
 /// sidebar: a section's own page, then what's in it, then on to the next item.
@@ -578,7 +608,7 @@ mod tests {
             title: title.to_string(),
             frontmatter: Mapping::new(),
             html: String::new(),
-            toc: Vec::new(),
+            nav: Vec::new(),
             page_type,
         }
     }
@@ -752,6 +782,26 @@ mod tests {
                 "Advanced (label)",
                 "  Tuning /guide/advanced/tuning",
                 "Install /guide/install",
+            ]
+        );
+    }
+
+    #[test]
+    fn a_page_nav_nests_its_headings() {
+        let md = "### Before\n\n### Also Before\n\n## One\n\n### One A\n\n### One B\n\n## Two\n";
+        let toc = render::parse_document(md).unwrap().toc;
+
+        // A `###` goes under the `##` above it; before the first `##`, it
+        // goes at the top, beside the others.
+        assert_eq!(
+            outline(&nest_headings(&toc)),
+            [
+                "Before #before",
+                "Also Before #also-before",
+                "One #one",
+                "  One A #one-a",
+                "  One B #one-b",
+                "Two #two",
             ]
         );
     }
@@ -1096,6 +1146,42 @@ mod tests {
             read("guide/install/index.html"),
             "Guide /guide/ < Install >"
         );
+        let _ = fs::remove_dir_all(&site);
+    }
+
+    #[test]
+    fn a_page_nav_is_shaped_like_the_site_nav() {
+        // So one macro can list both.
+        let site = scratch_site(
+            "page-nav",
+            &[
+                ("little.yml", "theme: ./theme\n"),
+                (
+                    "docs/README.md",
+                    "# Home\n\n## Setup\n\n### Requirements\n\n## Usage\n",
+                ),
+                ("docs/guide/README.md", "# Guide\n"),
+                ("docs/guide/install.md", "# Install\n"),
+                (
+                    "theme/_templates/default.html",
+                    "{% macro list(items) %}{% for item in items %}\
+                     [{{ item.title }} {{ item.url | safe }}{% if item.children %} {{ list(item.children) }}{% endif %}]\
+                     {% endfor %}{% endmacro %}\
+                     {{ list(site.nav) }} / {{ list(page.nav) }}",
+                ),
+            ],
+        );
+
+        build(&site).unwrap();
+
+        let read = |path: &str| fs::read_to_string(site.join("dist").join(path)).unwrap();
+        let nav = "[Home /][Guide /guide/ [Install /guide/install]]";
+        assert_eq!(
+            read("index.html"),
+            format!("{nav} / [Setup #setup [Requirements #requirements]][Usage #usage]")
+        );
+        // A page without headings has an empty `page.nav`.
+        assert_eq!(read("guide/install/index.html"), format!("{nav} / "));
         let _ = fs::remove_dir_all(&site);
     }
 

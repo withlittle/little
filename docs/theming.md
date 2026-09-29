@@ -29,8 +29,10 @@ The merged config (little → theme → site), plus a derived nav:
 - `page.url` — the page's clean, extensionless URL (`/`, `/getting-started`, `/guide/install`)
 - `page.title` — frontmatter `title`, else the first `<h1>`, else a name derived from the file
 - `page.content` — the rendered Markdown (HTML)
-- `page.nav` — an in-page table of contents built from the page's `h2`–`h3` headings;
-  each item is `{ title, anchor, depth }`, where `anchor` is a `#fragment` link
+- `page.nav` — an in-page table of contents built from the page's `h2`–`h3` headings,
+  shaped like `site.nav`: each item is `{ title, url, children }`, where `url` is a
+  `#fragment` link, and each `h3` is a child of the `h2` above it. This theme lists it
+  with a recursive loop, as it does its sidebar
 - `page.children` — on home and section pages, what else is in the page's folder, shaped
   like `site.nav`: handy for listing a section's pages
 - `page.prev` and `page.next` — the pages before and after this one in `site.nav`, read

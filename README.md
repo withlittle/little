@@ -126,7 +126,7 @@ my-docs/
   ```
 
 - **On this page.** Each page's `##` and `###` headings become its table of
-  contents.
+  contents, with each `###` under the `##` above it.
 
 ## Configuration
 
@@ -298,7 +298,7 @@ rather than setting it to null, so `{% if page.description %}` and
 | `page.url` | The page's URL, e.g. `/guide/install`; compare it with `item.url` to mark the current nav item |
 | `page.title` | The page title |
 | `page.content` | The rendered Markdown as HTML; output it with the `safe` filter |
-| `page.nav` | The page's table of contents (its `##`/`###` headings): a list of `{ title, anchor, depth }` |
+| `page.nav` | The page's table of contents (its `##`/`###` headings), shaped like `site.nav`: a list of `{ title, url, children }`, where `url` is the heading's `#fragment` and each `###` is a child of the `##` above it |
 | `page.children` | Home and section pages only: what else is in the page's folder, shaped like `site.nav` |
 | `page.prev` | The page before this one in `site.nav`, read from top to bottom: `{ title, url }`. The first page has none |
 | `page.next` | The page after this one in `site.nav`: `{ title, url }`. The last page has none |
