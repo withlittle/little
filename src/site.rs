@@ -192,8 +192,10 @@ pub fn build(site_dir: &Path) -> Result<PathBuf> {
         });
     }
 
-    // Deterministic output order (nav has its own ordering).
-    pages.sort_by(|a, b| a.url.cmp(&b.url));
+    // Deterministic output order (nav has its own ordering), and so a
+    // deterministic error for files that would be the same page.
+    pages.sort_by(|a, b| (&a.url, &a.rel).cmp(&(&b.url, &b.rel)));
+    check_clashes(&pages, &source_dir)?;
 
     // What little works out is the bottom of the cascade: the nav it builds
     // from the folders goes beneath the config, so a theme or site that sets
@@ -341,6 +343,32 @@ fn clear_destination(destination: &Path) -> Result<()> {
         "Built by little, which wipes this folder on every build.\n",
     )
     .with_context(|| format!("writing {}", marker.display()))
+}
+
+/// Fail if two files in the source would be the same page, like `guide.md`
+/// and `guide/README.md`, or `README.md` and `readme.md`: one would silently
+/// overwrite the other. Files whose URLs differ only in case, like `API.md`
+/// and `api/README.md`, aren't caught, though they clash on a disk that
+/// ignores case, as macOS's and Windows' do by default.
+fn check_clashes(pages: &[Page], source_dir: &Path) -> Result<()> {
+    let mut seen: HashMap<&Path, &Page> = HashMap::new();
+    for page in pages {
+        if let Some(other) = seen.insert(&page.out_path, page) {
+            // `guide.md` is at `/guide` and `guide/README.md` at `/guide/`,
+            // but both would be `guide/index.html`, served at `/guide/`.
+            let url = if other.url.ends_with('/') {
+                &other.url
+            } else {
+                &page.url
+            };
+            bail!(
+                "{} and {} would both be the page at {url}: rename or move one",
+                source_dir.join(&other.rel).display(),
+                source_dir.join(&page.rel).display(),
+            );
+        }
+    }
+    Ok(())
 }
 
 /// Fail if a theme's static file would land on a page in the destination: on
@@ -682,11 +710,12 @@ mod tests {
     fn page(rel: &str, title: &str) -> Page {
         let rel = PathBuf::from(rel);
         let url = derive_url(&rel);
+        let out_path = out_path_for_url(Path::new("dist"), &url);
         let page_type = page_type(&rel);
         Page {
             rel,
             url,
-            out_path: PathBuf::new(),
+            out_path,
             title: title.to_string(),
             frontmatter: Mapping::new(),
             html: String::new(),
@@ -815,6 +844,27 @@ mod tests {
             out_path_for_url(dist, "/guide/install"),
             PathBuf::from("dist/guide/install/index.html")
         );
+    }
+
+    #[test]
+    fn two_files_cannot_be_the_same_page() {
+        let check = |a: &str, b: &str| {
+            let pages = [page(a, "A"), page(b, "B")];
+            check_clashes(&pages, Path::new("docs")).map_err(|e| e.to_string())
+        };
+        assert_eq!(
+            check("guide.md", "guide/README.md").unwrap_err(),
+            "docs/guide.md and docs/guide/README.md would both be the page at /guide/: rename or move one"
+        );
+        assert_eq!(
+            check("README.md", "readme.md").unwrap_err(),
+            "docs/README.md and docs/readme.md would both be the page at /: rename or move one"
+        );
+
+        // A page beside a folder is fine, and so, for now, are URLs that
+        // differ only in case.
+        assert!(check("guide.md", "guide/install.md").is_ok());
+        assert!(check("API.md", "api/README.md").is_ok());
     }
 
     #[test]
@@ -1847,6 +1897,35 @@ mod tests {
         }
         let home = fs::read_to_string(site.join("dist/index.html")).unwrap();
         assert_eq!(home, "Home");
+        let _ = fs::remove_dir_all(&site);
+    }
+
+    #[test]
+    fn pages_cannot_take_each_others_place() {
+        let site = scratch_site(
+            "same-page",
+            &[
+                ("little.yml", "theme: ./theme\n"),
+                ("docs/README.md", "# Home\n"),
+                ("docs/guide/README.md", "# Guide\n"),
+                ("theme/_templates/default.html", "{{ page.title }}"),
+            ],
+        );
+        build(&site).unwrap();
+
+        // `guide.md` would be built into `guide/index.html` too, so the build
+        // stops, and leaves the last one in place.
+        fs::write(site.join("docs/guide.md"), "# Also the guide\n").unwrap();
+        let message = format!("{:#}", build(&site).unwrap_err());
+        let docs = site.join("docs");
+        let expected = format!(
+            "{} and {} would both be the page at /guide/: rename or move one",
+            docs.join("guide.md").display(),
+            docs.join("guide").join("README.md").display(),
+        );
+        assert_eq!(message, expected);
+        let guide = fs::read_to_string(site.join("dist/guide/index.html")).unwrap();
+        assert_eq!(guide, "Guide");
         let _ = fs::remove_dir_all(&site);
     }
 }

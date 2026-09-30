@@ -124,4 +124,9 @@ Record notable choices as short ADRs in `decisions/`. Locked so far:
   inside the source count, so it can be hidden itself, and a theme's
   `_static/` is still copied whole — see
   [`decisions/0012-hidden-files.md`](./decisions/0012-hidden-files.md).
+- **Pages that clash:** two files in the source that would be the same page,
+  like `guide.md` and `guide/README.md`, stop the build before any page is
+  rendered, with an error that names both; URLs that differ only in case
+  aren't checked — see
+  [`decisions/0013-pages-that-clash.md`](./decisions/0013-pages-that-clash.md).
 - **Plugins:** sandboxed WASM (planned).

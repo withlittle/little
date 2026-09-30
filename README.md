@@ -90,7 +90,11 @@ my-docs/
 - **Pages and URLs.** Every `.md` file under `docs/` becomes a page at a clean,
   extensionless URL (see the layout above). As on GitHub, a folder's
   `README.md` is its landing page. Anything whose name starts with `.`, like a
-  `.drafts/` folder and everything in it, is hidden and left out.
+  `.drafts/` folder and everything in it, is hidden and left out. Two files
+  that would be the same page, like `guide.md` and `guide/README.md`, stop the
+  build with an error that names both. Pages whose URLs differ only in case,
+  like `API.md` and `api/README.md`, aren't caught, but on macOS and Windows,
+  which ignore case by default, one replaces the other.
 - **Markdown.** CommonMark plus GitHub Flavored Markdown: tables,
   strikethrough, task lists, autolinks, and footnotes. Every heading gets an
   `id`, so you can link straight to a section (`/guide/install#from-source`).
