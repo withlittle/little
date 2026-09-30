@@ -143,9 +143,14 @@ pub fn build(site_dir: &Path) -> Result<PathBuf> {
     }
     let theme = Theme::load(&themes)?;
 
-    // Collect and render every Markdown file in the source folder.
+    // Collect and render every Markdown file in the source folder but hidden
+    // ones, without walking hidden folders. The source folder itself (depth 0)
+    // can be hidden.
     let mut pages = Vec::new();
-    for entry in WalkDir::new(&source_dir).into_iter().filter_map(Result::ok) {
+    let entries = WalkDir::new(&source_dir)
+        .into_iter()
+        .filter_entry(|entry| entry.depth() == 0 || !is_hidden(Path::new(entry.file_name())));
+    for entry in entries.filter_map(Result::ok) {
         let path = entry.path();
         if path.extension().and_then(|s| s.to_str()) != Some("md") {
             continue;
@@ -187,8 +192,10 @@ pub fn build(site_dir: &Path) -> Result<PathBuf> {
         });
     }
 
-    // Deterministic output order (nav has its own ordering).
-    pages.sort_by(|a, b| a.url.cmp(&b.url));
+    // Deterministic output order (nav has its own ordering), and so a
+    // deterministic error for files that would be the same page.
+    pages.sort_by(|a, b| (&a.url, &a.rel).cmp(&(&b.url, &b.rel)));
+    check_clashes(&pages, &source_dir)?;
 
     // What little works out is the bottom of the cascade: the nav it builds
     // from the folders goes beneath the config, so a theme or site that sets
@@ -338,6 +345,32 @@ fn clear_destination(destination: &Path) -> Result<()> {
     .with_context(|| format!("writing {}", marker.display()))
 }
 
+/// Fail if two files in the source would be the same page, like `guide.md`
+/// and `guide/README.md`, or `README.md` and `readme.md`: one would silently
+/// overwrite the other. Files whose URLs differ only in case, like `API.md`
+/// and `api/README.md`, aren't caught, though they clash on a disk that
+/// ignores case, as macOS's and Windows' do by default.
+fn check_clashes(pages: &[Page], source_dir: &Path) -> Result<()> {
+    let mut seen: HashMap<&Path, &Page> = HashMap::new();
+    for page in pages {
+        if let Some(other) = seen.insert(&page.out_path, page) {
+            // `guide.md` is at `/guide` and `guide/README.md` at `/guide/`,
+            // but both would be `guide/index.html`, served at `/guide/`.
+            let url = if other.url.ends_with('/') {
+                &other.url
+            } else {
+                &page.url
+            };
+            bail!(
+                "{} and {} would both be the page at {url}: rename or move one",
+                source_dir.join(&other.rel).display(),
+                source_dir.join(&page.rel).display(),
+            );
+        }
+    }
+    Ok(())
+}
+
 /// Fail if a theme's static file would land on a page in the destination: on
 /// the page itself, or on the folder it's in.
 fn check_static_files(files: &[StaticFile], destination: &Path, outputs: &[Output]) -> Result<()> {
@@ -356,6 +389,17 @@ fn write_file(path: &Path, contents: &[u8]) -> Result<()> {
         fs::create_dir_all(parent).with_context(|| format!("creating {}", parent.display()))?;
     }
     fs::write(path, contents).with_context(|| format!("writing {}", path.display()))
+}
+
+/// Is the file or folder at `rel`, a path in the source folder, hidden, so
+/// left out of the site? Its name starts with `.`, like Jupyter's
+/// `.ipynb_checkpoints/` or an editor's swap file, or it's in a folder whose
+/// name does. Only names inside the source folder count, so it can be hidden
+/// itself, like `.github`.
+pub fn is_hidden(rel: &Path) -> bool {
+    rel.components().any(|component| {
+        matches!(component, Component::Normal(name) if name.as_encoded_bytes().starts_with(b"."))
+    })
 }
 
 /// Is this file a directory's home page? `README.md` is the documentation
@@ -666,11 +710,12 @@ mod tests {
     fn page(rel: &str, title: &str) -> Page {
         let rel = PathBuf::from(rel);
         let url = derive_url(&rel);
+        let out_path = out_path_for_url(Path::new("dist"), &url);
         let page_type = page_type(&rel);
         Page {
             rel,
             url,
-            out_path: PathBuf::new(),
+            out_path,
             title: title.to_string(),
             frontmatter: Mapping::new(),
             html: String::new(),
@@ -717,6 +762,32 @@ mod tests {
             .map(|crumb| format!("{} {}", crumb.title, crumb.url.unwrap_or("(label)")))
             .collect::<Vec<_>>()
             .join(" > ")
+    }
+
+    /// Every file in `dir`, by its path in it, sorted.
+    fn files_in(dir: &Path) -> Vec<PathBuf> {
+        let mut files: Vec<_> = WalkDir::new(dir)
+            .into_iter()
+            .filter_map(Result::ok)
+            .filter(|entry| entry.file_type().is_file())
+            .map(|entry| entry.path().strip_prefix(dir).unwrap().to_path_buf())
+            .collect();
+        files.sort();
+        files
+    }
+
+    #[test]
+    fn detects_hidden_files() {
+        for rel in [
+            ".draft.md",
+            ".ipynb_checkpoints/notes-checkpoint.md",
+            "guide/.notes.md",
+        ] {
+            assert!(is_hidden(Path::new(rel)), "{rel}");
+        }
+        for rel in ["README.md", "guide/install.md", "v1.0/README.md"] {
+            assert!(!is_hidden(Path::new(rel)), "{rel}");
+        }
     }
 
     #[test]
@@ -773,6 +844,27 @@ mod tests {
             out_path_for_url(dist, "/guide/install"),
             PathBuf::from("dist/guide/install/index.html")
         );
+    }
+
+    #[test]
+    fn two_files_cannot_be_the_same_page() {
+        let check = |a: &str, b: &str| {
+            let pages = [page(a, "A"), page(b, "B")];
+            check_clashes(&pages, Path::new("docs")).map_err(|e| e.to_string())
+        };
+        assert_eq!(
+            check("guide.md", "guide/README.md").unwrap_err(),
+            "docs/guide.md and docs/guide/README.md would both be the page at /guide/: rename or move one"
+        );
+        assert_eq!(
+            check("README.md", "readme.md").unwrap_err(),
+            "docs/README.md and docs/readme.md would both be the page at /: rename or move one"
+        );
+
+        // A page beside a folder is fine, and so, for now, are URLs that
+        // differ only in case.
+        assert!(check("guide.md", "guide/install.md").is_ok());
+        assert!(check("API.md", "api/README.md").is_ok());
     }
 
     #[test]
@@ -1173,6 +1265,89 @@ mod tests {
         assert_eq!(read("guide/install/index.html"), "Install");
         assert!(!site.join("dist").exists());
         let _ = fs::remove_dir_all(&site);
+    }
+
+    #[test]
+    fn hidden_files_and_folders_are_left_out() {
+        // Like Jupyter's checkpoints, an editor's swap files, or drafts.
+        let site = scratch_site(
+            "hidden",
+            &[
+                ("little.yml", "theme: ./theme\n"),
+                ("docs/README.md", "# Home\n"),
+                ("docs/.draft.md", "# Draft\n"),
+                (
+                    "docs/.ipynb_checkpoints/notes-checkpoint.md",
+                    "# Checkpoint\n",
+                ),
+                ("docs/.hidden/README.md", "# Hidden\n"),
+                ("docs/guide/README.md", "# Guide\n"),
+                ("docs/guide/install.md", "# Install\n"),
+                ("docs/guide/.notes.md", "# Notes\n"),
+                (
+                    "theme/_templates/default.html",
+                    "{% macro list(items) %}{% for item in items %}\
+                     [{{ item.title }}{% if item.children %} {{ list(item.children) }}{% endif %}]\
+                     {% endfor %}{% endmacro %}{{ list(site.nav) }}",
+                ),
+                ("theme/_static/.nojekyll", ""),
+            ],
+        );
+
+        build(&site).unwrap();
+
+        // They aren't pages, so they aren't in the nav either. A theme's
+        // static files are copied whole, hidden ones too.
+        let dist = site.join("dist");
+        let built = [
+            MARKER_FILE,
+            ".nojekyll",
+            "guide/index.html",
+            "guide/install/index.html",
+            "index.html",
+        ];
+        assert_eq!(files_in(&dist), built.map(PathBuf::from));
+        let home = fs::read_to_string(dist.join("index.html")).unwrap();
+        assert_eq!(home, "[Home][Guide [Install]]");
+        let _ = fs::remove_dir_all(&site);
+    }
+
+    #[test]
+    fn only_hidden_names_inside_the_source_count() {
+        // So the source can be a hidden folder, and the site can be in one.
+        let root = scratch_site(
+            "hidden-source",
+            &[
+                (".site/little.yml", "theme: ./theme\nsource: ./.github\n"),
+                (".site/README.md", "# Site\n"),
+                (".site/.github/README.md", "# Home\n"),
+                (".site/.github/ISSUE_TEMPLATE/bug.md", "# Bug\n"),
+                (".site/.github/.drafts/wip.md", "# WIP\n"),
+                (".site/.little/themes/fancy/README.md", "# Fancy\n"),
+                (".site/theme/_templates/default.html", "{{ page.title }}"),
+            ],
+        );
+        let site = root.join(".site");
+        let dist = site.join("dist");
+        let read = |path: &str| fs::read_to_string(dist.join(path)).unwrap();
+
+        build(&site).unwrap();
+
+        let built = [MARKER_FILE, "ISSUE_TEMPLATE/bug/index.html", "index.html"];
+        assert_eq!(files_in(&dist), built.map(PathBuf::from));
+        assert_eq!(read("index.html"), "Home");
+
+        // With the site's folder as its source, what's in `.github/` and
+        // `.little/` isn't a page.
+        fs::write(site.join("little.yml"), "theme: ./theme\nsource: .\n").unwrap();
+        build(&site).unwrap();
+
+        assert_eq!(
+            files_in(&dist),
+            [MARKER_FILE, "index.html"].map(PathBuf::from)
+        );
+        assert_eq!(read("index.html"), "Site");
+        let _ = fs::remove_dir_all(&root);
     }
 
     #[test]
@@ -1722,6 +1897,35 @@ mod tests {
         }
         let home = fs::read_to_string(site.join("dist/index.html")).unwrap();
         assert_eq!(home, "Home");
+        let _ = fs::remove_dir_all(&site);
+    }
+
+    #[test]
+    fn pages_cannot_take_each_others_place() {
+        let site = scratch_site(
+            "same-page",
+            &[
+                ("little.yml", "theme: ./theme\n"),
+                ("docs/README.md", "# Home\n"),
+                ("docs/guide/README.md", "# Guide\n"),
+                ("theme/_templates/default.html", "{{ page.title }}"),
+            ],
+        );
+        build(&site).unwrap();
+
+        // `guide.md` would be built into `guide/index.html` too, so the build
+        // stops, and leaves the last one in place.
+        fs::write(site.join("docs/guide.md"), "# Also the guide\n").unwrap();
+        let message = format!("{:#}", build(&site).unwrap_err());
+        let docs = site.join("docs");
+        let expected = format!(
+            "{} and {} would both be the page at /guide/: rename or move one",
+            docs.join("guide.md").display(),
+            docs.join("guide").join("README.md").display(),
+        );
+        assert_eq!(message, expected);
+        let guide = fs::read_to_string(site.join("dist/guide/index.html")).unwrap();
+        assert_eq!(guide, "Guide");
         let _ = fs::remove_dir_all(&site);
     }
 }

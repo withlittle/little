@@ -1,6 +1,7 @@
 # 0004 — Downloading themes
 
-- Status: accepted
+- Status: accepted; amended by [0012](./0012-hidden-files.md), which leaves
+  hidden folders in the source, `.little/` included, out of the site
 - Date: 2026-09-28
 - Amends: [0003](./0003-choosing-and-layering-themes.md)
 

@@ -89,7 +89,12 @@ my-docs/
 
 - **Pages and URLs.** Every `.md` file under `docs/` becomes a page at a clean,
   extensionless URL (see the layout above). As on GitHub, a folder's
-  `README.md` is its landing page.
+  `README.md` is its landing page. Anything whose name starts with `.`, like a
+  `.drafts/` folder and everything in it, is hidden and left out. Two files
+  that would be the same page, like `guide.md` and `guide/README.md`, stop the
+  build with an error that names both. Pages whose URLs differ only in case,
+  like `API.md` and `api/README.md`, aren't caught, but on macOS and Windows,
+  which ignore case by default, one replaces the other.
 - **Markdown.** CommonMark plus GitHub Flavored Markdown: tables,
   strikethrough, task lists, autolinks, and footnotes. Every heading gets an
   `id`, so you can link straight to a section (`/guide/install#from-source`).
@@ -209,8 +214,6 @@ theme: https://github.com/withlittle/theme-bootstrap/archive/refs/tags/0.0.1.tar
   repository's archive answers 404. For safety, an archive holding symlinks,
   hard links, or paths that lead out of it is an error.
 - `little serve` doesn't watch a downloaded theme, as it never changes.
-- With `source: .`, `.little/` is inside the source, so the Markdown in a
-  downloaded theme (its README, say) becomes pages too.
 
 ### Building on another theme
 
@@ -259,6 +262,8 @@ destination: ./public
 - Paths are relative to the site's folder, the one holding its `little.yml`,
   or absolute. A theme's `little.yml` can set them too, but they're still
   relative to the site.
+- The source can be a hidden folder itself, like `./.github`: only what's
+  hidden inside it is left out.
 - Every build wipes the destination, so point it at a folder that holds nothing
   but builds. little leaves a `.little-build` file in each folder it builds,
   and only wipes a folder that has one or is empty: pointed at any other
