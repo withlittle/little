@@ -17,3 +17,9 @@ theme: true
 # `######` (6): all but a page's `#` heading, its title.
 toc_min_depth: 2
 toc_max_depth: 6
+
+# Where `little serve` serves the site while you write it: a host name or IP
+# address, and a port. `little serve --host` and `--port` override them for a
+# single run.
+host: 127.0.0.1
+port: 8080

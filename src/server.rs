@@ -9,6 +9,7 @@ use anyhow::{Result, anyhow};
 use notify::{Event, RecommendedWatcher, RecursiveMode, Watcher};
 use std::ffi::OsStr;
 use std::io;
+use std::net::Ipv6Addr;
 use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::Sender;
@@ -19,8 +20,14 @@ use tiny_http::{Header, Response, Server};
 use crate::theme::Location;
 use crate::{config, site};
 
-pub fn serve(site_dir: &Path, addr: &str) -> Result<()> {
+/// Serve the site at `host` and `port`, or where its config says for either
+/// that's `None`.
+pub fn serve(site_dir: &Path, host: Option<String>, port: Option<u16>) -> Result<()> {
     let site_dir = site_dir.to_path_buf();
+
+    let cfg = config::load(&site_dir)?;
+    let host = host.unwrap_or(cfg.host);
+    let port = port.unwrap_or(cfg.port);
 
     // The folder of the last build that worked, which a rebuild can move.
     let destination = Arc::new(Mutex::new(site::build(&site_dir)?));
@@ -28,7 +35,9 @@ pub fn serve(site_dir: &Path, addr: &str) -> Result<()> {
     let version = Arc::new(AtomicU64::new(1));
     spawn_watcher(site_dir.clone(), destination.clone(), version.clone());
 
-    let server = Server::http(addr).map_err(|e| anyhow!("failed to bind {addr}: {e}"))?;
+    let addr = address(&host, port);
+    let server =
+        Server::http((host.as_str(), port)).map_err(|e| anyhow!("failed to bind {addr}: {e}"))?;
     println!("little serving http://{addr}  (live reload on — edit your docs or the theme)");
 
     for request in server.incoming_requests() {
@@ -41,6 +50,16 @@ pub fn serve(site_dir: &Path, addr: &str) -> Result<()> {
         serve_file(&destination, request);
     }
     Ok(())
+}
+
+/// `host` and `port` as a URL writes them. An IPv6 address goes in brackets,
+/// like `[::1]:8080`, so its colons aren't taken for the port's.
+fn address(host: &str, port: u16) -> String {
+    if host.parse::<Ipv6Addr>().is_ok() {
+        format!("[{host}]:{port}")
+    } else {
+        format!("{host}:{port}")
+    }
 }
 
 fn spawn_watcher(site_dir: PathBuf, destination: Arc<Mutex<PathBuf>>, version: Arc<AtomicU64>) {
@@ -406,6 +425,13 @@ mod tests {
         assert_eq!(respond_with(&dist, "/404.html"), Some((not_found, 200)));
 
         let _ = std::fs::remove_dir_all(&dist);
+    }
+
+    #[test]
+    fn ipv6_addresses_go_in_brackets() {
+        assert_eq!(address("127.0.0.1", 8080), "127.0.0.1:8080");
+        assert_eq!(address("localhost", 3000), "localhost:3000");
+        assert_eq!(address("::1", 8080), "[::1]:8080");
     }
 
     #[test]

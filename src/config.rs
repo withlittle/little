@@ -13,6 +13,9 @@
 //!
 //! `toc_min_depth` and `toc_max_depth` are the levels of heading, from 1 for
 //! `#` to 6, that each page's table of contents lists.
+//!
+//! `host` and `port` are where `little serve` serves the site, unless its
+//! `--host` and `--port` say otherwise.
 
 use anyhow::{Context, Result, anyhow, bail};
 use serde_yaml::{Mapping, Value};
@@ -42,6 +45,10 @@ pub struct Config {
     /// The levels of heading each page's table of contents lists, from
     /// `toc_min_depth` to `toc_max_depth`.
     pub toc_depths: RangeInclusive<u8>,
+    /// The host `little serve` serves at, like `127.0.0.1`.
+    pub host: String,
+    /// The port `little serve` serves at, like 8080.
+    pub port: u16,
 }
 
 /// little's built-in defaults: level 1 of the cascade. They live in
@@ -113,12 +120,16 @@ pub fn load(site_dir: &Path) -> Result<Config> {
     let source_dir = folder(site_dir, &values, "source")?;
     let destination_dir = folder(site_dir, &values, "destination")?;
     let toc_depths = toc_depths(&values)?;
+    let host = host(&values)?;
+    let port = port(&values)?;
     Ok(Config {
         values,
         themes,
         source_dir,
         destination_dir,
         toc_depths,
+        host,
+        port,
     })
 }
 
@@ -189,6 +200,24 @@ fn heading_level(values: &Mapping, key: &str) -> Result<u8> {
     match values.get(key).and_then(Value::as_u64) {
         Some(level @ 1..=6) => Ok(level as u8),
         _ => bail!("`{key}` must be a heading level from 1 to 6, like 3 for `###`"),
+    }
+}
+
+/// The host `little serve` serves at: a host name, like `localhost`, or an IP
+/// address, like `127.0.0.1` or `::1`.
+fn host(values: &Mapping) -> Result<String> {
+    match values.get("host") {
+        Some(Value::String(host)) if !host.is_empty() => Ok(host.clone()),
+        _ => bail!("`host` must be a host name or IP address, like 127.0.0.1"),
+    }
+}
+
+/// The port `little serve` serves at. Port 0 would have the system pick one,
+/// and the URL little prints would be wrong.
+fn port(values: &Mapping) -> Result<u16> {
+    match values.get("port").and_then(Value::as_u64) {
+        Some(port @ 1..=65535) => Ok(port as u16),
+        _ => bail!("`port` must be a number from 1 to 65535, like 8080"),
     }
 }
 
@@ -388,6 +417,8 @@ mod tests {
              theme: ./company\n\
              toc_min_depth: 2\n\
              toc_max_depth: 6\n\
+             host: 127.0.0.1\n\
+             port: 8080\n\
              name: My Docs\n\
              font: Inter\n\
              lang: en\n\
@@ -656,6 +687,54 @@ mod tests {
     }
 
     #[test]
+    fn host_and_port_cascade() {
+        let site = scratch("host-port", &[("theme/little.yml", "port: 4000\n")]);
+        let address = |site_cfg: &str| {
+            std::fs::write(site.join(CONFIG_FILE), site_cfg).unwrap();
+            let cfg = load(&site).unwrap();
+            (cfg.host, cfg.port)
+        };
+
+        // little serves at 127.0.0.1:8080, a theme can change that, and a site
+        // has the last word.
+        assert_eq!(address(""), ("127.0.0.1".into(), 8080));
+        assert_eq!(address("theme: ./theme\n"), ("127.0.0.1".into(), 4000));
+        let site_cfg = "theme: ./theme\nhost: localhost\nport: 3000\n";
+        assert_eq!(address(site_cfg), ("localhost".into(), 3000));
+
+        // An IPv6 address needs no quotes or brackets.
+        assert_eq!(address("host: ::1\n"), ("::1".into(), 8080));
+
+        let _ = std::fs::remove_dir_all(&site);
+    }
+
+    #[test]
+    fn bad_hosts_and_ports_explain_themselves() {
+        let site = scratch("bad-host-port", &[]);
+
+        // A host is a name or an address, written as text.
+        for value in [" 8080", " [a, b]", " \"\"", ""] {
+            let message = error(&site, &format!("host:{value}\n"));
+            assert_eq!(
+                message,
+                "`host` must be a host name or IP address, like 127.0.0.1"
+            );
+        }
+
+        // Port 0 would have the system pick a port, there's none past 65535,
+        // and a port is a number, not text, nor an address with it.
+        for value in [" 0", " 65536", " -1", " \"8080\"", " 127.0.0.1:3000", ""] {
+            let message = error(&site, &format!("port:{value}\n"));
+            assert_eq!(
+                message,
+                "`port` must be a number from 1 to 65535, like 8080"
+            );
+        }
+
+        let _ = std::fs::remove_dir_all(&site);
+    }
+
+    #[test]
     fn config_files_hold_settings() {
         let site = scratch("settings", &[]);
         let parsing = format!("parsing {}: ", site.join(CONFIG_FILE).display());
@@ -707,6 +786,8 @@ mod tests {
         assert_eq!(cfg.get("theme"), Some(&Value::Bool(true)));
         assert_eq!(cfg.get("toc_min_depth").and_then(Value::as_u64), Some(2));
         assert_eq!(cfg.get("toc_max_depth").and_then(Value::as_u64), Some(6));
+        assert_eq!(get(&cfg, "host"), Some("127.0.0.1"));
+        assert_eq!(cfg.get("port").and_then(Value::as_u64), Some(8080));
         // A site's name, language, and look are the theme's to default.
         for key in ["name", "lang"] {
             assert_eq!(cfg.get(key), None, "little shouldn't default `{key}`");

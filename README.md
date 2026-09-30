@@ -51,7 +51,7 @@ Then add a `little.yml` to name your site. See [Configuration](#configuration).
 ```sh
 little build                         # render the site into dist/
 little serve                         # dev server with live reload at http://127.0.0.1:8080
-little serve --addr 127.0.0.1:3000   # serve on a different address or port
+little serve --port 3000             # serve on another port, just this once
 little config                        # print the site's config, merged
 little -C path/to/site build         # work on a site in another directory
 little --help                        # list every command and option
@@ -65,7 +65,9 @@ little --help                        # list every command and option
   they're [downloaded](#downloading-a-theme)), and `little.yml`, rebuilding and
   refreshing open browser tabs whenever you save. If you switch folders or
   themes, it follows. If a save breaks the build, `serve` prints why and keeps
-  serving the last build.
+  serving the last build. It serves at the [host and
+  port](#choosing-where-to-serve) your config sets, unless `--host` or
+  `--port` says otherwise.
 - `config` prints the [config](#configuration) the theme gets as `site`
   (without `site.nav`), so you can check a setting without building.
 
@@ -149,9 +151,10 @@ tagline: "Docs that just work"
 Every key reaches the theme as `site.<key>`, so you can add your own. little's
 built-in defaults (see [`src/little.yml`](./src/little.yml)) cover only
 little's own settings, like the [theme](#choosing-a-theme), the
-[folders](#choosing-folders) a site is built from and into, and the
+[folders](#choosing-folders) a site is built from and into, the
 [headings](#choosing-headings-for-tables-of-contents) its tables of contents
-list; a site's name, language, and look are up to the theme and the site. The
+list, and [where `little serve` serves it](#choosing-where-to-serve); a site's
+name, language, and look are up to the theme and the site. The
 built-in theme uses these keys, with defaults from its
 [`little.yml`](./theme/little.yml):
 
@@ -286,6 +289,39 @@ toc_max_depth: 4
   frontmatter.
 - Each must be a level from 1 to 6, and `toc_min_depth` can't be more than
   `toc_max_depth`: otherwise, the build stops and says why.
+
+### Choosing where to serve
+
+`little serve` serves the site at <http://127.0.0.1:8080> unless you choose
+another host or port:
+
+| Key | Default | Serves the site… |
+| --- | ------- | ---------------- |
+| `host` | `127.0.0.1` | at this host name or IP address |
+| `port` | `8080` | on this port |
+
+To serve it at <http://localhost:3000> every time, say, set them in
+`little.yml`:
+
+```yaml
+# little.yml
+host: localhost
+port: 3000
+```
+
+- `little serve --host` and `--port` override them for a single run, like
+  `little serve --port 4000` while something else has port 3000.
+- The default host, `127.0.0.1`, serves only your own computer. To open the
+  site on another device, like your phone, run
+  `little serve --host 0.0.0.0` and browse to your computer's IP address.
+- `little serve` reads them when it starts, so after changing them, stop it
+  and start it again.
+- They're only for `little serve`. A theme gets them as `site.host` and
+  `site.port`, like every key, but the published site is somewhere else, so
+  don't build links from them.
+- `host` must be a host name or IP address, like `localhost` or `::1`, and
+  `port` a number from 1 to 65535. Otherwise, every command stops and says
+  why, even `little build`, which doesn't use them.
 
 ## Theming
 

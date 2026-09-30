@@ -136,6 +136,7 @@ pub fn build(site_dir: &Path) -> Result<PathBuf> {
         source_dir,
         destination_dir,
         toc_depths,
+        ..
     } = config::load(site_dir)?;
     if !source_dir.is_dir() {
         bail!("there's no source folder at {}", source_dir.display());
