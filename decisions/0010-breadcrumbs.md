@@ -54,6 +54,10 @@ see.
 - As with everything in `page`, the page's frontmatter has the last word
   ([0006](./0006-frontmatter-and-config-win.md)): `breadcrumbs: false` turns
   them off, and a list of its own replaces them.
+- The built-in theme shows them above each page's content, then the page's
+  title, marked as the current page and not linked, as Docusaurus and the Read
+  the Docs theme do. So every page but the home page shows where it is, even
+  one at the top of the nav, whose trail is just the home page.
 
 ## Consequences
 - The trail always agrees with the sidebar and with `page.prev` and

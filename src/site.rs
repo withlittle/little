@@ -1365,6 +1365,63 @@ mod tests {
     }
 
     #[test]
+    fn the_builtin_theme_shows_breadcrumbs() {
+        let site = scratch_site(
+            "builtin-breadcrumbs",
+            &[
+                ("docs/README.md", "# Home\n"),
+                ("docs/guide/README.md", "# Guide\n"),
+                ("docs/guide/install.md", "# Install\n"),
+                ("docs/api/reference.md", "# Reference\n"),
+                (
+                    "docs/api/errors.md",
+                    "---\nbreadcrumbs: false\n---\n# Errors\n",
+                ),
+            ],
+        );
+
+        build(&site).unwrap();
+
+        let read = |path: &str| fs::read_to_string(site.join("dist").join(path)).unwrap();
+        let nav = r#"<nav class="breadcrumbs""#;
+        // The trail's items, which the theme writes one to a line.
+        let trail = |path: &str| -> Vec<String> {
+            read(path)
+                .lines()
+                .map(str::trim)
+                .skip_while(|line| !line.starts_with(nav))
+                .take_while(|line| *line != "</nav>")
+                .filter(|line| line.starts_with("<li>"))
+                .map(str::to_string)
+                .collect()
+        };
+        // It ends with the page itself, and a folder without a README.md is
+        // plain text, as in the sidebar.
+        assert_eq!(
+            trail("guide/install/index.html"),
+            [
+                r#"<li><a href="/">Home</a></li>"#,
+                r#"<li><a href="/guide/">Guide</a></li>"#,
+                r#"<li><span aria-current="page">Install</span></li>"#,
+            ]
+        );
+        assert_eq!(
+            trail("api/reference/index.html"),
+            [
+                r#"<li><a href="/">Home</a></li>"#,
+                "<li>Api</li>",
+                r#"<li><span aria-current="page">Reference</span></li>"#,
+            ]
+        );
+        // The home page has nothing above it, a page can turn them off, and the
+        // 404 page has none.
+        for path in ["index.html", "api/errors/index.html", NOT_FOUND_FILE] {
+            assert!(!read(path).contains(nav), "{path}");
+        }
+        let _ = fs::remove_dir_all(&site);
+    }
+
+    #[test]
     fn a_page_toc_is_shaped_like_the_site_nav() {
         // So one macro can list both.
         let site = scratch_site(

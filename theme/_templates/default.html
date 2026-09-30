@@ -37,6 +37,19 @@
     </nav>
 
     <main class="content">
+      {# page.breadcrumbs is what's above this page in site.nav, from the top
+         down; the home page has none. Folders without a README are labels. #}
+      {% if page.breadcrumbs %}
+      <nav class="breadcrumbs" aria-label="Breadcrumbs">
+        <ol>
+          {% for crumb in page.breadcrumbs %}
+          <li>{% if crumb.url %}<a href="{{ crumb.url | safe }}">{{ crumb.title }}</a>{% else %}{{ crumb.title }}{% endif %}</li>
+          {% endfor %}
+          <li><span aria-current="page">{{ page.title }}</span></li>
+        </ol>
+      </nav>
+      {% endif %}
+
       {% block content %}{{ page.content | safe }}{% endblock %}
 
       {# page.prev and page.next follow site.nav from top to bottom; the first
