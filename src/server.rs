@@ -135,7 +135,7 @@ impl Sources {
             .as_ref()
             .is_none_or(|(watched, _)| *watched != source);
         if moved && source.0.is_dir() {
-            let watcher = watch_folder(&source.0, &source.1, self.tx.clone())?;
+            let watcher = watch_folder(&source.0, &source.1, true, self.tx.clone())?;
             self.source = Some((source, watcher));
         }
         // The built-in theme is in the binary, and a downloaded theme never
@@ -154,7 +154,7 @@ impl Sources {
         {
             let mut watchers = Vec::new();
             for theme in themes {
-                let watcher = watch_folder(&theme.0, &theme.1, self.tx.clone())?;
+                let watcher = watch_folder(&theme.0, &theme.1, false, self.tx.clone())?;
                 watchers.push((theme, watcher));
             }
             self.themes = watchers;
@@ -182,23 +182,29 @@ fn watch_config(
 /// Watch a folder a build reads: the source, or a theme's folder, its
 /// optional config included. Either can hold the destination (`docs/_build`,
 /// or a theme's demo site that sets `theme: ..`), so the build's own output is
-/// ignored, or each build would trigger the next.
+/// ignored, or each build would trigger the next. With `skip_hidden`, as for
+/// the source, hidden files are ignored too, as a build leaves them out; a
+/// theme copies its hidden static files, so they count.
 fn watch_folder(
     dir: &Path,
     destination: &Path,
+    skip_hidden: bool,
     tx: Sender<notify::Result<Event>>,
 ) -> notify::Result<RecommendedWatcher> {
     // Real paths on both sides: some platforms (macOS) report events by them.
+    let dir = dir.canonicalize()?;
     let destination = real_path(destination)?;
+    let root = dir.clone();
     let mut watcher = notify::recommended_watcher(move |res: notify::Result<Event>| {
-        if !res
-            .as_ref()
-            .is_ok_and(|event| is_read(event) || is_within(event, &destination))
-        {
+        if !res.as_ref().is_ok_and(|event| {
+            is_read(event)
+                || is_within(event, &destination)
+                || (skip_hidden && is_hidden_in(event, &root))
+        }) {
             let _ = tx.send(res);
         }
     })?;
-    watcher.watch(&dir.canonicalize()?, RecursiveMode::Recursive)?;
+    watcher.watch(&dir, RecursiveMode::Recursive)?;
     Ok(watcher)
 }
 
@@ -238,6 +244,17 @@ fn is_read(event: &Event) -> bool {
 /// Does this event only touch paths inside `dir`?
 fn is_within(event: &Event, dir: &Path) -> bool {
     !event.paths.is_empty() && event.paths.iter().all(|path| path.starts_with(dir))
+}
+
+/// Does this event only touch hidden files in the source folder `source`?
+/// A file saved by renaming a hidden one over it, as some editors do, isn't
+/// hidden, so that event still counts.
+fn is_hidden_in(event: &Event, source: &Path) -> bool {
+    !event.paths.is_empty()
+        && event
+            .paths
+            .iter()
+            .all(|path| path.strip_prefix(source).is_ok_and(site::is_hidden))
 }
 
 /// Does this root-folder event change the site's config file?
@@ -466,6 +483,29 @@ mod tests {
         )));
     }
 
+    #[test]
+    fn only_hidden_files_in_the_source_are_ignored() {
+        let source = Path::new("/site/.github");
+        let event = |paths: &[&str]| {
+            let mut event = Event::new(notify::EventKind::Any);
+            for path in paths {
+                event = event.add_path(source.join(path));
+            }
+            event
+        };
+
+        // A build leaves out hidden files and what's in hidden folders.
+        assert!(is_hidden_in(&event(&[".install.md.swp"]), source));
+        assert!(is_hidden_in(&event(&[".drafts/wip.md"]), source));
+        // Only names inside the source count, so it can be hidden itself.
+        assert!(!is_hidden_in(&event(&["README.md"]), source));
+        // A hidden file renamed over a page changes the page.
+        assert!(!is_hidden_in(
+            &event(&[".README.md.tmp", "README.md"]),
+            source
+        ));
+    }
+
     /// A throwaway folder holding `files`, each a (path, contents) pair.
     fn scratch(label: &str, files: &[(&str, &str)]) -> PathBuf {
         let root =
@@ -655,6 +695,36 @@ mod tests {
             "theme: ./theme\nsource: ./pages\n",
             "docs/README.md",
             "pages/README.md",
+        );
+        let _ = std::fs::remove_dir_all(&site_dir);
+    }
+
+    #[test]
+    fn the_watcher_skips_hidden_files_in_the_source() {
+        // Like an editor's swap files or drafts, which a build leaves out.
+        let site_dir = scratch_site("hidden");
+        {
+            let (_sources, rx) = watch_built_site(&site_dir);
+            let docs = site_dir.join("docs");
+            std::fs::write(docs.join("guide/.install.md.swp"), "swap\n").unwrap();
+            std::fs::create_dir_all(docs.join(".drafts")).unwrap();
+            std::fs::write(docs.join(".drafts/wip.md"), "# WIP\n").unwrap();
+            let event = rx.recv_timeout(Duration::from_millis(500));
+            assert!(event.is_err(), "a hidden file woke the watcher: {event:?}");
+
+            std::fs::write(docs.join("guide/install.md"), "# Installing\n").unwrap();
+            let event = rx.recv_timeout(Duration::from_secs(5));
+            assert!(event.is_ok(), "editing a page didn't wake the watcher");
+        }
+
+        // Only names inside the source count, so it can be hidden itself.
+        std::fs::create_dir_all(site_dir.join(".docs")).unwrap();
+        std::fs::write(site_dir.join(".docs/README.md"), "# Home\n").unwrap();
+        assert_follows(
+            &site_dir,
+            "theme: ./theme\nsource: ./.docs\n",
+            "docs/README.md",
+            ".docs/README.md",
         );
         let _ = std::fs::remove_dir_all(&site_dir);
     }

@@ -143,9 +143,14 @@ pub fn build(site_dir: &Path) -> Result<PathBuf> {
     }
     let theme = Theme::load(&themes)?;
 
-    // Collect and render every Markdown file in the source folder.
+    // Collect and render every Markdown file in the source folder but hidden
+    // ones, without walking hidden folders. The source folder itself (depth 0)
+    // can be hidden.
     let mut pages = Vec::new();
-    for entry in WalkDir::new(&source_dir).into_iter().filter_map(Result::ok) {
+    let entries = WalkDir::new(&source_dir)
+        .into_iter()
+        .filter_entry(|entry| entry.depth() == 0 || !is_hidden(Path::new(entry.file_name())));
+    for entry in entries.filter_map(Result::ok) {
         let path = entry.path();
         if path.extension().and_then(|s| s.to_str()) != Some("md") {
             continue;
@@ -356,6 +361,17 @@ fn write_file(path: &Path, contents: &[u8]) -> Result<()> {
         fs::create_dir_all(parent).with_context(|| format!("creating {}", parent.display()))?;
     }
     fs::write(path, contents).with_context(|| format!("writing {}", path.display()))
+}
+
+/// Is the file or folder at `rel`, a path in the source folder, hidden, so
+/// left out of the site? Its name starts with `.`, like Jupyter's
+/// `.ipynb_checkpoints/` or an editor's swap file, or it's in a folder whose
+/// name does. Only names inside the source folder count, so it can be hidden
+/// itself, like `.github`.
+pub fn is_hidden(rel: &Path) -> bool {
+    rel.components().any(|component| {
+        matches!(component, Component::Normal(name) if name.as_encoded_bytes().starts_with(b"."))
+    })
 }
 
 /// Is this file a directory's home page? `README.md` is the documentation
@@ -717,6 +733,32 @@ mod tests {
             .map(|crumb| format!("{} {}", crumb.title, crumb.url.unwrap_or("(label)")))
             .collect::<Vec<_>>()
             .join(" > ")
+    }
+
+    /// Every file in `dir`, by its path in it, sorted.
+    fn files_in(dir: &Path) -> Vec<PathBuf> {
+        let mut files: Vec<_> = WalkDir::new(dir)
+            .into_iter()
+            .filter_map(Result::ok)
+            .filter(|entry| entry.file_type().is_file())
+            .map(|entry| entry.path().strip_prefix(dir).unwrap().to_path_buf())
+            .collect();
+        files.sort();
+        files
+    }
+
+    #[test]
+    fn detects_hidden_files() {
+        for rel in [
+            ".draft.md",
+            ".ipynb_checkpoints/notes-checkpoint.md",
+            "guide/.notes.md",
+        ] {
+            assert!(is_hidden(Path::new(rel)), "{rel}");
+        }
+        for rel in ["README.md", "guide/install.md", "v1.0/README.md"] {
+            assert!(!is_hidden(Path::new(rel)), "{rel}");
+        }
     }
 
     #[test]
@@ -1173,6 +1215,89 @@ mod tests {
         assert_eq!(read("guide/install/index.html"), "Install");
         assert!(!site.join("dist").exists());
         let _ = fs::remove_dir_all(&site);
+    }
+
+    #[test]
+    fn hidden_files_and_folders_are_left_out() {
+        // Like Jupyter's checkpoints, an editor's swap files, or drafts.
+        let site = scratch_site(
+            "hidden",
+            &[
+                ("little.yml", "theme: ./theme\n"),
+                ("docs/README.md", "# Home\n"),
+                ("docs/.draft.md", "# Draft\n"),
+                (
+                    "docs/.ipynb_checkpoints/notes-checkpoint.md",
+                    "# Checkpoint\n",
+                ),
+                ("docs/.hidden/README.md", "# Hidden\n"),
+                ("docs/guide/README.md", "# Guide\n"),
+                ("docs/guide/install.md", "# Install\n"),
+                ("docs/guide/.notes.md", "# Notes\n"),
+                (
+                    "theme/_templates/default.html",
+                    "{% macro list(items) %}{% for item in items %}\
+                     [{{ item.title }}{% if item.children %} {{ list(item.children) }}{% endif %}]\
+                     {% endfor %}{% endmacro %}{{ list(site.nav) }}",
+                ),
+                ("theme/_static/.nojekyll", ""),
+            ],
+        );
+
+        build(&site).unwrap();
+
+        // They aren't pages, so they aren't in the nav either. A theme's
+        // static files are copied whole, hidden ones too.
+        let dist = site.join("dist");
+        let built = [
+            MARKER_FILE,
+            ".nojekyll",
+            "guide/index.html",
+            "guide/install/index.html",
+            "index.html",
+        ];
+        assert_eq!(files_in(&dist), built.map(PathBuf::from));
+        let home = fs::read_to_string(dist.join("index.html")).unwrap();
+        assert_eq!(home, "[Home][Guide [Install]]");
+        let _ = fs::remove_dir_all(&site);
+    }
+
+    #[test]
+    fn only_hidden_names_inside_the_source_count() {
+        // So the source can be a hidden folder, and the site can be in one.
+        let root = scratch_site(
+            "hidden-source",
+            &[
+                (".site/little.yml", "theme: ./theme\nsource: ./.github\n"),
+                (".site/README.md", "# Site\n"),
+                (".site/.github/README.md", "# Home\n"),
+                (".site/.github/ISSUE_TEMPLATE/bug.md", "# Bug\n"),
+                (".site/.github/.drafts/wip.md", "# WIP\n"),
+                (".site/.little/themes/fancy/README.md", "# Fancy\n"),
+                (".site/theme/_templates/default.html", "{{ page.title }}"),
+            ],
+        );
+        let site = root.join(".site");
+        let dist = site.join("dist");
+        let read = |path: &str| fs::read_to_string(dist.join(path)).unwrap();
+
+        build(&site).unwrap();
+
+        let built = [MARKER_FILE, "ISSUE_TEMPLATE/bug/index.html", "index.html"];
+        assert_eq!(files_in(&dist), built.map(PathBuf::from));
+        assert_eq!(read("index.html"), "Home");
+
+        // With the site's folder as its source, what's in `.github/` and
+        // `.little/` isn't a page.
+        fs::write(site.join("little.yml"), "theme: ./theme\nsource: .\n").unwrap();
+        build(&site).unwrap();
+
+        assert_eq!(
+            files_in(&dist),
+            [MARKER_FILE, "index.html"].map(PathBuf::from)
+        );
+        assert_eq!(read("index.html"), "Site");
+        let _ = fs::remove_dir_all(&root);
     }
 
     #[test]

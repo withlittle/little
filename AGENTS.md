@@ -119,4 +119,9 @@ Record notable choices as short ADRs in `decisions/`. Locked so far:
   config: little sets `127.0.0.1` and `8080`, and `little serve --host` and
   `--port` override them for a single run — see
   [`decisions/0011-serve-host-and-port-in-config.md`](./decisions/0011-serve-host-and-port-in-config.md).
+- **Hidden files:** a file or folder in the source whose name starts with `.`
+  is left out, and saving it doesn't rebuild in `little serve`; only names
+  inside the source count, so it can be hidden itself, and a theme's
+  `_static/` is still copied whole — see
+  [`decisions/0012-hidden-files.md`](./decisions/0012-hidden-files.md).
 - **Plugins:** sandboxed WASM (planned).
