@@ -154,6 +154,30 @@ a:hover { text-decoration: underline; }
 .content li { margin: 0.25rem 0; }
 .content input[type="checkbox"] { margin-right: 0.4rem; }
 
+/* Breadcrumbs: links like the sidebar's, and the rest muted like its labels. */
+.breadcrumbs {
+  margin-bottom: 0.75rem;
+  font-size: 0.85rem;
+  color: #8a909a;
+}
+.breadcrumbs ol {
+  display: flex;
+  flex-wrap: wrap;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.breadcrumbs li { margin: 0; }
+/* A "›" between items. Its empty alt text keeps screen readers, which announce
+   a list, from reading it too; browsers without alt text use the first line. */
+.breadcrumbs li + li::before {
+  content: "\203A";
+  content: "\203A" / "";
+  margin: 0 0.45rem;
+}
+.breadcrumbs a { color: #4a515a; }
+.breadcrumbs a:hover { color: #7c3aed; text-decoration: none; }
+
 /* Previous and next pages */
 .pager {
   display: grid;

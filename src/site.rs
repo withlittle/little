@@ -67,6 +67,9 @@ struct PageData<'a> {
     /// A home or section page's branch of the nav: what's in its folder.
     #[serde(skip_serializing_if = "Option::is_none")]
     children: Option<&'a [NavItem]>,
+    /// What's above this page in the nav, from the top down.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    breadcrumbs: Option<&'a [Breadcrumb<'a>]>,
     /// The page before this one in the nav, unless it's the first.
     #[serde(skip_serializing_if = "Option::is_none")]
     prev: Option<Link<'a>>,
@@ -81,6 +84,24 @@ struct PageData<'a> {
 struct Link<'a> {
     title: &'a str,
     url: &'a str,
+}
+
+/// A page above another in the nav, or a folder without a `README.md`, which
+/// has no `url`: what a template sees in `page.breadcrumbs`.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize)]
+struct Breadcrumb<'a> {
+    title: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    url: Option<&'a str>,
+}
+
+impl<'a> From<&'a NavItem> for Breadcrumb<'a> {
+    fn from(item: &'a NavItem) -> Self {
+        Breadcrumb {
+            title: &item.title,
+            url: item.url.as_deref(),
+        }
+    }
 }
 
 /// One node in the site-wide navigation tree (see `build_nav`), in a `nav`
@@ -170,8 +191,8 @@ pub fn build(site_dir: &Path) -> Result<PathBuf> {
 
     // What little works out is the bottom of the cascade: the nav it builds
     // from the folders goes beneath the config, so a theme or site that sets
-    // `nav` replaces it. `page.prev` and `page.next` follow the nav the theme
-    // gets, so they agree with its sidebar.
+    // `nav` replaces it. `page.breadcrumbs`, `page.prev`, and `page.next`
+    // follow the nav the theme gets, so they agree with its sidebar.
     let tree = build_tree(&pages);
     let mut site = Mapping::new();
     site.insert("nav".into(), serde_yaml::to_value(build_nav(&tree))?);
@@ -180,6 +201,7 @@ pub fn build(site_dir: &Path) -> Result<PathBuf> {
         .context("`nav` in little.yml must be a list of links, each `{ title, url, children }`")?;
     let site_value = MjValue::from_serialize(&site);
     let neighbours = neighbours_in(&nav);
+    let trails = breadcrumbs_in(&nav);
 
     // The theme owns 100% of the markup; little only hands it structured data.
     // Every page is rendered before the destination is touched, so a build
@@ -201,6 +223,11 @@ pub fn build(site_dir: &Path) -> Result<PathBuf> {
             .get(page.url.as_str())
             .copied()
             .unwrap_or_default();
+        // A page that isn't in the nav has nothing above it there.
+        let breadcrumbs = trails
+            .get(page.url.as_str())
+            .map(Vec::as_slice)
+            .unwrap_or_default();
         let data = PageData {
             page_type: page.page_type.name(),
             url: &page.url,
@@ -208,6 +235,7 @@ pub fn build(site_dir: &Path) -> Result<PathBuf> {
             content: Some(&page.html),
             toc: Some(&page.toc),
             children: children.as_deref(),
+            breadcrumbs: Some(breadcrumbs),
             prev,
             next,
         };
@@ -230,6 +258,7 @@ pub fn build(site_dir: &Path) -> Result<PathBuf> {
         content: None,
         toc: None,
         children: None,
+        breadcrumbs: None,
         prev: None,
         next: None,
     };
@@ -595,6 +624,40 @@ fn push_links<'a>(items: &'a [NavItem], links: &mut Vec<Link<'a>>) {
     }
 }
 
+/// What's above each page in the nav, by its URL: its `page.breadcrumbs`. They
+/// follow the nav from the top down, so they agree with the sidebar: each item
+/// the page is in, as the nav titles it. The nav lists the home page beside the
+/// items at its top, but it's above them, so their trails start with it. A
+/// page listed twice gets the trail to the last place, where its `page.prev`
+/// and `page.next` come from too.
+fn breadcrumbs_in(nav: &[NavItem]) -> HashMap<&str, Vec<Breadcrumb<'_>>> {
+    let is_home = |item: &NavItem| item.url.as_deref() == Some("/");
+    let home = nav.iter().find(|item| is_home(item)).map(Breadcrumb::from);
+    let mut trails = HashMap::new();
+    for item in nav {
+        let mut above: Vec<_> = home.filter(|_| !is_home(item)).into_iter().collect();
+        push_trails(slice::from_ref(item), &mut above, &mut trails);
+    }
+    trails
+}
+
+/// Add the trail to each page in `items`, and in their children, to `trails`.
+/// `above` holds what's above `items`.
+fn push_trails<'a>(
+    items: &'a [NavItem],
+    above: &mut Vec<Breadcrumb<'a>>,
+    trails: &mut HashMap<&'a str, Vec<Breadcrumb<'a>>>,
+) {
+    for item in items {
+        if let Some(url) = &item.url {
+            trails.insert(url, above.clone());
+        }
+        above.push(Breadcrumb::from(item));
+        push_trails(&item.children, above, trails);
+        above.pop();
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -644,6 +707,15 @@ mod tests {
             );
         }
         lines
+    }
+
+    /// The titles (or "(label)") and URLs of a page's breadcrumbs, top down.
+    fn trail(breadcrumbs: &[Breadcrumb]) -> String {
+        breadcrumbs
+            .iter()
+            .map(|crumb| format!("{} {}", crumb.title, crumb.url.unwrap_or("(label)")))
+            .collect::<Vec<_>>()
+            .join(" > ")
     }
 
     #[test]
@@ -848,6 +920,84 @@ mod tests {
             assert_eq!(after.map(|link| link.url), next, "{page}");
         }
         assert_eq!(neighbours.len(), pages.len());
+    }
+
+    #[test]
+    fn breadcrumbs_follow_the_nav() {
+        let pages = vec![
+            page("README.md", "Home"),
+            page("getting-started.md", "Getting Started"),
+            page("guide/README.md", "Guide"),
+            page("guide/install.md", "Install"),
+            page("guide/advanced/tuning.md", "Tuning"),
+            page("api/reference.md", "Reference"),
+        ];
+        let nav = build_nav(&build_tree(&pages));
+        let trails = breadcrumbs_in(&nav);
+
+        // The home page is above every other page. The folders without a
+        // README.md, api/ and guide/advanced/, are labels on the way down.
+        for (page, expected) in [
+            ("/", ""),
+            ("/getting-started", "Home /"),
+            ("/guide/", "Home /"),
+            ("/guide/install", "Home / > Guide /guide/"),
+            (
+                "/guide/advanced/tuning",
+                "Home / > Guide /guide/ > Advanced (label)",
+            ),
+            ("/api/reference", "Home / > Api (label)"),
+        ] {
+            assert_eq!(trail(&trails[page]), expected, "{page}");
+        }
+        assert_eq!(trails.len(), pages.len());
+
+        // Without a home page, the trails start at the top of the nav.
+        let pages = vec![
+            page("guide/README.md", "Guide"),
+            page("guide/install.md", "Install"),
+        ];
+        let nav = build_nav(&build_tree(&pages));
+        let trails = breadcrumbs_in(&nav);
+        assert_eq!(trail(&trails["/guide/"]), "");
+        assert_eq!(trail(&trails["/guide/install"]), "Guide /guide/");
+    }
+
+    #[test]
+    fn breadcrumbs_follow_a_nav_in_the_config() {
+        // The home page can be anywhere at the top of a nav set by hand, and a
+        // page can be listed twice.
+        let nav: Vec<NavItem> = serde_yaml::from_str(
+            "- { title: Tutorials, children: [\
+                 { title: First Steps, url: /getting-started },\
+                 { title: Setup, url: /guide/install }] }\n\
+             - { title: Start, url: / }\n\
+             - { title: Guide, url: /guide/, children: [{ title: Install, url: /guide/install }] }\n",
+        )
+        .unwrap();
+        let trails = breadcrumbs_in(&nav);
+
+        // The trails use the nav's titles. A page listed twice gets the trail
+        // to the last place, where its `prev` and `next` come from too.
+        for (page, expected) in [
+            ("/", ""),
+            ("/getting-started", "Start / > Tutorials (label)"),
+            ("/guide/", "Start /"),
+            ("/guide/install", "Start / > Guide /guide/"),
+        ] {
+            assert_eq!(trail(&trails[page]), expected, "{page}");
+        }
+        let (prev, _) = neighbours_in(&nav)["/guide/install"];
+        assert_eq!(prev.map(|link| link.url), Some("/guide/"));
+
+        // Only a home page at the top of the nav is above everything else.
+        let nav: Vec<NavItem> = serde_yaml::from_str(
+            "- { title: Docs, children: [{ title: Home, url: / }, { title: Guide, url: /guide/ }] }\n",
+        )
+        .unwrap();
+        let trails = breadcrumbs_in(&nav);
+        assert_eq!(trail(&trails["/"]), "Docs (label)");
+        assert_eq!(trail(&trails["/guide/"]), "Docs (label)");
     }
 
     #[test]
@@ -1098,21 +1248,21 @@ mod tests {
         // The first page has no `prev`, and the last no `next`.
         assert_eq!(
             read("index.html"),
-            "home with default.html: children content next title toc type url"
+            "home with default.html: breadcrumbs children content next title toc type url"
         );
         assert_eq!(
             read("guide/index.html"),
-            "section with section.html: children content description next prev title toc type url"
+            "section with section.html: breadcrumbs children content description next prev title toc type url"
         );
         assert_eq!(
             read("guide/install/index.html"),
-            "page with default.html: content prev title toc type url"
+            "page with default.html: breadcrumbs content prev title toc type url"
         );
         // A folder without a README gets no page of its own.
         assert!(!dist.join("api/index.html").exists());
         assert_eq!(
             read("api/reference/index.html"),
-            "page with default.html: content next prev title toc type url"
+            "page with default.html: breadcrumbs content next prev title toc type url"
         );
         // A 404 page has no content of its own.
         assert_eq!(
@@ -1152,6 +1302,122 @@ mod tests {
             read("guide/install/index.html"),
             "Guide /guide/ < Install >"
         );
+        let _ = fs::remove_dir_all(&site);
+    }
+
+    #[test]
+    fn each_page_lists_the_pages_above_it() {
+        let site = scratch_site(
+            "breadcrumbs",
+            &[
+                ("little.yml", "theme: ./theme\n"),
+                ("docs/README.md", "# Home\n"),
+                ("docs/guide/README.md", "# Guide\n"),
+                ("docs/guide/install.md", "# Install\n"),
+                ("docs/api/reference.md", "# Reference\n"),
+                (
+                    "docs/api/errors.md",
+                    "---\nbreadcrumbs: false\n---\n# Errors\n",
+                ),
+                (
+                    "docs/api/limits.md",
+                    "---\nbreadcrumbs:\n  - { title: Reference, url: /api/reference }\n---\n# Limits\n",
+                ),
+                (
+                    "theme/_templates/default.html",
+                    "{% if page.breadcrumbs %}{% for crumb in page.breadcrumbs %}\
+                     {{ crumb.title }} {{ crumb.url | default('(label)') | safe }} > \
+                     {% endfor %}{% endif %}{{ page.title }}",
+                ),
+            ],
+        );
+
+        build(&site).unwrap();
+
+        let read = |path: &str| fs::read_to_string(site.join("dist").join(path)).unwrap();
+        assert_eq!(read("index.html"), "Home");
+        assert_eq!(read("guide/index.html"), "Home / > Guide");
+        assert_eq!(
+            read("guide/install/index.html"),
+            "Home / > Guide /guide/ > Install"
+        );
+        assert_eq!(
+            read("api/reference/index.html"),
+            "Home / > Api (label) > Reference"
+        );
+        // Frontmatter has the last word: `breadcrumbs: false` turns them off,
+        // and a list replaces them.
+        assert_eq!(read("api/errors/index.html"), "Errors");
+        assert_eq!(
+            read("api/limits/index.html"),
+            "Reference /api/reference > Limits"
+        );
+
+        // They follow a nav set by hand, so a page that isn't in it has none.
+        let site_cfg = "theme: ./theme\nnav:\n\
+                        - { title: Start, url: / }\n\
+                        - { title: Install, url: /guide/install }\n";
+        fs::write(site.join("little.yml"), site_cfg).unwrap();
+        build(&site).unwrap();
+        assert_eq!(read("guide/install/index.html"), "Start / > Install");
+        assert_eq!(read("guide/index.html"), "Guide");
+        let _ = fs::remove_dir_all(&site);
+    }
+
+    #[test]
+    fn the_builtin_theme_shows_breadcrumbs() {
+        let site = scratch_site(
+            "builtin-breadcrumbs",
+            &[
+                ("docs/README.md", "# Home\n"),
+                ("docs/guide/README.md", "# Guide\n"),
+                ("docs/guide/install.md", "# Install\n"),
+                ("docs/api/reference.md", "# Reference\n"),
+                (
+                    "docs/api/errors.md",
+                    "---\nbreadcrumbs: false\n---\n# Errors\n",
+                ),
+            ],
+        );
+
+        build(&site).unwrap();
+
+        let read = |path: &str| fs::read_to_string(site.join("dist").join(path)).unwrap();
+        let nav = r#"<nav class="breadcrumbs""#;
+        // The trail's items, which the theme writes one to a line.
+        let trail = |path: &str| -> Vec<String> {
+            read(path)
+                .lines()
+                .map(str::trim)
+                .skip_while(|line| !line.starts_with(nav))
+                .take_while(|line| *line != "</nav>")
+                .filter(|line| line.starts_with("<li>"))
+                .map(str::to_string)
+                .collect()
+        };
+        // It ends with the page itself, and a folder without a README.md is
+        // plain text, as in the sidebar.
+        assert_eq!(
+            trail("guide/install/index.html"),
+            [
+                r#"<li><a href="/">Home</a></li>"#,
+                r#"<li><a href="/guide/">Guide</a></li>"#,
+                r#"<li><span aria-current="page">Install</span></li>"#,
+            ]
+        );
+        assert_eq!(
+            trail("api/reference/index.html"),
+            [
+                r#"<li><a href="/">Home</a></li>"#,
+                "<li>Api</li>",
+                r#"<li><span aria-current="page">Reference</span></li>"#,
+            ]
+        );
+        // The home page has nothing above it, a page can turn them off, and the
+        // 404 page has none.
+        for path in ["index.html", "api/errors/index.html", NOT_FOUND_FILE] {
+            assert!(!read(path).contains(nav), "{path}");
+        }
         let _ = fs::remove_dir_all(&site);
     }
 

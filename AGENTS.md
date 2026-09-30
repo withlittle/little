@@ -110,4 +110,8 @@ Record notable choices as short ADRs in `decisions/`. Locked so far:
   sets 2 to 6, every heading but the page's `#` title, and the built-in theme
   a max of 3 — see
   [`decisions/0009-toc-depth-in-config.md`](./decisions/0009-toc-depth-in-config.md).
+- **Breadcrumbs:** `page.breadcrumbs` lists the items above a page in
+  `site.nav`, from the top down, each `{ title, url }`: the home page, if it's
+  at the nav's top, then the sections the page is in, but not the page
+  itself — see [`decisions/0010-breadcrumbs.md`](./decisions/0010-breadcrumbs.md).
 - **Plugins:** sandboxed WASM (planned).

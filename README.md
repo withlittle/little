@@ -109,11 +109,13 @@ my-docs/
 - **Navigation** is built from the folder structure: the home page first, then
   pages and folders sorted by title. A folder with a `README.md` becomes a
   linked section; without one, it's a plain label. Each page's previous and
-  next pages follow the same order, from top to bottom. To write the nav
-  yourself, set `nav` in `little.yml` to a list of `{ title, url, children }`.
-  It replaces little's, and previous and next pages follow it instead, so a
-  page that isn't in it has neither. Use each page's URL as little builds it
-  (`/guide/`, not `/guide`), so the theme can mark the current page:
+  next pages follow the same order, from top to bottom, and its breadcrumbs
+  are what's above it: the home page, then each folder it's in. To write the
+  nav yourself, set `nav` in `little.yml` to a list of
+  `{ title, url, children }`. It replaces little's. Breadcrumbs and previous
+  and next pages follow it instead, so a page that isn't in it has none. Use
+  each page's URL as little builds it (`/guide/`, not `/guide`), so the theme
+  can mark the current page:
 
   ```yaml
   # little.yml
@@ -330,6 +332,7 @@ rather than setting it to null, so `{% if page.description %}` and
 | `page.content` | The rendered Markdown as HTML; output it with the `safe` filter |
 | `page.toc` | The page's table of contents (its headings from [`toc_min_depth` to `toc_max_depth`](#choosing-headings-for-tables-of-contents)), shaped like `site.nav`: a list of `{ title, url, children }`, where `url` is the heading's `#fragment` and each heading is a child of the nearest one above it with fewer `#`s, like a `###` of the `##` above it |
 | `page.children` | Home and section pages only: what else is in the page's folder, shaped like `site.nav` |
+| `page.breadcrumbs` | What's above this page in `site.nav`, from the top down: a list of `{ title, url }`, where a folder without a `README.md` has no `url`. It starts with the home page, if `site.nav` lists it at its top, and leaves out this page. The home page, and a page that isn't in `site.nav`, have an empty list |
 | `page.prev` | The page before this one in `site.nav`, read from top to bottom: `{ title, url }`. The first page has none |
 | `page.next` | The page after this one in `site.nav`: `{ title, url }`. The last page has none |
 | `page.<key>` | Every other key in the page's frontmatter, as written, like `page.description` |
@@ -339,8 +342,9 @@ A 404 page has just `page.type` and `page.url` (`/404.html`).
 A page's frontmatter has the last word on `page`, even over what little works
 out: it merges over it the way a `little.yml` merges over the level beneath,
 so `prev: { title: Start here }` renames the previous page's link,
-`next: false` removes the next one, and `toc: false` removes the table of
-contents. It changes only what the theme sees:
+`next: false` removes the next one, `toc: false` removes the table of
+contents, and `breadcrumbs: false` removes the breadcrumbs. It changes only
+what the theme sees:
 `url` doesn't move the page, and `type` doesn't choose its template. A key
 left blank is ignored.
 
