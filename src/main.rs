@@ -30,9 +30,12 @@ enum Commands {
     Build,
     /// Serve the site locally with live reload
     Serve {
-        /// Address to bind
-        #[arg(long, default_value = "127.0.0.1:8080")]
-        addr: String,
+        /// Host to serve at, overriding the config's `host`
+        #[arg(long)]
+        host: Option<String>,
+        /// Port to serve at, overriding the config's `port`
+        #[arg(long, value_parser = clap::value_parser!(u16).range(1..))]
+        port: Option<u16>,
     },
     /// Print the site's config: little's, its theme's, and its own, merged
     Config,
@@ -44,7 +47,7 @@ fn main() -> Result<()> {
         Commands::Build => {
             site::build(&cli.dir)?;
         }
-        Commands::Serve { addr } => server::serve(&cli.dir, &addr)?,
+        Commands::Serve { host, port } => server::serve(&cli.dir, host, port)?,
         Commands::Config => {
             let cfg = config::load(&cli.dir)?;
             print!("{}", serde_yaml::to_string(&cfg.values)?);

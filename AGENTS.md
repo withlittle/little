@@ -18,8 +18,9 @@ cargo fmt                   # format — run before committing
 ## Architecture (keep the core small)
 - `src/main.rs` — CLI (clap): `build`, `serve`, `config`.
 - `src/config.rs` — the 3-level cascading config (little → theme → site): the
-  chain of themes a site uses, its source and destination folders, and the
-  levels of heading its tables of contents list.
+  chain of themes a site uses, its source and destination folders, the levels
+  of heading its tables of contents list, and the host and port
+  `little serve` serves it at.
 - `src/little.yml` — little's own defaults (level 1), compiled into the binary.
 - `src/render.rs` — Markdown (comrak) + YAML frontmatter → HTML fragment.
 - `src/site.rs` — build pipeline: walk the source (`docs/`), render, apply
@@ -114,4 +115,8 @@ Record notable choices as short ADRs in `decisions/`. Locked so far:
   `site.nav`, from the top down, each `{ title, url }`: the home page, if it's
   at the nav's top, then the sections the page is in, but not the page
   itself — see [`decisions/0010-breadcrumbs.md`](./decisions/0010-breadcrumbs.md).
+- **Where `little serve` serves:** `host` and `port`, which cascade like any
+  config: little sets `127.0.0.1` and `8080`, and `little serve --host` and
+  `--port` override them for a single run — see
+  [`decisions/0011-serve-host-and-port-in-config.md`](./decisions/0011-serve-host-and-port-in-config.md).
 - **Plugins:** sandboxed WASM (planned).
