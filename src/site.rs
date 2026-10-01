@@ -124,9 +124,13 @@ struct NavItem {
 /// A page the build writes.
 struct Output {
     path: PathBuf,
+    /// Its URL from the root of the site, like `/guide/`.
+    url: String,
     html: String,
     /// Which page it is, for an error: "the page built from docs/README.md".
     name: String,
+    /// What it's built from, for a warning: "docs/README.md".
+    origin: String,
 }
 
 /// A site that's been built.
@@ -136,6 +140,14 @@ pub struct Built {
     pub destination: PathBuf,
     /// Where it's published, which `little serve` serves it under.
     pub url: SiteUrl,
+    /// What each file in the destination was built or copied from, by its
+    /// path there, so a broken link names the file to fix: a page's
+    /// Markdown, like `docs/guide.md`, or a static file's origin.
+    pub origins: HashMap<PathBuf, String>,
+    /// Each page's URL from the root of the site, by its path in the
+    /// destination, like `/guide/install` for `guide/install/index.html`,
+    /// so a broken link to it is shown as the theme links to it.
+    pub urls: HashMap<PathBuf, String>,
 }
 
 /// Build the site rooted at `site_dir`.
@@ -282,8 +294,16 @@ pub fn build(site_dir: &Path) -> Result<Built> {
             .with_context(|| format!("rendering {}", source.display()))?
         {
             let path = page.out_path.clone();
-            let name = format!("the page built from {}", source.display());
-            outputs.push(Output { path, html, name });
+            let url = page.url.clone();
+            let origin = source.display().to_string();
+            let name = format!("the page built from {origin}");
+            outputs.push(Output {
+                path,
+                url,
+                html,
+                name,
+                origin,
+            });
         }
     }
 
@@ -304,8 +324,16 @@ pub fn build(site_dir: &Path) -> Result<Built> {
         render(PageType::NotFound, &data, &Mapping::new()).context("rendering the 404 page")?
     {
         let path = destination_dir.join(NOT_FOUND_FILE);
+        let url = not_found_url.clone();
         let name = "the 404 page".to_string();
-        outputs.push(Output { path, html, name });
+        let origin = name.clone();
+        outputs.push(Output {
+            path,
+            url,
+            html,
+            name,
+            origin,
+        });
     }
 
     // The theme's static files (css/js/images) go verbatim to the site's root,
@@ -320,14 +348,20 @@ pub fn build(site_dir: &Path) -> Result<Built> {
     check_static_files(&static_files, &destination_dir, &outputs)?;
 
     clear_destination(&destination_dir)?;
-    for output in &outputs {
+    let mut origins = HashMap::new();
+    let mut urls = HashMap::new();
+    for output in outputs {
         write_file(&output.path, output.html.as_bytes())?;
+        let path = output.path.strip_prefix(&destination_dir)?.to_path_buf();
+        origins.insert(path.clone(), output.origin);
+        urls.insert(path, output.url);
     }
     // Written from what was read, not with `fs::copy`: on macOS that clones
     // the file, and FSEvents then reports the *source* as changed, so `little
     // serve` would rebuild forever. A build must only ever read its sources.
-    for file in &static_files {
+    for file in static_files {
         write_file(&destination_dir.join(&file.path), &file.contents)?;
+        origins.insert(file.path, file.origin);
     }
 
     println!(
@@ -338,6 +372,8 @@ pub fn build(site_dir: &Path) -> Result<Built> {
     Ok(Built {
         destination: destination_dir,
         url: site_url,
+        origins,
+        urls,
     })
 }
 

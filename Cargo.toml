@@ -8,14 +8,19 @@ anyhow = "1.0.104"
 clap = { version = "4.6.7", features = ["derive"] }
 comrak = "0.55.0"
 flate2 = "1.1.10"
+futures = "0.3.34"
+lychee-lib = { version = "0.24.2", default-features = false }
 minijinja = { version = "2.24.0", features = ["loader"] }
 notify = "8.2.0"
 notify-debouncer-mini = "0.7.0"
 percent-encoding = "2.3.2"
+regex = "1.13.1"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_yaml = "0.9.34"
 tar = { version = "0.4.46", default-features = false }
 tiny_http = "0.12.0"
+tokio = { version = "1.53.1", features = ["rt-multi-thread"] }
 ureq = { version = "3.4.2", default-features = false, features = ["rustls"] }
+url = "2.5.8"
 walkdir = "2.5.0"
 zip = { version = "8.6.0", default-features = false, features = ["deflate-flate2"] }

@@ -8,6 +8,10 @@
 //! A site whose `url` puts it under a path, like `/my-project`, is served
 //! under it, as it's published, so a link that leaves the path out is broken
 //! here too. The root of the domain sends the browser to the site.
+//!
+//! After each build, it warns of each broken link within the site. Links
+//! that leave it are left to `little build`, so a save never waits on the
+//! network.
 
 use anyhow::{Result, anyhow};
 use notify::{Event, RecommendedWatcher, RecursiveMode, Watcher};
@@ -22,6 +26,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tiny_http::{Header, Response, Server};
 
+use crate::links::{self, Scope};
 use crate::site::Built;
 use crate::theme::Location;
 use crate::{config, site};
@@ -38,11 +43,13 @@ pub fn serve(site_dir: &Path, host: Option<String>, port: Option<u16>) -> Result
     // The last build that worked. A rebuild can move its folder, or the path
     // it's served under.
     let built = site::build(&site_dir)?;
+    warn_of_broken_links(&built);
     let home = match built.url.path.as_str() {
         "" => String::new(),
         path => format!("{path}/"),
     };
-    let built = Arc::new(Mutex::new(built));
+    // Shared with each request, as a build's list of files can be long.
+    let built = Arc::new(Mutex::new(Arc::new(built)));
 
     let version = Arc::new(AtomicU64::new(1));
     spawn_watcher(site_dir.clone(), built.clone(), version.clone());
@@ -58,7 +65,7 @@ pub fn serve(site_dir: &Path, host: Option<String>, port: Option<u16>) -> Result
             let _ = request.respond(Response::from_string(body));
             continue;
         }
-        let built = built.lock().unwrap().clone();
+        let built = Arc::clone(&built.lock().unwrap());
         serve_file(&built, request);
     }
     Ok(())
@@ -74,7 +81,19 @@ fn address(host: &str, port: u16) -> String {
     }
 }
 
-fn spawn_watcher(site_dir: PathBuf, last: Arc<Mutex<Built>>, version: Arc<AtomicU64>) {
+/// Warn of each broken link within the site `built`.
+fn warn_of_broken_links(built: &Built) {
+    match links::check(built, Scope::Internal) {
+        Ok(broken) => {
+            for link in broken {
+                eprintln!("warning: {link}");
+            }
+        }
+        Err(e) => eprintln!("link check error: {e:#}"),
+    }
+}
+
+fn spawn_watcher(site_dir: PathBuf, last: Arc<Mutex<Arc<Built>>>, version: Arc<AtomicU64>) {
     std::thread::spawn(move || {
         let (tx, rx) = std::sync::mpsc::channel();
         let mut sources = match Sources::watch(&site_dir, tx) {
@@ -97,9 +116,12 @@ fn spawn_watcher(site_dir: PathBuf, last: Arc<Mutex<Built>>, version: Arc<Atomic
 
             match site::build(&site_dir) {
                 Ok(built) => {
-                    *last.lock().unwrap() = built;
+                    let built = Arc::new(built);
+                    *last.lock().unwrap() = Arc::clone(&built);
                     version.fetch_add(1, Ordering::SeqCst);
                     println!("rebuilt");
+                    // Once browsers can reload, as it takes longer than building.
+                    warn_of_broken_links(&built);
                 }
                 Err(e) => eprintln!("build error: {e:#}"),
             }
