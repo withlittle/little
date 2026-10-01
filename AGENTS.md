@@ -19,16 +19,17 @@ cargo fmt                   # format — run before committing
 - `src/main.rs` — CLI (clap): `build`, `serve`, `config`.
 - `src/config.rs` — the 3-level cascading config (little → theme → site): the
   chain of themes a site uses, its source and destination folders, the levels
-  of heading its tables of contents list, and the host and port
-  `little serve` serves it at.
+  of heading its tables of contents list, the host and port
+  `little serve` serves it at, and the `url` it's published at.
 - `src/little.yml` — little's own defaults (level 1), compiled into the binary.
 - `src/render.rs` — Markdown (comrak) + YAML frontmatter → HTML fragment.
 - `src/site.rs` — build pipeline: walk the source (`docs/`), render, apply
   theme, write the destination (`dist/`).
 - `src/theme.rs` — a theme's templates and static files, layered over those of
   the themes it builds on, and the built-in theme; picks each page's template
-  by its type (`home`, `section`, `page`, `404`). A theme is built in, in a
-  folder, or downloaded.
+  by its type (`home`, `section`, `page`, `404`), and gives templates the
+  `url` and `absolute_url` filters. A theme is built in, in a folder, or
+  downloaded.
 - `src/download.rs` — a theme downloaded from a URL: fetched over HTTPS,
   unpacked from its `.zip` or `.tar.gz`, and kept in the site's `.little/`, so
   it's downloaded only once.
@@ -129,4 +130,10 @@ Record notable choices as short ADRs in `decisions/`. Locked so far:
   rendered, with an error that names both; URLs that differ only in case
   aren't checked — see
   [`decisions/0013-pages-that-clash.md`](./decisions/0013-pages-that-clash.md).
+- **Publishing under a path:** a site's `url`, like
+  `https://withlittle.github.io/little`, puts its path before every URL
+  little gives the theme and every link in Markdown, and `little serve`
+  serves the site under it; a theme writes its own URLs through the `url`
+  filter, and makes them absolute with `absolute_url` — see
+  [`decisions/0014-site-url-and-its-path.md`](./decisions/0014-site-url-and-its-path.md).
 - **Plugins:** sandboxed WASM (planned).

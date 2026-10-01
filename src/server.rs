@@ -4,6 +4,10 @@
 //! `/__little/version` counter, and inject a small polling script into every
 //! HTML page. A file watcher rebuilds the site and bumps the counter, so open
 //! browsers reload themselves.
+//!
+//! A site whose `url` puts it under a path, like `/my-project`, is served
+//! under it, as it's published, so a link that leaves the path out is broken
+//! here too. The root of the domain sends the browser to the site.
 
 use anyhow::{Result, anyhow};
 use notify::{Event, RecommendedWatcher, RecursiveMode, Watcher};
@@ -17,6 +21,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tiny_http::{Header, Response, Server};
 
+use crate::site::Built;
 use crate::theme::Location;
 use crate::{config, site};
 
@@ -29,16 +34,22 @@ pub fn serve(site_dir: &Path, host: Option<String>, port: Option<u16>) -> Result
     let host = host.unwrap_or(cfg.host);
     let port = port.unwrap_or(cfg.port);
 
-    // The folder of the last build that worked, which a rebuild can move.
-    let destination = Arc::new(Mutex::new(site::build(&site_dir)?));
+    // The last build that worked. A rebuild can move its folder, or the path
+    // it's served under.
+    let built = site::build(&site_dir)?;
+    let home = match built.url.path.as_str() {
+        "" => String::new(),
+        path => format!("{path}/"),
+    };
+    let built = Arc::new(Mutex::new(built));
 
     let version = Arc::new(AtomicU64::new(1));
-    spawn_watcher(site_dir.clone(), destination.clone(), version.clone());
+    spawn_watcher(site_dir.clone(), built.clone(), version.clone());
 
     let addr = address(&host, port);
     let server =
         Server::http((host.as_str(), port)).map_err(|e| anyhow!("failed to bind {addr}: {e}"))?;
-    println!("little serving http://{addr}  (live reload on — edit your docs or the theme)");
+    println!("little serving http://{addr}{home}  (live reload on — edit your docs or the theme)");
 
     for request in server.incoming_requests() {
         if request.url().starts_with("/__little/version") {
@@ -46,8 +57,8 @@ pub fn serve(site_dir: &Path, host: Option<String>, port: Option<u16>) -> Result
             let _ = request.respond(Response::from_string(body));
             continue;
         }
-        let destination = destination.lock().unwrap().clone();
-        serve_file(&destination, request);
+        let built = built.lock().unwrap().clone();
+        serve_file(&built, request);
     }
     Ok(())
 }
@@ -62,7 +73,7 @@ fn address(host: &str, port: u16) -> String {
     }
 }
 
-fn spawn_watcher(site_dir: PathBuf, destination: Arc<Mutex<PathBuf>>, version: Arc<AtomicU64>) {
+fn spawn_watcher(site_dir: PathBuf, last: Arc<Mutex<Built>>, version: Arc<AtomicU64>) {
     std::thread::spawn(move || {
         let (tx, rx) = std::sync::mpsc::channel();
         let mut sources = match Sources::watch(&site_dir, tx) {
@@ -85,7 +96,7 @@ fn spawn_watcher(site_dir: PathBuf, destination: Arc<Mutex<PathBuf>>, version: A
 
             match site::build(&site_dir) {
                 Ok(built) => {
-                    *destination.lock().unwrap() = built;
+                    *last.lock().unwrap() = built;
                     version.fetch_add(1, Ordering::SeqCst);
                     println!("rebuilt");
                 }
@@ -266,8 +277,16 @@ fn changes_site_config(event: &Event) -> bool {
             .any(|path| path.file_name() == Some(OsStr::new(config::CONFIG_FILE)))
 }
 
-fn serve_file(destination: &Path, request: tiny_http::Request) {
-    let (full, status) = match respond_with(destination, request.url()) {
+fn serve_file(built: &Built, request: tiny_http::Request) {
+    let base = &built.url.path;
+    if let Some(location) = redirect(base, request.url())
+        && let Ok(header) = Header::from_bytes(&b"Location"[..], location.as_bytes())
+    {
+        // Not 301, which a browser would remember after the path changes.
+        let _ = request.respond(Response::empty(302).with_header(header));
+        return;
+    }
+    let (full, status) = match respond_with(&built.destination, base, request.url()) {
         Some(found) => found,
         None => {
             let _ = request.respond(Response::from_string("404 Not Found").with_status_code(404));
@@ -294,11 +313,21 @@ fn serve_file(destination: &Path, request: tiny_http::Request) {
     }
 }
 
+/// Where to send the browser instead of `url`, for a site under `base`, like
+/// `/my-project`: to the site's home page, from the root of the domain or
+/// from `base` without its `/`.
+fn redirect(base: &str, url: &str) -> Option<String> {
+    let path = url.split(['?', '#']).next().unwrap_or("");
+    (!base.is_empty() && (path == "/" || path == base)).then(|| format!("{base}/"))
+}
+
 /// The file to answer a request for `url` with, and the status to send: the
-/// file at that URL, or else the site's 404 page, as a static host would.
-/// `None` if there's neither.
-fn respond_with(destination: &Path, url: &str) -> Option<(PathBuf, u16)> {
-    if let Some(path) = resolve_route(destination, url) {
+/// file at that URL under `base`, the site's path, or else the site's 404
+/// page, as a static host would. `None` if there's neither.
+fn respond_with(destination: &Path, base: &str, url: &str) -> Option<(PathBuf, u16)> {
+    let path = url.split(['?', '#']).next().unwrap_or("");
+    let within = path.strip_prefix(base).filter(|rest| rest.starts_with('/'));
+    if let Some(path) = within.and_then(|rest| resolve_route(destination, rest)) {
         return Some((path, 200));
     }
     let not_found = destination.join(site::NOT_FOUND_FILE);
@@ -423,23 +452,62 @@ mod tests {
         let not_found = dist.join(site::NOT_FOUND_FILE);
 
         // Without a 404 page, there's nothing to send...
-        assert_eq!(respond_with(&dist, "/nowhere"), None);
+        assert_eq!(respond_with(&dist, "", "/nowhere"), None);
 
         // ...and with one, it's sent for any URL that has no file.
         std::fs::write(&not_found, "Not found").unwrap();
         assert_eq!(
-            respond_with(&dist, "/nowhere"),
+            respond_with(&dist, "", "/nowhere"),
             Some((not_found.clone(), 404))
         );
         assert_eq!(
-            respond_with(&dist, "/../secret"),
+            respond_with(&dist, "", "/../secret"),
             Some((not_found.clone(), 404))
         );
         assert_eq!(
-            respond_with(&dist, "/"),
+            respond_with(&dist, "", "/"),
             Some((dist.join("index.html"), 200))
         );
-        assert_eq!(respond_with(&dist, "/404.html"), Some((not_found, 200)));
+        assert_eq!(respond_with(&dist, "", "/404.html"), Some((not_found, 200)));
+
+        let _ = std::fs::remove_dir_all(&dist);
+    }
+
+    #[test]
+    fn a_site_under_a_path_is_served_under_it() {
+        let dist = scratch(
+            "under-a-path",
+            &[
+                ("index.html", "Home"),
+                ("guide/index.html", "Guide"),
+                ("404.html", "Not found"),
+            ],
+        );
+        let at = |url: &str| respond_with(&dist, "/little", url);
+        let found = |file: &str| Some((dist.join(file), 200));
+        let not_found = Some((dist.join(site::NOT_FOUND_FILE), 404));
+
+        assert_eq!(at("/little/"), found("index.html"));
+        assert_eq!(at("/little/guide/"), found("guide/index.html"));
+        assert_eq!(at("/little/guide?v=2"), found("guide/index.html"));
+        assert_eq!(at("/little/404.html"), found("404.html"));
+
+        // Outside the path, nothing is the site's, as when it's published, so
+        // a link that leaves the path out is broken here too.
+        for url in ["/guide/", "/404.html", "/littler/", "/../little/"] {
+            assert_eq!(at(url), not_found, "{url}");
+        }
+
+        // The root of the domain, and the path without its `/`, go to the
+        // site's home page.
+        assert_eq!(redirect("/little", "/"), Some("/little/".into()));
+        assert_eq!(redirect("/little", "/?v=2"), Some("/little/".into()));
+        assert_eq!(redirect("/little", "/little"), Some("/little/".into()));
+        for url in ["/little/", "/guide/", "/littler"] {
+            assert_eq!(redirect("/little", url), None, "{url}");
+        }
+        // A site at the root of its domain is already there.
+        assert_eq!(redirect("", "/"), None);
 
         let _ = std::fs::remove_dir_all(&dist);
     }

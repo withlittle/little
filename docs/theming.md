@@ -26,7 +26,8 @@ The merged config (little → theme → site), plus a derived nav:
 ### `page`
 
 - `page.type` — the type of page: `home`, `section`, `page`, or `404` (see below)
-- `page.url` — the page's clean, extensionless URL (`/`, `/getting-started`, `/guide/install`)
+- `page.url` — the page's clean, extensionless URL (`/`, `/getting-started`, `/guide/install`),
+  after the path of the site's `url`, if it's published under one (see below)
 - `page.title` — frontmatter `title`, else the first `<h1>`, else a name derived from the file
 - `page.content` — the rendered Markdown (HTML)
 - `page.toc` — an in-page table of contents built from the page's headings, from level
@@ -109,7 +110,7 @@ my-theme/
 ```
 
 This theme keeps its stylesheet at `_static/assets/style.css`, so its pages link to
-`/assets/style.css`. It's little's built-in theme, compiled into little from `theme/`, so a
+`{{ '/assets/style.css' | url }}`. It's little's built-in theme, compiled into little from `theme/`, so a
 site that doesn't set `theme` gets it. This site sets `theme: ./theme` to use the folder
 instead, so edits to it reload live. To use a theme kept somewhere else, point `theme` at its
 folder in the site's `little.yml`:
@@ -139,3 +140,23 @@ A theme's own `little.yml` can set `theme` too, to build on another theme: a pat
 to the theme's folder, and a URL works just as it does for a site. Its settings go over that
 theme's, and so do its templates and static files, file by file, so a company theme that only
 changes some colours can be just a `little.yml` that builds on a downloaded theme.
+
+## Wherever the site is published
+
+A site published under a path, like a GitHub Pages project site at
+`https://withlittle.github.io/little`, sets `url` to that address in its `little.yml`:
+
+```yaml
+url: https://withlittle.github.io/little
+```
+
+little then puts the path, `/little`, before every URL it gives the theme, in `page.url`,
+`page.prev`, `site.nav`, and the rest, and before each link in Markdown, like this
+[link to the guide](/guide/), so authors write URLs from the root of the site.
+`little serve` serves the site under the path too, so a link that leaves it out breaks
+there first.
+
+A theme puts the path before its own URLs with the `url` filter, as this theme does for its
+stylesheet and its home link, and makes a URL absolute, for a link preview or a feed, with
+`absolute_url`: `{{ page.url | absolute_url }}`, or `{{ '/og.png' | url | absolute_url }}`
+for one of its own. Without a `url`, both leave a URL as it is.
