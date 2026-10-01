@@ -11,6 +11,7 @@
 
 use anyhow::{Result, anyhow};
 use notify::{Event, RecommendedWatcher, RecursiveMode, Watcher};
+use percent_encoding::percent_decode_str;
 use std::ffi::OsStr;
 use std::io;
 use std::net::Ipv6Addr;
@@ -336,13 +337,22 @@ fn respond_with(destination: &Path, base: &str, url: &str) -> Option<(PathBuf, u
 
 /// Resolve a request URL to a file in the destination, understanding the
 /// pretty, extensionless routes the build emits (`/getting-started` ->
-/// `getting-started/index.html`). Returns `None` for anything that doesn't
-/// resolve to a real file, and rejects `..` traversal.
+/// `getting-started/index.html`). The URL is decoded first, as a browser
+/// encodes what it can't send as is: the page built from
+/// `Incident Response/triage.md` is asked for as `/Incident%20Response/triage`.
+/// Returns `None` for anything that doesn't resolve to a real file, and
+/// rejects paths that would leave the destination.
 fn resolve_route(destination: &Path, url: &str) -> Option<PathBuf> {
     let path = url.split(['?', '#']).next().unwrap_or("");
-    let trimmed = path.trim_start_matches('/');
+    let decoded = percent_decode_str(path).decode_utf8().ok()?;
+    let trimmed = decoded.trim_start_matches('/');
 
-    if trimmed.split('/').any(|segment| segment == "..") {
+    // Check the decoded path, where `%2e%2e` is `..`, and check it as the
+    // system reads it, so on Windows a `\` (`%5C`) can't climb out either.
+    if !Path::new(trimmed)
+        .components()
+        .all(|component| matches!(component, Component::Normal(_) | Component::CurDir))
+    {
         return None;
     }
 
@@ -444,6 +454,56 @@ mod tests {
         assert_eq!(at("/../secret"), None);
 
         let _ = std::fs::remove_dir_all(&dist);
+    }
+
+    #[test]
+    fn encoded_urls_find_the_files_they_name() {
+        // A browser encodes the space in `Incident Response`, and the `é` in
+        // `café`, when it asks for them.
+        let root = scratch(
+            "encoded",
+            &[
+                ("dist/index.html", "Home"),
+                ("dist/Incident Response/Process/triage/index.html", "Triage"),
+                ("dist/café/index.html", "Café"),
+                ("secret/index.html", "Secret"),
+            ],
+        );
+        let dist = root.join("dist");
+        let at = |url: &str| resolve_route(&dist, url);
+        let triage = dist.join("Incident Response/Process/triage/index.html");
+
+        assert_eq!(
+            at("/Incident%20Response/Process/triage"),
+            Some(triage.clone())
+        );
+        assert_eq!(
+            at("/Incident%20Response/Process/triage/?v=2"),
+            Some(triage.clone())
+        );
+        assert_eq!(at("/caf%C3%A9/"), Some(dist.join("café/index.html")));
+        // Not UTF-8 once decoded, so it can't be one of little's URLs.
+        assert_eq!(at("/caf%E9/"), None);
+        // And under a site's path, as `little serve` is asked for it.
+        assert_eq!(
+            respond_with(
+                &dist,
+                "/little",
+                "/little/Incident%20Response/Process/triage"
+            ),
+            Some((triage, 200))
+        );
+
+        // Decoded, each of these would leave the destination for `secret/`.
+        for url in [
+            "/%2e%2e/secret/",
+            "/%2E%2E%2Fsecret/",
+            "/Incident%20Response/..%2F..%2Fsecret/",
+        ] {
+            assert_eq!(at(url), None, "{url}");
+        }
+
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]

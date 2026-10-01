@@ -556,6 +556,7 @@ dependencies = [
  "minijinja",
  "notify",
  "notify-debouncer-mini",
+ "percent-encoding",
  "serde",
  "serde_yaml",
  "tar",
