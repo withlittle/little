@@ -82,7 +82,9 @@ my-docs/
 │   ├── getting-started.md  # → /getting-started
 │   └── guide/
 │       ├── README.md       # → /guide/
-│       └── install.md      # → /guide/install
+│       ├── install.md      # → /guide/install
+│       └── images/
+│           └── setup.png   # → /guide/images/setup.png, copied as it is
 └── dist/                   # the destination: build output (generated)
 ```
 
@@ -96,13 +98,21 @@ my-docs/
   build with an error that names both. Pages whose URLs differ only in case,
   like `API.md` and `api/README.md`, aren't caught, but on macOS and Windows,
   which ignore case by default, one replaces the other.
+- **Images and other files.** Every other file under `docs/`, like an image or
+  a PDF, is copied as it is to the same path in the site, so keep it beside
+  the pages that use it. One at the same path as one of the theme's files
+  replaces it.
 - **Markdown.** CommonMark plus GitHub Flavored Markdown: tables,
   strikethrough, task lists, autolinks, and footnotes. Every heading gets an
   `id`, so you can link straight to a section (`/guide/install#from-source`).
-- **Links.** Link to other pages by URL (`[Install](/guide/install)`), not by
-  file name. `.md` links aren't rewritten. Write URLs from the root of the
-  site, even if it's published under a path: its
-  [`url`](#choosing-the-sites-url) adds the path for you.
+- **Links and images.** Write them relative to the file they're in, as on
+  GitHub, and they work wherever the site is published: in
+  `guide/install.md`, `![Setup](images/setup.png)` shows
+  `guide/images/setup.png`. Link to other pages by URL (`[Usage](usage)`, or
+  `[Install](/guide/install)` from the root of the site), not by file name:
+  `.md` links aren't rewritten. If the site is published under a path, its
+  [`url`](#choosing-the-sites-url) adds it to every link for you, but on
+  GitHub, a link from the root leads from the root of the repository.
 - **Frontmatter** is an optional block of YAML settings at the very top of a
   page. Every setting reaches the theme as `page.<key>`, like `description`
   for a meta description, and has the last word on what `page` holds. little
@@ -251,7 +261,7 @@ A site is built from its `source` folder into its `destination` folder:
 
 | Key | Default | The folder… |
 | --- | ------- | ----------- |
-| `source` | `./docs` | whose `.md` files become the site's pages |
+| `source` | `./docs` | whose `.md` files become the site's pages, and whose other files are copied into it |
 | `destination` | `./dist` | the site is built into |
 
 To use others, set them in `little.yml`:
@@ -267,6 +277,9 @@ destination: ./public
   relative to the site.
 - The source can be a hidden folder itself, like `./.github`: only what's
   hidden inside it is left out.
+- With `source: .`, everything in the site's folder that isn't hidden is
+  published, its `little.yml` included, but the destination: a build never
+  copies itself.
 - Every build wipes the destination, so point it at a folder that holds nothing
   but builds. little leaves a `.little-build` file in each folder it builds,
   and only wipes a folder that has one or is empty: pointed at any other
@@ -346,8 +359,10 @@ url: https://withlittle.github.io/little
 - Every URL little gives the theme gets the path: `/guide/install` becomes
   `/little/guide/install` in `site.nav`, in `page.url` and the other links on
   `page`, and in Markdown links and images. So write URLs as usual, from the
-  root of the site, without the path. A `#fragment`, a link like `install`,
-  and a link to another site are left as they are.
+  root of the site, without the path, or relative to the file they're in:
+  `images/setup.png`, in `guide/install.md`, becomes
+  `/little/guide/images/setup.png`. A `#fragment` and a link to another site
+  are left as they are.
 - `little serve` serves the site under the path too, at
   <http://127.0.0.1:8080/little/>, so a link that leaves it out is broken
   while you write, not after you publish. The server's root sends you to the
@@ -424,7 +439,8 @@ what the theme sees:
 left blank is ignored.
 
 Everything in `_static/` is copied to the site's root as it is, so
-`_static/assets/style.css` becomes `/assets/style.css`. If a static file would
+`_static/assets/style.css` becomes `/assets/style.css`, unless a site has a
+file at the same path in its source, which replaces it. If a static file would
 take the place of a page, the build stops and names both. The built-in theme's
 [`default.html`](./theme/_templates/default.html) and
 [`404.html`](./theme/_templates/404.html) are complete working examples.
@@ -455,9 +471,11 @@ from a stylesheet relative to it, like `url(fonts/inter.woff2)`.
 ## Deploying
 
 `dist/` (or your [destination](#choosing-folders)) is plain static HTML: upload
-it to any static host. Page links and assets are root-relative
-(`/guide/install`, `/assets/style.css`), so to publish the site under a path,
-like a GitHub Pages project site, set its [`url`](#choosing-the-sites-url).
+it to any static host. Page links, images, and assets are root-relative
+(`/guide/install`, `/guide/images/setup.png`, `/assets/style.css`), even those
+written relative to a page, so they work whether or not a host adds a `/` to
+the end of a page's URL. To publish the site under a path, like a GitHub
+Pages project site, set its [`url`](#choosing-the-sites-url).
 A theme's 404 page is built to `dist/404.html`,
 where GitHub Pages, Netlify, and most other static hosts look for one;
 `little serve` uses it too.

@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="480" height="96" viewBox="0 0 480 96" role="img" aria-labelledby="title">
+  <title id="title">docs/guide/install.md becomes the page at /guide/install</title>
+  <style>
+    text { font: 15px ui-monospace, SFMono-Regular, Menlo, monospace; fill: #1f2328; }
+  </style>
+  <rect x="1" y="24" width="200" height="48" rx="8" fill="#f2f3f5" stroke="#e7e9ec"/>
+  <text x="101" y="53" text-anchor="middle">guide/install.md</text>
+  <path d="M212 48 H262" stroke="#7c3aed" stroke-width="2"/>
+  <path d="M262 42 L272 48 L262 54 Z" fill="#7c3aed"/>
+  <rect x="279" y="24" width="200" height="48" rx="8" fill="#ffffff" stroke="#7c3aed"/>
+  <text x="379" y="53" text-anchor="middle">/guide/install</text>
+</svg>

@@ -22,9 +22,11 @@ cargo fmt                   # format — run before committing
   of heading its tables of contents list, the host and port
   `little serve` serves it at, and the `url` it's published at.
 - `src/little.yml` — little's own defaults (level 1), compiled into the binary.
-- `src/render.rs` — Markdown (comrak) + YAML frontmatter → HTML fragment.
-- `src/site.rs` — build pipeline: walk the source (`docs/`), render, apply
-  theme, write the destination (`dist/`).
+- `src/render.rs` — Markdown (comrak) + YAML frontmatter → HTML fragment, with
+  each relative link led from the folder of the file it's in.
+- `src/site.rs` — build pipeline: walk the source (`docs/`), render its
+  Markdown, copy its other files, apply theme, write the destination
+  (`dist/`).
 - `src/theme.rs` — a theme's templates and static files, layered over those of
   the themes it builds on, and the built-in theme; picks each page's template
   by its type (`home`, `section`, `page`, `404`), and gives templates the
@@ -136,4 +138,10 @@ Record notable choices as short ADRs in `decisions/`. Locked so far:
   serves the site under it; a theme writes its own URLs through the `url`
   filter, and makes them absolute with `absolute_url` — see
   [`decisions/0014-site-url-and-its-path.md`](./decisions/0014-site-url-and-its-path.md).
+- **Files and relative links:** every file in the source that isn't hidden or
+  Markdown is copied to the same path in the destination, over a theme's file
+  at that path, but for a destination inside the source; a relative link or
+  image leads from the folder of the file it's in, as on GitHub, whatever URL
+  its page is served at — see
+  [`decisions/0015-files-and-relative-links.md`](./decisions/0015-files-and-relative-links.md).
 - **Plugins:** sandboxed WASM (planned).

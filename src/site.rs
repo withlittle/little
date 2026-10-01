@@ -158,22 +158,36 @@ pub fn build(site_dir: &Path) -> Result<Built> {
     }
     let theme = Theme::load(&themes, &site_url)?;
 
-    // Collect and render every Markdown file in the source folder but hidden
-    // ones, without walking hidden folders. The source folder itself (depth 0)
-    // can be hidden.
+    // Walk every file in the source folder but hidden ones, without walking
+    // hidden folders, or the destination, which can be inside it. The source
+    // folder itself (depth 0) can be hidden. Each Markdown file is rendered
+    // into a page, and every other file, like an image, is copied as it is.
+    let destination = destination_in(&source_dir, &destination_dir);
     let mut pages = Vec::new();
-    let entries = WalkDir::new(&source_dir)
-        .into_iter()
-        .filter_entry(|entry| entry.depth() == 0 || !is_hidden(Path::new(entry.file_name())));
+    let mut source_files = Vec::new();
+    let entries = WalkDir::new(&source_dir).into_iter().filter_entry(|entry| {
+        entry.depth() == 0
+            || !(is_hidden(Path::new(entry.file_name()))
+                || destination.as_deref() == Some(entry.path()))
+    });
     for entry in entries.filter_map(Result::ok) {
         let path = entry.path();
-        if path.extension().and_then(|s| s.to_str()) != Some("md") {
+        // A link to a file counts as the file, as it always has for pages.
+        if !path.is_file() {
             continue;
         }
         let rel = path.strip_prefix(&source_dir)?.to_path_buf();
+        if path.extension().and_then(|s| s.to_str()) != Some("md") {
+            source_files.push(StaticFile {
+                contents: fs::read(path).with_context(|| format!("reading {}", path.display()))?,
+                origin: path.display().to_string(),
+                path: rel,
+            });
+            continue;
+        }
         let raw =
             fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
-        let rendered = render::parse_document(&raw, &toc_depths, &site_url)
+        let rendered = render::parse_document(&raw, &folder_url(&rel), &toc_depths, &site_url)
             .with_context(|| format!("rendering {}", path.display()))?;
 
         // A key left blank is as good as not there: a page never holds null,
@@ -294,8 +308,15 @@ pub fn build(site_dir: &Path) -> Result<Built> {
         outputs.push(Output { path, html, name });
     }
 
-    // The theme's static files (css/js/images) go verbatim to the site's root.
-    let static_files = theme.static_files()?;
+    // The theme's static files (css/js/images) go verbatim to the site's root,
+    // and the source's other files beside the pages built from it. Where both
+    // have a file at the same path, the site's wins, as a theme's own file
+    // wins over that of the theme it builds on.
+    let mut static_files = BTreeMap::new();
+    for file in source_files.into_iter().chain(theme.static_files()?) {
+        static_files.entry(file.path.clone()).or_insert(file);
+    }
+    let static_files: Vec<_> = static_files.into_values().collect();
     check_static_files(&static_files, &destination_dir, &outputs)?;
 
     clear_destination(&destination_dir)?;
@@ -430,8 +451,8 @@ fn check_clashes(pages: &[Page], source_dir: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Fail if a theme's static file would land on a page in the destination: on
-/// the page itself, or on the folder it's in.
+/// Fail if a static file, a theme's or one from the source, would land on a
+/// page in the destination: on the page itself, or on the folder it's in.
 fn check_static_files(files: &[StaticFile], destination: &Path, outputs: &[Output]) -> Result<()> {
     for file in files {
         let target = destination.join(&file.path);
@@ -494,32 +515,43 @@ fn folders(rel: &Path) -> Vec<&str> {
         .collect()
 }
 
-/// Directory segments of `rel` (the parent folders), `/`-joined.
-fn dir_segments(rel: &Path) -> Option<String> {
-    let folders = folders(rel);
-    (!folders.is_empty()).then(|| folders.join("/"))
+/// The URL of the folder the file at `rel` is in, which the links in it lead
+/// from.
+///
+/// - `README.md`         -> `/`
+/// - `guide/install.md`  -> `/guide/`
+fn folder_url(rel: &Path) -> String {
+    let mut url = String::from("/");
+    for folder in folders(rel) {
+        url.push_str(folder);
+        url.push('/');
+    }
+    url
 }
 
-/// Derive a page's pretty, extensionless URL.
+/// Derive a page's pretty, extensionless URL: its folder's, then its name,
+/// unless it's the folder's `README.md`.
 ///
 /// - `README.md`           -> `/`
 /// - `getting-started.md`  -> `/getting-started`
 /// - `guide/README.md`     -> `/guide/`
 /// - `guide/install.md`    -> `/guide/install`
 fn derive_url(rel: &Path) -> String {
-    let dir = dir_segments(rel);
+    let folder = folder_url(rel);
     if is_readme(rel) {
-        match dir {
-            Some(d) => format!("/{d}/"),
-            None => "/".to_string(),
-        }
-    } else {
-        let stem = rel.file_stem().and_then(|s| s.to_str()).unwrap_or("index");
-        match dir {
-            Some(d) => format!("/{d}/{stem}"),
-            None => format!("/{stem}"),
-        }
+        return folder;
     }
+    let stem = rel.file_stem().and_then(|s| s.to_str()).unwrap_or("index");
+    format!("{folder}{stem}")
+}
+
+/// Where a walk of the `source` folder finds the `destination`, if it's
+/// inside it, like `docs/_build`, so a build doesn't copy the last one into
+/// itself. Both are compared by their real paths, however they're written.
+fn destination_in(source: &Path, destination: &Path) -> Option<PathBuf> {
+    let real = destination.canonicalize().ok()?;
+    let rel = real.strip_prefix(source.canonicalize().ok()?).ok()?;
+    Some(source.join(rel))
 }
 
 /// Map a pretty URL to its directory-index output file in the destination.
@@ -885,6 +917,19 @@ mod tests {
     }
 
     #[test]
+    fn finds_the_url_of_a_files_folder() {
+        for (rel, folder) in [
+            ("README.md", "/"),
+            ("logo.png", "/"),
+            ("guide/README.md", "/guide/"),
+            ("guide/install.md", "/guide/"),
+            ("guide/advanced/tuning.md", "/guide/advanced/"),
+        ] {
+            assert_eq!(folder_url(Path::new(rel)), folder, "{rel}");
+        }
+    }
+
+    #[test]
     fn maps_urls_to_directory_index_files() {
         let dist = Path::new("dist");
         assert_eq!(
@@ -1016,7 +1061,7 @@ mod tests {
     fn a_page_toc_nests_its_headings() {
         let md = "### Before\n\n### Also Before\n\n## One\n\n### One A\n\n#### One A i\n\n\
                   ### One B\n\n## Two\n\n#### Two i\n";
-        let toc = render::parse_document(md, &(2..=6), &SiteUrl::default())
+        let toc = render::parse_document(md, "/", &(2..=6), &SiteUrl::default())
             .unwrap()
             .toc;
 
@@ -1345,6 +1390,9 @@ mod tests {
                 ("docs/guide/README.md", "# Guide\n"),
                 ("docs/guide/install.md", "# Install\n"),
                 ("docs/guide/.notes.md", "# Notes\n"),
+                ("docs/.DS_Store", ""),
+                ("docs/.drafts/diagram.png", "png"),
+                ("docs/guide/.install.md.swp", ""),
                 (
                     "theme/_templates/default.html",
                     "{% macro list(items) %}{% for item in items %}\
@@ -1357,8 +1405,8 @@ mod tests {
 
         build(&site).unwrap();
 
-        // They aren't pages, so they aren't in the nav either. A theme's
-        // static files are copied whole, hidden ones too.
+        // They aren't pages or copied, so they aren't in the nav either. A
+        // theme's static files are copied whole, hidden ones too.
         let dist = site.join("dist");
         let built = [
             MARKER_FILE,
@@ -1399,14 +1447,19 @@ mod tests {
         assert_eq!(read("index.html"), "Home");
 
         // With the site's folder as its source, what's in `.github/` and
-        // `.little/` isn't a page.
+        // `.little/` isn't a page. Everything else is published, its config
+        // and theme too, but for the destination, which a build never copies
+        // into itself.
         fs::write(site.join("little.yml"), "theme: ./theme\nsource: .\n").unwrap();
         build(&site).unwrap();
 
-        assert_eq!(
-            files_in(&dist),
-            [MARKER_FILE, "index.html"].map(PathBuf::from)
-        );
+        let built = [
+            MARKER_FILE,
+            "index.html",
+            "little.yml",
+            "theme/_templates/default.html",
+        ];
+        assert_eq!(files_in(&dist), built.map(PathBuf::from));
         assert_eq!(read("index.html"), "Site");
         let _ = fs::remove_dir_all(&root);
     }
@@ -1447,6 +1500,123 @@ mod tests {
             assert_eq!(fs::read_to_string(dir.join("index.html")).unwrap(), "Home");
         }
         let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn every_other_file_in_the_source_is_copied() {
+        let site = scratch_site(
+            "copied",
+            &[
+                ("little.yml", "theme: ./theme\n"),
+                ("docs/README.md", "# Home\n"),
+                ("docs/logo.svg", "<svg/>"),
+                ("docs/guide/install.md", "# Install\n"),
+                ("docs/guide/install/demo.mp4", "mp4"),
+                ("docs/assets/style.css", "site"),
+                ("theme/_templates/default.html", "{{ page.title }}"),
+                ("theme/_static/assets/style.css", "theme"),
+                ("theme/_static/assets/theme.js", "theme"),
+            ],
+        );
+        let png = [
+            0x89, b'P', b'N', b'G', b'\r', b'\n', 0x1a, b'\n', 0x00, 0xff,
+        ];
+        let image = site.join("docs/guide/images/step 1.png");
+        fs::create_dir_all(image.parent().unwrap()).unwrap();
+        fs::write(&image, png).unwrap();
+
+        build(&site).unwrap();
+
+        // To the same path, beside the pages, even in a page's own folder.
+        let dist = site.join("dist");
+        let built = [
+            MARKER_FILE,
+            "assets/style.css",
+            "assets/theme.js",
+            "guide/images/step 1.png",
+            "guide/install/demo.mp4",
+            "guide/install/index.html",
+            "index.html",
+            "logo.svg",
+        ];
+        assert_eq!(files_in(&dist), built.map(PathBuf::from));
+        assert_eq!(fs::read(dist.join("guide/images/step 1.png")).unwrap(), png);
+        // Where the theme has a file at the same path, the site's wins.
+        let style = fs::read_to_string(dist.join("assets/style.css")).unwrap();
+        assert_eq!(style, "site");
+        let _ = fs::remove_dir_all(&site);
+    }
+
+    #[test]
+    fn a_destination_in_the_source_isnt_copied_into_itself() {
+        let site = scratch_site(
+            "inside",
+            &[
+                ("docs/README.md", "# Home\n"),
+                ("docs/logo.svg", "<svg/>"),
+                ("theme/_templates/default.html", "{{ page.title }}"),
+            ],
+        );
+        // However its path is written. The second build finds the first's.
+        for destination in ["./docs/_build", "./docs/../docs/_build"] {
+            let site_cfg = format!("theme: ./theme\ndestination: {destination}\n");
+            fs::write(site.join("little.yml"), site_cfg).unwrap();
+            build(&site).unwrap();
+            build(&site).unwrap();
+            let built = [MARKER_FILE, "index.html", "logo.svg"];
+            let files = files_in(&site.join("docs/_build"));
+            assert_eq!(files, built.map(PathBuf::from), "{destination}");
+        }
+        let _ = fs::remove_dir_all(&site);
+    }
+
+    #[test]
+    fn links_lead_from_the_folder_of_the_file_theyre_in() {
+        // As on GitHub, whatever URL the page is served at, with or without a
+        // `/` at its end, and under the site's path.
+        let site = scratch_site(
+            "relative",
+            &[
+                (
+                    "little.yml",
+                    "theme: ./theme\nurl: https://withlittle.github.io/little\n",
+                ),
+                ("docs/README.md", "![Logo](assets/logo.svg)\n"),
+                (
+                    "docs/guide/README.md",
+                    "![Diagram](images/diagram.svg) [Install](install)\n",
+                ),
+                (
+                    "docs/guide/install.md",
+                    "![Diagram](images/diagram.svg) ![Logo](../assets/logo.svg)\n",
+                ),
+                ("docs/assets/logo.svg", "<svg/>"),
+                ("docs/guide/images/diagram.svg", "<svg/>"),
+                ("theme/_templates/default.html", "{{ page.content | safe }}"),
+            ],
+        );
+
+        build(&site).unwrap();
+
+        let dist = site.join("dist");
+        let read = |path: &str| fs::read_to_string(dist.join(path)).unwrap();
+        let logo = r#"<img src="/little/assets/logo.svg" alt="Logo" />"#;
+        let diagram = r#"<img src="/little/guide/images/diagram.svg" alt="Diagram" />"#;
+        let install = r#"<a href="/little/guide/install">Install</a>"#;
+        assert_eq!(read("index.html"), format!("<p>{logo}</p>\n"));
+        assert_eq!(
+            read("guide/index.html"),
+            format!("<p>{diagram} {install}</p>\n")
+        );
+        assert_eq!(
+            read("guide/install/index.html"),
+            format!("<p>{diagram} {logo}</p>\n")
+        );
+        // And each image is where it leads.
+        for image in ["assets/logo.svg", "guide/images/diagram.svg"] {
+            assert!(dist.join(image).is_file(), "{image}");
+        }
+        let _ = fs::remove_dir_all(&site);
     }
 
     #[test]
@@ -2031,25 +2201,27 @@ mod tests {
         build(&site).unwrap();
         assert!(site.join("dist/guide/style.css").is_file());
 
-        // ...but not on one, or where one's folder goes.
-        let static_dir = site.join("theme").join("_static");
+        // ...but not on one, or where one's folder goes, whether it's the
+        // theme's or one in the source.
         let built_from = |file: &str| {
             let source = site.join("docs").join(file);
             format!("the page built from {}", source.display())
         };
-        for (file, page) in [
-            ("index.html", built_from("README.md")),
-            ("guide/install", built_from("guide/install.md")),
-            ("guide/install/index.html", built_from("guide/install.md")),
-            ("404.html", "the 404 page".to_string()),
-        ] {
-            let path = static_dir.join(file);
-            fs::create_dir_all(path.parent().unwrap()).unwrap();
-            fs::write(&path, "static").unwrap();
-            let message = format!("{:#}", build(&site).unwrap_err());
-            let expected = format!("{} clashes with {page}", path.display());
-            assert_eq!(message, expected);
-            fs::remove_file(&path).unwrap();
+        for folder in [site.join("theme").join("_static"), site.join("docs")] {
+            for (file, page) in [
+                ("index.html", built_from("README.md")),
+                ("guide/install", built_from("guide/install.md")),
+                ("guide/install/index.html", built_from("guide/install.md")),
+                ("404.html", "the 404 page".to_string()),
+            ] {
+                let path = folder.join(file);
+                fs::create_dir_all(path.parent().unwrap()).unwrap();
+                fs::write(&path, "static").unwrap();
+                let message = format!("{:#}", build(&site).unwrap_err());
+                let expected = format!("{} clashes with {page}", path.display());
+                assert_eq!(message, expected);
+                fs::remove_file(&path).unwrap();
+            }
         }
         let home = fs::read_to_string(site.join("dist/index.html")).unwrap();
         assert_eq!(home, "Home");

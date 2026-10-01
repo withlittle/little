@@ -152,7 +152,8 @@ url: https://withlittle.github.io/little
 
 little then puts the path, `/little`, before every URL it gives the theme, in `page.url`,
 `page.prev`, `site.nav`, and the rest, and before each link in Markdown, like this
-[link to the guide](/guide/), so authors write URLs from the root of the site.
+[link to the guide](/guide/), so authors write URLs from the root of the site, or relative
+to the file they're in, [like this one](guide/).
 `little serve` serves the site under the path too, so a link that leaves it out breaks
 there first.
 
