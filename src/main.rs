@@ -1,11 +1,12 @@
 mod config;
 mod download;
+mod links;
 mod render;
 mod server;
 mod site;
 mod theme;
 
-use anyhow::Result;
+use anyhow::{Result, bail};
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
@@ -26,8 +27,13 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Build the site into its destination folder (dist/ by default)
-    Build,
+    /// Build the site into its destination folder (dist/ by default), and
+    /// warn of each broken link
+    Build {
+        /// Fail on a broken link, rather than warn of it, as for CI
+        #[arg(long)]
+        strict: bool,
+    },
     /// Serve the site locally with live reload
     Serve {
         /// Host to serve at, overriding the config's `host`
@@ -44,8 +50,15 @@ enum Commands {
 fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.command {
-        Commands::Build => {
-            site::build(&cli.dir)?;
+        Commands::Build { strict } => {
+            let built = site::build(&cli.dir)?;
+            let broken = links::check(&built, links::Scope::All)?;
+            for link in &broken {
+                eprintln!("warning: {link}");
+            }
+            if strict && !broken.is_empty() {
+                bail!("{} broken link(s)", broken.len());
+            }
         }
         Commands::Serve { host, port } => server::serve(&cli.dir, host, port)?,
         Commands::Config => {

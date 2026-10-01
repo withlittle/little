@@ -1,0 +1,535 @@
+//! Checking a built site's links with lychee: that the page, file, or
+//! `#fragment` each one leads to is there, in the site or on the web.
+//!
+//! lychee reads the built HTML, so the theme's links are checked as well as
+//! the Markdown's. A site published under a path, like `/my-project`, is
+//! checked as it's published: a link from the root of the domain is resolved
+//! in a folder that's never there, and only one under the site's path is led
+//! from it into the destination, so a link that leaves the path out is
+//! broken here, as it would be on the web.
+
+use anyhow::{Context, Result, anyhow};
+use futures::StreamExt;
+use lychee_lib::remap::Remaps;
+use lychee_lib::{
+    BaseInfo, Client, ClientBuilder, Collector, FileType, FragmentCheckerOptions, Input,
+    InputSource, Request, RequestError, ResolvedInputSource, Uri,
+};
+use percent_encoding::percent_decode_str;
+use regex::Regex;
+use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::fmt;
+use std::path::{Path, PathBuf};
+use url::Url;
+
+use crate::site::Built;
+
+/// How many files a warning names before it counts the rest.
+const FILES_NAMED: usize = 3;
+
+/// How many links are checked at once; lychee also limits how often it asks
+/// each host.
+const AT_ONCE: usize = 32;
+
+/// Which links to check.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Scope {
+    /// Every link, including those that leave the site.
+    All,
+    /// Only the links within the site, which need no network.
+    Internal,
+}
+
+/// A broken link, and the files it's in.
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct Broken {
+    /// What each file it's in was built from, like `./docs/guide.md`, sorted.
+    pub files: Vec<String>,
+    /// The link as a reader follows it, like `/my-project/guide/#usage`.
+    pub url: String,
+    /// Why it's broken, in lychee's words.
+    pub reason: String,
+}
+
+impl fmt::Display for Broken {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        // A link in the theme is on every page, so only a few are named.
+        let named = self.files.len().min(FILES_NAMED);
+        let files = self.files[..named].join(", ");
+        write!(f, "broken link {} in {files}", self.url)?;
+        if self.files.len() > named {
+            write!(f, " and {} more", self.files.len() - named)?;
+        }
+        write!(f, ": {}", self.reason)
+    }
+}
+
+/// The broken links in `built`, sorted by the files they're in.
+pub fn check(built: &Built, scope: Scope) -> Result<Vec<Broken>> {
+    tokio::runtime::Runtime::new()
+        .context("starting the link checker")?
+        .block_on(check_site(&Site::new(built)?, scope))
+}
+
+async fn check_site(site: &Site<'_>, scope: Scope) -> Result<Vec<Broken>> {
+    // Each link is checked once, however many files it's in.
+    let mut links: BTreeMap<String, (Request, BTreeSet<String>)> = BTreeMap::new();
+    // The files each broken link is in, by the link as shown and why it's
+    // broken: two links can look alike once shown, like `/guide/#usage` and
+    // `/guide/index.html#usage`, and a reader looks for one.
+    let mut broken: BTreeMap<(String, String), BTreeSet<String>> = BTreeMap::new();
+    let input = Input {
+        source: InputSource::FsPath(site.destination.clone()),
+        file_type_hint: None,
+    };
+    let requests = Collector::new(Some(site.root.clone()), BaseInfo::none())?
+        // A destination git ignores, as `dist/` usually is, is still checked.
+        .skip_ignored(false)
+        .collect_links_from_file_types(HashSet::from([input]), FileType::html_extensions());
+    let mut requests = std::pin::pin!(requests);
+    while let Some(request) = requests.next().await {
+        match request {
+            Ok(request) => {
+                let file = site.origin(&request.source);
+                let key = request.uri.as_str().to_string();
+                let (_, files) = links
+                    .entry(key)
+                    .or_insert_with(|| (request, BTreeSet::new()));
+                files.insert(file);
+            }
+            // A link that isn't a URL at all, like `https://exa mple.com`.
+            Err(RequestError::CreateRequestItem(link, source, error)) => {
+                let file = site.origin(&source);
+                let key = (link.text, error.to_string());
+                broken.entry(key).or_default().insert(file);
+            }
+            Err(error) => return Err(error).context("reading the built site's links"),
+        }
+    }
+
+    let client = site.client(scope)?;
+    let checked: Vec<_> = futures::stream::iter(links.into_values())
+        .map(|(request, files)| {
+            let client = &client;
+            async move {
+                let link = request.uri.clone();
+                let (checked, reason) = match client.check(request).await {
+                    Ok(response) => {
+                        let status = response.status();
+                        let reason = status.is_error().then(|| status.to_string());
+                        (response.body().uri.clone(), reason)
+                    }
+                    Err(error) => (link.clone(), Some(error.to_string())),
+                };
+                Some(((site.shown(&link, &checked), reason?), files))
+            }
+        })
+        .buffer_unordered(AT_ONCE)
+        .collect()
+        .await;
+    for (key, files) in checked.into_iter().flatten() {
+        broken.entry(key).or_default().extend(files);
+    }
+
+    let mut broken: Vec<_> = broken
+        .into_iter()
+        .map(|((url, reason), files)| Broken {
+            files: files.into_iter().collect(),
+            url,
+            reason,
+        })
+        .collect();
+    broken.sort();
+    Ok(broken)
+}
+
+/// A built site, as lychee finds its files and links.
+struct Site<'a> {
+    built: &'a Built,
+    /// The destination, as an absolute path, as lychee names its files.
+    destination: PathBuf,
+    /// The folder a link from the root of the domain is resolved in. It's
+    /// never there, so only a link remapped out of it into the destination
+    /// can be found.
+    root: PathBuf,
+}
+
+impl<'a> Site<'a> {
+    fn new(built: &'a Built) -> Result<Self> {
+        let destination = std::path::absolute(&built.destination)
+            .with_context(|| format!("finding {}", built.destination.display()))?;
+        let root = destination.join(".little-root");
+        Ok(Self {
+            built,
+            destination,
+            root,
+        })
+    }
+
+    fn client(&self, scope: Scope) -> Result<Client> {
+        let schemes = match scope {
+            Scope::All => HashSet::new(),
+            // A link to the site's own `url` is still checked: it's remapped
+            // to a `file` link first.
+            Scope::Internal => HashSet::from(["file".to_string()]),
+        };
+        let client = ClientBuilder::builder()
+            .index_files(Some(vec!["index.html".to_string()]))
+            .fragment_checker_options(FragmentCheckerOptions {
+                check_anchor_fragments: true,
+                check_text_fragments: false,
+            })
+            .remaps(Some(self.remaps()?))
+            .schemes(schemes)
+            // Links that only work on the author's machine, like localhost.
+            .exclude_all_private(true)
+            .build()
+            .client()?;
+        Ok(client)
+    }
+
+    /// Lead into the destination a link from the root of the domain that's
+    /// under the site's path, and a link to the site's own `url`.
+    fn remaps(&self) -> Result<Remaps> {
+        let site = &self.built.url;
+        // Made URLs as lychee makes them, so they're encoded alike.
+        let mut under = vec![dir_url(&self.root)?.join(site.path.trim_start_matches('/'))?];
+        if !site.origin.is_empty() {
+            under.push(Url::parse(&format!("{}{}", site.origin, site.path))?);
+        }
+        // `$` would start a capture group in a replacement.
+        let into = format!(
+            "{}${{1}}",
+            trimmed(&dir_url(&self.destination)?).replace('$', "$$")
+        );
+        let remaps = under
+            .iter()
+            .map(|url| {
+                let pattern = format!("^{}([/?#]|$)", regex::escape(trimmed(url)));
+                Ok((Regex::new(&pattern)?, into.clone()))
+            })
+            .collect::<Result<_>>()?;
+        Ok(Remaps::new(remaps))
+    }
+
+    /// `link`, which lychee checked as `checked`, as a reader follows it: a
+    /// link within the site from the root of the domain, like
+    /// `/my-project/guide/#usage`, and any other link as it is.
+    fn shown(&self, link: &Uri, checked: &Uri) -> String {
+        let shown = || -> Option<String> {
+            if !link.is_file() {
+                return None;
+            }
+            let url = Url::parse(checked.as_str()).ok()?;
+            let path = url.to_file_path().ok()?;
+            let (mut shown, rel, page) = match path.strip_prefix(&self.root) {
+                Ok(rel) => (String::new(), rel, None),
+                Err(_) => {
+                    let rel = path.strip_prefix(&self.destination).ok()?;
+                    let urls = &self.built.urls;
+                    let page = urls.get(rel).or_else(|| urls.get(&rel.join("index.html")));
+                    (self.built.url.path.clone(), rel, page)
+                }
+            };
+            // lychee drops the `/` from the end of a link to a file, so a
+            // page is shown at its URL, and a folder gets its `/` back.
+            if let Some(page) = page {
+                shown.push_str(page);
+            } else {
+                for part in rel {
+                    shown.push('/');
+                    shown.push_str(&part.to_string_lossy());
+                }
+                if shown.is_empty() || path.is_dir() {
+                    shown.push('/');
+                }
+            }
+            if let Some(query) = url.query() {
+                shown.push('?');
+                shown.push_str(query);
+            }
+            if let Some(fragment) = url.fragment() {
+                shown.push('#');
+                shown.push_str(&percent_decode_str(fragment).decode_utf8_lossy());
+            }
+            Some(shown)
+        };
+        shown().unwrap_or_else(|| link.to_string())
+    }
+
+    /// What `source`, a file lychee read, was built from.
+    fn origin(&self, source: &ResolvedInputSource) -> String {
+        if let ResolvedInputSource::FsPath(path) = source
+            && let Ok(rel) = path.strip_prefix(&self.destination)
+            && let Some(origin) = self.built.origins.get(rel)
+        {
+            return origin.clone();
+        }
+        source.to_string()
+    }
+}
+
+/// The `file` URL of the folder `dir`, which must be an absolute path.
+fn dir_url(dir: &Path) -> Result<Url> {
+    Url::from_directory_path(dir).map_err(|()| anyhow!("{} has no file URL", dir.display()))
+}
+
+/// `url` with no `/` at the end, so a path can follow it.
+fn trimmed(url: &Url) -> &str {
+    url.as_str().trim_end_matches('/')
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::site;
+    use std::fs;
+
+    /// A theme that shows only each page's content, so a test sees only the
+    /// links it writes.
+    const BARE_THEME: [(&str, &str); 2] = [
+        ("little.yml", "theme: ./theme\n"),
+        ("theme/_templates/default.html", "{{ page.content | safe }}"),
+    ];
+
+    const NOT_FOUND: &str = "File not found. Check if file exists and path is correct";
+
+    /// A throwaway site holding `files`, each a (path, contents) pair; a
+    /// later file overwrites an earlier one at the same path.
+    fn scratch_site(label: &str, files: &[(&str, &str)]) -> PathBuf {
+        let site =
+            std::env::temp_dir().join(format!("little-links-test-{label}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&site);
+        for (file, contents) in files {
+            let path = site.join(file);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(&path, contents).unwrap();
+        }
+        site
+    }
+
+    /// Build the site holding `files`, and warn of each broken link in
+    /// `scope`, naming each file by its path in the site.
+    fn broken_links(label: &str, scope: Scope, files: &[(&str, &str)]) -> Vec<String> {
+        let site = scratch_site(label, files);
+        let built = site::build(&site).unwrap();
+        let broken = check(&built, scope).unwrap();
+        fs::remove_dir_all(&site).unwrap();
+        let prefix = format!("{}/", site.display());
+        broken
+            .into_iter()
+            .map(|mut link| {
+                for file in &mut link.files {
+                    if let Some(rel) = file.strip_prefix(&prefix) {
+                        *file = rel.to_string();
+                    }
+                }
+                link.to_string()
+            })
+            .collect()
+    }
+
+    #[test]
+    fn finds_pages_files_and_fragments_that_arent_there() {
+        let broken = broken_links(
+            "missing",
+            Scope::Internal,
+            &[
+                BARE_THEME[0],
+                BARE_THEME[1],
+                (
+                    "docs/README.md",
+                    "# Home\n\n## Usage\n\n\
+                     [Guide](guide/) [Install](/guide/install#from-source) [Usage](#usage) \
+                     ![Diagram](guide/diagram.png)\n\n\
+                     [Uninstall](/guide/uninstall) ![Logo](images/logo.png) \
+                     [Usage](#usge) [Install](guide/install#from-sorce)\n",
+                ),
+                ("docs/guide/README.md", "# Guide\n"),
+                ("docs/guide/install.md", "# Install\n\n## From source\n"),
+                ("docs/guide/diagram.png", "png"),
+                // Copied as it is, so its links are led from its folder.
+                (
+                    "docs/guide/old.html",
+                    "<a href=\"install\">Install</a> <a href=\"setup.html\">Setup</a>",
+                ),
+            ],
+        );
+        assert_eq!(
+            broken,
+            [
+                "broken link /#usge in docs/README.md: Cannot find fragment".to_string(),
+                "broken link /guide/install#from-sorce in docs/README.md: Cannot find fragment"
+                    .to_string(),
+                format!("broken link /guide/uninstall in docs/README.md: {NOT_FOUND}"),
+                format!("broken link /images/logo.png in docs/README.md: {NOT_FOUND}"),
+                format!("broken link /guide/setup.html in docs/guide/old.html: {NOT_FOUND}"),
+            ]
+        );
+    }
+
+    #[test]
+    fn shows_a_page_at_its_url() {
+        let broken = broken_links(
+            "shown",
+            Scope::Internal,
+            &[
+                BARE_THEME[0],
+                BARE_THEME[1],
+                // Both `/guide#nope` and `guide/index.html#nope` show as
+                // `/guide/#nope`, so they're one warning.
+                (
+                    "docs/README.md",
+                    "[Install](/guide/install/#nope) [Guide](/guide#nope) \
+                     [Guide](guide/index.html#nope) [Images](/images/) [Café](#café)\n",
+                ),
+                ("docs/guide/README.md", "# Guide\n"),
+                ("docs/guide/install.md", "# Install\n"),
+                ("docs/images/logo.png", "png"),
+            ],
+        );
+        assert_eq!(
+            broken,
+            [
+                "broken link /#café in docs/README.md: Cannot find fragment",
+                "broken link /guide/#nope in docs/README.md: Cannot find fragment",
+                "broken link /guide/install#nope in docs/README.md: Cannot find fragment",
+                "broken link /images/ in docs/README.md: Cannot find index file within directory",
+            ]
+        );
+    }
+
+    #[test]
+    fn checks_a_site_under_its_path_as_its_published() {
+        let broken = broken_links(
+            "path",
+            Scope::Internal,
+            &[
+                (
+                    "little.yml",
+                    "theme: ./theme\nurl: https://withlittle.github.io/little\n",
+                ),
+                // The second stylesheet leaves out the site's path.
+                (
+                    "theme/_templates/default.html",
+                    "<link rel=\"stylesheet\" href=\"{{ '/style.css' | url }}\">\
+                     <link rel=\"stylesheet\" href=\"/style.css\">\
+                     {{ page.content | safe }}",
+                ),
+                ("theme/_static/style.css", "body {}\n"),
+                (
+                    "docs/README.md",
+                    "# Home\n\n[Usage](/guide/#usage) \
+                     [Usage](https://withlittle.github.io/little/guide/#usage) \
+                     [Usage](https://withlittle.github.io/little/guide/#usge)\n",
+                ),
+                ("docs/guide/README.md", "# Guide\n\n## Usage\n"),
+            ],
+        );
+        assert_eq!(
+            broken,
+            [
+                "broken link https://withlittle.github.io/little/guide/#usge in docs/README.md: \
+                 Cannot find fragment"
+                    .to_string(),
+                format!(
+                    "broken link /style.css in docs/README.md, docs/guide/README.md: {NOT_FOUND}"
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn finds_a_link_thats_not_a_url() {
+        let broken = broken_links(
+            "not-a-url",
+            Scope::Internal,
+            &[
+                BARE_THEME[0],
+                BARE_THEME[1],
+                ("docs/README.md", "[Example](<https://exa mple.com>)\n"),
+            ],
+        );
+        assert_eq!(broken.len(), 1, "{broken:?}");
+        assert!(
+            broken[0].starts_with("broken link https://exa%20mple.com in docs/README.md: "),
+            "{broken:?}"
+        );
+    }
+
+    #[test]
+    fn leaves_links_out_of_the_site_to_a_build() {
+        let broken = broken_links(
+            "internal",
+            Scope::Internal,
+            &[
+                BARE_THEME[0],
+                BARE_THEME[1],
+                (
+                    "docs/README.md",
+                    "[Gone](https://github.com/withlittle/no-such-repo) \
+                     [Mail](mailto:hello@withlittle.dev)\n",
+                ),
+            ],
+        );
+        assert_eq!(broken, Vec::<String>::new());
+    }
+
+    #[test]
+    fn leaves_out_links_that_work_only_on_the_authors_machine() {
+        let broken = broken_links(
+            "private",
+            Scope::All,
+            &[
+                BARE_THEME[0],
+                BARE_THEME[1],
+                (
+                    "docs/README.md",
+                    "[Preview](http://127.0.0.1:1/) [Preview](http://localhost:1/) \
+                     [Router](http://192.168.0.1:1/)\n",
+                ),
+            ],
+        );
+        assert_eq!(broken, Vec::<String>::new());
+    }
+
+    #[test]
+    fn finds_no_broken_links_in_the_built_in_theme() {
+        for config in ["", "url: https://withlittle.github.io/little\n"] {
+            let broken = broken_links(
+                "built-in",
+                Scope::Internal,
+                &[
+                    ("little.yml", config),
+                    ("docs/README.md", "# Home\n\n## Usage\n\n### Options\n"),
+                    ("docs/guide/README.md", "# Guide\n\n## Install\n"),
+                    ("docs/guide/install.md", "# Install\n\n## From source\n"),
+                    ("docs/about.md", "# About\n"),
+                ],
+            );
+            assert_eq!(broken, Vec::<String>::new(), "with little.yml {config:?}");
+        }
+    }
+
+    #[test]
+    fn names_a_few_of_the_files_a_link_is_in() {
+        let broken = |files: usize| Broken {
+            files: (1..=files).map(|n| format!("docs/{n}.md")).collect(),
+            url: "/guide/".to_string(),
+            reason: "Cannot find fragment".to_string(),
+        };
+        assert_eq!(
+            broken(1).to_string(),
+            "broken link /guide/ in docs/1.md: Cannot find fragment"
+        );
+        assert_eq!(
+            broken(3).to_string(),
+            "broken link /guide/ in docs/1.md, docs/2.md, docs/3.md: Cannot find fragment"
+        );
+        assert_eq!(
+            broken(5).to_string(),
+            "broken link /guide/ in docs/1.md, docs/2.md, docs/3.md and 2 more: \
+             Cannot find fragment"
+        );
+    }
+}

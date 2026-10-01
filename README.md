@@ -49,7 +49,8 @@ Then add a `little.yml` to name your site. See [Configuration](#configuration).
 ## Commands
 
 ```sh
-little build                         # render the site into dist/
+little build                         # render the site into dist/, and warn of broken links
+little build --strict                # fail on a broken link, as for CI
 little serve                         # dev server with live reload at http://127.0.0.1:8080
 little serve --port 3000             # serve on another port, just this once
 little config                        # print the site's config, merged
@@ -59,7 +60,9 @@ little --help                        # list every command and option
 
 - `build` wipes and regenerates `dist/` (or your
   [destination](#choosing-folders)) every time, so don't keep anything there by
-  hand. A build that fails leaves the last one in place.
+  hand. A build that fails leaves the last one in place. Once it's built the
+  site, it [checks every link](#checking-links) in it, and warns of each one
+  that's broken.
 - `serve` builds first, then watches the source folder, the theme's folder
   (and those of the themes it [builds on](#building-on-another-theme), unless
   they're [downloaded](#downloading-a-theme)), and `little.yml`, rebuilding and
@@ -68,7 +71,8 @@ little --help                        # list every command and option
   serving the last build. It serves at the [host and
   port](#choosing-where-to-serve) your config sets, unless `--host` or
   `--port` says otherwise, and under the path of the site's
-  [`url`](#choosing-the-sites-url), if it has one.
+  [`url`](#choosing-the-sites-url), if it has one. After each build, it warns
+  of broken links within the site.
 - `config` prints the [config](#configuration) the theme gets as `site`
   (without `site.nav`), so you can check a setting without building.
 
@@ -113,6 +117,7 @@ my-docs/
   `.md` links aren't rewritten. If the site is published under a path, its
   [`url`](#choosing-the-sites-url) adds it to every link for you, but on
   GitHub, a link from the root leads from the root of the repository.
+  `little build` [warns of a broken link](#checking-links).
 - **Frontmatter** is an optional block of YAML settings at the very top of a
   page. Every setting reaches the theme as `page.<key>`, like `description`
   for a meta description, and has the last word on what `page` holds. little
@@ -467,6 +472,45 @@ filters:
 Both leave a URL that isn't from the root of the site, like `https://…` or
 `#…`, as it is. A theme's CSS can't use them, so link to fonts and images
 from a stylesheet relative to it, like `url(fonts/inter.woff2)`.
+
+## Checking links
+
+Once it's built the site, `little build` checks every link and image in it,
+the theme's too, and warns of each one that's broken: a page, file, or
+`#fragment` that isn't there, in the site or on another.
+
+```text
+$ little build
+built 12 page(s) -> ./dist
+warning: broken link /guide/install#from-sorce in ./docs/README.md: Cannot find fragment
+warning: broken link https://github.com/withlittle/litle in ./docs/about.md: Rejected status code: 404 Not Found
+```
+
+- Each warning names the file to fix, and the link as a reader follows it: a
+  link within the site is shown from the root of the domain, whichever folder
+  it leads from. A link on many pages, like one in the theme, is one warning,
+  which names a few of them and counts the rest.
+- `little build --strict` fails on a broken link, so CI can keep a broken
+  site from being published. `dist/` is written either way.
+- `little serve` checks only the links within the site, so a save needn't
+  wait for other sites.
+- The site is checked as it's published. Under the path of its
+  [`url`](#choosing-the-sites-url), a link that leaves the path out is
+  broken. A link to the site's own `url`, like one a theme makes with
+  `absolute_url`, is checked in `dist/`, so a new page isn't broken before
+  it's published.
+- Links to other sites are checked on every build, so without a network,
+  each one warns. One to a site that doesn't answer holds the build up until
+  it times out, which can take about a minute. Some sites turn link checkers
+  away, so a link to one can warn even though it works; there's no way to
+  skip one yet.
+- Links that only work on your computer or network, like
+  `http://localhost:8080/`, and example domains, like `example.com`, aren't
+  checked. Nor are `mailto:` and `tel:` links, or URLs in code.
+- Only pages and other HTML files are checked, not CSS. A warning names the
+  file, not the line.
+- Links are checked with [lychee](https://lychee.cli.rs), which is built into
+  little, so there's nothing else to install.
 
 ## Deploying
 

@@ -77,7 +77,8 @@ if the theme doesn't have one:
 
 This theme has just `default.html` and `404.html`. Its `404.html` extends `default.html`
 and replaces only the title and content; templates can extend and include any others in
-`_templates/`, in subfolders too. Try it: visit a [page that isn't here](/no-such-page).
+`_templates/`, in subfolders too. Try it: add `/no-such-page` to the end of this site's
+address.
 
 ## The cascading config, made visible
 

@@ -6,7 +6,8 @@ generator written in Rust. Its mission is **authoring experience** — see
 
 ## Commands
 ```sh
-cargo run -- build          # build the example site (docs/) into dist/
+cargo run -- build          # build the example site (docs/) into dist/, and check its links
+cargo run -- build --strict # ...and fail on a broken link
 cargo run -- serve          # live-reloading dev server at http://127.0.0.1:8080
 cargo run -- config         # print the example site's merged config
 cargo build --release       # produce the release binary (target/release/little)
@@ -16,7 +17,8 @@ cargo fmt                   # format — run before committing
 ```
 
 ## Architecture (keep the core small)
-- `src/main.rs` — CLI (clap): `build`, `serve`, `config`.
+- `src/main.rs` — CLI (clap): `build` (`--strict` fails on a broken link),
+  `serve`, `config`.
 - `src/config.rs` — the 3-level cascading config (little → theme → site): the
   chain of themes a site uses, its source and destination folders, the levels
   of heading its tables of contents list, the host and port
@@ -26,7 +28,10 @@ cargo fmt                   # format — run before committing
   each relative link led from the folder of the file it's in.
 - `src/site.rs` — build pipeline: walk the source (`docs/`), render its
   Markdown, copy its other files, apply theme, write the destination
-  (`dist/`).
+  (`dist/`), noting the source file and URL of each file it writes.
+- `src/links.rs` — checks the links in the built site with lychee-lib: those
+  within the site in the destination, as the site is published under its
+  `url`, and, for `little build`, those to other sites over the network.
 - `src/theme.rs` — a theme's templates and static files, layered over those of
   the themes it builds on, and the built-in theme; picks each page's template
   by its type (`home`, `section`, `page`, `404`), and gives templates the
@@ -35,7 +40,8 @@ cargo fmt                   # format — run before committing
 - `src/download.rs` — a theme downloaded from a URL: fetched over HTTPS,
   unpacked from its `.zip` or `.tar.gz`, and kept in the site's `.little/`, so
   it's downloaded only once.
-- `src/server.rs` — dev server + file watcher + live reload.
+- `src/server.rs` — dev server + file watcher + live reload; checks the links
+  within the site after each build.
 
 Content and theme live outside `src/`:
 - `docs/` — the example/dogfood site content. This is little's **input**, not
@@ -76,7 +82,8 @@ Content and theme live outside `src/`:
 ## Conventions
 - Errors: `anyhow::Result` at boundaries; add context with `.context()`.
 - Format with `cargo fmt`; keep `cargo clippy` clean.
-- Prefer small, well-maintained crates; justify any heavy dependency.
+- Reach for a well-maintained crate before writing our own code; justify a
+  heavy dependency in an ADR.
 - Comment the *why*, not the *what*; don't over-comment.
 - Add unit tests for parsing/merging logic (frontmatter, config cascade).
 - Commits: imperative subject; include the Copilot co-author trailer.
@@ -144,4 +151,9 @@ Record notable choices as short ADRs in `decisions/`. Locked so far:
   image leads from the folder of the file it's in, as on GitHub, whatever URL
   its page is served at — see
   [`decisions/0015-files-and-relative-links.md`](./decisions/0015-files-and-relative-links.md).
+- **Checking links:** `little build` checks every link in the built site
+  with lychee-lib, built in, and warns of each broken page, file, `#fragment`,
+  or link to another site, naming the file it's in; `--strict` fails on one,
+  and `little serve` checks only links within the site — see
+  [`decisions/0016-checking-links.md`](./decisions/0016-checking-links.md).
 - **Plugins:** sandboxed WASM (planned).
