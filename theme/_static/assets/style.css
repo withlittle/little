@@ -34,7 +34,7 @@ a:hover { text-decoration: underline; }
   color: #1f2328;
 }
 .brand:hover { text-decoration: none; }
-.tagline { color: #6b727c; font-size: 0.9rem; }
+.description { color: #6b727c; font-size: 0.9rem; }
 
 /* Layout */
 .layout {

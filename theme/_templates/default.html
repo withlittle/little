@@ -18,7 +18,7 @@
 <body>
   <header class="site-header">
     <a class="brand" href="{{ '/' | url }}">{{ site.name }}</a>
-    {% if site.tagline %}<span class="tagline">{{ site.tagline }}</span>{% endif %}
+    {% if site.description %}<span class="description">{{ site.description }}</span>{% endif %}
   </header>
 
   <div class="layout{% if page.toc %} has-toc{% endif %}">

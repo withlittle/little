@@ -153,7 +153,7 @@ and `little config` prints the result:
 ```yaml
 # little.yml
 name: "My Project Docs"
-tagline: "Docs that just work"
+description: "Docs that just work"
 ```
 
 Every key reaches the theme as `site.<key>`, so you can add your own. little's
@@ -169,7 +169,7 @@ built-in theme uses these keys, with defaults from its
 | Key | Default | Used for |
 | --- | ------- | -------- |
 | `name` | `Documentation` | Site title (header and browser tab) |
-| `tagline` | none | Text beside the site title |
+| `description` | none | Text beside the site title |
 | `font` | a system UI font stack | Body text `font-family` |
 | `lang` | `en` | The page's `lang` attribute |
 
@@ -399,7 +399,7 @@ rather than setting it to null, so `{% if page.description %}` and
 
 | Variable | Contents |
 | -------- | -------- |
-| `site` | The merged config: `site.name`, `site.tagline`, and any keys you add |
+| `site` | The merged config: `site.name`, `site.description`, and any keys you add |
 | `site.nav` | The nav tree: a list of `{ title, url, children }`; a folder without a `README.md` has no `url`. A `nav` in `little.yml` replaces it |
 | `page.type` | The page's type: `home`, `section`, `page`, or `404` |
 | `page.url` | The page's URL, e.g. `/guide/install`; compare it with `item.url` to mark the current nav item |
