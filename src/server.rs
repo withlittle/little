@@ -655,6 +655,7 @@ mod tests {
                 ("little.yml", "theme: ./theme\nname: Test\n"),
                 ("docs/README.md", "# Home\n"),
                 ("docs/guide/install.md", "# Install\n"),
+                ("docs/guide/images/diagram.png", "png"),
                 ("theme/little.yml", "font: serif\n"),
                 ("theme/_templates/default.html", "{{ page.content | safe }}"),
                 ("theme/_static/style.css", "body {}\n"),

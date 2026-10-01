@@ -1,6 +1,8 @@
 # 0014 — A site's `url` puts it under its path
 
-- Status: accepted
+- Status: accepted; amended by [0015](./0015-files-and-relative-links.md),
+  which leads a relative link, like `install`, from the folder of the file
+  it's written in, and gives it the path too
 - Date: 2026-10-01
 
 ## Context

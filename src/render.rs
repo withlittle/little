@@ -36,10 +36,13 @@ pub struct Rendered {
 
 /// Parse a document into its frontmatter, rendered HTML, and outline, which
 /// lists its headings at the levels in `toc_depths` (the config's
-/// `toc_min_depth` to `toc_max_depth`). Links and images from the root of the
-/// site, like `/guide/`, get the path of the site's `url`.
+/// `toc_min_depth` to `toc_max_depth`). Links and images relative to the
+/// document, like `images/logo.png`, lead from `folder`, the URL of the folder
+/// it's in, like `/guide/`; those from the root of the site get the path of
+/// the site's `url`.
 pub fn parse_document(
     raw: &str,
+    folder: &str,
     toc_depths: &RangeInclusive<u8>,
     url: &SiteUrl,
 ) -> Result<Rendered> {
@@ -56,7 +59,7 @@ pub fn parse_document(
     let arena = Arena::new();
     let root = comrak::parse_document(&arena, &body, &options);
 
-    link_within_site(root, url);
+    link_within_site(root, folder, url);
     let (toc, first_h1) = outline(root, toc_depths);
 
     let mut html = String::new();
@@ -85,17 +88,57 @@ fn render_options() -> Options<'static> {
     options
 }
 
-/// Put the site's path before each link and image from the root of the site,
-/// so an author can write `/guide/` wherever the site is published. Raw HTML
-/// isn't rendered, so its links needn't be found.
-fn link_within_site<'a>(root: &'a AstNode<'a>, url: &SiteUrl) {
+/// Point each link and image where it leads in the built site. One relative
+/// to the document leads from its `folder`, as where Markdown is read as
+/// files, like on GitHub, whatever URL its page is served at: with or without
+/// a `/` at the end, as hosts differ. Then one from the root of the site gets
+/// the site's path, so an author can write `/guide/` wherever the site is
+/// published. Raw HTML isn't rendered, so its links needn't be found.
+fn link_within_site<'a>(root: &'a AstNode<'a>, folder: &str, url: &SiteUrl) {
     for node in root.descendants() {
-        if let NodeValue::Link(link) | NodeValue::Image(link) = &mut node.data.borrow_mut().value
-            && let Cow::Owned(within) = url.link(&link.url)
-        {
+        if let NodeValue::Link(link) | NodeValue::Image(link) = &mut node.data.borrow_mut().value {
+            let within = url.link(&from_the_folder(folder, &link.url)).into_owned();
             link.url = within;
         }
     }
+}
+
+/// `url`, written in a document in the folder at `folder`, like `/guide/`,
+/// from the root of the site: `images/logo.png` is `/guide/images/logo.png`,
+/// and `../logo.png` is `/logo.png`, as `..` can't leave the site. Any other
+/// URL, like `https://…`, `/…`, `#…`, or `?…`, is left as it is.
+fn from_the_folder<'a>(folder: &str, url: &'a str) -> Cow<'a, str> {
+    if url.is_empty() || url.starts_with(['/', '#', '?']) || has_scheme(url) {
+        return Cow::Borrowed(url);
+    }
+    // The `?query` and `#fragment` follow the path as they are.
+    let (path, rest) = url.split_at(url.find(['?', '#']).unwrap_or(url.len()));
+    let mut segments: Vec<&str> = folder.split('/').filter(|s| !s.is_empty()).collect();
+    let mut parts = path.split('/').peekable();
+    while let Some(part) = parts.next() {
+        match part {
+            "." => {}
+            ".." => {
+                segments.pop();
+            }
+            _ => segments.push(part),
+        }
+        // A path that ends at a folder, like `..`, ends with its `/`.
+        if parts.peek().is_none() && matches!(part, "." | "..") {
+            segments.push("");
+        }
+    }
+    Cow::Owned(format!("/{}{rest}", segments.join("/")))
+}
+
+/// Whether `url` starts with a scheme, like `https:` or `mailto:`.
+fn has_scheme(url: &str) -> bool {
+    url.split_once(':').is_some_and(|(scheme, _)| {
+        scheme.starts_with(|c: char| c.is_ascii_alphabetic())
+            && scheme
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '.'))
+    })
 }
 
 /// Walk the parsed document once to build the TOC from the headings at the
@@ -202,7 +245,7 @@ mod tests {
     const TOC_DEPTHS: RangeInclusive<u8> = 2..=6;
 
     fn render(md: &str) -> Rendered {
-        parse_document(md, &TOC_DEPTHS, &SiteUrl::default()).expect("document renders")
+        parse_document(md, "/", &TOC_DEPTHS, &SiteUrl::default()).expect("document renders")
     }
 
     #[test]
@@ -237,7 +280,7 @@ mod tests {
         ] {
             let message = format!(
                 "{:#}",
-                parse_document(md, &TOC_DEPTHS, &SiteUrl::default())
+                parse_document(md, "/", &TOC_DEPTHS, &SiteUrl::default())
                     .err()
                     .unwrap()
             );
@@ -258,7 +301,7 @@ mod tests {
         let md = "# Title\n\n## Getting Started\n\n### Install\n\n#### From Source\n\n\
                   ##### On Linux\n\n###### With Nix\n\n# Another Title\n\n## Usage\n";
         let toc = |depths| {
-            let r = parse_document(md, &depths, &SiteUrl::default()).unwrap();
+            let r = parse_document(md, "/", &depths, &SiteUrl::default()).unwrap();
             let items = r.toc.iter().map(|t| format!("{} {}", t.depth, t.anchor));
             items.collect::<Vec<_>>()
         };
@@ -330,18 +373,21 @@ mod tests {
         let md = "[Install](/guide/install) ![Logo](/logo.png) [Guide][guide]\n\n\
                   [Usage](usage) [Top](#top) [little](https://example.com/)\n\n\
                   [guide]: /guide/\n";
-        let html = parse_document(md, &TOC_DEPTHS, &url).unwrap().html;
+        let html = parse_document(md, "/guide/", &TOC_DEPTHS, &url)
+            .unwrap()
+            .html;
         for within in [
             r#"<a href="/little/guide/install">Install</a>"#,
             r#"<img src="/little/logo.png" alt="Logo" />"#,
             r#"<a href="/little/guide/">Guide</a>"#,
+            // From the page's folder, then from the root.
+            r#"<a href="/little/guide/usage">Usage</a>"#,
         ] {
             assert!(html.contains(within), "{within} in {html}");
         }
 
-        // A link from the page, or to another site, is left as it is.
+        // A link within the page, or to another site, is left as it is.
         for other in [
-            r#"<a href="usage">Usage</a>"#,
             r##"<a href="#top">Top</a>"##,
             r#"<a href="https://example.com/">little</a>"#,
         ] {
@@ -351,5 +397,57 @@ mod tests {
         // As is every link of a site at the root of its domain.
         let html = render(md).html;
         assert!(html.contains(r#"<a href="/guide/install">"#), "{html}");
+    }
+
+    #[test]
+    fn relative_links_lead_from_the_documents_folder() {
+        // Like on GitHub, whatever URL the page is served at.
+        for (url, from_guide) in [
+            ("images/logo.png", "/guide/images/logo.png"),
+            ("logo.png", "/guide/logo.png"),
+            ("./logo.png", "/guide/logo.png"),
+            ("../assets/logo.png", "/assets/logo.png"),
+            ("install", "/guide/install"),
+            ("install/", "/guide/install/"),
+            ("a/../b//c", "/guide/b//c"),
+            ("logo.png?v=2#top", "/guide/logo.png?v=2#top"),
+            // `.` and `..` at the end lead to a folder, which ends with `/`.
+            (".", "/guide/"),
+            ("./", "/guide/"),
+            ("..", "/"),
+            // `..` can't leave the site.
+            ("../../../logo.png", "/logo.png"),
+            // Anything else is left as it is.
+            ("", ""),
+            ("/logo.png", "/logo.png"),
+            ("//example.com/logo.png", "//example.com/logo.png"),
+            ("#top", "#top"),
+            ("?v=2", "?v=2"),
+            ("https://example.com/", "https://example.com/"),
+            ("mailto:me@example.com", "mailto:me@example.com"),
+            ("data:image/png;base64,AAAA", "data:image/png;base64,AAAA"),
+            // A `:` after a `/` isn't a scheme's.
+            ("images/a:b.png", "/guide/images/a:b.png"),
+        ] {
+            assert_eq!(from_the_folder("/guide/", url), from_guide, "{url}");
+        }
+        assert_eq!(from_the_folder("/", "images/logo.png"), "/images/logo.png");
+        assert_eq!(from_the_folder("/", "../logo.png"), "/logo.png");
+        assert_eq!(from_the_folder("/a/b/", "../../c"), "/c");
+
+        // In Markdown, in a link or an image, written however Markdown
+        // allows: a space is escaped as the page is written.
+        let md = "[Logo](logo.png) ![Logo](<images/the logo.png> \"Logo\") \
+                  ![Logo][logo]\n\n[logo]: ../logo.png\n";
+        let html = parse_document(md, "/guide/", &TOC_DEPTHS, &SiteUrl::default())
+            .unwrap()
+            .html;
+        for resolved in [
+            r#"<a href="/guide/logo.png">Logo</a>"#,
+            r#"<img src="/guide/images/the%20logo.png" alt="Logo" title="Logo" />"#,
+            r#"<img src="/logo.png" alt="Logo" />"#,
+        ] {
+            assert!(html.contains(resolved), "{resolved} in {html}");
+        }
     }
 }
