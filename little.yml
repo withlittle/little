@@ -3,7 +3,7 @@
 
 # The built-in theme is compiled from ./theme; building with the folder instead
 # means editing it live-reloads. Without this, little uses its built-in copy.
-theme: ./theme
 name: Little
 description: A little static documentationsite site generator
 url: https://withlittle.github.io/little
+theme: ./theme
