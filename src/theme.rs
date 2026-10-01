@@ -11,13 +11,21 @@
 //! A theme can build on another (see `config`). Its files then go over the
 //! other theme's, file by file, so it only needs the ones it changes. A theme
 //! is built into little, in a folder, or downloaded (see `download`).
+//!
+//! little adds two filters to a theme's templates, for URLs the theme writes
+//! itself: `url` puts the path of the site's `url` before a URL from the root
+//! of the site, and `absolute_url` its scheme and host before one that has
+//! the path.
 
 use anyhow::{Context, Result, bail};
-use minijinja::{Environment, ErrorKind, Value, path_loader};
+use minijinja::{AutoEscape, Environment, ErrorKind, HtmlEscape, State, Value, path_loader};
+use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap};
 use std::fmt;
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
+
+use crate::config::SiteUrl;
 
 /// The folder of a theme's templates, which can extend and include each other.
 const TEMPLATES_DIR: &str = "_templates";
@@ -192,14 +200,23 @@ pub struct Theme {
 }
 
 impl Theme {
-    /// Load the first of `themes`, which builds on the rest in turn. A build
-    /// does this before it touches its destination, so a theme that can't
-    /// build the site doesn't cost it its last build.
-    pub fn load(themes: &[Location]) -> Result<Self> {
+    /// Load the first of `themes`, which builds on the rest in turn, for a
+    /// site published at `url`. A build does this before it touches its
+    /// destination, so a theme that can't build the site doesn't cost it its
+    /// last build.
+    pub fn load(themes: &[Location], url: &SiteUrl) -> Result<Self> {
         let Some(top) = themes.first() else {
             bail!("little can't build a site without a theme (`theme: false`) yet");
         };
         let mut env = Environment::new();
+        let site = url.clone();
+        env.add_filter("url", move |state: &State, value: Value| {
+            url_filter(state, value, |url| site.link(url))
+        });
+        let site = url.clone();
+        env.add_filter("absolute_url", move |state: &State, value: Value| {
+            url_filter(state, value, |url| site.absolute(url))
+        });
         // Templates are read as they're needed, by name, so a theme's folder
         // can hold other files (a README, say) without little trying to parse
         // them. Each comes from the first theme that has it, so a theme can
@@ -272,6 +289,24 @@ impl Theme {
     }
 }
 
+/// Apply `change` to `value`, if it's text. In an HTML template the result is
+/// escaped now, as the template would, but for its `/`s, which needn't be, so
+/// a URL reads as written in the page's source without `| safe`.
+fn url_filter(state: &State, value: Value, change: impl Fn(&str) -> Cow<'_, str>) -> Value {
+    let Some(url) = value.as_str() else {
+        return value; // nothing to change, like an undefined value
+    };
+    let changed = change(url);
+    if value.is_safe() {
+        Value::from_safe_string(changed.into_owned())
+    } else if matches!(state.auto_escape(), AutoEscape::Html) {
+        let escaped = HtmlEscape(&changed).to_string();
+        Value::from_safe_string(escaped.replace("&#x2f;", "/"))
+    } else {
+        Value::from(changed.into_owned())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -291,9 +326,10 @@ mod tests {
         root
     }
 
-    /// Load the theme in `dir`, which builds on nothing.
+    /// Load the theme in `dir`, which builds on nothing, for a site at the
+    /// root of its domain.
     fn load(dir: &Path) -> Result<Theme> {
-        Theme::load(&[Location::Folder(dir.to_path_buf())])
+        Theme::load(&[Location::Folder(dir.to_path_buf())], &SiteUrl::default())
     }
 
     /// What `theme` renders for each type of page, `None` for types it skips.
@@ -381,6 +417,45 @@ mod tests {
     }
 
     #[test]
+    fn url_filters_put_the_sites_path_and_address_before_a_url() {
+        let dir = scratch(
+            "url-filters",
+            &[(
+                "_templates/default.html",
+                "{{ '/assets/style.css' | url }} {{ page.url | absolute_url }} \
+                 {{ '/og.png' | url | absolute_url }} {{ 'https://example.com/' | url }} \
+                 {{ '/search?q=a&b' | url }} {{ '/a&amp;b' | safe | url }} [{{ missing | url }}]",
+            )],
+        );
+        let render = |url: &SiteUrl| {
+            let theme = Theme::load(&[Location::Folder(dir.clone())], url).unwrap();
+            let page_url = format!("{}/guide/", url.path);
+            let ctx = context! { page => context! { url => page_url } };
+            theme.render(PageType::Page, ctx).unwrap().unwrap()
+        };
+
+        let project = SiteUrl {
+            origin: "https://withlittle.github.io".into(),
+            path: "/little".into(),
+        };
+        assert_eq!(
+            render(&project),
+            "/little/assets/style.css https://withlittle.github.io/little/guide/ \
+             https://withlittle.github.io/little/og.png https://example.com/ \
+             /little/search?q=a&amp;b /little/a&amp;b []"
+        );
+
+        // Without a url, URLs are left as they are, escaped but for their `/`s.
+        assert_eq!(
+            render(&SiteUrl::default()),
+            "/assets/style.css /guide/ /og.png https://example.com/ \
+             /search?q=a&amp;b /a&amp;b []"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn a_theme_replaces_the_files_of_the_one_it_builds_on() {
         let root = scratch(
             "layers",
@@ -402,7 +477,7 @@ mod tests {
             Location::Folder(company.clone()),
             Location::Folder(base.clone()),
         ];
-        let theme = Theme::load(&chain).unwrap();
+        let theme = Theme::load(&chain, &SiteUrl::default()).unwrap();
 
         let ctx = context! { page => context! { type => "page" } };
         let html = theme.render(PageType::Page, ctx).unwrap();
@@ -421,7 +496,10 @@ mod tests {
 
         // A broken template is named as the file it's read from.
         std::fs::write(company.join("_templates/home.html"), "{% if %}").unwrap();
-        let message = format!("{:#}", Theme::load(&chain).err().unwrap());
+        let message = format!(
+            "{:#}",
+            Theme::load(&chain, &SiteUrl::default()).err().unwrap()
+        );
         let expected = format!("loading {}", company.join("_templates/home.html").display());
         assert!(message.starts_with(&expected), "{message}");
 

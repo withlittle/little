@@ -5,7 +5,10 @@ use anyhow::{Context, Result};
 use comrak::nodes::{AstNode, NodeValue};
 use comrak::{Anchorizer, Arena, Options};
 use serde_yaml::Mapping;
+use std::borrow::Cow;
 use std::ops::RangeInclusive;
+
+use crate::config::SiteUrl;
 
 /// One heading in a page's in-page table of contents. They're listed in the
 /// order they come, and the build nests them like `site.nav`.
@@ -33,8 +36,13 @@ pub struct Rendered {
 
 /// Parse a document into its frontmatter, rendered HTML, and outline, which
 /// lists its headings at the levels in `toc_depths` (the config's
-/// `toc_min_depth` to `toc_max_depth`).
-pub fn parse_document(raw: &str, toc_depths: &RangeInclusive<u8>) -> Result<Rendered> {
+/// `toc_min_depth` to `toc_max_depth`). Links and images from the root of the
+/// site, like `/guide/`, get the path of the site's `url`.
+pub fn parse_document(
+    raw: &str,
+    toc_depths: &RangeInclusive<u8>,
+    url: &SiteUrl,
+) -> Result<Rendered> {
     let (frontmatter_src, body) = split_frontmatter(raw);
 
     // Frontmatter is settings, like a `little.yml`, as each one becomes a key
@@ -48,6 +56,7 @@ pub fn parse_document(raw: &str, toc_depths: &RangeInclusive<u8>) -> Result<Rend
     let arena = Arena::new();
     let root = comrak::parse_document(&arena, &body, &options);
 
+    link_within_site(root, url);
     let (toc, first_h1) = outline(root, toc_depths);
 
     let mut html = String::new();
@@ -74,6 +83,19 @@ fn render_options() -> Options<'static> {
     options.extension.footnotes = true;
     options.extension.header_id_prefix = Some(String::new());
     options
+}
+
+/// Put the site's path before each link and image from the root of the site,
+/// so an author can write `/guide/` wherever the site is published. Raw HTML
+/// isn't rendered, so its links needn't be found.
+fn link_within_site<'a>(root: &'a AstNode<'a>, url: &SiteUrl) {
+    for node in root.descendants() {
+        if let NodeValue::Link(link) | NodeValue::Image(link) = &mut node.data.borrow_mut().value
+            && let Cow::Owned(within) = url.link(&link.url)
+        {
+            link.url = within;
+        }
+    }
 }
 
 /// Walk the parsed document once to build the TOC from the headings at the
@@ -180,7 +202,7 @@ mod tests {
     const TOC_DEPTHS: RangeInclusive<u8> = 2..=6;
 
     fn render(md: &str) -> Rendered {
-        parse_document(md, &TOC_DEPTHS).expect("document renders")
+        parse_document(md, &TOC_DEPTHS, &SiteUrl::default()).expect("document renders")
     }
 
     #[test]
@@ -213,7 +235,12 @@ mod tests {
             "---\n- title: Hi\n---\n# Head\n",
             "---\nJust some words\n---\n# Head\n",
         ] {
-            let message = format!("{:#}", parse_document(md, &TOC_DEPTHS).err().unwrap());
+            let message = format!(
+                "{:#}",
+                parse_document(md, &TOC_DEPTHS, &SiteUrl::default())
+                    .err()
+                    .unwrap()
+            );
             assert!(message.starts_with("parsing frontmatter: "), "{message}");
             assert!(message.contains("expected a YAML mapping"), "{message}");
         }
@@ -231,7 +258,7 @@ mod tests {
         let md = "# Title\n\n## Getting Started\n\n### Install\n\n#### From Source\n\n\
                   ##### On Linux\n\n###### With Nix\n\n# Another Title\n\n## Usage\n";
         let toc = |depths| {
-            let r = parse_document(md, &depths).unwrap();
+            let r = parse_document(md, &depths, &SiteUrl::default()).unwrap();
             let items = r.toc.iter().map(|t| format!("{} {}", t.depth, t.anchor));
             items.collect::<Vec<_>>()
         };
@@ -292,5 +319,37 @@ mod tests {
     fn first_h1_is_none_without_h1() {
         let r = render("## Only A Subheading\n");
         assert_eq!(r.first_h1, None);
+    }
+
+    #[test]
+    fn links_from_the_root_get_the_sites_path() {
+        let url = SiteUrl {
+            origin: "https://withlittle.github.io".into(),
+            path: "/little".into(),
+        };
+        let md = "[Install](/guide/install) ![Logo](/logo.png) [Guide][guide]\n\n\
+                  [Usage](usage) [Top](#top) [little](https://example.com/)\n\n\
+                  [guide]: /guide/\n";
+        let html = parse_document(md, &TOC_DEPTHS, &url).unwrap().html;
+        for within in [
+            r#"<a href="/little/guide/install">Install</a>"#,
+            r#"<img src="/little/logo.png" alt="Logo" />"#,
+            r#"<a href="/little/guide/">Guide</a>"#,
+        ] {
+            assert!(html.contains(within), "{within} in {html}");
+        }
+
+        // A link from the page, or to another site, is left as it is.
+        for other in [
+            r#"<a href="usage">Usage</a>"#,
+            r##"<a href="#top">Top</a>"##,
+            r#"<a href="https://example.com/">little</a>"#,
+        ] {
+            assert!(html.contains(other), "{other} in {html}");
+        }
+
+        // As is every link of a site at the root of its domain.
+        let html = render(md).html;
+        assert!(html.contains(r#"<a href="/guide/install">"#), "{html}");
     }
 }

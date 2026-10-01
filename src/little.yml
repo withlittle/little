@@ -23,3 +23,8 @@ toc_max_depth: 6
 # single run.
 host: 127.0.0.1
 port: 8080
+
+# `url`, where the site is published, like
+# https://example.github.io/my-project, has no default: only the site knows.
+# Its path goes before every URL little gives the theme, and `little serve`
+# serves the site under it.

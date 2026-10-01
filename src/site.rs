@@ -5,6 +5,7 @@ use anyhow::{Context, Result, bail};
 use minijinja::{Value as MjValue, context};
 use serde::{Deserialize, Serialize};
 use serde_yaml::{Mapping, Value};
+use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap};
 use std::fs;
 use std::io::ErrorKind;
@@ -13,6 +14,7 @@ use std::path::{Component, Path, PathBuf};
 use std::slice;
 use walkdir::WalkDir;
 
+use crate::config::SiteUrl;
 use crate::theme::{PageType, StaticFile, Theme};
 use crate::{config, render};
 
@@ -127,21 +129,34 @@ struct Output {
     name: String,
 }
 
-/// Build the site rooted at `site_dir`, and return the folder it was built
-/// into.
-pub fn build(site_dir: &Path) -> Result<PathBuf> {
+/// A site that's been built.
+#[derive(Clone, Debug)]
+pub struct Built {
+    /// The folder it was built into.
+    pub destination: PathBuf,
+    /// Where it's published, which `little serve` serves it under.
+    pub url: SiteUrl,
+}
+
+/// Build the site rooted at `site_dir`.
+///
+/// Pages, and the nav and links between them, are worked out at their URLs
+/// from the root of the site, like `/guide/`. Only what the theme gets has
+/// the path of the site's `url` before them, like `/my-project/guide/`.
+pub fn build(site_dir: &Path) -> Result<Built> {
     let config::Config {
         values: site_cfg,
         themes,
         source_dir,
         destination_dir,
         toc_depths,
+        url: site_url,
         ..
     } = config::load(site_dir)?;
     if !source_dir.is_dir() {
         bail!("there's no source folder at {}", source_dir.display());
     }
-    let theme = Theme::load(&themes)?;
+    let theme = Theme::load(&themes, &site_url)?;
 
     // Collect and render every Markdown file in the source folder but hidden
     // ones, without walking hidden folders. The source folder itself (depth 0)
@@ -158,7 +173,7 @@ pub fn build(site_dir: &Path) -> Result<PathBuf> {
         let rel = path.strip_prefix(&source_dir)?.to_path_buf();
         let raw =
             fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
-        let rendered = render::parse_document(&raw, &toc_depths)
+        let rendered = render::parse_document(&raw, &toc_depths, &site_url)
             .with_context(|| format!("rendering {}", path.display()))?;
 
         // A key left blank is as good as not there: a page never holds null,
@@ -207,6 +222,7 @@ pub fn build(site_dir: &Path) -> Result<PathBuf> {
     config::merge(&mut site, site_cfg);
     let nav: Vec<NavItem> = serde_yaml::from_value(site["nav"].clone())
         .context("`nav` in little.yml must be a list of links, each `{ title, url, children }`")?;
+    link_items(&mut site["nav"], &site_url);
     let site_value = MjValue::from_serialize(&site);
     let neighbours = neighbours_in(&nav);
     let trails = breadcrumbs_in(&nav);
@@ -215,7 +231,7 @@ pub fn build(site_dir: &Path) -> Result<PathBuf> {
     // Every page is rendered before the destination is touched, so a build
     // that fails leaves the last one in place.
     let render = |page_type: PageType, data: &PageData, frontmatter: &Mapping| {
-        let page = page_value(data, frontmatter)?;
+        let page = page_value(data, frontmatter, &site_url)?;
         theme.render(
             page_type,
             context! {
@@ -298,7 +314,10 @@ pub fn build(site_dir: &Path) -> Result<PathBuf> {
         pages.len(),
         destination_dir.display()
     );
-    Ok(destination_dir)
+    Ok(Built {
+        destination: destination_dir,
+        url: site_url,
+    })
 }
 
 /// What a template sees as `page`: what little works out for it, with the
@@ -306,12 +325,52 @@ pub fn build(site_dir: &Path) -> Result<PathBuf> {
 /// over the one beneath, so the author has the last word. It changes only
 /// what the theme sees: a page is built at its own URL, with the template for
 /// its own type, whatever its frontmatter says.
-fn page_value(data: &PageData, frontmatter: &Mapping) -> Result<Mapping> {
+///
+/// Then each of the page's links gets the path of the site's `url`, whoever
+/// wrote it, as do the links in its Markdown.
+fn page_value(data: &PageData, frontmatter: &Mapping, url: &SiteUrl) -> Result<Mapping> {
     let Value::Mapping(mut page) = serde_yaml::to_value(data)? else {
         unreachable!("a struct serializes to a mapping");
     };
     config::merge(&mut page, frontmatter.clone());
+    link(page.get_mut("url"), url);
+    for key in ["prev", "next"] {
+        if let Some(Value::Mapping(item)) = page.get_mut(key) {
+            link(item.get_mut("url"), url);
+        }
+    }
+    for key in ["breadcrumbs", "children", "toc"] {
+        if let Some(items) = page.get_mut(key) {
+            link_items(items, url);
+        }
+    }
     Ok(page)
+}
+
+/// Put the site's path before the `url` of each of `items`, a list shaped
+/// like `site.nav`, and of each of their `children`.
+fn link_items(items: &mut Value, url: &SiteUrl) {
+    let Value::Sequence(items) = items else {
+        return;
+    };
+    for item in items {
+        if let Value::Mapping(item) = item {
+            link(item.get_mut("url"), url);
+            if let Some(children) = item.get_mut("children") {
+                link_items(children, url);
+            }
+        }
+    }
+}
+
+/// Put the site's path before `value`, if it's a URL from the root of the
+/// site.
+fn link(value: Option<&mut Value>, url: &SiteUrl) {
+    if let Some(Value::String(value)) = value
+        && let Cow::Owned(within) = url.link(value)
+    {
+        *value = within;
+    }
 }
 
 /// Empty the destination for a new build, and mark it as little's. Only a
@@ -957,7 +1016,9 @@ mod tests {
     fn a_page_toc_nests_its_headings() {
         let md = "### Before\n\n### Also Before\n\n## One\n\n### One A\n\n#### One A i\n\n\
                   ### One B\n\n## Two\n\n#### Two i\n";
-        let toc = render::parse_document(md, &(2..=6)).unwrap().toc;
+        let toc = render::parse_document(md, &(2..=6), &SiteUrl::default())
+            .unwrap()
+            .toc;
 
         // A heading goes under the nearest one above it with fewer `#`s, even
         // two levels up; before the first `##`, it goes at the top, beside the
@@ -1257,7 +1318,7 @@ mod tests {
             ],
         );
 
-        let destination = build(&site).unwrap();
+        let destination = build(&site).unwrap().destination;
 
         assert_eq!(destination, site.join("public"));
         let read = |path: &str| fs::read_to_string(destination.join(path)).unwrap();
@@ -1379,7 +1440,7 @@ mod tests {
         // the next build leaves nothing of the last.
         fs::create_dir_all(root.join("empty")).unwrap();
         for destination in ["./dist", "../empty", "./docs/_build"] {
-            let dir = build_into(destination).unwrap();
+            let dir = build_into(destination).unwrap().destination;
             fs::write(dir.join("stale.html"), "old").unwrap();
             build_into(destination).unwrap();
             assert!(!dir.join("stale.html").exists(), "{destination}");
@@ -1822,6 +1883,101 @@ mod tests {
             let expected = "`nav` in little.yml must be a list of links";
             assert!(message.starts_with(expected), "{message}");
         }
+        let _ = fs::remove_dir_all(&site);
+    }
+
+    #[test]
+    fn a_url_puts_every_link_under_the_sites_path() {
+        let site_cfg = "theme: ./theme\nurl: https://withlittle.github.io/little\n";
+        let site = scratch_site(
+            "site-url",
+            &[
+                ("little.yml", site_cfg),
+                (
+                    "docs/README.md",
+                    "# Home\n\nRead the [guide](/guide/), or see ![the logo](/logo.png).\n",
+                ),
+                ("docs/guide/README.md", "# Guide\n\n## Steps\n"),
+                (
+                    "docs/guide/install.md",
+                    "---\nprev: { url: /start/ }\nlogo: /logo.png\n---\n# Install\n",
+                ),
+                ("theme/_templates/home.html", "{{ page.content | safe }}"),
+                (
+                    "theme/_templates/default.html",
+                    "{% for item in site.nav recursive %}{{ item.url | safe }} \
+                     {% if item.children %}{{ loop(item.children) }}{% endif %}{% endfor %}\
+                     | {{ page.url | safe }} \
+                     | {% if page.prev %}{{ page.prev.url | safe }}{% endif %} \
+                     {% if page.next %}{{ page.next.url | safe }}{% endif %} \
+                     | {% for crumb in page.breadcrumbs %}{{ crumb.url | safe }} {% endfor %}\
+                     | {% for item in page.children %}{{ item.url | safe }} {% endfor %}\
+                     | {% for item in page.toc %}{{ item.url | safe }} {% endfor %}\
+                     | {{ page.logo | safe }}",
+                ),
+                (
+                    "theme/_templates/404.html",
+                    "{{ page.url | safe }} {{ '/' | url }} {{ site.url | safe }}",
+                ),
+            ],
+        );
+
+        build(&site).unwrap();
+
+        // Pages are built where they'd be without a url: it's the host that
+        // puts them under the path.
+        let read = |path: &str| fs::read_to_string(site.join("dist").join(path)).unwrap();
+        assert!(!site.join("dist/little").exists());
+
+        // Every URL little works out gets the path, but a heading's
+        // `#fragment`.
+        let nav = "/little/ /little/guide/ /little/guide/install ";
+        assert_eq!(
+            read("guide/index.html"),
+            format!(
+                "{nav}| /little/guide/ | /little/ /little/guide/install | /little/ \
+                 | /little/guide/install | #steps | "
+            )
+        );
+        // So does one the author writes where little would, like `prev`, but
+        // not a setting of the theme's own, like `logo`.
+        assert_eq!(
+            read("guide/install/index.html"),
+            format!(
+                "{nav}| /little/guide/install | /little/start/  | /little/ /little/guide/ \
+                 | | | /logo.png"
+            )
+        );
+        // As do links and images in Markdown.
+        let home = read("index.html");
+        assert!(
+            home.contains(r#"<a href="/little/guide/">guide</a>"#),
+            "{home}"
+        );
+        assert!(home.contains(r#"<img src="/little/logo.png""#), "{home}");
+        // And the 404 page's own URL. `site.url` is as the config sets it.
+        assert_eq!(
+            read(NOT_FOUND_FILE),
+            "/little/404.html /little/ https://withlittle.github.io/little"
+        );
+
+        // A nav in the config gets it too, but for links to other sites.
+        let site_cfg = format!(
+            "{site_cfg}nav:\n\
+             - {{ title: Start, url: /guide/install }}\n\
+             - {{ title: GitHub, url: \"https://github.com/withlittle/little\" }}\n"
+        );
+        fs::write(site.join("little.yml"), site_cfg).unwrap();
+        build(&site).unwrap();
+        let github = "https://github.com/withlittle/little";
+        assert_eq!(
+            read("guide/install/index.html"),
+            format!(
+                "/little/guide/install {github} | /little/guide/install \
+                 | /little/start/ {github} | | | | /logo.png"
+            )
+        );
+
         let _ = fs::remove_dir_all(&site);
     }
 

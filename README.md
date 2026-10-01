@@ -67,7 +67,8 @@ little --help                        # list every command and option
   themes, it follows. If a save breaks the build, `serve` prints why and keeps
   serving the last build. It serves at the [host and
   port](#choosing-where-to-serve) your config sets, unless `--host` or
-  `--port` says otherwise.
+  `--port` says otherwise, and under the path of the site's
+  [`url`](#choosing-the-sites-url), if it has one.
 - `config` prints the [config](#configuration) the theme gets as `site`
   (without `site.nav`), so you can check a setting without building.
 
@@ -99,7 +100,9 @@ my-docs/
   strikethrough, task lists, autolinks, and footnotes. Every heading gets an
   `id`, so you can link straight to a section (`/guide/install#from-source`).
 - **Links.** Link to other pages by URL (`[Install](/guide/install)`), not by
-  file name. `.md` links aren't rewritten.
+  file name. `.md` links aren't rewritten. Write URLs from the root of the
+  site, even if it's published under a path: its
+  [`url`](#choosing-the-sites-url) adds the path for you.
 - **Frontmatter** is an optional block of YAML settings at the very top of a
   page. Every setting reaches the theme as `page.<key>`, like `description`
   for a meta description, and has the last word on what `page` holds. little
@@ -323,10 +326,41 @@ port: 3000
   and start it again.
 - They're only for `little serve`. A theme gets them as `site.host` and
   `site.port`, like every key, but the published site is somewhere else, so
-  don't build links from them.
+  don't build links from them: that's what [`url`](#choosing-the-sites-url)
+  is for.
 - `host` must be a host name or IP address, like `localhost` or `::1`, and
   `port` a number from 1 to 65535. Otherwise, every command stops and says
   why, even `little build`, which doesn't use them.
+
+### Choosing the site's URL
+
+A site published under a path, like a GitHub Pages project site at
+`https://<owner>.github.io/<repo>`, needs that path at the start of every
+link. Set `url` to the address it's published at, and little adds it:
+
+```yaml
+# little.yml
+url: https://withlittle.github.io/little
+```
+
+- Every URL little gives the theme gets the path: `/guide/install` becomes
+  `/little/guide/install` in `site.nav`, in `page.url` and the other links on
+  `page`, and in Markdown links and images. So write URLs as usual, from the
+  root of the site, without the path. A `#fragment`, a link like `install`,
+  and a link to another site are left as they are.
+- `little serve` serves the site under the path too, at
+  <http://127.0.0.1:8080/little/>, so a link that leaves it out is broken
+  while you write, not after you publish. The server's root sends you to the
+  site's home page.
+- The build doesn't change shape: the home page is still `dist/index.html`,
+  and the host puts it under the path.
+- A theme puts the path before its own URLs, like its stylesheet's, with the
+  [`url` filter](#urls-in-a-theme), and makes a URL absolute, as a link
+  preview needs, with `absolute_url`.
+- A site at the root of its domain doesn't need `url`, but can set it, like
+  `https://docs.example.com`, for a theme that uses `absolute_url`.
+- `url` must start with `https://` or `http://`, with nothing after its path
+  (no `?` or `#`). Otherwise, every command stops and says why.
 
 ## Theming
 
@@ -395,12 +429,36 @@ take the place of a page, the build stops and names both. The built-in theme's
 [`default.html`](./theme/_templates/default.html) and
 [`404.html`](./theme/_templates/404.html) are complete working examples.
 
+### URLs in a theme
+
+Every URL little gives a theme, like `page.url` and those in `site.nav`,
+already has the path of the site's [`url`](#choosing-the-sites-url) before
+it, if it has one. For the URLs a theme writes itself, little adds two
+filters:
+
+- `url` puts the path before a URL from the root of the site:
+  `{{ '/assets/style.css' | url }}` is `/little/assets/style.css` for a site
+  at `https://withlittle.github.io/little`, and `/assets/style.css` for one at
+  the root of its domain. Don't put little's URLs through it, or they get the
+  path twice.
+- `absolute_url` puts the site's scheme and host before a URL that has the
+  path, for a link preview, a canonical link, or a feed:
+  `{{ page.url | absolute_url }}` is
+  `https://withlittle.github.io/little/guide/install`. For one of the theme's
+  own URLs, use both: `{{ '/og.png' | url | absolute_url }}`. A site without
+  a `url` gets the URL back as it is.
+
+Both leave a URL that isn't from the root of the site, like `https://…` or
+`#…`, as it is. A theme's CSS can't use them, so link to fonts and images
+from a stylesheet relative to it, like `url(fonts/inter.woff2)`.
+
 ## Deploying
 
 `dist/` (or your [destination](#choosing-folders)) is plain static HTML: upload
 it to any static host. Page links and assets are root-relative
-(`/guide/install`, `/assets/style.css`), so serve the site from the root of a
-domain rather than a subpath. A theme's 404 page is built to `dist/404.html`,
+(`/guide/install`, `/assets/style.css`), so to publish the site under a path,
+like a GitHub Pages project site, set its [`url`](#choosing-the-sites-url).
+A theme's 404 page is built to `dist/404.html`,
 where GitHub Pages, Netlify, and most other static hosts look for one;
 `little serve` uses it too.
 

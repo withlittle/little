@@ -5,7 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}{{ page.title }} · {{ site.name }}{% endblock %}</title>
   {% if page.description %}<meta name="description" content="{{ page.description }}">{% endif %}
-  <link rel="stylesheet" href="/assets/style.css">
+  {# The theme's own URLs go through `url`, which puts the path of the site's
+     `url` before them, if it has one. little's URLs, like page.url, already
+     have it. #}
+  <link rel="stylesheet" href="{{ '/assets/style.css' | url }}">
   <style>
     :root {
       --font: {{ site.font | default('system-ui, sans-serif') | safe }};
@@ -14,7 +17,7 @@
 </head>
 <body>
   <header class="site-header">
-    <a class="brand" href="/">{{ site.name }}</a>
+    <a class="brand" href="{{ '/' | url }}">{{ site.name }}</a>
     {% if site.tagline %}<span class="tagline">{{ site.tagline }}</span>{% endif %}
   </header>
 

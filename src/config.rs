@@ -16,9 +16,15 @@
 //!
 //! `host` and `port` are where `little serve` serves the site, unless its
 //! `--host` and `--port` say otherwise.
+//!
+//! `url` is the address the site is published at, like
+//! `https://example.github.io/my-project`. Its path, `/my-project`, goes
+//! before each URL little gives the theme, and `little serve` serves the site
+//! under it too.
 
 use anyhow::{Context, Result, anyhow, bail};
 use serde_yaml::{Mapping, Value};
+use std::borrow::Cow;
 use std::io::ErrorKind;
 use std::ops::RangeInclusive;
 use std::path::{Path, PathBuf};
@@ -49,6 +55,49 @@ pub struct Config {
     pub host: String,
     /// The port `little serve` serves at, like 8080.
     pub port: u16,
+    /// Where the site is published, from `url`.
+    pub url: SiteUrl,
+}
+
+/// Where a site is published, from its `url`. A site that doesn't set one is
+/// at the root of whichever domain serves it.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct SiteUrl {
+    /// The scheme and host, like `https://example.github.io`; empty if the
+    /// site doesn't set `url`.
+    pub origin: String,
+    /// The path the site is under, like `/my-project`, with no `/` at the
+    /// end; empty for a site at the root of its domain.
+    pub path: String,
+}
+
+impl SiteUrl {
+    /// `url` as the browser should follow it: a URL from the root of the
+    /// site, like `/guide/`, gets the site's path, as `/my-project/guide/`.
+    /// Any other URL, like `https://…`, `//…`, `#…`, or `guide/`, is left as
+    /// it is.
+    pub fn link<'a>(&self, url: &'a str) -> Cow<'a, str> {
+        if self.path.is_empty() || !from_the_root(url) {
+            return Cow::Borrowed(url);
+        }
+        Cow::Owned(format!("{}{url}", self.path))
+    }
+
+    /// `url`, which already has the site's path, with the site's scheme and
+    /// host before it, as a feed, a sitemap, or a link preview needs. Left as
+    /// it is if the site doesn't set `url`, or `url` isn't from the root.
+    pub fn absolute<'a>(&self, url: &'a str) -> Cow<'a, str> {
+        if self.origin.is_empty() || !from_the_root(url) {
+            return Cow::Borrowed(url);
+        }
+        Cow::Owned(format!("{}{url}", self.origin))
+    }
+}
+
+/// Whether `url` starts at the root of the domain, like `/guide/`, rather
+/// than at another domain, like `//example.com/`, or the current page.
+fn from_the_root(url: &str) -> bool {
+    url.starts_with('/') && !url.starts_with("//")
 }
 
 /// little's built-in defaults: level 1 of the cascade. They live in
@@ -122,6 +171,7 @@ pub fn load(site_dir: &Path) -> Result<Config> {
     let toc_depths = toc_depths(&values)?;
     let host = host(&values)?;
     let port = port(&values)?;
+    let url = site_url(&values)?;
     Ok(Config {
         values,
         themes,
@@ -130,6 +180,7 @@ pub fn load(site_dir: &Path) -> Result<Config> {
         toc_depths,
         host,
         port,
+        url,
     })
 }
 
@@ -219,6 +270,35 @@ fn port(values: &Mapping) -> Result<u16> {
         Some(port @ 1..=65535) => Ok(port as u16),
         _ => bail!("`port` must be a number from 1 to 65535, like 8080"),
     }
+}
+
+/// Where the site is published, from `url`: its scheme and host, then the
+/// path the site is under.
+fn site_url(values: &Mapping) -> Result<SiteUrl> {
+    let Some(value) = values.get("url") else {
+        return Ok(SiteUrl::default());
+    };
+    let error = || {
+        anyhow!(
+            "`url` must be the address the site is published at, starting with https:// \
+             or http://, like https://example.github.io/my-project"
+        )
+    };
+    let url = value.as_str().ok_or_else(error)?;
+    let rest = (url.strip_prefix("https://"))
+        .or_else(|| url.strip_prefix("http://"))
+        .ok_or_else(error)?;
+    if rest.contains(['?', '#']) || rest.contains(char::is_whitespace) {
+        return Err(error());
+    }
+    let (host, path) = rest.split_at(rest.find('/').unwrap_or(rest.len()));
+    if host.is_empty() {
+        return Err(error());
+    }
+    Ok(SiteUrl {
+        origin: url[..url.len() - path.len()].to_string(),
+        path: path.trim_end_matches('/').to_string(),
+    })
 }
 
 /// Resolve a path a config names against `dir`: an absolute path is just that
@@ -735,6 +815,110 @@ mod tests {
     }
 
     #[test]
+    fn a_url_puts_the_site_under_its_path() {
+        let site = scratch("site-url", &[]);
+        let url = |site_cfg: &str| {
+            std::fs::write(site.join(CONFIG_FILE), site_cfg).unwrap();
+            load(&site).unwrap().url
+        };
+        let site_url = |origin: &str, path: &str| SiteUrl {
+            origin: origin.into(),
+            path: path.into(),
+        };
+
+        // Without a url, a site is at the root of whichever domain serves it.
+        assert_eq!(url(""), SiteUrl::default());
+
+        // A `/` at the end of the path is left off, so links don't get two.
+        let project = site_url("https://withlittle.github.io", "/little");
+        assert_eq!(url("url: https://withlittle.github.io/little\n"), project);
+        assert_eq!(url("url: https://withlittle.github.io/little/\n"), project);
+        let domain = site_url("https://docs.example.com", "");
+        assert_eq!(url("url: https://docs.example.com\n"), domain);
+        assert_eq!(url("url: https://docs.example.com/\n"), domain);
+        let nested = site_url("http://localhost:4000", "/a/b");
+        assert_eq!(url("url: http://localhost:4000/a/b\n"), nested);
+
+        let _ = std::fs::remove_dir_all(&site);
+    }
+
+    #[test]
+    fn bad_urls_explain_themselves() {
+        let site = scratch("bad-site-url", &[]);
+
+        // A url is the whole address, as text: not just its host or path, and
+        // with nothing after the path.
+        for value in [
+            " withlittle.github.io/little",
+            " /little",
+            " ftp://example.com/docs",
+            " https://",
+            " https:///little",
+            " https://example.com/docs?lang=en",
+            " https://example.com/docs#top",
+            " https://example.com/my docs",
+            " 8080",
+            " [https://example.com]",
+            "",
+        ] {
+            let message = error(&site, &format!("url:{value}\n"));
+            assert_eq!(
+                message,
+                "`url` must be the address the site is published at, starting with \
+                 https:// or http://, like https://example.github.io/my-project",
+                "url:{value}"
+            );
+        }
+
+        let _ = std::fs::remove_dir_all(&site);
+    }
+
+    #[test]
+    fn links_from_the_root_get_the_sites_path() {
+        let url = SiteUrl {
+            origin: "https://withlittle.github.io".into(),
+            path: "/little".into(),
+        };
+        assert_eq!(url.link("/"), "/little/");
+        assert_eq!(url.link("/guide/install"), "/little/guide/install");
+        assert_eq!(url.link("/assets/style.css"), "/little/assets/style.css");
+
+        // A link to another site, or from the current page, is left alone.
+        for other in [
+            "https://example.com/",
+            "//cdn.example.com/lib.js",
+            "mailto:me@example.com",
+            "#usage",
+            "install",
+            "../",
+            "",
+        ] {
+            assert_eq!(url.link(other), other);
+        }
+
+        // An absolute URL adds the scheme and host to a link with the path.
+        let og = "https://withlittle.github.io/little/og.png";
+        assert_eq!(url.absolute("/little/og.png"), og);
+        assert_eq!(url.absolute(og), og);
+        assert_eq!(url.absolute("og.png"), "og.png");
+
+        // A site at the root of its domain keeps its links as they are.
+        let domain = SiteUrl {
+            origin: "https://docs.example.com".into(),
+            path: String::new(),
+        };
+        assert_eq!(domain.link("/guide/"), "/guide/");
+        assert_eq!(
+            domain.absolute("/guide/"),
+            "https://docs.example.com/guide/"
+        );
+
+        // And without a url, there's nothing to add.
+        assert_eq!(SiteUrl::default().link("/guide/"), "/guide/");
+        assert_eq!(SiteUrl::default().absolute("/guide/"), "/guide/");
+    }
+
+    #[test]
     fn config_files_hold_settings() {
         let site = scratch("settings", &[]);
         let parsing = format!("parsing {}: ", site.join(CONFIG_FILE).display());
@@ -792,6 +976,8 @@ mod tests {
         for key in ["name", "lang"] {
             assert_eq!(cfg.get(key), None, "little shouldn't default `{key}`");
         }
+        // And only the site knows where it's published.
+        assert_eq!(cfg.get("url"), None);
     }
 
     #[test]
