@@ -25,13 +25,15 @@ cargo fmt                   # format — run before committing
   `little serve` serves it at, and the `url` it's published at.
 - `src/little.yml` — little's own defaults (level 1), compiled into the binary.
 - `src/render.rs` — Markdown (comrak) + YAML frontmatter → HTML fragment, with
-  each relative link led from the folder of the file it's in.
+  each relative link led from the folder of the file it's in, and each link
+  to a page's `.md` file led to the page, noting each link as it's written.
 - `src/site.rs` — build pipeline: walk the source (`docs/`), render its
   Markdown, copy its other files, apply theme, write the destination
   (`dist/`), noting the source file and URL of each file it writes.
 - `src/links.rs` — checks the links in the built site with lychee-lib: those
   within the site in the destination, as the site is published under its
   `url`, and, for `little build`, those to other sites over the network.
+  Shows a broken link in Markdown as it's written.
 - `src/theme.rs` — a theme's templates and static files, layered over those of
   the themes it builds on, and the built-in theme; picks each page's template
   by its type (`home`, `section`, `page`, `404`), and gives templates the
@@ -156,4 +158,10 @@ Record notable choices as short ADRs in `decisions/`. Locked so far:
   or link to another site, naming the file it's in; `--strict` fails on one,
   and `little serve` checks only links within the site — see
   [`decisions/0016-checking-links.md`](./decisions/0016-checking-links.md).
+- **Links to pages' files:** a link in Markdown to a `.md` file, like
+  `install.md#usage` or `guide/README.md`, leads to the page built from it,
+  as it leads to the file on GitHub, even one that isn't there, so it's
+  warned of; a warning shows a broken link in Markdown as it's written, and
+  one in the theme or a copied file as a reader follows it — see
+  [`decisions/0017-links-to-pages-files.md`](./decisions/0017-links-to-pages-files.md).
 - **Plugins:** sandboxed WASM (planned).

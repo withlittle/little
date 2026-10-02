@@ -42,6 +42,8 @@ struct Page {
     /// `toc_max_depth`, nested like `site.nav`.
     toc: Vec<NavItem>,
     page_type: PageType,
+    /// The links and images in its Markdown, as they're written.
+    links: Vec<render::WrittenLink>,
 }
 
 impl Page {
@@ -131,6 +133,8 @@ struct Output {
     name: String,
     /// What it's built from, for a warning: "docs/README.md".
     origin: String,
+    /// The links and images in its Markdown, as they're written.
+    links: Vec<render::WrittenLink>,
 }
 
 /// A site that's been built.
@@ -148,6 +152,9 @@ pub struct Built {
     /// destination, like `/guide/install` for `guide/install/index.html`,
     /// so a broken link to it is shown as the theme links to it.
     pub urls: HashMap<PathBuf, String>,
+    /// The links and images in each page's Markdown, by its path in the
+    /// destination, so a broken one is shown as it's written.
+    pub links: HashMap<PathBuf, Vec<render::WrittenLink>>,
 }
 
 /// Build the site rooted at `site_dir`.
@@ -230,6 +237,7 @@ pub fn build(site_dir: &Path) -> Result<Built> {
             html: rendered.html,
             toc: nest_headings(&rendered.toc),
             page_type,
+            links: rendered.links,
         });
     }
 
@@ -303,6 +311,7 @@ pub fn build(site_dir: &Path) -> Result<Built> {
                 html,
                 name,
                 origin,
+                links: page.links.clone(),
             });
         }
     }
@@ -333,6 +342,7 @@ pub fn build(site_dir: &Path) -> Result<Built> {
             html,
             name,
             origin,
+            links: Vec::new(),
         });
     }
 
@@ -350,11 +360,13 @@ pub fn build(site_dir: &Path) -> Result<Built> {
     clear_destination(&destination_dir)?;
     let mut origins = HashMap::new();
     let mut urls = HashMap::new();
+    let mut links = HashMap::new();
     for output in outputs {
         write_file(&output.path, output.html.as_bytes())?;
         let path = output.path.strip_prefix(&destination_dir)?.to_path_buf();
         origins.insert(path.clone(), output.origin);
-        urls.insert(path, output.url);
+        urls.insert(path.clone(), output.url);
+        links.insert(path, output.links);
     }
     // Written from what was read, not with `fs::copy`: on macOS that clones
     // the file, and FSEvents then reports the *source* as changed, so `little
@@ -374,6 +386,7 @@ pub fn build(site_dir: &Path) -> Result<Built> {
         url: site_url,
         origins,
         urls,
+        links,
     })
 }
 
@@ -848,6 +861,7 @@ mod tests {
             html: String::new(),
             toc: Vec::new(),
             page_type,
+            links: Vec::new(),
         }
     }
 

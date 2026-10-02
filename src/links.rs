@@ -7,6 +7,10 @@
 //! in a folder that's never there, and only one under the site's path is led
 //! from it into the destination, so a link that leaves the path out is
 //! broken here, as it would be on the web.
+//!
+//! A broken link in a page's Markdown is shown as it's written there, so an
+//! author can find it, and any other, like one in the theme, as a reader
+//! follows it.
 
 use anyhow::{Context, Result, anyhow};
 use futures::StreamExt;
@@ -17,11 +21,12 @@ use lychee_lib::{
 };
 use percent_encoding::percent_decode_str;
 use regex::Regex;
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fmt;
 use std::path::{Path, PathBuf};
 use url::Url;
 
+use crate::render::WrittenLink;
 use crate::site::Built;
 
 /// How many files a warning names before it counts the rest.
@@ -45,7 +50,9 @@ pub enum Scope {
 pub struct Broken {
     /// What each file it's in was built from, like `./docs/guide.md`, sorted.
     pub files: Vec<String>,
-    /// The link as a reader follows it, like `/my-project/guide/#usage`.
+    /// The link as the Markdown writes it, like `install.md#usage`, or, in
+    /// the theme or a copied file, as a reader follows it, like
+    /// `/my-project/guide/#usage`.
     pub url: String,
     /// Why it's broken, in lychee's words.
     pub reason: String,
@@ -72,11 +79,13 @@ pub fn check(built: &Built, scope: Scope) -> Result<Vec<Broken>> {
 }
 
 async fn check_site(site: &Site<'_>, scope: Scope) -> Result<Vec<Broken>> {
-    // Each link is checked once, however many files it's in.
-    let mut links: BTreeMap<String, (Request, BTreeSet<String>)> = BTreeMap::new();
-    // The files each broken link is in, by the link as shown and why it's
-    // broken: two links can look alike once shown, like `/guide/#usage` and
-    // `/guide/index.html#usage`, and a reader looks for one.
+    // Each link is checked once, however many files it's in, each with how
+    // its Markdown writes it, if it does.
+    let mut links: BTreeMap<String, (Request, BTreeSet<Found>)> = BTreeMap::new();
+    // The files each broken link is in, by the link as it's shown and why
+    // it's broken: one written alike in many files is one warning, as are
+    // two that look alike once shown, like `/guide/#usage` and
+    // `/guide/index.html#usage`, as a reader looks for one.
     let mut broken: BTreeMap<(String, String), BTreeSet<String>> = BTreeMap::new();
     let input = Input {
         source: InputSource::FsPath(site.destination.clone()),
@@ -90,18 +99,23 @@ async fn check_site(site: &Site<'_>, scope: Scope) -> Result<Vec<Broken>> {
     while let Some(request) = requests.next().await {
         match request {
             Ok(request) => {
-                let file = site.origin(&request.source);
                 let key = request.uri.as_str().to_string();
+                let found = site.found(&request.source, &key);
                 let (_, files) = links
                     .entry(key)
                     .or_insert_with(|| (request, BTreeSet::new()));
-                files.insert(file);
+                files.extend(found);
             }
             // A link that isn't a URL at all, like `https://exa mple.com`.
             Err(RequestError::CreateRequestItem(link, source, error)) => {
-                let file = site.origin(&source);
-                let key = (link.text, error.to_string());
-                broken.entry(key).or_default().insert(file);
+                let reason = error.to_string();
+                for (file, written) in site.found(&source, &link.text) {
+                    let url = written.unwrap_or_else(|| link.text.clone());
+                    broken
+                        .entry((url, reason.clone()))
+                        .or_default()
+                        .insert(file);
+                }
             }
             Err(error) => return Err(error).context("reading the built site's links"),
         }
@@ -121,14 +135,20 @@ async fn check_site(site: &Site<'_>, scope: Scope) -> Result<Vec<Broken>> {
                     }
                     Err(error) => (link.clone(), Some(error.to_string())),
                 };
-                Some(((site.shown(&link, &checked), reason?), files))
+                Some((site.shown(&link, &checked), reason?, files))
             }
         })
         .buffer_unordered(AT_ONCE)
         .collect()
         .await;
-    for (key, files) in checked.into_iter().flatten() {
-        broken.entry(key).or_default().extend(files);
+    for (shown, reason, files) in checked.into_iter().flatten() {
+        for (file, written) in files {
+            let url = written.unwrap_or_else(|| shown.clone());
+            broken
+                .entry((url, reason.clone()))
+                .or_default()
+                .insert(file);
+        }
     }
 
     let mut broken: Vec<_> = broken
@@ -143,6 +163,11 @@ async fn check_site(site: &Site<'_>, scope: Scope) -> Result<Vec<Broken>> {
     Ok(broken)
 }
 
+/// A file a link is in, by what it was built from, and the link as the
+/// file's Markdown writes it: `None` for one that isn't in its Markdown, like
+/// one in the theme.
+type Found = (String, Option<String>);
+
 /// A built site, as lychee finds its files and links.
 struct Site<'a> {
     built: &'a Built,
@@ -152,6 +177,10 @@ struct Site<'a> {
     /// never there, so only a link remapped out of it into the destination
     /// can be found.
     root: PathBuf,
+    /// How each page's Markdown writes its links, by the page's path in the
+    /// destination, then by the URL lychee makes of each, or, for one that
+    /// isn't a URL, by its text.
+    written: HashMap<PathBuf, HashMap<String, BTreeSet<String>>>,
 }
 
 impl<'a> Site<'a> {
@@ -159,10 +188,20 @@ impl<'a> Site<'a> {
         let destination = std::path::absolute(&built.destination)
             .with_context(|| format!("finding {}", built.destination.display()))?;
         let root = destination.join(".little-root");
+        let root_url = dir_url(&root)?;
+        let written = built
+            .links
+            .iter()
+            .map(|(rel, links)| {
+                let source = ResolvedInputSource::FsPath(destination.join(rel));
+                (rel.clone(), written_in(&source, links, &root_url))
+            })
+            .collect();
         Ok(Self {
             built,
             destination,
             root,
+            written,
         })
     }
 
@@ -259,14 +298,70 @@ impl<'a> Site<'a> {
 
     /// What `source`, a file lychee read, was built from.
     fn origin(&self, source: &ResolvedInputSource) -> String {
-        if let ResolvedInputSource::FsPath(path) = source
-            && let Ok(rel) = path.strip_prefix(&self.destination)
-            && let Some(origin) = self.built.origins.get(rel)
-        {
-            return origin.clone();
-        }
-        source.to_string()
+        self.in_destination(source)
+            .and_then(|rel| self.built.origins.get(rel))
+            .cloned()
+            .unwrap_or_else(|| source.to_string())
     }
+
+    /// The file `link` is in, which lychee read as `source`, once for each
+    /// way its Markdown writes the link, or once if it doesn't. `link` is
+    /// the URL lychee made of it, or, if it isn't a URL, its text.
+    fn found(&self, source: &ResolvedInputSource, link: &str) -> Vec<Found> {
+        let file = self.origin(source);
+        let written = self
+            .in_destination(source)
+            .and_then(|rel| self.written.get(rel)?.get(link));
+        match written {
+            Some(written) => written
+                .iter()
+                .map(|written| (file.clone(), Some(written.clone())))
+                .collect(),
+            None => vec![(file, None)],
+        }
+    }
+
+    /// Where `source`, a file lychee read, is in the destination.
+    fn in_destination<'s>(&self, source: &'s ResolvedInputSource) -> Option<&'s Path> {
+        match source {
+            ResolvedInputSource::FsPath(path) => path.strip_prefix(&self.destination).ok(),
+            _ => None,
+        }
+    }
+}
+
+/// How the Markdown of the file lychee reads as `source` writes each of its
+/// `links`, by the URL lychee makes of it, or, for one that isn't a URL, by
+/// its text. The URL is made as lychee makes it, from the text it reads: from
+/// the file's folder, or, for a link from the root of the domain, from
+/// `root`.
+fn written_in(
+    source: &ResolvedInputSource,
+    links: &[WrittenLink],
+    root: &Url,
+) -> HashMap<String, BTreeSet<String>> {
+    let base = source.to_base_info().ok();
+    let mut written: HashMap<String, BTreeSet<String>> = HashMap::new();
+    for link in links {
+        let url = base.as_ref().and_then(|base| {
+            base.parse_url_text_with_root_dir(&link.href, Some(root))
+                .ok()
+        });
+        let key = match url {
+            Some(mut url) => {
+                // As lychee drops the `/` from the end of a link to a file.
+                if url.scheme() == "file" {
+                    let _ = url.path_segments_mut().map(|mut path| {
+                        path.pop_if_empty();
+                    });
+                }
+                url.into()
+            }
+            None => link.href.clone(),
+        };
+        written.entry(key).or_default().insert(link.written.clone());
+    }
+    written
 }
 
 /// The `file` URL of the folder `dir`, which must be an absolute path.
@@ -358,12 +453,84 @@ mod tests {
         assert_eq!(
             broken,
             [
-                "broken link /#usge in docs/README.md: Cannot find fragment".to_string(),
-                "broken link /guide/install#from-sorce in docs/README.md: Cannot find fragment"
-                    .to_string(),
+                "broken link #usge in docs/README.md: Cannot find fragment".to_string(),
                 format!("broken link /guide/uninstall in docs/README.md: {NOT_FOUND}"),
-                format!("broken link /images/logo.png in docs/README.md: {NOT_FOUND}"),
+                "broken link guide/install#from-sorce in docs/README.md: Cannot find fragment"
+                    .to_string(),
+                format!("broken link images/logo.png in docs/README.md: {NOT_FOUND}"),
                 format!("broken link /guide/setup.html in docs/guide/old.html: {NOT_FOUND}"),
+            ]
+        );
+    }
+
+    #[test]
+    fn follows_a_link_to_a_pages_file_to_the_page() {
+        let broken = broken_links(
+            "md",
+            Scope::Internal,
+            &[
+                (
+                    "little.yml",
+                    "theme: ./theme\nurl: https://withlittle.github.io/little\n",
+                ),
+                BARE_THEME[1],
+                (
+                    "docs/README.md",
+                    "# Home\n\n[Guide](guide/README.md) [Install](guide/install.md#from-source) \
+                     [Home](README.md) [Home](/readme.md)\n\n\
+                     [Uninstall](guide/uninstall.md) [Install](guide/install.md#from-sorce)\n",
+                ),
+                (
+                    "docs/guide/README.md",
+                    "# Guide\n\n## Usage\n\n[Home](../README.md) [Install](./install.md) \
+                     [Usage](Readme.md#usage)\n",
+                ),
+                (
+                    "docs/guide/install.md",
+                    "# Install\n\n## From source\n\n[Usage](README.md#usage) [Home](/README.md)\n",
+                ),
+            ],
+        );
+        assert_eq!(
+            broken,
+            [
+                "broken link guide/install.md#from-sorce in docs/README.md: Cannot find fragment"
+                    .to_string(),
+                format!("broken link guide/uninstall.md in docs/README.md: {NOT_FOUND}"),
+            ]
+        );
+    }
+
+    #[test]
+    fn shows_a_link_in_markdown_as_its_written() {
+        let broken = broken_links(
+            "written",
+            Scope::Internal,
+            &[
+                (
+                    "little.yml",
+                    "theme: ./theme\nurl: https://withlittle.github.io/little\n",
+                ),
+                BARE_THEME[1],
+                // Each way a link is written is a warning, which names each
+                // file it's written in that way.
+                (
+                    "docs/README.md",
+                    "# Home\n\n[Usage](guide/#usge) [Usage](/guide/#usge)\n",
+                ),
+                ("docs/about.md", "# About\n\n[Usage](/guide/#usge)\n"),
+                (
+                    "docs/guide/README.md",
+                    "# Guide\n\n## Usage\n\n[Usage](#usge)\n",
+                ),
+            ],
+        );
+        assert_eq!(
+            broken,
+            [
+                "broken link guide/#usge in docs/README.md: Cannot find fragment",
+                "broken link /guide/#usge in docs/README.md, docs/about.md: Cannot find fragment",
+                "broken link #usge in docs/guide/README.md: Cannot find fragment",
             ]
         );
     }
@@ -376,13 +543,17 @@ mod tests {
             &[
                 BARE_THEME[0],
                 BARE_THEME[1],
-                // Both `/guide#nope` and `guide/index.html#nope` show as
+                // Copied as it is, so its links are shown as a reader follows
+                // them. Both `/guide#nope` and `guide/index.html#nope` show as
                 // `/guide/#nope`, so they're one warning.
                 (
-                    "docs/README.md",
-                    "[Install](/guide/install/#nope) [Guide](/guide#nope) \
-                     [Guide](guide/index.html#nope) [Images](/images/) [Café](#café)\n",
+                    "docs/old.html",
+                    "<a href=\"/guide/install/#nope\">Install</a> \
+                     <a href=\"/guide#nope\">Guide</a> \
+                     <a href=\"guide/index.html#nope\">Guide</a> \
+                     <a href=\"/images/\">Images</a> <a href=\"#café\">Café</a>",
                 ),
+                ("docs/README.md", "# Home\n"),
                 ("docs/guide/README.md", "# Guide\n"),
                 ("docs/guide/install.md", "# Install\n"),
                 ("docs/images/logo.png", "png"),
@@ -391,10 +562,10 @@ mod tests {
         assert_eq!(
             broken,
             [
-                "broken link /#café in docs/README.md: Cannot find fragment",
-                "broken link /guide/#nope in docs/README.md: Cannot find fragment",
-                "broken link /guide/install#nope in docs/README.md: Cannot find fragment",
-                "broken link /images/ in docs/README.md: Cannot find index file within directory",
+                "broken link /guide/#nope in docs/old.html: Cannot find fragment",
+                "broken link /guide/install#nope in docs/old.html: Cannot find fragment",
+                "broken link /images/ in docs/old.html: Cannot find index file within directory",
+                "broken link /old.html#café in docs/old.html: Cannot find fragment",
             ]
         );
     }
@@ -452,7 +623,7 @@ mod tests {
         );
         assert_eq!(broken.len(), 1, "{broken:?}");
         assert!(
-            broken[0].starts_with("broken link https://exa%20mple.com in docs/README.md: "),
+            broken[0].starts_with("broken link https://exa mple.com in docs/README.md: "),
             "{broken:?}"
         );
     }

@@ -1,6 +1,7 @@
 # 0016 — Checking links with lychee
 
-- Status: accepted
+- Status: accepted; amended by [0017](./0017-links-to-pages-files.md),
+  which shows a broken link in Markdown as it's written
 - Date: 2026-10-01
 
 ## Context

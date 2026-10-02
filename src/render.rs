@@ -6,6 +6,7 @@ use comrak::nodes::{AstNode, NodeValue};
 use comrak::{Anchorizer, Arena, Options};
 use serde_yaml::Mapping;
 use std::borrow::Cow;
+use std::mem;
 use std::ops::RangeInclusive;
 
 use crate::config::SiteUrl;
@@ -32,6 +33,19 @@ pub struct Rendered {
     pub toc: Vec<TocItem>,
     /// Text of the first `<h1>`, used as a title fallback.
     pub first_h1: Option<String>,
+    /// The body's links and images, in the order they come.
+    pub links: Vec<WrittenLink>,
+}
+
+/// A link or image in a document, so a broken one can be shown as it's
+/// written, not as little rewrote it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WrittenLink {
+    /// As the document has it, like `install.md#usage`.
+    pub written: String,
+    /// Where it leads in the HTML, as a browser reads it there, like
+    /// `/my-project/guide/install#usage`.
+    pub href: String,
 }
 
 /// Parse a document into its frontmatter, rendered HTML, and outline, which
@@ -39,7 +53,8 @@ pub struct Rendered {
 /// `toc_min_depth` to `toc_max_depth`). Links and images relative to the
 /// document, like `images/logo.png`, lead from `folder`, the URL of the folder
 /// it's in, like `/guide/`; those from the root of the site get the path of
-/// the site's `url`.
+/// the site's `url`. A link to a page's Markdown file, like `install.md`,
+/// leads to the page.
 pub fn parse_document(
     raw: &str,
     folder: &str,
@@ -59,7 +74,7 @@ pub fn parse_document(
     let arena = Arena::new();
     let root = comrak::parse_document(&arena, &body, &options);
 
-    link_within_site(root, folder, url);
+    let links = link_within_site(root, folder, url, &options);
     let (toc, first_h1) = outline(root, toc_depths);
 
     let mut html = String::new();
@@ -71,6 +86,7 @@ pub fn parse_document(
         html,
         toc,
         first_h1,
+        links,
     })
 }
 
@@ -91,16 +107,74 @@ fn render_options() -> Options<'static> {
 /// Point each link and image where it leads in the built site. One relative
 /// to the document leads from its `folder`, as where Markdown is read as
 /// files, like on GitHub, whatever URL its page is served at: with or without
-/// a `/` at the end, as hosts differ. Then one from the root of the site gets
-/// the site's path, so an author can write `/guide/` wherever the site is
-/// published. Raw HTML isn't rendered, so its links needn't be found.
-fn link_within_site<'a>(root: &'a AstNode<'a>, folder: &str, url: &SiteUrl) {
+/// a `/` at the end, as hosts differ. A link to a page's Markdown file leads
+/// to the page, as it leads to the file on GitHub. Then one from the root of
+/// the site gets the site's path, so an author can write `/guide/` wherever
+/// the site is published. Raw HTML isn't rendered, so its links needn't be
+/// found.
+///
+/// Returns each link and image as it's written, and as it's read from the
+/// HTML.
+fn link_within_site<'a>(
+    root: &'a AstNode<'a>,
+    folder: &str,
+    url: &SiteUrl,
+    options: &Options,
+) -> Vec<WrittenLink> {
+    let mut links = Vec::new();
     for node in root.descendants() {
-        if let NodeValue::Link(link) | NodeValue::Image(link) = &mut node.data.borrow_mut().value {
-            let within = url.link(&from_the_folder(folder, &link.url)).into_owned();
-            link.url = within;
+        let mut data = node.data.borrow_mut();
+        let (link, is_image) = match &mut data.value {
+            NodeValue::Link(link) => (link, false),
+            NodeValue::Image(link) => (link, true),
+            _ => continue,
+        };
+        let mut within = from_the_folder(folder, &link.url);
+        // An image can't be a page.
+        if !is_image && let Some(page) = page_of(&within) {
+            within = Cow::Owned(page);
         }
+        let href = url.link(&within).into_owned();
+        links.push(WrittenLink {
+            href: as_read(&href, options),
+            written: mem::replace(&mut link.url, href),
+        });
     }
+    links
+}
+
+/// The page built from the Markdown file at `url`, from the root of the
+/// site, which a link to the file leads to, as on GitHub: `/guide/install`
+/// for `/guide/install.md`, and the folder's page, `/guide/`, for
+/// `/guide/README.md`. The `?query` and `#fragment` follow as they are.
+/// `None` for any other URL, like `/logo.png`, or `https://…/README.md`.
+fn page_of(url: &str) -> Option<String> {
+    if !url.starts_with('/') || url.starts_with("//") {
+        return None;
+    }
+    let (path, rest) = url.split_at(url.find(['?', '#']).unwrap_or(url.len()));
+    let (folder, file) = path.rsplit_once('/')?;
+    // Only a `.md` file is a page: not `.MD`, nor `.md` alone, which is
+    // hidden.
+    let name = file.strip_suffix(".md").filter(|name| !name.is_empty())?;
+    // As in the build, a `README.md` in any case is its folder's page.
+    let page = if name.eq_ignore_ascii_case("readme") {
+        ""
+    } else {
+        name
+    };
+    Some(format!("{folder}/{page}{rest}"))
+}
+
+/// `href` as a browser, or a link checker, reads it from the HTML: escaped
+/// as comrak writes it, with the `&` and `'` it writes as entities read back.
+fn as_read(href: &str, options: &Options) -> String {
+    let mut escaped = String::new();
+    // Writing to a `String` can't fail.
+    let _ = comrak::html::escape_href(&mut escaped, href, options.parse.relaxed_autolinks);
+    // `&#x27;` is read back first, or a URL with `&#x27;` in it, written
+    // `&amp;#x27;`, would be read with a `'`.
+    escaped.replace("&#x27;", "'").replace("&amp;", "&")
 }
 
 /// `url`, written in a document in the folder at `folder`, like `/guide/`,
@@ -449,5 +523,93 @@ mod tests {
         ] {
             assert!(html.contains(resolved), "{resolved} in {html}");
         }
+    }
+
+    #[test]
+    fn links_to_a_pages_file_lead_to_the_page() {
+        // As the build makes a page of each `.md` file.
+        for (url, page) in [
+            ("/guide/install.md", Some("/guide/install")),
+            ("/guide/install.md#usage", Some("/guide/install#usage")),
+            (
+                "/guide/install.md?v=2#usage",
+                Some("/guide/install?v=2#usage"),
+            ),
+            ("/guide/README.md", Some("/guide/")),
+            ("/guide/readme.md#usage", Some("/guide/#usage")),
+            ("/README.md", Some("/")),
+            ("/notes.md.md", Some("/notes.md")),
+            // Anything else is left as it is.
+            ("/guide/README.MD", None),
+            ("/guide/install.markdown", None),
+            ("/guide/.md", None),
+            ("/guide/install.md/", None),
+            ("/guide/", None),
+            ("/logo.png", None),
+            ("/guide?file=install.md", None),
+            ("//example.com/README.md", None),
+            ("https://example.com/README.md", None),
+            ("#install.md", None),
+        ] {
+            assert_eq!(page_of(url).as_deref(), page, "{url}");
+        }
+
+        // In Markdown, from the document's folder, and with the site's path,
+        // in a link, but not an image.
+        let url = SiteUrl {
+            origin: "https://withlittle.github.io".into(),
+            path: "/little".into(),
+        };
+        let md = "[Install](install.md#from-source) [Home](../README.md) \
+                  [Guide](./README.md) [Usage][usage] ![Diagram](diagram.md)\n\n\
+                  [usage]: /guide/usage.md\n";
+        let html = parse_document(md, "/guide/", &TOC_DEPTHS, &url)
+            .unwrap()
+            .html;
+        for within in [
+            r#"<a href="/little/guide/install#from-source">Install</a>"#,
+            r#"<a href="/little/">Home</a>"#,
+            r#"<a href="/little/guide/">Guide</a>"#,
+            r#"<a href="/little/guide/usage">Usage</a>"#,
+            r#"<img src="/little/guide/diagram.md" alt="Diagram" />"#,
+        ] {
+            assert!(html.contains(within), "{within} in {html}");
+        }
+    }
+
+    #[test]
+    fn keeps_each_link_as_its_written() {
+        let url = SiteUrl {
+            origin: "https://withlittle.github.io".into(),
+            path: "/little".into(),
+        };
+        let md = "[Install](install.md#from-source) ![Logo](<images/the logo.png>) \
+                  [Top](#top) [Search](https://example.com/?q=a&b='c') [Usage][usage]\n\n\
+                  [usage]: /guide/usage\n";
+        let rendered = parse_document(md, "/guide/", &TOC_DEPTHS, &url).unwrap();
+        let links: Vec<_> = rendered
+            .links
+            .iter()
+            .map(|link| (link.written.as_str(), link.href.as_str()))
+            .collect();
+        assert_eq!(
+            links,
+            [
+                (
+                    "install.md#from-source",
+                    "/little/guide/install#from-source"
+                ),
+                ("images/the logo.png", "/little/guide/images/the%20logo.png"),
+                ("#top", "#top"),
+                (
+                    "https://example.com/?q=a&b='c'",
+                    "https://example.com/?q=a&b='c'"
+                ),
+                ("/guide/usage", "/little/guide/usage"),
+            ]
+        );
+        // Each as a browser reads it from the HTML.
+        let search = r#"<a href="https://example.com/?q=a&amp;b=&#x27;c&#x27;">"#;
+        assert!(rendered.html.contains(search), "{}", rendered.html);
     }
 }
