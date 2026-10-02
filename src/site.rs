@@ -6,7 +6,7 @@ use minijinja::{Value as MjValue, context};
 use serde::{Deserialize, Serialize};
 use serde_yaml::{Mapping, Value};
 use std::borrow::Cow;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs;
 use std::io::ErrorKind;
 use std::iter::Peekable;
@@ -16,7 +16,7 @@ use walkdir::WalkDir;
 
 use crate::config::SiteUrl;
 use crate::theme::{PageType, StaticFile, Theme};
-use crate::{config, render};
+use crate::{config, render, search};
 
 /// Where a site's 404 page is written: the root of the destination, which is
 /// where static hosts look for it.
@@ -170,6 +170,7 @@ pub fn build(site_dir: &Path) -> Result<Built> {
         destination_dir,
         toc_depths,
         url: site_url,
+        search: searchable,
         ..
     } = config::load(site_dir)?;
     if !source_dir.is_dir() {
@@ -275,6 +276,7 @@ pub fn build(site_dir: &Path) -> Result<Built> {
         )
     };
     let mut outputs = Vec::new();
+    let mut searched = Vec::new();
     for page in &pages {
         let children = page.is_index().then(|| children_of(&tree, &page.rel));
         let (prev, next) = neighbours
@@ -301,6 +303,16 @@ pub fn build(site_dir: &Path) -> Result<Built> {
         if let Some(html) = render(page.page_type, &data, &page.frontmatter)
             .with_context(|| format!("rendering {}", source.display()))?
         {
+            // Search indexes the page's own content, not the theme's markup
+            // around it, but in the language the theme gives it.
+            if searchable {
+                searched.push(search::Page {
+                    url: site_url.link(&page.url).into_owned(),
+                    title: &page.title,
+                    content: &page.html,
+                    lang: search::lang(&html),
+                });
+            }
             let path = page.out_path.clone();
             let url = page.url.clone();
             let origin = source.display().to_string();
@@ -357,6 +369,16 @@ pub fn build(site_dir: &Path) -> Result<Built> {
     let static_files: Vec<_> = static_files.into_values().collect();
     check_static_files(&static_files, &destination_dir, &outputs)?;
 
+    // Every page the theme rendered is searchable, but the 404 page, which
+    // isn't one to find.
+    let search_files = if searchable {
+        let files = search::index(&searched)?;
+        check_search_files(&files, &static_files, &destination_dir, &outputs)?;
+        files
+    } else {
+        Vec::new()
+    };
+
     clear_destination(&destination_dir)?;
     let mut origins = HashMap::new();
     let mut urls = HashMap::new();
@@ -374,6 +396,9 @@ pub fn build(site_dir: &Path) -> Result<Built> {
     for file in static_files {
         write_file(&destination_dir.join(&file.path), &file.contents)?;
         origins.insert(file.path, file.origin);
+    }
+    for file in search_files {
+        write_file(&destination_dir.join(&file.path), &file.contents)?;
     }
 
     println!(
@@ -507,6 +532,45 @@ fn check_static_files(files: &[StaticFile], destination: &Path, outputs: &[Outpu
         let target = destination.join(&file.path);
         if let Some(page) = outputs.iter().find(|page| page.path.starts_with(&target)) {
             bail!("{} clashes with {}", file.origin, page.name);
+        }
+    }
+    Ok(())
+}
+
+/// Fail if a static file or a page would land on one of the files little
+/// writes for search, or on a folder they're in, or one of them would land on
+/// it, as a static file named `search` would.
+fn check_search_files(
+    search_files: &[search::File],
+    static_files: &[StaticFile],
+    destination: &Path,
+    outputs: &[Output],
+) -> Result<()> {
+    let taken: BTreeSet<&Path> = search_files
+        .iter()
+        .map(|file| file.path.as_path())
+        .collect();
+    let mut written: Vec<(&Path, &str)> = (static_files.iter())
+        .map(|file| (file.path.as_path(), file.origin.as_str()))
+        .collect();
+    for page in outputs {
+        written.push((page.path.strip_prefix(destination)?, &page.name));
+    }
+    let url = |path: &Path| path.to_string_lossy().replace('\\', "/");
+    for (path, name) in written {
+        if let Some(file) = path.ancestors().find(|path| taken.contains(path)) {
+            bail!(
+                "{name} clashes with /{}, which little writes for search: rename or move it",
+                url(file)
+            );
+        }
+        // Paths sort by their parts, so the files in a folder sort just after it.
+        if (taken.range(path..).next()).is_some_and(|file| file.starts_with(path)) {
+            bail!(
+                "{name} clashes with /{}/, where little writes files for search: \
+                 rename or move it",
+                url(path)
+            );
         }
     }
     Ok(())
@@ -846,6 +910,7 @@ fn push_trails<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Read;
 
     fn page(rel: &str, title: &str) -> Page {
         let rel = PathBuf::from(rel);
@@ -876,6 +941,24 @@ mod tests {
             fs::write(&path, contents).unwrap();
         }
         site
+    }
+
+    /// What search found in each page of the site built into `dist`, as
+    /// Pagefind keeps it: JSON of its URL, content, title, and headings.
+    fn indexed(dist: &Path) -> Vec<String> {
+        let fragments = fs::read_dir(dist.join("search/fragment")).unwrap();
+        let mut pages: Vec<String> = fragments
+            .map(|fragment| {
+                let file = fs::File::open(fragment.unwrap().path()).unwrap();
+                let mut json = String::new();
+                flate2::read::GzDecoder::new(file)
+                    .read_to_string(&mut json)
+                    .unwrap();
+                json.trim_start_matches("pagefind_dcd").to_string()
+            })
+            .collect();
+        pages.sort();
+        pages
     }
 
     /// The titles (or "label") and URLs of `items`, nested like the nav.
@@ -1298,6 +1381,29 @@ mod tests {
         assert!(dist.join(NOT_FOUND_FILE).is_file());
         let css = fs::read(dist.join("assets/style.css")).unwrap();
         assert_eq!(css, include_bytes!("../theme/_static/assets/style.css"));
+        // And it's searchable, from the search box in its header.
+        assert!(dist.join("search/pagefind-component-ui.js").is_file());
+        assert!(home.contains("<pagefind-modal-trigger>"), "{home}");
+        let _ = fs::remove_dir_all(&site);
+    }
+
+    #[test]
+    fn a_site_can_turn_off_the_built_in_themes_search() {
+        let site = scratch_site(
+            "builtin-unsearched",
+            &[
+                ("little.yml", "search: false\n"),
+                ("docs/README.md", "# Home\n"),
+            ],
+        );
+
+        build(&site).unwrap();
+
+        let dist = site.join("dist");
+        let home = fs::read_to_string(dist.join("index.html")).unwrap();
+        assert!(!home.contains("pagefind"), "{home}");
+        assert!(!home.contains("/search/"), "{home}");
+        assert!(!dist.join("search").exists());
         let _ = fs::remove_dir_all(&site);
     }
 
@@ -2353,6 +2459,130 @@ mod tests {
         assert_eq!(message, expected);
         let guide = fs::read_to_string(site.join("dist/guide/index.html")).unwrap();
         assert_eq!(guide, "Guide");
+        let _ = fs::remove_dir_all(&site);
+    }
+
+    #[test]
+    fn each_page_is_indexed_for_search() {
+        let site = scratch_site(
+            "search",
+            &[
+                (
+                    "little.yml",
+                    "theme: ./theme\nurl: https://example.com/docs\n",
+                ),
+                ("docs/README.md", "# Home\n\nWelcome aboard.\n"),
+                (
+                    "docs/guide/install.md",
+                    "---\ntitle: Installing\n---\n# Install\n\n## From source\n\nRun cargo.\n",
+                ),
+                ("theme/little.yml", "search: true\n"),
+                (
+                    "theme/_templates/default.html",
+                    "<html lang=\"fr\"><header>Theme header</header>{{ page.content }}</html>",
+                ),
+                ("theme/_templates/404.html", "<html lang=\"fr\">Lost</html>"),
+            ],
+        );
+        build(&site).unwrap();
+
+        // Each page but the 404 page, in the language the theme gives it...
+        let dist = site.join("dist");
+        let entry = fs::read_to_string(dist.join("search/pagefind-entry.json")).unwrap();
+        assert!(entry.contains(r#""wasm":"fr","page_count":2"#), "{entry}");
+        assert!(dist.join("search/pagefind.js").is_file());
+
+        // ...at its URL, with the site's path, under its title, with its
+        // headings, and with only its own content, not the theme's.
+        let pages = indexed(&dist);
+        let expected = [
+            [
+                r#""url":"/docs/""#,
+                r#""title":"Home""#,
+                r#""content":"Home. Welcome aboard.""#,
+            ],
+            [
+                r#""url":"/docs/guide/install""#,
+                r#""title":"Installing""#,
+                r#""id":"from-source","text":"From source""#,
+            ],
+        ];
+        assert_eq!(pages.len(), expected.len());
+        for (page, expected) in pages.iter().zip(expected) {
+            for part in expected {
+                assert!(page.contains(part), "{part} in {page}");
+            }
+            assert!(!page.contains("Theme header"), "{page}");
+        }
+
+        // A site can go without.
+        let site_cfg = "theme: ./theme\nsearch: false\n";
+        fs::write(site.join("little.yml"), site_cfg).unwrap();
+        build(&site).unwrap();
+        assert!(dist.join("index.html").is_file());
+        assert!(!dist.join("search").exists());
+        let _ = fs::remove_dir_all(&site);
+    }
+
+    #[test]
+    fn nothing_can_take_the_place_of_search_files() {
+        let site = scratch_site(
+            "search-clash",
+            &[
+                ("little.yml", "theme: ./theme\n"),
+                ("docs/README.md", "# Home\n"),
+                ("theme/little.yml", "search: true\n"),
+                ("theme/_templates/default.html", "{{ page.title }}"),
+            ],
+        );
+        // A page at /search, or a file beside search's files, is fine...
+        fs::write(site.join("docs/search.md"), "# Search\n").unwrap();
+        fs::create_dir_all(site.join("docs/search")).unwrap();
+        fs::write(site.join("docs/search/notes.txt"), "notes").unwrap();
+        build(&site).unwrap();
+        let dist = site.join("dist");
+        assert_eq!(
+            fs::read_to_string(dist.join("search/index.html")).unwrap(),
+            "Search"
+        );
+        assert!(dist.join("search/notes.txt").is_file());
+        assert!(dist.join("search/pagefind.js").is_file());
+
+        // ...but not one on one of them, whether it's the theme's or one in
+        // the source, or a page...
+        let docs = site.join("docs");
+        let theme_file = site.join("theme/_static/search/pagefind.js");
+        let source_file = docs.join("search/pagefind.js");
+        let page = docs.join("search/pagefind.js.md");
+        for (file, name) in [
+            (&theme_file, theme_file.display().to_string()),
+            (&source_file, source_file.display().to_string()),
+            (&page, format!("the page built from {}", page.display())),
+        ] {
+            fs::create_dir_all(file.parent().unwrap()).unwrap();
+            fs::write(file, "# Mine\n").unwrap();
+            let message = format!("{:#}", build(&site).unwrap_err());
+            let expected = format!(
+                "{name} clashes with /search/pagefind.js, which little writes for search: \
+                 rename or move it"
+            );
+            assert_eq!(message, expected);
+            fs::remove_file(file).unwrap();
+        }
+
+        // ...or one where their folder goes.
+        fs::remove_file(docs.join("search.md")).unwrap();
+        fs::remove_dir_all(docs.join("search")).unwrap();
+        fs::write(docs.join("search"), "a file, not a folder").unwrap();
+        let message = format!("{:#}", build(&site).unwrap_err());
+        let expected = format!(
+            "{} clashes with /search/, where little writes files for search: rename or move it",
+            docs.join("search").display()
+        );
+        assert_eq!(message, expected);
+
+        // The last build is left in place.
+        assert!(dist.join("search/pagefind.js").is_file());
         let _ = fs::remove_dir_all(&site);
     }
 }

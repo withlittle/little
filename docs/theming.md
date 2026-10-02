@@ -212,3 +212,22 @@ A theme puts the path before its own URLs with the `url` filter, as this theme d
 stylesheet and its home link, and makes a URL absolute, for a link preview or a feed, with
 `absolute_url`: `{{ page.url | absolute_url }}`, or `{{ '/og.png' | url | absolute_url }}`
 for one of its own. Without a `url`, both leave a URL as it is.
+
+## A search box
+
+This theme's `little.yml` sets `search: true`, so little indexes every page into `search/` as
+it builds, and the theme puts [Pagefind](https://pagefind.app/)'s search box in its header,
+loaded from there. Press ⌘K or Ctrl+K to try it. A site that sets `search: false` goes
+without, and the theme leaves the box out too:
+
+```html
+{% if site.search %}
+<pagefind-config bundle-path="{{ '/search/' | url }}"></pagefind-config>
+<pagefind-modal-trigger></pagefind-modal-trigger>
+<pagefind-modal></pagefind-modal>
+{% endif %}
+```
+
+little indexes each page's own content, under its title, so nothing the theme puts around
+it, like its header or sidebar, turns up in results. The theme gives the box its font and
+colours with Pagefind's `--pf-*` CSS variables.

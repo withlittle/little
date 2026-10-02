@@ -21,6 +21,9 @@
 //! `https://example.github.io/my-project`. Its path, `/my-project`, goes
 //! before each URL little gives the theme, and `little serve` serves the site
 //! under it too.
+//!
+//! `search` is whether each build indexes the site for a search box (see
+//! `search`): little leaves it off, and a theme with a search box turns it on.
 
 use anyhow::{Context, Result, anyhow, bail};
 use serde_yaml::{Mapping, Value};
@@ -57,6 +60,8 @@ pub struct Config {
     pub port: u16,
     /// Where the site is published, from `url`.
     pub url: SiteUrl,
+    /// Whether a build indexes the site for search, from `search`.
+    pub search: bool,
 }
 
 /// Where a site is published, from its `url`. A site that doesn't set one is
@@ -172,6 +177,7 @@ pub fn load(site_dir: &Path) -> Result<Config> {
     let host = host(&values)?;
     let port = port(&values)?;
     let url = site_url(&values)?;
+    let search = search(&values)?;
     Ok(Config {
         values,
         themes,
@@ -181,6 +187,7 @@ pub fn load(site_dir: &Path) -> Result<Config> {
         host,
         port,
         url,
+        search,
     })
 }
 
@@ -299,6 +306,15 @@ fn site_url(values: &Mapping) -> Result<SiteUrl> {
         origin: url[..url.len() - path.len()].to_string(),
         path: path.trim_end_matches('/').to_string(),
     })
+}
+
+/// Whether a build indexes the site for search. YAML reads `yes` and `"true"`
+/// as text, not `true`, so they're errors rather than a guess.
+fn search(values: &Mapping) -> Result<bool> {
+    match values.get("search") {
+        Some(Value::Bool(on)) => Ok(*on),
+        _ => bail!("`search` must be `true` or `false`"),
+    }
 }
 
 /// Resolve a path a config names against `dir`: an absolute path is just that
@@ -499,6 +515,7 @@ mod tests {
              toc_max_depth: 6\n\
              host: 127.0.0.1\n\
              port: 8080\n\
+             search: false\n\
              name: My Docs\n\
              font: Inter\n\
              lang: en\n\
@@ -767,6 +784,37 @@ mod tests {
     }
 
     #[test]
+    fn search_cascades() {
+        let site = scratch("search", &[("theme/_templates/default.html", "")]);
+        let search = |site_cfg: &str| {
+            std::fs::write(site.join(CONFIG_FILE), site_cfg).unwrap();
+            load(&site).unwrap().search
+        };
+
+        // little leaves search off, the built-in theme, with its search box,
+        // turns it on, and a site has the last word.
+        assert!(!search("theme: ./theme\n"));
+        assert!(!search("theme: false\n"));
+        assert!(search(""));
+        assert!(!search("search: false\n"));
+        assert!(search("theme: ./theme\nsearch: true\n"));
+
+        let _ = std::fs::remove_dir_all(&site);
+    }
+
+    #[test]
+    fn bad_searches_explain_themselves() {
+        let site = scratch("bad-search", &[]);
+        // YAML reads `yes` and a quoted `"true"` as text, not `true`.
+        for value in [" yes", " \"true\"", " 1", ""] {
+            let message = error(&site, &format!("search:{value}\n"));
+            assert_eq!(message, "`search` must be `true` or `false`");
+        }
+
+        let _ = std::fs::remove_dir_all(&site);
+    }
+
+    #[test]
     fn host_and_port_cascade() {
         let site = scratch("host-port", &[("theme/little.yml", "port: 4000\n")]);
         let address = |site_cfg: &str| {
@@ -972,6 +1020,8 @@ mod tests {
         assert_eq!(cfg.get("toc_max_depth").and_then(Value::as_u64), Some(6));
         assert_eq!(get(&cfg, "host"), Some("127.0.0.1"));
         assert_eq!(cfg.get("port").and_then(Value::as_u64), Some(8080));
+        // Search is a theme's to turn on, with a box to search in.
+        assert_eq!(cfg.get("search"), Some(&Value::Bool(false)));
         // A site's name, language, and look are the theme's to default.
         for key in ["name", "lang"] {
             assert_eq!(cfg.get(key), None, "little shouldn't default `{key}`");

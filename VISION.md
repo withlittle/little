@@ -50,6 +50,8 @@ and a rejection of their worst friction.
   (e.g. Sphinx-style docstring extraction as a plugin).
 - **Styling:** bring-your-own; little compiles a theme's Sass (grass, built
   in), and pairs with the standalone Tailwind CLI (no Node).
+- **Search:** Pagefind, built in, indexes each page as it's built, for a
+  theme's search box to search in the browser.
 
 ## Roadmap (thin vertical slices)
 Each slice ships as a small, reviewable PR, dogfooded against the example site in `docs/`.
@@ -58,7 +60,7 @@ Each slice ships as a small, reviewable PR, dogfooded against the example site i
 - [ ] **1 — Navigation & structure:** nested sections, explicit ordering, sidebar tree.
 - [ ] **2 — Authoring essentials:** syntax highlighting, callouts/admonitions, per-page TOC, heading anchors.
 - [ ] **3 — `little init` + default theme:** scaffold a site in one command; a polished, responsive, accessible default theme.
-- [ ] **4 — Search:** client-side search index out of the box.
+- [x] **4 — Search:** client-side search index out of the box.
 - [ ] **5 — Plugin API (WASM):** sandboxed plugins; first plugin — docstring / API extraction.
 - [ ] **6 — Versioning:** multiple doc versions for large product sites.
 - [ ] **7 — Performance:** incremental builds for large sites.

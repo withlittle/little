@@ -22,14 +22,19 @@ cargo fmt                   # format — run before committing
 - `src/config.rs` — the 3-level cascading config (little → theme → site): the
   chain of themes a site uses, its source and destination folders, the levels
   of heading its tables of contents list, the host and port
-  `little serve` serves it at, and the `url` it's published at.
+  `little serve` serves it at, the `url` it's published at, and whether it's
+  indexed for search.
 - `src/little.yml` — little's own defaults (level 1), compiled into the binary.
 - `src/render.rs` — Markdown (comrak) + YAML frontmatter → HTML fragment, with
   each relative link led from the folder of the file it's in, and each link
   to a page's `.md` file led to the page, noting each link as it's written.
 - `src/site.rs` — build pipeline: walk the source (`docs/`), render its
-  Markdown, copy its other files, apply theme, write the destination
-  (`dist/`), noting the source file and URL of each file it writes.
+  Markdown, copy its other files, apply theme, index it for search, write the
+  destination (`dist/`), noting the source file and URL of each file it
+  writes.
+- `src/search.rs` — indexes each page's own content, under its title and URL,
+  with Pagefind, in the language the theme gives the page, into the files of
+  the destination's `search/`.
 - `src/links.rs` — checks the links in the built site with lychee-lib: those
   within the site in the destination, as the site is published under its
   `url`, and, for `little build`, those to other sites over the network.
@@ -54,7 +59,8 @@ Content and theme live outside `src/`:
 - `theme/` — little's built-in theme, compiled into the binary: `_templates/`
   (MiniJinja; `default.html` is required) + `_static/` (copied to the site's
   root) + an optional `little.yml`. It's plain CSS: `builtin` has no `_sass/`.
-  List every file in it in `builtin` in `src/theme.rs`; a test checks.
+  List every file in it in `builtin` in `src/theme.rs`; a test checks. Its
+  search box is Pagefind's, loaded from the `search/` little writes.
 - `little.yml` — example site config (optional). It sets `theme: ./theme`, so
   edits to the built-in theme live-reload.
 - Project meta (`VISION.md`, `AGENTS.md`, `decisions/`) lives at the repo root.
@@ -173,4 +179,10 @@ Record notable choices as short ADRs in `decisions/`. Locked so far:
   `_templates/`; a partial in `_static/` stops the build, and Sass in the
   source is copied as-is — see
   [`decisions/0018-sass-in-themes.md`](./decisions/0018-sass-in-themes.md).
+- **Site search:** `search`, which little sets `false` and the built-in
+  theme `true`, indexes each page's own content, under its title and URL,
+  with Pagefind, built in, into the destination's `search/`, in the language
+  of the page's `<html lang>`, but not the 404 page; the theme owns the
+  search box, and a page or file where search writes one stops the build —
+  see [`decisions/0019-site-search.md`](./decisions/0019-site-search.md).
 - **Plugins:** sandboxed WASM (planned).

@@ -36,6 +36,25 @@ a:hover { text-decoration: underline; }
 .brand:hover { text-decoration: none; }
 .description { color: #6b727c; font-size: 0.9rem; }
 
+/* Search: Pagefind's search box, in this theme's font and colours, with its
+   button at the right of the header. */
+:root {
+  --pf-font: var(--font, system-ui, sans-serif);
+  --pf-text: #1f2328;
+  --pf-text-secondary: #4a515a;
+  --pf-text-muted: #6b727c;
+  --pf-border: #ebedf0;
+  --pf-border-focus: #7c3aed;
+  --pf-hover: #f4f5f7;
+  --pf-mark: #7c3aed;
+  --pf-outline-focus: #7c3aed;
+  --pf-border-radius: 7px;
+}
+.site-header pagefind-modal-trigger {
+  margin-left: auto;
+  align-self: center;
+}
+
 /* Layout */
 .layout {
   display: grid;
@@ -213,6 +232,8 @@ a:hover { text-decoration: underline; }
 }
 
 @media (max-width: 720px) {
+  /* There's no room for the description beside the search button. */
+  .site-header.has-search .description { display: none; }
   .layout,
   .layout.has-toc { grid-template-columns: 1fr; gap: 1rem; }
   .sidebar { position: static; }

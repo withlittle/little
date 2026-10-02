@@ -8,6 +8,12 @@
   {# The theme's own URLs go through `url`, which puts the path of the site's
      `url` before them, if it has one. little's URLs, like page.url, already
      have it. #}
+  {% if site.search %}
+  {# Pagefind's search box, from the index little writes to /search/. Its
+     styles come before this theme's, so the theme can restyle it. #}
+  <link rel="stylesheet" href="{{ '/search/pagefind-component-ui.css' | url }}">
+  <script src="{{ '/search/pagefind-component-ui.js' | url }}" type="module"></script>
+  {% endif %}
   <link rel="stylesheet" href="{{ '/assets/style.css' | url }}">
   <style>
     :root {
@@ -16,9 +22,17 @@
   </style>
 </head>
 <body>
-  <header class="site-header">
+  <header class="site-header{% if site.search %} has-search{% endif %}">
     <a class="brand" href="{{ '/' | url }}">{{ site.name }}</a>
     {% if site.description %}<span class="description">{{ site.description }}</span>{% endif %}
+    {% if site.search %}
+    {# A button that opens the search box, as ⌘K or Ctrl+K does. The script
+       is a module, which can't tell where it was loaded from, so
+       `bundle-path` tells it where the index is. #}
+    <pagefind-config bundle-path="{{ '/search/' | url }}"></pagefind-config>
+    <pagefind-modal-trigger></pagefind-modal-trigger>
+    <pagefind-modal></pagefind-modal>
+    {% endif %}
   </header>
 
   <div class="layout{% if page.toc %} has-toc{% endif %}">

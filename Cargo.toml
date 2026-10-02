@@ -15,6 +15,7 @@ lychee-lib = { version = "0.24.2", default-features = false }
 minijinja = { version = "2.24.0", features = ["loader"] }
 notify = "8.2.0"
 notify-debouncer-mini = "0.7.0"
+pagefind = { version = "1.5.2", default-features = false }
 percent-encoding = "2.3.2"
 regex = "1.13.1"
 serde = { version = "1.0.229", features = ["derive"] }

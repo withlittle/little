@@ -3,6 +3,7 @@ mod download;
 mod links;
 mod render;
 mod sass;
+mod search;
 mod server;
 mod site;
 mod theme;
