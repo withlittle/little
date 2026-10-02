@@ -179,8 +179,9 @@ built-in defaults (see [`src/little.yml`](./src/little.yml)) cover only
 little's own settings, like the [theme](#choosing-a-theme), the
 [folders](#choosing-folders) a site is built from and into, the
 [headings](#choosing-headings-for-tables-of-contents) its tables of contents
-list, and [where `little serve` serves it](#choosing-where-to-serve); a site's
-name, language, and look are up to the theme and the site. The
+list, [where `little serve` serves it](#choosing-where-to-serve), and whether
+it's [searchable](#search); a site's name, language, and look are up to the
+theme and the site. The
 built-in theme uses these keys, with defaults from its
 [`little.yml`](./theme/little.yml):
 
@@ -190,6 +191,7 @@ built-in theme uses these keys, with defaults from its
 | `description` | none | Text beside the site title |
 | `font` | a system UI font stack | Body text `font-family` |
 | `lang` | `en` | The page's `lang` attribute |
+| `search` | `true` | The [search box](#search) in the header, and the index it searches |
 
 ### Choosing a theme
 
@@ -452,7 +454,8 @@ left blank is ignored.
 Everything in `_static/` is copied to the site's root as it is, but for
 [Sass](#sass), so `_static/assets/style.css` becomes `/assets/style.css`,
 unless a site has a file at the same path in its source, which replaces it. If
-a static file would take the place of a page, the build stops and names both.
+a static file would take the place of a page, or of a file little writes for
+[search](#search), the build stops and names both.
 The built-in theme's [`default.html`](./theme/_templates/default.html) and
 [`404.html`](./theme/_templates/404.html) are complete working examples.
 
@@ -517,6 +520,38 @@ Both leave a URL that isn't from the root of the site, like `https://…` or
 `#…`, as it is. A theme's CSS can't use them, so link to fonts and images
 from a stylesheet relative to it, like `url(fonts/inter.woff2)`.
 
+### A search box
+
+A theme with a search box sets `search: true` in its `little.yml`, so little
+[indexes](#search) each site built with it into `search/`. It shows the box
+only when `site.search` is on, since a site can turn search off. The quickest
+box is [Pagefind](https://pagefind.app/)'s own, which the built-in theme uses:
+
+```html
+<!-- In <head>, before the theme's stylesheet -->
+{% if site.search %}
+<link rel="stylesheet" href="{{ '/search/pagefind-component-ui.css' | url }}">
+<script src="{{ '/search/pagefind-component-ui.js' | url }}" type="module"></script>
+{% endif %}
+
+<!-- Where its button goes -->
+{% if site.search %}
+<pagefind-config bundle-path="{{ '/search/' | url }}"></pagefind-config>
+<pagefind-modal-trigger></pagefind-modal-trigger>
+<pagefind-modal></pagefind-modal>
+{% endif %}
+```
+
+- `bundle-path` tells the box where the index is: its script is a module,
+  which can't tell where it was loaded from.
+- Restyle it with Pagefind's `--pf-*` CSS variables, as the built-in theme's
+  [`style.css`](./theme/_static/assets/style.css) does. Pagefind keeps the
+  rest of a theme's CSS out of it.
+- For a box of your own, search with Pagefind's
+  [JavaScript API](https://pagefind.app/docs/api/), from
+  `{{ '/search/pagefind.js' | url }}`.
+- Each page is indexed in the language of its `<html lang>`.
+
 ## Checking links
 
 Once it's built the site, `little build` checks every link and image in it,
@@ -556,6 +591,42 @@ warning: broken link https://github.com/withlittle/litle in ./docs/about.md: Rej
   file, not the line.
 - Links are checked with [lychee](https://lychee.cli.rs), which is built into
   little, so there's nothing else to install.
+
+## Search
+
+A site built with the built-in theme is searchable out of the box: the search
+box in its header, which ⌘K or Ctrl+K opens too, finds pages, and the
+headings within them, as a reader types.
+
+- Each build indexes every page into `search/` in `dist/`, and the box
+  searches it in the reader's browser, so there's no server or service to set
+  up. `little serve` indexes each save. little indexes with
+  [Pagefind](https://pagefind.app/), which is built in, so there's nothing
+  else to install.
+- What's indexed is each page's own content, from its Markdown, under its
+  title, so nothing the theme puts around it, like its header or nav, fills
+  the results. The 404 page isn't indexed, nor is an HTML file copied from
+  `docs/`.
+- Words are matched by their stem in the site's [`lang`](#configuration), so
+  "installing" finds "install".
+- To go without, set `search: false`, and the built-in theme leaves out the
+  box too:
+
+  ```yaml
+  # little.yml
+  search: false
+  ```
+
+- A page or file where little writes one of the search's files, like
+  `docs/search/pagefind.js`, stops the build. A page at `/search`, from
+  `docs/search.md`, is fine, and so is any other file in `docs/search/`.
+- `search/` is about 0.7 MB for a site of a few pages, and about 3 MB for one
+  of 450. A reader downloads only the parts of it a search needs.
+- A page can't leave itself out of search yet. Chinese, Japanese, and Thai,
+  which don't put spaces between words, search poorly.
+
+A theme without a search box leaves search off; see [A search
+box](#a-search-box) to add one.
 
 ## Deploying
 

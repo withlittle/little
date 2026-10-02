@@ -28,3 +28,8 @@ port: 8080
 # https://example.github.io/my-project, has no default: only the site knows.
 # Its path goes before every URL little gives the theme, and `little serve`
 # serves the site under it.
+
+# Whether each build indexes the site into the destination's `search/` folder,
+# so readers can search it. It's off unless the theme has a search box to use
+# the index, and a site can still turn it off.
+search: false

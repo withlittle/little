@@ -20,6 +20,7 @@ little config     # print the site's config, merged
 | Jekyll-style theme | ✅     |
 | Cascading config   | ✅     |
 | Live reload        | ✅     |
+| Search             | ✅     |
 | Plugins (WASM)     | 🔜     |
 
 ## A task list

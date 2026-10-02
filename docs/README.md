@@ -21,6 +21,7 @@ subfolder becomes that section's landing page.
 - Adds an **on-this-page TOC** from each page's headings
 - Hands **structured data** to a theme template (little bakes in *zero* HTML)
 - Merges a **3-level cascading config**: little → theme → site
+- Indexes every page for **search**: press ⌘K or Ctrl+K
 - Serves it all with **live reload**
 
 > Try it: run `little serve`, edit this sentence, and watch the browser refresh itself.

@@ -1,6 +1,6 @@
 # 0019 — Searching a site with Pagefind
 
-- Status: proposed
+- Status: accepted
 - Date: 2026-10-02
 
 ## Context
@@ -58,7 +58,7 @@ need Node, and the theme owns the markup, so the search box is the theme's.
   table of contents, turns up in results.
 - Each page is indexed in the language its theme gives it with `<html lang>`,
   so in English, "installing" finds "install". A page without one is indexed
-  without stemming.
+  without stemming, and searched with the site's most common language.
 - A search finds the headings within a page, by the `id` little gives each
   one, as well as the page.
 - The theme owns the search box: Pagefind's, or one of its own on
@@ -67,9 +67,9 @@ need Node, and the theme owns the markup, so the search box is the theme's.
   it there with `<pagefind-config bundle-path="{{ '/search/' | url }}">`.
 - The built-in theme puts Pagefind's search box in its header when
   `site.search` is on, opened with ⌘K or Ctrl+K, and styled to match.
-- A file in the source or a theme at the same path as one of the search's
-  files stops the build, naming it. A page at `/search`, from
-  `docs/search.md`, doesn't clash.
+- A page, or a file in the source or a theme, where the search writes a file,
+  or a folder of them, stops the build, naming both. A page at `/search`, from
+  `docs/search.md`, doesn't clash, nor does any other file in `search/`.
 - New crate: `pagefind`, without its default features, which add a web
   server.
 
