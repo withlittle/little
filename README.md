@@ -108,16 +108,19 @@ my-docs/
   replaces it.
 - **Markdown.** CommonMark plus GitHub Flavored Markdown: tables,
   strikethrough, task lists, autolinks, and footnotes. Every heading gets an
-  `id`, so you can link straight to a section (`/guide/install#from-source`).
+  `id`, so you can link straight to a section
+  (`guide/install.md#from-source`).
 - **Links and images.** Write them relative to the file they're in, as on
   GitHub, and they work wherever the site is published: in
   `guide/install.md`, `![Setup](images/setup.png)` shows
-  `guide/images/setup.png`. Link to other pages by URL (`[Usage](usage)`, or
-  `[Install](/guide/install)` from the root of the site), not by file name:
-  `.md` links aren't rewritten. If the site is published under a path, its
-  [`url`](#choosing-the-sites-url) adds it to every link for you, but on
-  GitHub, a link from the root leads from the root of the repository.
-  `little build` [warns of a broken link](#checking-links).
+  `guide/images/setup.png`. Link to another page by its file, as on GitHub,
+  and the link leads to the page: `[Usage](usage.md#options)` to
+  `usage#options`, and `[Guide](guide/README.md)` to `guide/`. A link to the
+  page's URL, like `[Usage](usage)`, works too, but only in the site. If the
+  site is published under a path, its [`url`](#choosing-the-sites-url) adds
+  it to every link for you, but on GitHub, a link from the root leads from
+  the root of the repository. `little build`
+  [warns of a broken link](#checking-links).
 - **Frontmatter** is an optional block of YAML settings at the very top of a
   page. Every setting reaches the theme as `page.<key>`, like `description`
   for a meta description, and has the last word on what `page` holds. little
@@ -482,14 +485,15 @@ the theme's too, and warns of each one that's broken: a page, file, or
 ```text
 $ little build
 built 12 page(s) -> ./dist
-warning: broken link /guide/install#from-sorce in ./docs/README.md: Cannot find fragment
+warning: broken link guide/install.md#from-sorce in ./docs/README.md: Cannot find fragment
 warning: broken link https://github.com/withlittle/litle in ./docs/about.md: Rejected status code: 404 Not Found
 ```
 
-- Each warning names the file to fix, and the link as a reader follows it: a
-  link within the site is shown from the root of the domain, whichever folder
-  it leads from. A link on many pages, like one in the theme, is one warning,
-  which names a few of them and counts the rest.
+- Each warning names the file to fix, and the link as it's written there, so
+  you can search for it. One in the theme, or in an HTML file in `docs/`, is
+  shown as a reader follows it, from the root of the domain. A link on many
+  pages, like one in the theme, is one warning, which names a few of them and
+  counts the rest.
 - `little build --strict` fails on a broken link, so CI can keep a broken
   site from being published. `dist/` is written either way.
 - `little serve` checks only the links within the site, so a save needn't
