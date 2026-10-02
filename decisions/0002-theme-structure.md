@@ -1,6 +1,7 @@
 # 0002 — Theme structure and template lookup
 
-- Status: accepted
+- Status: accepted; amended by [0018](./0018-sass-in-themes.md), which
+  compiles Sass in `_static/` to CSS, loading from a new folder, `_sass/`
 - Date: 2026-09-27
 
 ## Context

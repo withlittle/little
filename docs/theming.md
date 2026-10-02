@@ -105,7 +105,8 @@ A theme is just a folder:
 
 ```text
 my-theme/
-├── _static/      optional: copied as-is to the site's root
+├── _sass/        optional: Sass for the stylesheets in _static/ to load
+├── _static/      optional: copied to the site's root, Sass compiled to CSS
 ├── _templates/   the templates; default.html is required
 └── little.yml    optional: the theme's config
 ```
@@ -139,8 +140,56 @@ never changes, so `little serve` doesn't watch it.
 
 A theme's own `little.yml` can set `theme` too, to build on another theme: a path is relative
 to the theme's folder, and a URL works just as it does for a site. Its settings go over that
-theme's, and so do its templates and static files, file by file, so a company theme that only
-changes some colours can be just a `little.yml` that builds on a downloaded theme.
+theme's, and so do its templates, static files, and Sass, file by file, so a company theme
+that only changes some colours can be just a `little.yml` that builds on a downloaded theme.
+
+## Write it in Sass
+
+A stylesheet in a theme's `_static/` can be Sass, a `.scss` or `.sass` file, and little
+compiles it to CSS as it builds, with nothing else to install. `_static/assets/style.scss`
+is published as `/assets/style.css`, so the theme links to `{{ '/assets/style.css' | url }}`.
+
+What a stylesheet loads, with `@use`, `@forward`, or `@import`, goes in the theme's `_sass/`
+folder, which isn't published. To build Bootstrap with your own colours, say, copy its
+`scss/` folder into `_sass/bootstrap/`, untouched, and set them before you load it:
+
+```text
+my-theme/
+├── _sass/
+│   ├── _variables.scss
+│   └── bootstrap/
+├── _static/
+│   └── assets/
+│       └── style.scss
+└── _templates/
+    └── default.html
+```
+
+```scss
+// _sass/_variables.scss
+$primary: #6f42c1;
+```
+
+```scss
+// _static/assets/style.scss
+@import "variables";
+@import "bootstrap/bootstrap";
+```
+
+A stylesheet loads only from `_sass/`, never from beside it, so a partial, a Sass file whose
+name starts with `_`, in `_static/` stops the build: move it to `_sass/`. A file in `_sass/`
+loads from its own folder first, then from `_sass/` itself, and nothing outside `_sass/` can
+be loaded.
+
+A theme that builds on another can replace any file in its `_sass/`, as it can a template,
+and that theme's stylesheets load the replacement. So a company theme that builds on
+`my-theme` can be just a `little.yml` and a `_sass/_variables.scss` of its own, to give
+Bootstrap its colours.
+
+A stylesheet that doesn't compile stops the build, naming the file, line, and column of the
+error, and `little serve` keeps showing the last good build until you fix it. little compiles
+Sass much as Dart Sass 1.54 does, so newer Sass, like `color.channel()`, won't compile. Sass
+in `docs/`, rather than the theme, is copied as-is, like any other file.
 
 ## Wherever the site is published
 

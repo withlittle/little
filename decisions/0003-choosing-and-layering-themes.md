@@ -3,7 +3,8 @@
 - Status: accepted
 - Date: 2026-09-28
 - Amends: [0002](./0002-theme-structure.md)
-- Amended by: [0004](./0004-downloading-themes.md)
+- Amended by: [0004](./0004-downloading-themes.md),
+  [0018](./0018-sass-in-themes.md)
 
 ## Context
 A site that didn't set `theme` used the theme in its own `theme/` folder, so

@@ -257,8 +257,10 @@ a theme's `little.yml`, a path is relative to the theme's folder, and a URL is
 downloaded into the site's `.little/`.
 
 - A template in `_templates/` replaces the base theme's template at the same
-  path, and a file in `_static/` replaces its file at the same path. Templates
-  can extend and include the base theme's too.
+  path, and so does a file in `_sass/`. A file in `_static/` replaces the base
+  theme's file published at the same path, so a `style.scss` replaces a
+  `style.css`, and the other way round. Templates can extend and include the
+  base theme's too.
 - A template can't `{% extends %}` the one it replaces: it would extend
   itself. To change part of a base theme's template, replace a smaller one it
   `{% include %}`s instead.
@@ -392,7 +394,8 @@ folder:
 
 ```text
 my-theme/
-├── _static/      # optional: copied as-is to the site's root
+├── _sass/        # optional: Sass for the stylesheets in _static/ to load
+├── _static/      # optional: copied to the site's root, Sass compiled to CSS
 ├── _templates/   # the templates; default.html is required
 └── little.yml    # optional: the theme's config
 ```
@@ -446,12 +449,50 @@ what the theme sees:
 `url` doesn't move the page, and `type` doesn't choose its template. A key
 left blank is ignored.
 
-Everything in `_static/` is copied to the site's root as it is, so
-`_static/assets/style.css` becomes `/assets/style.css`, unless a site has a
-file at the same path in its source, which replaces it. If a static file would
-take the place of a page, the build stops and names both. The built-in theme's
-[`default.html`](./theme/_templates/default.html) and
+Everything in `_static/` is copied to the site's root as it is, but for
+[Sass](#sass), so `_static/assets/style.css` becomes `/assets/style.css`,
+unless a site has a file at the same path in its source, which replaces it. If
+a static file would take the place of a page, the build stops and names both.
+The built-in theme's [`default.html`](./theme/_templates/default.html) and
 [`404.html`](./theme/_templates/404.html) are complete working examples.
+
+### Sass
+
+A `.scss` or `.sass` file in `_static/` is a stylesheet, which little compiles
+to CSS at the same path: `_static/assets/style.scss` becomes
+`/assets/style.css`, so the theme links to `{{ '/assets/style.css' | url }}`.
+There's nothing to install or configure.
+
+What a stylesheet loads, with `@use`, `@forward`, or `@import`, goes in the
+theme's `_sass/` folder, which isn't published. To build Bootstrap with your
+own colours, say, copy its `scss/` folder into `_sass/` as it is:
+
+```text
+my-theme/
+├── _sass/
+│   ├── _variables.scss   # $primary: #6f42c1;
+│   └── bootstrap/        # Bootstrap's scss/ folder
+└── _static/
+    └── assets/
+        └── style.scss    # @import "variables"; @import "bootstrap/bootstrap";
+```
+
+- A stylesheet loads only from `_sass/`, never from beside it. A file in
+  `_sass/` loads from its own folder first, then from `_sass/` itself. Nothing
+  outside `_sass/` can be loaded.
+- A partial, a Sass file whose name starts with `_`, in `_static/` stops the
+  build: move it to `_sass/`. So do two files in one theme that would be
+  published at the same path, like `style.scss` and `style.css`.
+- A theme that [builds on](#building-on-another-theme) this one can replace
+  `_sass/_variables.scss` with its own, and this one's stylesheet loads it
+  instead.
+- A stylesheet that doesn't compile stops the build, naming the file, line,
+  and column of the error, and `little serve` keeps serving the last good
+  build. `@warn` and `@debug` messages name theirs too.
+- little compiles Sass with [grass](https://github.com/connorskees/grass),
+  which follows Dart Sass 1.54, so newer Sass, like `color.channel()`, won't
+  compile, and there are no `pkg:` URLs.
+- Sass in the site's source is copied as it is, like any other file.
 
 ### URLs in a theme
 

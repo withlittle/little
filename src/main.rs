@@ -2,6 +2,7 @@ mod config;
 mod download;
 mod links;
 mod render;
+mod sass;
 mod server;
 mod site;
 mod theme;
