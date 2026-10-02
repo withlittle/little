@@ -1598,6 +1598,55 @@ mod tests {
     }
 
     #[test]
+    fn sass_in_the_theme_is_compiled_and_in_the_source_copied() {
+        let site = scratch_site(
+            "sass",
+            &[
+                ("little.yml", "theme: ./theme\n"),
+                ("docs/README.md", "# Home\n"),
+                ("docs/examples/button.scss", "$x: 1;"),
+                ("docs/examples/_mixins.scss", "$y: 2;"),
+                ("theme/_templates/default.html", "{{ page.title }}"),
+                (
+                    "theme/_static/assets/style.scss",
+                    "@use 'colors';\na { color: colors.$link; }",
+                ),
+                ("theme/_sass/_colors.scss", "$link: teal;"),
+            ],
+        );
+        build(&site).unwrap();
+
+        let dist = site.join("dist");
+        let built = [
+            MARKER_FILE,
+            "assets/style.css",
+            "examples/_mixins.scss",
+            "examples/button.scss",
+            "index.html",
+        ];
+        assert_eq!(files_in(&dist), built.map(PathBuf::from));
+        let css = fs::read_to_string(dist.join("assets/style.css")).unwrap();
+        assert_eq!(css, "a {\n  color: teal;\n}\n");
+        let example = fs::read_to_string(dist.join("examples/button.scss")).unwrap();
+        assert_eq!(example, "$x: 1;");
+
+        // A stylesheet that doesn't compile fails the build, which leaves the
+        // last one.
+        let colors = site.join("theme/_sass/_colors.scss");
+        fs::write(&colors, "$link: $missing;").unwrap();
+        let message = format!("{:#}", build(&site).unwrap_err());
+        let expected = format!(
+            "compiling {}: {}:1:8: Undefined variable.",
+            site.join("theme/_static/assets/style.scss").display(),
+            colors.display()
+        );
+        assert_eq!(message, expected);
+        let css = fs::read_to_string(dist.join("assets/style.css")).unwrap();
+        assert_eq!(css, "a {\n  color: teal;\n}\n");
+        let _ = fs::remove_dir_all(&site);
+    }
+
+    #[test]
     fn a_destination_in_the_source_isnt_copied_into_itself() {
         let site = scratch_site(
             "inside",

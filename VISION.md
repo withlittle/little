@@ -48,7 +48,8 @@ and a rejection of their worst friction.
 - **Config:** cascading YAML.
 - **Plugins (planned):** sandboxed **WASM**, so plugins are language-agnostic
   (e.g. Sphinx-style docstring extraction as a plugin).
-- **Styling:** bring-your-own; pairs with the standalone Tailwind CLI (no Node).
+- **Styling:** bring-your-own; little compiles a theme's Sass (grass, built
+  in), and pairs with the standalone Tailwind CLI (no Node).
 
 ## Roadmap (thin vertical slices)
 Each slice ships as a small, reviewable PR, dogfooded against the example site in `docs/`.

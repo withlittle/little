@@ -3,14 +3,16 @@
 //!
 //! ```text
 //! my-theme/
-//! ├── _static/      optional: copied as-is to the site's root
+//! ├── _sass/        optional: Sass for its stylesheets to load
+//! ├── _static/      optional: copied to the site's root, Sass compiled to CSS
 //! ├── _templates/   the templates; default.html is required
 //! └── little.yml    optional: the theme's config
 //! ```
 //!
 //! A theme can build on another (see `config`). Its files then go over the
-//! other theme's, file by file, so it only needs the ones it changes. A theme
-//! is built into little, in a folder, or downloaded (see `download`).
+//! other theme's, file by file, so it only needs the ones it changes: a
+//! stylesheet over the CSS file it's compiled to, and the other way round. A
+//! theme is built into little, in a folder, or downloaded (see `download`).
 //!
 //! little adds two filters to a theme's templates, for URLs the theme writes
 //! itself: `url` puts the path of the site's `url` before a URL from the root
@@ -26,11 +28,15 @@ use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
 use crate::config::SiteUrl;
+use crate::sass;
 
 /// The folder of a theme's templates, which can extend and include each other.
 const TEMPLATES_DIR: &str = "_templates";
-/// The folder of a theme's static files, copied as-is to the site's root.
+/// The folder of a theme's static files, copied to the site's root, but for
+/// its Sass stylesheets, which are compiled to CSS (see `sass`).
 const STATIC_DIR: &str = "_static";
+/// The folder of the Sass a theme's stylesheets load. It isn't published.
+const SASS_DIR: &str = "_sass";
 /// The template for any type of page without its own. Every theme has one.
 const DEFAULT_TEMPLATE: &str = "default.html";
 
@@ -137,31 +143,45 @@ impl Location {
 
     /// The theme's own static files.
     fn static_files(&self) -> Result<Vec<StaticFile>> {
-        let static_dir = match self {
+        match self {
             Self::BuiltIn => {
                 let file = |&(path, contents): &(&str, &[u8])| StaticFile {
                     path: PathBuf::from(path),
                     origin: self.describe(&format!("{STATIC_DIR}/{path}")),
                     contents: contents.to_vec(),
                 };
-                return Ok(builtin::STATIC.iter().map(file).collect());
+                Ok(builtin::STATIC.iter().map(file).collect())
             }
-            Self::Folder(dir) | Self::Downloaded { dir, .. } => dir.join(STATIC_DIR),
-        };
+            Self::Folder(dir) | Self::Downloaded { dir, .. } => self.files_in(dir, STATIC_DIR),
+        }
+    }
+
+    /// The theme's own Sass in `_sass/`, by its path from there. The built-in
+    /// theme has none.
+    fn sass_files(&self) -> Result<Vec<StaticFile>> {
+        match self.folder() {
+            Some(dir) => self.files_in(dir, SASS_DIR),
+            None => Ok(Vec::new()),
+        }
+    }
+
+    /// Every file in `folder` of the theme in `dir`, by its path from there.
+    fn files_in(&self, dir: &Path, folder: &str) -> Result<Vec<StaticFile>> {
+        let root = dir.join(folder);
         let mut files = Vec::new();
-        if !static_dir.is_dir() {
+        if !root.is_dir() {
             return Ok(files);
         }
-        for entry in WalkDir::new(&static_dir) {
+        for entry in WalkDir::new(&root) {
             let entry = entry?;
             if entry.file_type().is_dir() {
                 continue;
             }
             let path = entry.path();
-            let rel = path.strip_prefix(&static_dir)?;
+            let rel = path.strip_prefix(&root)?;
             files.push(StaticFile {
                 path: rel.to_path_buf(),
-                origin: self.describe(&Path::new(STATIC_DIR).join(rel).display().to_string()),
+                origin: self.describe(&Path::new(folder).join(rel).display().to_string()),
                 contents: std::fs::read(path)
                     .with_context(|| format!("reading {}", path.display()))?,
             });
@@ -180,9 +200,11 @@ impl fmt::Display for Location {
     }
 }
 
-/// One of a theme's static files, read and ready to copy to the site's root.
+/// One of a theme's files, read: a static file, ready to copy to the site's
+/// root, or one in `_sass/`, for stylesheets to load.
+#[derive(Debug)]
 pub struct StaticFile {
-    /// Its path from `_static/`, and so from the site's root.
+    /// Its path from `_static/`, and so from the site's root, or `_sass/`.
     pub path: PathBuf,
     /// The file it's read from, to name it in errors.
     pub origin: String,
@@ -276,16 +298,59 @@ impl Theme {
         Ok(Some(self.env.get_template(name)?.render(ctx)?))
     }
 
-    /// The static files of every theme, merged: where two have a file at the
-    /// same path, the one nearer the site wins.
+    /// The static files of every theme, merged, with each Sass stylesheet
+    /// compiled to the CSS file at its path. Where two themes have a file at
+    /// the same path, the one nearer the site wins, so a stylesheet replaces a
+    /// CSS file, and a CSS file a stylesheet. The stylesheets load from the
+    /// `_sass/` of every theme, merged the same way.
     pub fn static_files(&self) -> Result<Vec<StaticFile>> {
         let mut files = BTreeMap::new();
+        let mut sass = BTreeMap::new();
         for theme in &self.themes {
+            let mut own: BTreeMap<PathBuf, StaticFile> = BTreeMap::new();
             for file in theme.static_files()? {
-                files.entry(file.path.clone()).or_insert(file);
+                let path = if sass::is_partial(&file.path) {
+                    bail!(
+                        "{} is a Sass partial, for stylesheets to load: move it to {SASS_DIR}/, \
+                         where they load from",
+                        file.origin
+                    );
+                } else if sass::is_sass(&file.path) {
+                    file.path.with_extension("css")
+                } else {
+                    file.path.clone()
+                };
+                if let Some(other) = own.insert(path.clone(), file) {
+                    let mut both = [&other.origin, &own[&path].origin];
+                    both.sort();
+                    let url = path.to_string_lossy().replace('\\', "/");
+                    bail!(
+                        "{} and {} would both be /{url}: remove or rename one",
+                        both[0],
+                        both[1]
+                    );
+                }
+            }
+            for (path, file) in own {
+                files.entry(path).or_insert(file);
+            }
+            for file in theme.sass_files()? {
+                sass.entry(file.path.clone()).or_insert(file);
             }
         }
-        Ok(files.into_values().collect())
+        files
+            .into_iter()
+            .map(|(path, file)| {
+                if !sass::is_sass(&file.path) {
+                    return Ok(file);
+                }
+                Ok(StaticFile {
+                    contents: sass::compile(&file, &sass)?,
+                    path,
+                    origin: file.origin,
+                })
+            })
+            .collect()
     }
 }
 
@@ -544,6 +609,117 @@ mod tests {
         assert_eq!(files.len(), 1);
         assert_eq!(files[0].path, Path::new("img").join("logo.png"));
         assert_eq!(files[0].contents, png); // byte for byte
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn stylesheets_are_compiled_with_what_they_load_from_sass() {
+        let dir = scratch(
+            "sass",
+            &[
+                ("_templates/default.html", ""),
+                (
+                    "_static/assets/style.scss",
+                    "@use 'colors';\na { color: colors.$link; }",
+                ),
+                (
+                    "_static/assets/print.sass",
+                    "@use 'colors'\nbody\n  color: black\n",
+                ),
+                ("_static/assets/notes.md", "Not Sass"),
+                ("_sass/_colors.scss", "$link: teal;"),
+                ("_sass/README.md", "Not published"),
+            ],
+        );
+        let files = load(&dir).unwrap().static_files().unwrap();
+        assert_eq!(
+            contents(&files),
+            [
+                ("assets/notes.md".into(), "Not Sass".into()),
+                (
+                    "assets/print.css".into(),
+                    "body {\n  color: black;\n}\n".into()
+                ),
+                ("assets/style.css".into(), "a {\n  color: teal;\n}\n".into()),
+            ]
+        );
+        // Named as the stylesheet it's compiled from, in a broken link, say.
+        let origin = dir.join("_static/assets/style.scss").display().to_string();
+        assert_eq!(files[2].origin, origin);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_theme_replaces_the_sass_of_the_one_it_builds_on() {
+        let root = scratch(
+            "sass-layers",
+            &[
+                ("base/_templates/default.html", ""),
+                (
+                    "base/_static/style.scss",
+                    "@use 'colors';\na { color: colors.$link; }",
+                ),
+                ("base/_static/print.css", "base print"),
+                ("base/_static/extra.scss", "a {"), // replaced, so never compiled
+                ("base/_sass/_colors.scss", "$link: teal;"),
+                ("company/_static/print.scss", "body { color: black; }"),
+                ("company/_static/extra.css", "company extra"),
+                ("company/_sass/_colors.scss", "$link: navy;"),
+            ],
+        );
+        let chain = [
+            Location::Folder(root.join("company")),
+            Location::Folder(root.join("base")),
+        ];
+        let theme = Theme::load(&chain, &SiteUrl::default()).unwrap();
+        assert_eq!(
+            contents(&theme.static_files().unwrap()),
+            [
+                ("extra.css".into(), "company extra".into()),
+                ("print.css".into(), "body {\n  color: black;\n}\n".into()),
+                ("style.css".into(), "a {\n  color: navy;\n}\n".into()),
+            ]
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn sass_in_the_wrong_place_stops_the_build() {
+        let error = |files: &[(&str, &str)]| {
+            let dir = scratch("sass-misplaced", files);
+            let message = format!("{:#}", load(&dir).unwrap().static_files().unwrap_err());
+            (dir, message)
+        };
+
+        // A partial is for stylesheets to load, and they load from `_sass/`.
+        let (dir, message) = error(&[
+            ("_templates/default.html", ""),
+            ("_static/assets/style.scss", "@use 'colors';"),
+            ("_static/assets/_colors.scss", "$link: teal;"),
+        ]);
+        let partial = dir.join("_static/assets/_colors.scss");
+        let expected = format!(
+            "{} is a Sass partial, for stylesheets to load: move it to _sass/, where they load from",
+            partial.display()
+        );
+        assert_eq!(message, expected);
+
+        // Two files in one theme that would be the same file.
+        for other in ["_static/style.css", "_static/style.sass"] {
+            let (dir, message) = error(&[
+                ("_templates/default.html", ""),
+                ("_static/style.scss", ""),
+                (other, ""),
+            ]);
+            let mut both = [dir.join(other), dir.join("_static/style.scss")];
+            both.sort();
+            let expected = format!(
+                "{} and {} would both be /style.css: remove or rename one",
+                both[0].display(),
+                both[1].display()
+            );
+            assert_eq!(message, expected);
+        }
         let _ = std::fs::remove_dir_all(&dir);
     }
 

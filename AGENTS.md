@@ -34,11 +34,14 @@ cargo fmt                   # format — run before committing
   within the site in the destination, as the site is published under its
   `url`, and, for `little build`, those to other sites over the network.
   Shows a broken link in Markdown as it's written.
-- `src/theme.rs` — a theme's templates and static files, layered over those of
-  the themes it builds on, and the built-in theme; picks each page's template
-  by its type (`home`, `section`, `page`, `404`), and gives templates the
-  `url` and `absolute_url` filters. A theme is built in, in a folder, or
+- `src/theme.rs` — a theme's templates, static files, and Sass, layered over
+  those of the themes it builds on, and the built-in theme; picks each page's
+  template by its type (`home`, `section`, `page`, `404`), and gives templates
+  the `url` and `absolute_url` filters. A theme is built in, in a folder, or
   downloaded.
+- `src/sass.rs` — compiles a stylesheet in a theme's `_static/` to CSS with
+  grass, loading only from the theme's `_sass/`, and names the real file of
+  each error and warning.
 - `src/download.rs` — a theme downloaded from a URL: fetched over HTTPS,
   unpacked from its `.zip` or `.tar.gz`, and kept in the site's `.little/`, so
   it's downloaded only once.
@@ -50,8 +53,8 @@ Content and theme live outside `src/`:
   project documentation — don't put meta docs here.
 - `theme/` — little's built-in theme, compiled into the binary: `_templates/`
   (MiniJinja; `default.html` is required) + `_static/` (copied to the site's
-  root) + an optional `little.yml`. List every file in it in `builtin` in
-  `src/theme.rs`; a test checks.
+  root) + an optional `little.yml`. It's plain CSS: `builtin` has no `_sass/`.
+  List every file in it in `builtin` in `src/theme.rs`; a test checks.
 - `little.yml` — example site config (optional). It sets `theme: ./theme`, so
   edits to the built-in theme live-reload.
 - Project meta (`VISION.md`, `AGENTS.md`, `decisions/`) lives at the repo root.
@@ -164,4 +167,10 @@ Record notable choices as short ADRs in `decisions/`. Locked so far:
   warned of; a warning shows a broken link in Markdown as it's written, and
   one in the theme or a copied file as a reader follows it — see
   [`decisions/0017-links-to-pages-files.md`](./decisions/0017-links-to-pages-files.md).
+- **Sass in themes:** a `.scss` or `.sass` file in a theme's `_static/` is
+  compiled with grass, built in, to the CSS file at its path, loading only
+  from the theme's `_sass/`, which isn't published and layers like
+  `_templates/`; a partial in `_static/` stops the build, and Sass in the
+  source is copied as-is — see
+  [`decisions/0018-sass-in-themes.md`](./decisions/0018-sass-in-themes.md).
 - **Plugins:** sandboxed WASM (planned).
