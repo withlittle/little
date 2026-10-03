@@ -179,7 +179,8 @@ built-in defaults (see [`src/little.yml`](./src/little.yml)) cover only
 little's own settings, like the [theme](#choosing-a-theme), the
 [folders](#choosing-folders) a site is built from and into, the
 [headings](#choosing-headings-for-tables-of-contents) its tables of contents
-list, [where `little serve` serves it](#choosing-where-to-serve), and whether
+list, [where `little serve` serves it](#choosing-where-to-serve), the
+[repository](#choosing-the-sites-repository) its source is in, and whether
 it's [searchable](#search); a site's name, language, and look are up to the
 theme and the site. The
 built-in theme uses these keys, with defaults from its
@@ -192,6 +193,7 @@ built-in theme uses these keys, with defaults from its
 | `font` | a system UI font stack | Body text `font-family` |
 | `lang` | `en` | The page's `lang` attribute |
 | `search` | `true` | The [search box](#search) in the header, and the index it searches |
+| `repo` | none | A link to the [repository](#choosing-the-sites-repository) in the header, and links to edit and view each page's file there below its content |
 
 ### Choosing a theme
 
@@ -389,6 +391,41 @@ url: https://withlittle.github.io/little
 - `url` must start with `https://` or `http://`, with nothing after its path
   (no `?` or `#`). Otherwise, every command stops and says why.
 
+### Choosing the site's repository
+
+Set `repo` to the address of the repository your site's source is in, as a
+browser shows it, and a theme can link to it, and to each page's file there,
+so readers can see the page's Markdown, or suggest a change to it:
+
+```yaml
+# little.yml
+repo: https://github.com/withlittle/little
+```
+
+- The theme gets `repo` as `site.repo`. On GitHub and GitLab, each page gets
+  where to view and edit its file too, as `page.source_url` and
+  `page.edit_url`, like
+  `https://github.com/withlittle/little/blob/main/docs/guide/install.md` and
+  `https://github.com/withlittle/little/edit/main/docs/guide/install.md`. The
+  built-in theme links to the repository in its header, and to edit and view
+  the page's file below its content.
+- The links are to files on the `main` branch. Set `branch` for another, like
+  `branch: trunk`, in quotes if it looks like a number, like `branch: "2.0"`.
+- Each file's path starts at the root of the repository: the nearest folder,
+  from `docs/` up, with a `.git` in it, or, without one, the site's folder. So
+  a site in a `website/` folder links to `website/docs/guide/install.md`. A
+  source folder outside the repository has no links to its files.
+- A page's frontmatter can change either link, or turn it off, like
+  `edit_url: false` on a page that's generated from something else.
+- A repository anywhere else, like a GitLab or Gitea of your own, gets
+  `site.repo`, but no `page.source_url` or `page.edit_url`: little doesn't
+  know how its links are made.
+- Links into the repository aren't [checked](#checking-links).
+- `repo` must start with `https://` or `http://`, with a path after its host,
+  and nothing after that path (no `?` or `#`). It isn't the address you clone
+  from, so it doesn't end in `.git`. Otherwise, every command stops and says
+  why.
+
 ## Theming
 
 The theme owns 100% of the markup; little bakes in no HTML. A theme is a
@@ -438,6 +475,8 @@ rather than setting it to null, so `{% if page.description %}` and
 | `page.breadcrumbs` | What's above this page in `site.nav`, from the top down: a list of `{ title, url }`, where a folder without a `README.md` has no `url`. It starts with the home page, if `site.nav` lists it at its top, and leaves out this page. The home page, and a page that isn't in `site.nav`, have an empty list |
 | `page.prev` | The page before this one in `site.nav`, read from top to bottom: `{ title, url }`. The first page has none |
 | `page.next` | The page after this one in `site.nav`: `{ title, url }`. The last page has none |
+| `page.source_url` | Where to view the page's file in the site's [repository](#choosing-the-sites-repository), if it's on GitHub or GitLab, like `https://github.com/withlittle/little/blob/main/docs/guide/install.md` |
+| `page.edit_url` | Where to edit the page's file there, like `https://github.com/withlittle/little/edit/main/docs/guide/install.md` |
 | `page.<key>` | Every other key in the page's frontmatter, as written, like `page.description` |
 
 A 404 page has just `page.type` and `page.url` (`/404.html`).
@@ -446,8 +485,8 @@ A page's frontmatter has the last word on `page`, even over what little works
 out: it merges over it the way a `little.yml` merges over the level beneath,
 so `prev: { title: Start here }` renames the previous page's link,
 `next: false` removes the next one, `toc: false` removes the table of
-contents, and `breadcrumbs: false` removes the breadcrumbs. It changes only
-what the theme sees:
+contents, `breadcrumbs: false` removes the breadcrumbs, and `edit_url: false`
+removes the link to edit the page. It changes only what the theme sees:
 `url` doesn't move the page, and `type` doesn't choose its template. A key
 left blank is ignored.
 
@@ -587,6 +626,10 @@ warning: broken link https://github.com/withlittle/litle in ./docs/about.md: Rej
 - Links that only work on your computer or network, like
   `http://localhost:8080/`, and example domains, like `example.com`, aren't
   checked. Nor are `mailto:` and `tel:` links, or URLs in code.
+- Links into the site's [repository](#choosing-the-sites-repository), like
+  the theme's links to edit each page, aren't checked either: a new page's
+  file isn't there until you push it, and a link checker can't see the files
+  in a private repository.
 - Only pages and other HTML files are checked, not CSS. A warning names the
   file, not the line.
 - Links are checked with [lychee](https://lychee.cli.rs), which is built into

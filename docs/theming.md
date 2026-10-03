@@ -22,6 +22,8 @@ The merged config (little → theme → site), plus a derived nav:
   `site.nav` is shared by every page, so the theme marks the current item by comparing
   `item.url` with `page.url`. A `nav` in a `little.yml` replaces it, to order the
   sidebar by hand.
+- `site.repo` — the address of the repository the site's source is in, if its
+  `little.yml` sets `repo` (see below). This theme links to it in its header
 
 ### `page`
 
@@ -51,15 +53,19 @@ The merged config (little → theme → site), plus a derived nav:
   from top to bottom, so they follow the sidebar. Each is `{ title, url }`. The first page
   has no `page.prev`, and the last has no `page.next`. This theme links to them at the foot
   of each page
+- `page.source_url` and `page.edit_url` — where to view and edit the page's file in the
+  site's repository, if it's on GitHub or GitLab (see below). This theme links to them
+  below each page's content
 - `page.<key>` — every other key in the page's frontmatter, as written, like
   `page.description`, which this theme uses for the page's meta description
 
 The page's frontmatter has the last word on `page`, even over what little works out: it
 merges over it the way a `little.yml` merges over the level beneath, so
 `prev: { title: Start here }` renames the previous page's link, `next: false` removes the
-next one, `toc: false` removes the table of contents, and `breadcrumbs: false` removes the
-breadcrumbs. It changes only what the theme sees: `url` doesn't move the page, and `type`
-doesn't choose its template. A key left blank is ignored.
+next one, `toc: false` removes the table of contents, `breadcrumbs: false` removes the
+breadcrumbs, and `edit_url: false` removes the link to edit the page. It changes only what
+the theme sees: `url` doesn't move the page, and `type` doesn't choose its template. A key
+left blank is ignored.
 
 A page leaves out what it doesn't have, rather than setting it to null, so
 `{% if page.description %}` and `{{ page.description | default("…") }}` both work.
@@ -212,6 +218,28 @@ A theme puts the path before its own URLs with the `url` filter, as this theme d
 stylesheet and its home link, and makes a URL absolute, for a link preview or a feed, with
 `absolute_url`: `{{ page.url | absolute_url }}`, or `{{ '/og.png' | url | absolute_url }}`
 for one of its own. Without a `url`, both leave a URL as it is.
+
+## Edit this page
+
+This site's `little.yml` sets `repo` to the address of the repository its source is in:
+
+```yaml
+repo: https://github.com/withlittle/little
+```
+
+So this theme links to the repository in its header, and, below each page's content, to the
+page's Markdown file there, to view it, or to edit it and suggest a change:
+
+```html
+{% if page.edit_url %}<a href="{{ page.edit_url | safe }}">Edit this page</a>{% endif %}
+```
+
+On GitHub and GitLab, little works out where each page's file is, like
+`https://github.com/withlittle/little/blob/main/docs/theming.md` for this one. Each path
+starts at the root of the repository, the nearest folder with a `.git` in it, and each link
+is to the `main` branch, unless the site's `little.yml` sets another, like `branch: trunk`.
+A repository anywhere else gets `site.repo`, but no links to its files. little doesn't check
+links into the repository: a new page's file isn't there until it's pushed.
 
 ## A search box
 

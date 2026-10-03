@@ -29,6 +29,12 @@ port: 8080
 # Its path goes before every URL little gives the theme, and `little serve`
 # serves the site under it.
 
+# `repo`, the repository the site's source is in, like
+# https://github.com/example/my-project, has no default either. With it, the
+# theme can link to the repository and, on GitHub or GitLab, to each page's
+# file in it, on this branch, to view or edit it there.
+branch: main
+
 # Whether each build indexes the site into the destination's `search/` folder,
 # so readers can search it. It's off unless the theme has a search box to use
 # the index, and a site can still turn it off.

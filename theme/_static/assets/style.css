@@ -55,6 +55,16 @@ a:hover { text-decoration: underline; }
   align-self: center;
 }
 
+/* The link to the site's repository, at the right of the header, with the
+   search button beside it. */
+.repo-link {
+  margin-left: auto;
+  color: #4a515a;
+  font-size: 0.9rem;
+}
+.repo-link:hover { color: #7c3aed; text-decoration: none; }
+.site-header .repo-link ~ pagefind-modal-trigger { margin-left: 0; }
+
 /* Layout */
 .layout {
   display: grid;
@@ -197,6 +207,19 @@ a:hover { text-decoration: underline; }
 .breadcrumbs a { color: #4a515a; }
 .breadcrumbs a:hover { color: #7c3aed; text-decoration: none; }
 
+/* Links to edit and view the page's file in the site's repository, muted
+   like the breadcrumbs. */
+.page-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 1.25rem;
+  margin-top: 3rem;
+  font-size: 0.85rem;
+}
+.page-links a { color: #4a515a; }
+.page-links a:hover { color: #7c3aed; text-decoration: none; }
+.page-links + .pager { margin-top: 1.5rem; }
+
 /* Previous and next pages */
 .pager {
   display: grid;
@@ -232,8 +255,11 @@ a:hover { text-decoration: underline; }
 }
 
 @media (max-width: 720px) {
-  /* There's no room for the description beside the search button. */
-  .site-header.has-search .description { display: none; }
+  /* There's no room for the description beside the search button, or for
+     the link to the repository, though each page still links to its file
+     there, below its content. */
+  .site-header.has-search .description,
+  .site-header .repo-link { display: none; }
   .layout,
   .layout.has-toc { grid-template-columns: 1fr; gap: 1rem; }
   .sidebar { position: static; }
