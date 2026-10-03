@@ -1,6 +1,6 @@
 //! Searching a site: each build indexes the site's pages with Pagefind, built
-//! in, and writes the files that search it to `search/` in the destination,
-//! where the theme's search box finds them.
+//! in, and writes the files that search it to `pagefind/` in the destination,
+//! as Pagefind does, where the theme's search box finds them.
 //!
 //! What's indexed is each page's own content, rendered from its Markdown,
 //! under its title, and not the theme's markup around it: nothing a theme
@@ -14,13 +14,15 @@ use regex::Regex;
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
 
-/// The folder in the destination that search's files go in.
-pub const DIR: &str = "search";
+/// The folder in the destination that search's files go in: Pagefind's
+/// default, the one its docs and search boxes expect.
+pub const DIR: &str = "pagefind";
 
 /// A page to index.
 pub struct Page<'a> {
-    /// Its URL, with the site's path, like `/my-project/guide/`.
-    pub url: String,
+    /// Its URL from the root of the site, like `/guide/`, without the site's
+    /// path: Pagefind puts that back, from where it finds the index.
+    pub url: &'a str,
     pub title: &'a str,
     /// Its own content, rendered from its Markdown.
     pub content: &'a str,
@@ -31,7 +33,7 @@ pub struct Page<'a> {
 /// One of the files search needs in the destination.
 pub struct File {
     /// Where it goes, from the root of the destination, like
-    /// `search/pagefind.js`.
+    /// `pagefind/pagefind.js`.
     pub path: PathBuf,
     pub contents: Vec<u8>,
 }
@@ -45,7 +47,7 @@ pub fn index(pages: &[Page]) -> Result<Vec<File>> {
         let mut pagefind = PagefindIndex::new(None).context("starting the search indexer")?;
         for page in pages {
             pagefind
-                .add_html_file(None, Some(page.url.clone()), document(page))
+                .add_html_file(None, Some(page.url.to_string()), document(page))
                 .await
                 .with_context(|| format!("indexing {} for search", page.url))?;
         }
@@ -122,7 +124,7 @@ mod tests {
     #[test]
     fn a_document_holds_a_pages_content_title_and_language() {
         let page = Page {
-            url: "/guide/".into(),
+            url: "/guide/",
             title: "Q&A: \"<tags>\"",
             content: "<h1>Q&amp;A</h1>",
             lang: Some("en".into()),

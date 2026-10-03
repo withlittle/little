@@ -562,33 +562,36 @@ from a stylesheet relative to it, like `url(fonts/inter.woff2)`.
 ### A search box
 
 A theme with a search box sets `search: true` in its `little.yml`, so little
-[indexes](#search) each site built with it into `search/`. It shows the box
+[indexes](#search) each site built with it into `pagefind/`. It shows the box
 only when `site.search` is on, since a site can turn search off. The quickest
 box is [Pagefind](https://pagefind.app/)'s own, which the built-in theme uses:
 
 ```html
 <!-- In <head>, before the theme's stylesheet -->
 {% if site.search %}
-<link rel="stylesheet" href="{{ '/search/pagefind-component-ui.css' | url }}">
-<script src="{{ '/search/pagefind-component-ui.js' | url }}" type="module"></script>
+<link rel="stylesheet" href="{{ '/pagefind/pagefind-component-ui.css' | url }}">
+<script src="{{ '/pagefind/pagefind-component-ui.js' | url }}" defer></script>
 {% endif %}
 
 <!-- Where its button goes -->
 {% if site.search %}
-<pagefind-config bundle-path="{{ '/search/' | url }}"></pagefind-config>
 <pagefind-modal-trigger></pagefind-modal-trigger>
 <pagefind-modal></pagefind-modal>
 {% endif %}
 ```
 
-- `bundle-path` tells the box where the index is: its script is a module,
-  which can't tell where it was loaded from.
+- Load its script with `defer`, not as the module Pagefind's docs show:
+  deferred, it finds the index beside it, even under the path of the site's
+  [`url`](#choosing-the-sites-url). A module looks in `/pagefind/` at the
+  root of the domain, unless
+  `<pagefind-config bundle-path="{{ '/pagefind/' | url }}">` tells it where
+  the index is.
 - Restyle it with Pagefind's `--pf-*` CSS variables, as the built-in theme's
   [`style.css`](./theme/_static/assets/style.css) does. Pagefind keeps the
   rest of a theme's CSS out of it.
 - For a box of your own, search with Pagefind's
   [JavaScript API](https://pagefind.app/docs/api/), from
-  `{{ '/search/pagefind.js' | url }}`.
+  `{{ '/pagefind/pagefind.js' | url }}`.
 - Each page is indexed in the language of its `<html lang>`.
 
 ## Checking links
@@ -641,7 +644,7 @@ A site built with the built-in theme is searchable out of the box: the search
 box in its header, which ⌘K or Ctrl+K opens too, finds pages, and the
 headings within them, as a reader types.
 
-- Each build indexes every page into `search/` in `dist/`, and the box
+- Each build indexes every page into `pagefind/` in `dist/`, and the box
   searches it in the reader's browser, so there's no server or service to set
   up. `little serve` indexes each save. little indexes with
   [Pagefind](https://pagefind.app/), which is built in, so there's nothing
@@ -661,9 +664,9 @@ headings within them, as a reader types.
   ```
 
 - A page or file where little writes one of the search's files, like
-  `docs/search/pagefind.js`, stops the build. A page at `/search`, from
-  `docs/search.md`, is fine, and so is any other file in `docs/search/`.
-- `search/` is about 0.7 MB for a site of a few pages, and about 3 MB for one
+  `docs/pagefind/pagefind.js`, stops the build. A page at `/pagefind`, from
+  `docs/pagefind.md`, is fine, and so is any other file in `docs/pagefind/`.
+- `pagefind/` is about 0.7 MB for a site of a few pages, and about 3 MB for one
   of 450. A reader downloads only the parts of it a search needs.
 - A page can't leave itself out of search yet. Chinese, Japanese, and Thai,
   which don't put spaces between words, search poorly.
