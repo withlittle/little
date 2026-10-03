@@ -1,6 +1,6 @@
 # 0020 — Linking to a page's file in its repository
 
-- Status: proposed
+- Status: accepted
 - Date: 2026-10-03
 
 ## Context

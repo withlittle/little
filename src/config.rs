@@ -22,10 +22,15 @@
 //! before each URL little gives the theme, and `little serve` serves the site
 //! under it too.
 //!
+//! `repo` is the address of the repository the site's source is in, like
+//! `https://github.com/withlittle/little`, and `branch` the branch each page
+//! links to its file on there.
+//!
 //! `search` is whether each build indexes the site for a search box (see
 //! `search`): little leaves it off, and a theme with a search box turns it on.
 
 use anyhow::{Context, Result, anyhow, bail};
+use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, utf8_percent_encode};
 use serde_yaml::{Mapping, Value};
 use std::borrow::Cow;
 use std::io::ErrorKind;
@@ -60,6 +65,9 @@ pub struct Config {
     pub port: u16,
     /// Where the site is published, from `url`.
     pub url: SiteUrl,
+    /// The repository the site's source is in, from `repo` and `branch`, if
+    /// it sets `repo`.
+    pub repo: Option<Repo>,
     /// Whether a build indexes the site for search, from `search`.
     pub search: bool,
 }
@@ -103,6 +111,62 @@ impl SiteUrl {
 /// than at another domain, like `//example.com/`, or the current page.
 fn from_the_root(url: &str) -> bool {
     url.starts_with('/') && !url.starts_with("//")
+}
+
+/// The repository a site's source is in, from `repo`, and the branch its
+/// pages link to their files on, from `branch`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Repo {
+    /// Its address, like `https://github.com/withlittle/little`, with no `/`
+    /// at the end.
+    pub url: String,
+    /// The branch, like `main`.
+    pub branch: String,
+}
+
+/// Where to view a file in a site's repository, and where to edit it.
+#[derive(Debug, PartialEq, Eq)]
+pub struct FileUrls {
+    pub source: String,
+    pub edit: String,
+}
+
+/// What's encoded in each part of a file's path in a URL: all but letters,
+/// digits, `-`, `.`, `_`, and `~`, so a name with a space or a `#` in it
+/// can't break the URL.
+const PATH_PART: &AsciiSet = &NON_ALPHANUMERIC
+    .remove(b'-')
+    .remove(b'.')
+    .remove(b'_')
+    .remove(b'~');
+
+impl Repo {
+    /// Where to view and to edit the file at `path` in the repository, like
+    /// `docs/guide/install.md`, on its branch. little knows only GitHub's and
+    /// GitLab's addresses, so a repository anywhere else has none.
+    pub fn file_urls(&self, path: &Path) -> Option<FileUrls> {
+        let host = self.url.split_once("://")?.1.split('/').next()?;
+        let (source, edit) = if host.eq_ignore_ascii_case("github.com") {
+            ("blob", "edit")
+        } else if host.eq_ignore_ascii_case("gitlab.com") {
+            ("-/blob", "-/edit")
+        } else {
+            return None;
+        };
+        let branch = self.branch.split('/').map(Cow::Borrowed);
+        let file = path
+            .components()
+            .map(|part| part.as_os_str().to_string_lossy());
+        let parts: Vec<String> = branch
+            .chain(file)
+            .map(|part| utf8_percent_encode(&part, PATH_PART).to_string())
+            .collect();
+        let rest = parts.join("/");
+        Some(FileUrls {
+            source: format!("{}/{source}/{rest}", self.url),
+            edit: format!("{}/{edit}/{rest}", self.url),
+        })
+    }
 }
 
 /// little's built-in defaults: level 1 of the cascade. They live in
@@ -177,6 +241,7 @@ pub fn load(site_dir: &Path) -> Result<Config> {
     let host = host(&values)?;
     let port = port(&values)?;
     let url = site_url(&values)?;
+    let repo = repo(&values)?;
     let search = search(&values)?;
     Ok(Config {
         values,
@@ -187,6 +252,7 @@ pub fn load(site_dir: &Path) -> Result<Config> {
         host,
         port,
         url,
+        repo,
         search,
     })
 }
@@ -306,6 +372,47 @@ fn site_url(values: &Mapping) -> Result<SiteUrl> {
         origin: url[..url.len() - path.len()].to_string(),
         path: path.trim_end_matches('/').to_string(),
     })
+}
+
+/// The repository the site's source is in, from `repo`, and the branch its
+/// pages link to their files on, from `branch`. YAML reads a branch like
+/// `2.0` as a number, so it must be quoted, or it would be linked as `2`.
+fn repo(values: &Mapping) -> Result<Option<Repo>> {
+    let branch = match values.get("branch") {
+        Some(Value::String(branch)) if !branch.is_empty() => branch.clone(),
+        _ => bail!(
+            "`branch` must be the name of a branch, like main, in quotes if it looks like a \
+             number, like \"2.0\""
+        ),
+    };
+    let Some(value) = values.get("repo") else {
+        return Ok(None);
+    };
+    let error = || {
+        anyhow!(
+            "`repo` must be the address of the site's repository, as a browser shows it, \
+             like https://github.com/example/my-project"
+        )
+    };
+    let url = value.as_str().ok_or_else(error)?.trim_end_matches('/');
+    let rest = (url.strip_prefix("https://"))
+        .or_else(|| url.strip_prefix("http://"))
+        .ok_or_else(error)?;
+    let (host, path) = rest.split_at(rest.find('/').unwrap_or(rest.len()));
+    // Not the address it's cloned from, which ends in `.git`.
+    if host.is_empty()
+        || path.is_empty()
+        || url.ends_with(".git")
+        || rest.contains(['?', '#'])
+        || rest.contains(char::is_whitespace)
+        || url::Url::parse(url).is_err()
+    {
+        return Err(error());
+    }
+    Ok(Some(Repo {
+        url: url.to_string(),
+        branch,
+    }))
 }
 
 /// Whether a build indexes the site for search. YAML reads `yes` and `"true"`
@@ -515,6 +622,7 @@ mod tests {
              toc_max_depth: 6\n\
              host: 127.0.0.1\n\
              port: 8080\n\
+             branch: main\n\
              search: false\n\
              name: My Docs\n\
              font: Inter\n\
@@ -967,6 +1075,133 @@ mod tests {
     }
 
     #[test]
+    fn a_repo_and_its_branch_cascade() {
+        let site = scratch("repo", &[("theme/little.yml", "branch: trunk\n")]);
+        let repo = |site_cfg: &str| {
+            std::fs::write(site.join(CONFIG_FILE), site_cfg).unwrap();
+            load(&site).unwrap().repo
+        };
+        let little = |branch: &str| {
+            Some(Repo {
+                url: "https://github.com/withlittle/little".into(),
+                branch: branch.into(),
+            })
+        };
+
+        // Without a repo, there's nothing to link to.
+        assert_eq!(repo(""), None);
+        assert_eq!(repo("theme: ./theme\n"), None);
+
+        // little links to files on `main`, a theme can change that, and a
+        // site has the last word. A `/` at the end of the repo is left off.
+        let site_cfg = "repo: https://github.com/withlittle/little\n";
+        assert_eq!(repo(site_cfg), little("main"));
+        assert_eq!(repo(&site_cfg.replace('\n', "/\n")), little("main"));
+        let site_cfg = format!("theme: ./theme\n{site_cfg}");
+        assert_eq!(repo(&site_cfg), little("trunk"));
+        assert_eq!(repo(&format!("{site_cfg}branch: \"2.0\"\n")), little("2.0"));
+
+        let _ = std::fs::remove_dir_all(&site);
+    }
+
+    #[test]
+    fn bad_repos_and_branches_explain_themselves() {
+        let site = scratch("bad-repo", &[]);
+
+        // A repo is the address a browser shows for it, as text: not the
+        // address it's cloned from, or just its host, and with nothing after
+        // its path.
+        for value in [
+            " withlittle/little",
+            " git@github.com:withlittle/little.git",
+            " ssh://git@github.com/withlittle/little",
+            " https://github.com/withlittle/little.git",
+            " https://github.com",
+            " https://github.com/",
+            " https://",
+            " https:///withlittle/little",
+            " https://github.com/withlittle/little?tab=readme",
+            " https://github.com/withlittle/little#readme",
+            " https://github.com/withlittle/my little",
+            " https://github.com:x/withlittle/little",
+            " 8080",
+            " [https://github.com/withlittle/little]",
+            "",
+        ] {
+            let message = error(&site, &format!("repo:{value}\n"));
+            assert_eq!(
+                message,
+                "`repo` must be the address of the site's repository, as a browser shows it, \
+                 like https://github.com/example/my-project",
+                "repo:{value}"
+            );
+        }
+
+        // YAML reads a branch like `2.0` as a number, which isn't its name.
+        for value in [" 2.0", " 2024", " true", " \"\"", " [main]", ""] {
+            let message = error(&site, &format!("branch:{value}\n"));
+            assert_eq!(
+                message,
+                "`branch` must be the name of a branch, like main, in quotes if it looks like \
+                 a number, like \"2.0\"",
+                "branch:{value}"
+            );
+        }
+
+        let _ = std::fs::remove_dir_all(&site);
+    }
+
+    #[test]
+    fn a_repo_links_to_its_files_on_github_and_gitlab() {
+        let repo = |url: &str, branch: &str| Repo {
+            url: url.into(),
+            branch: branch.into(),
+        };
+        let urls = |repo: &Repo, path: &str| {
+            let urls = repo.file_urls(Path::new(path))?;
+            Some([urls.source, urls.edit])
+        };
+
+        let github = repo("https://github.com/withlittle/little", "main");
+        assert_eq!(
+            urls(&github, "docs/guide/install.md").unwrap(),
+            [
+                "https://github.com/withlittle/little/blob/main/docs/guide/install.md",
+                "https://github.com/withlittle/little/edit/main/docs/guide/install.md",
+            ]
+        );
+        // A GitLab project can be in a group, and a branch in a folder.
+        let gitlab = repo("https://gitlab.com/withlittle/docs/little", "release/2.0");
+        assert_eq!(
+            urls(&gitlab, "README.md").unwrap(),
+            [
+                "https://gitlab.com/withlittle/docs/little/-/blob/release/2.0/README.md",
+                "https://gitlab.com/withlittle/docs/little/-/edit/release/2.0/README.md",
+            ]
+        );
+
+        // Each part of the branch and path is encoded, so no name can break
+        // the URL.
+        let [source, _] = urls(&repo(github.url.as_str(), "fix#1"), "docs/my café.md").unwrap();
+        assert_eq!(
+            source,
+            "https://github.com/withlittle/little/blob/fix%231/docs/my%20caf%C3%A9.md"
+        );
+
+        // A host is the same host in capitals, but little doesn't know any
+        // other's addresses.
+        let shouty = repo("https://GitHub.com/withlittle/little", "main");
+        assert!(urls(&shouty, "README.md").is_some());
+        for url in [
+            "https://codeberg.org/withlittle/little",
+            "https://github.example.com/withlittle/little",
+            "https://notgithub.com/withlittle/little",
+        ] {
+            assert_eq!(urls(&repo(url, "main"), "README.md"), None, "{url}");
+        }
+    }
+
+    #[test]
     fn config_files_hold_settings() {
         let site = scratch("settings", &[]);
         let parsing = format!("parsing {}: ", site.join(CONFIG_FILE).display());
@@ -1026,8 +1261,11 @@ mod tests {
         for key in ["name", "lang"] {
             assert_eq!(cfg.get(key), None, "little shouldn't default `{key}`");
         }
-        // And only the site knows where it's published.
+        // And only the site knows where it's published, and where its
+        // repository is, though most link to their files on `main`.
         assert_eq!(cfg.get("url"), None);
+        assert_eq!(cfg.get("repo"), None);
+        assert_eq!(get(&cfg, "branch"), Some("main"));
     }
 
     #[test]

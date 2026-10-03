@@ -22,8 +22,8 @@ cargo fmt                   # format — run before committing
 - `src/config.rs` — the 3-level cascading config (little → theme → site): the
   chain of themes a site uses, its source and destination folders, the levels
   of heading its tables of contents list, the host and port
-  `little serve` serves it at, the `url` it's published at, and whether it's
-  indexed for search.
+  `little serve` serves it at, the `url` it's published at, the `repo` and
+  `branch` its source is in, and whether it's indexed for search.
 - `src/little.yml` — little's own defaults (level 1), compiled into the binary.
 - `src/render.rs` — Markdown (comrak) + YAML frontmatter → HTML fragment, with
   each relative link led from the folder of the file it's in, and each link
@@ -31,14 +31,16 @@ cargo fmt                   # format — run before committing
 - `src/site.rs` — build pipeline: walk the source (`docs/`), render its
   Markdown, copy its other files, apply theme, index it for search, write the
   destination (`dist/`), noting the source file and URL of each file it
-  writes.
+  writes. Finds where the source is in its repository, so each page can link
+  to its file there.
 - `src/search.rs` — indexes each page's own content, under its title and URL,
   with Pagefind, in the language the theme gives the page, into the files of
   the destination's `search/`.
 - `src/links.rs` — checks the links in the built site with lychee-lib: those
   within the site in the destination, as the site is published under its
-  `url`, and, for `little build`, those to other sites over the network.
-  Shows a broken link in Markdown as it's written.
+  `url`, and, for `little build`, those to other sites over the network, but
+  not those into the site's repository. Shows a broken link in Markdown as
+  it's written.
 - `src/theme.rs` — a theme's templates, static files, and Sass, layered over
   those of the themes it builds on, and the built-in theme; picks each page's
   template by its type (`home`, `section`, `page`, `404`), and gives templates
@@ -185,4 +187,11 @@ Record notable choices as short ADRs in `decisions/`. Locked so far:
   of the page's `<html lang>`, but not the 404 page; the theme owns the
   search box, and a page or file where search writes one stops the build —
   see [`decisions/0019-site-search.md`](./decisions/0019-site-search.md).
+- **Linking to a page's file:** `repo`, the repository's address as a
+  browser shows it, reaches the theme as `site.repo`, and, on GitHub and
+  GitLab, gives each page `page.source_url` and `page.edit_url`, on `branch`,
+  which little sets to `main`, with each path from the nearest folder with a
+  `.git`, else the site's folder; links into the repository aren't
+  checked — see
+  [`decisions/0020-links-to-a-pages-file-in-its-repo.md`](./decisions/0020-links-to-a-pages-file-in-its-repo.md).
 - **Plugins:** sandboxed WASM (planned).

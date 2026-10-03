@@ -14,7 +14,7 @@ use std::path::{Component, Path, PathBuf};
 use std::slice;
 use walkdir::WalkDir;
 
-use crate::config::SiteUrl;
+use crate::config::{Repo, SiteUrl};
 use crate::theme::{PageType, StaticFile, Theme};
 use crate::{config, render, search};
 
@@ -80,6 +80,12 @@ struct PageData<'a> {
     /// The page after this one in the nav, unless it's the last.
     #[serde(skip_serializing_if = "Option::is_none")]
     next: Option<Link<'a>>,
+    /// Where to view the page's file in the site's repository.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    source_url: Option<&'a str>,
+    /// Where to edit the page's file in the site's repository.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    edit_url: Option<&'a str>,
 }
 
 /// A link to another page: what a template sees as `page.prev` or
@@ -155,6 +161,9 @@ pub struct Built {
     /// The links and images in each page's Markdown, by its path in the
     /// destination, so a broken one is shown as it's written.
     pub links: HashMap<PathBuf, Vec<render::WrittenLink>>,
+    /// The repository the site's source is in, if it says, whose links
+    /// aren't checked.
+    pub repo: Option<Repo>,
 }
 
 /// Build the site rooted at `site_dir`.
@@ -170,6 +179,7 @@ pub fn build(site_dir: &Path) -> Result<Built> {
         destination_dir,
         toc_depths,
         url: site_url,
+        repo,
         search: searchable,
         ..
     } = config::load(site_dir)?;
@@ -177,6 +187,10 @@ pub fn build(site_dir: &Path) -> Result<Built> {
         bail!("there's no source folder at {}", source_dir.display());
     }
     let theme = Theme::load(&themes, &site_url)?;
+    let source_in_repo = match repo {
+        Some(_) => folder_in_repo(&source_dir, site_dir)?,
+        None => None,
+    };
 
     // Walk every file in the source folder but hidden ones, without walking
     // hidden folders, or the destination, which can be inside it. The source
@@ -288,6 +302,8 @@ pub fn build(site_dir: &Path) -> Result<Built> {
             .get(page.url.as_str())
             .map(Vec::as_slice)
             .unwrap_or_default();
+        let file_urls = (repo.as_ref().zip(source_in_repo.as_ref()))
+            .and_then(|(repo, folder)| repo.file_urls(&folder.join(&page.rel)));
         let data = PageData {
             page_type: page.page_type.name(),
             url: &page.url,
@@ -298,6 +314,8 @@ pub fn build(site_dir: &Path) -> Result<Built> {
             breadcrumbs: Some(breadcrumbs),
             prev,
             next,
+            source_url: file_urls.as_ref().map(|urls| urls.source.as_str()),
+            edit_url: file_urls.as_ref().map(|urls| urls.edit.as_str()),
         };
         let source = source_dir.join(&page.rel);
         if let Some(html) = render(page.page_type, &data, &page.frontmatter)
@@ -328,7 +346,7 @@ pub fn build(site_dir: &Path) -> Result<Built> {
         }
     }
 
-    // A 404 page has no content: all `page` has is its type and URL.
+    // A 404 page has no content, or file: all `page` has is its type and URL.
     let not_found_url = format!("/{NOT_FOUND_FILE}");
     let data = PageData {
         page_type: PageType::NotFound.name(),
@@ -340,6 +358,8 @@ pub fn build(site_dir: &Path) -> Result<Built> {
         breadcrumbs: None,
         prev: None,
         next: None,
+        source_url: None,
+        edit_url: None,
     };
     if let Some(html) =
         render(PageType::NotFound, &data, &Mapping::new()).context("rendering the 404 page")?
@@ -412,7 +432,25 @@ pub fn build(site_dir: &Path) -> Result<Built> {
         origins,
         urls,
         links,
+        repo,
     })
+}
+
+/// Where the source folder is in the site's repository, like `docs`: from
+/// the nearest folder above it with a `.git`, which in a worktree is a file,
+/// or else from the site's folder, as in a copy of the repository without
+/// one. A source outside the repository is nowhere in it.
+fn folder_in_repo(source_dir: &Path, site_dir: &Path) -> Result<Option<PathBuf>> {
+    let canonical = |dir: &Path| {
+        dir.canonicalize()
+            .with_context(|| format!("reading {}", dir.display()))
+    };
+    let source = canonical(source_dir)?;
+    let root = match source.ancestors().find(|dir| dir.join(".git").exists()) {
+        Some(root) => root.to_path_buf(),
+        None => canonical(site_dir)?,
+    };
+    Ok(source.strip_prefix(&root).ok().map(Path::to_path_buf))
 }
 
 /// What a template sees as `page`: what little works out for it, with the
@@ -422,13 +460,16 @@ pub fn build(site_dir: &Path) -> Result<Built> {
 /// its own type, whatever its frontmatter says.
 ///
 /// Then each of the page's links gets the path of the site's `url`, whoever
-/// wrote it, as do the links in its Markdown.
+/// wrote it, as do the links in its Markdown, unless it's to another site,
+/// like its file in the site's repository.
 fn page_value(data: &PageData, frontmatter: &Mapping, url: &SiteUrl) -> Result<Mapping> {
     let Value::Mapping(mut page) = serde_yaml::to_value(data)? else {
         unreachable!("a struct serializes to a mapping");
     };
     config::merge(&mut page, frontmatter.clone());
-    link(page.get_mut("url"), url);
+    for key in ["url", "source_url", "edit_url"] {
+        link(page.get_mut(key), url);
+    }
     for key in ["prev", "next"] {
         if let Some(Value::Mapping(item)) = page.get_mut(key) {
             link(item.get_mut("url"), url);
@@ -2030,6 +2071,119 @@ mod tests {
         for path in ["index.html", "api/errors/index.html", NOT_FOUND_FILE] {
             assert!(!read(path).contains(nav), "{path}");
         }
+        let _ = fs::remove_dir_all(&site);
+    }
+
+    #[test]
+    fn each_page_links_to_its_file_in_the_repo() {
+        let template = "{{ site.repo | safe }} \
+                        | {% if page.source_url %}{{ page.source_url | safe }}{% endif %} \
+                        | {% if page.edit_url %}{{ page.edit_url | safe }}{% endif %}";
+        let repo = "https://github.com/withlittle/little";
+        let site_cfg =
+            format!("theme: ./theme\nurl: https://withlittle.github.io/little\nrepo: {repo}\n");
+        let root = scratch_site(
+            "repo",
+            &[
+                (".git/HEAD", "ref: refs/heads/main\n"),
+                ("site/little.yml", &site_cfg),
+                ("site/docs/README.md", "# Home\n"),
+                ("site/docs/guide/install.md", "# Install\n"),
+                (
+                    "site/docs/guide/reference.md",
+                    "---\nsource_url: /api/\nedit_url: false\n---\n# Reference\n",
+                ),
+                ("site/theme/_templates/default.html", template),
+                ("site/theme/_templates/404.html", template),
+            ],
+        );
+        let site = root.join("site");
+        let read = |path: &str| fs::read_to_string(site.join("dist").join(path)).unwrap();
+        let links = |path: &str| format!("{repo} | {repo}/blob/{path} | {repo}/edit/{path}");
+
+        // A page's file is found from the root of the repository: the
+        // nearest folder above it with a `.git`.
+        build(&site).unwrap();
+        assert_eq!(
+            read("guide/install/index.html"),
+            links("main/site/docs/guide/install.md")
+        );
+        // A page's frontmatter has the last word, and a link from the root of
+        // the site gets its path. The 404 page isn't built from a file.
+        assert_eq!(
+            read("guide/reference/index.html"),
+            format!("{repo} | /little/api/ | ")
+        );
+        assert_eq!(read(NOT_FOUND_FILE), format!("{repo} |  | "));
+
+        // In a worktree, `.git` is a file. A site can link to another branch.
+        fs::remove_dir_all(root.join(".git")).unwrap();
+        fs::write(root.join(".git"), "gitdir: /elsewhere\n").unwrap();
+        let branch_cfg = format!("{site_cfg}branch: release/2.0\n");
+        fs::write(site.join("little.yml"), branch_cfg).unwrap();
+        build(&site).unwrap();
+        assert_eq!(read("index.html"), links("release/2.0/site/docs/README.md"));
+
+        // Without a `.git`, as in a copy of the repository, the site's folder
+        // is the root of it, unless the tests run inside another repository.
+        fs::remove_file(root.join(".git")).unwrap();
+        fs::write(site.join("little.yml"), &site_cfg).unwrap();
+        if !root.ancestors().any(|dir| dir.join(".git").exists()) {
+            build(&site).unwrap();
+            assert_eq!(read("index.html"), links("main/docs/README.md"));
+        }
+
+        // little knows only GitHub's and GitLab's addresses for files, so a
+        // repository anywhere else is all a theme can link to.
+        let codeberg = "https://codeberg.org/withlittle/little";
+        fs::write(site.join("little.yml"), site_cfg.replace(repo, codeberg)).unwrap();
+        build(&site).unwrap();
+        assert_eq!(read("index.html"), format!("{codeberg} |  | "));
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn the_builtin_theme_links_to_the_repo_and_each_pages_file() {
+        let repo = "https://github.com/withlittle/little";
+        let site = scratch_site(
+            "builtin-repo",
+            &[
+                (".git/HEAD", "ref: refs/heads/main\n"),
+                ("little.yml", &format!("repo: {repo}\n")),
+                ("docs/README.md", "# Home\n"),
+                ("docs/guide.md", "---\nedit_url: false\n---\n# Guide\n"),
+            ],
+        );
+
+        build(&site).unwrap();
+
+        let read = |path: &str| fs::read_to_string(site.join("dist").join(path)).unwrap();
+        let repo_link = format!(r#"<a class="repo-link" href="{repo}">Repository</a>"#);
+        let home = read("index.html");
+        for link in [
+            repo_link.clone(),
+            format!(r#"<a href="{repo}/edit/main/docs/README.md">Edit this page</a>"#),
+            format!(r#"<a href="{repo}/blob/main/docs/README.md">View source of this page</a>"#),
+        ] {
+            assert!(home.contains(&link), "{link} in {home}");
+        }
+        // A page can turn either link off, and the 404 page has neither.
+        let guide = read("guide/index.html");
+        assert!(!guide.contains("Edit this page"), "{guide}");
+        assert!(guide.contains("View source of this page"), "{guide}");
+        let not_found = read(NOT_FOUND_FILE);
+        assert!(not_found.contains(&repo_link), "{not_found}");
+        assert!(
+            !not_found.contains("View source of this page"),
+            "{not_found}"
+        );
+
+        // Without a repo, there's nothing to link to.
+        fs::write(site.join("little.yml"), "").unwrap();
+        build(&site).unwrap();
+        let home = read("index.html");
+        assert!(!home.contains("repo-link"), "{home}");
+        assert!(!home.contains("View source of this page"), "{home}");
         let _ = fs::remove_dir_all(&site);
     }
 

@@ -11,6 +11,11 @@
 //! A broken link in a page's Markdown is shown as it's written there, so an
 //! author can find it, and any other, like one in the theme, as a reader
 //! follows it.
+//!
+//! A link to the site's repository, or to anything in it, isn't checked: a
+//! theme can link to each page's file there, from every page, and a new
+//! page's file isn't there until it's pushed, nor any in a private
+//! repository to a checker that hasn't signed in.
 
 use anyhow::{Context, Result, anyhow};
 use futures::StreamExt;
@@ -20,12 +25,13 @@ use lychee_lib::{
     InputSource, Request, RequestError, ResolvedInputSource, Uri,
 };
 use percent_encoding::percent_decode_str;
-use regex::Regex;
+use regex::{Regex, RegexSet};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fmt;
 use std::path::{Path, PathBuf};
 use url::Url;
 
+use crate::config::Repo;
 use crate::render::WrittenLink;
 use crate::site::Built;
 
@@ -222,6 +228,7 @@ impl<'a> Site<'a> {
             .schemes(schemes)
             // Links that only work on the author's machine, like localhost.
             .exclude_all_private(true)
+            .excludes(self.built.repo.as_ref().map(into_repo).transpose()?)
             .build()
             .client()?;
         Ok(client)
@@ -372,6 +379,14 @@ fn dir_url(dir: &Path) -> Result<Url> {
 /// `url` with no `/` at the end, so a path can follow it.
 fn trimmed(url: &Url) -> &str {
     url.as_str().trim_end_matches('/')
+}
+
+/// What matches a link to `repo`, or to anything in it, as lychee writes the
+/// link: with its host in lowercase, say.
+fn into_repo(repo: &Repo) -> Result<RegexSet> {
+    let url = Url::parse(&repo.url).with_context(|| format!("reading `repo`, {}", repo.url))?;
+    let pattern = format!("^{}([/?#]|$)", regex::escape(trimmed(&url)));
+    Ok(RegexSet::new([pattern])?)
 }
 
 #[cfg(test)]
@@ -662,6 +677,54 @@ mod tests {
             ],
         );
         assert_eq!(broken, Vec::<String>::new());
+    }
+
+    #[test]
+    fn leaves_out_links_into_the_sites_repo() {
+        // The built-in theme links to the repository, and each page to its
+        // file there, which no repository has, so none can be checked.
+        let repo = "https://github.com/withlittle/no-such-repo";
+        let broken = broken_links(
+            "repo",
+            Scope::All,
+            &[
+                ("little.yml", &format!("repo: {repo}/\n")),
+                (
+                    "docs/README.md",
+                    &format!(
+                        "# Home\n\n[Open issues]({repo}/issues?q=is%3Aopen) [Read me]({repo}#readme)\n"
+                    ),
+                ),
+                ("docs/guide.md", "# Guide\n"),
+            ],
+        );
+        assert_eq!(broken, Vec::<String>::new());
+
+        // A link is in the repository if it's to it, or under it, as lychee
+        // writes it.
+        let into = into_repo(&Repo {
+            url: "https://GitHub.com/withlittle/little".into(),
+            branch: "main".into(),
+        })
+        .unwrap();
+        let matches = |url: &str| into.is_match(Url::parse(url).unwrap().as_str());
+        for url in [
+            "https://github.com/withlittle/little",
+            "https://github.com/withlittle/little/",
+            "https://GITHUB.COM/withlittle/little/blob/main/docs/README.md",
+            "https://github.com/withlittle/little?tab=readme-ov-file",
+            "https://github.com/withlittle/little#readme",
+        ] {
+            assert!(matches(url), "{url}");
+        }
+        for url in [
+            "https://github.com/withlittle/little-other",
+            "https://github.com/withlittle",
+            "http://github.com/withlittle/little",
+            "https://github.com/WithLittle/Little",
+        ] {
+            assert!(!matches(url), "{url}");
+        }
     }
 
     #[test]

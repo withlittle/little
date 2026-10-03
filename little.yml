@@ -6,4 +6,6 @@
 name: Little
 description: A little static documentationsite site generator
 url: https://withlittle.github.io/little
+# Where the site's source is, so each page can link to its file there.
+repo: https://github.com/withlittle/little
 theme: ./theme

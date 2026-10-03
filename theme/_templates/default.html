@@ -25,6 +25,7 @@
   <header class="site-header{% if site.search %} has-search{% endif %}">
     <a class="brand" href="{{ '/' | url }}">{{ site.name }}</a>
     {% if site.description %}<span class="description">{{ site.description }}</span>{% endif %}
+    {% if site.repo %}<a class="repo-link" href="{{ site.repo | safe }}">Repository</a>{% endif %}
     {% if site.search %}
     {# A button that opens the search box, as ⌘K or Ctrl+K does. The script
        is a module, which can't tell where it was loaded from, so
@@ -68,6 +69,15 @@
       {% endif %}
 
       {% block content %}{{ page.content | safe }}{% endblock %}
+
+      {# page.edit_url and page.source_url are where to edit and view the
+         page's file in site.repo, if it's on GitHub or GitLab. #}
+      {% if page.edit_url or page.source_url %}
+      <div class="page-links">
+        {% if page.edit_url %}<a href="{{ page.edit_url | safe }}">Edit this page</a>{% endif %}
+        {% if page.source_url %}<a href="{{ page.source_url | safe }}">View source of this page</a>{% endif %}
+      </div>
+      {% endif %}
 
       {# page.prev and page.next follow site.nav from top to bottom; the first
          page has no prev, and the last no next. #}
