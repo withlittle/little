@@ -35,7 +35,7 @@ port: 8080
 # file in it, on this branch, to view or edit it there.
 branch: main
 
-# Whether each build indexes the site into the destination's `search/` folder,
+# Whether each build indexes the site into the destination's `pagefind/` folder,
 # so readers can search it. It's off unless the theme has a search box to use
 # the index, and a site can still turn it off.
 search: false

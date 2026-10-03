@@ -9,10 +9,12 @@
      `url` before them, if it has one. little's URLs, like page.url, already
      have it. #}
   {% if site.search %}
-  {# Pagefind's search box, from the index little writes to /search/. Its
-     styles come before this theme's, so the theme can restyle it. #}
-  <link rel="stylesheet" href="{{ '/search/pagefind-component-ui.css' | url }}">
-  <script src="{{ '/search/pagefind-component-ui.js' | url }}" type="module"></script>
+  {# Pagefind's search box, from the index little writes to /pagefind/. Its
+     styles come before this theme's, so the theme can restyle it. Its script
+     is deferred, not a module, so it finds the index beside it, even under
+     the path of the site's `url`. #}
+  <link rel="stylesheet" href="{{ '/pagefind/pagefind-component-ui.css' | url }}">
+  <script src="{{ '/pagefind/pagefind-component-ui.js' | url }}" defer></script>
   {% endif %}
   <link rel="stylesheet" href="{{ '/assets/style.css' | url }}">
   <style>
@@ -27,10 +29,7 @@
     {% if site.description %}<span class="description">{{ site.description }}</span>{% endif %}
     {% if site.repo %}<a class="repo-link" href="{{ site.repo | safe }}">Repository</a>{% endif %}
     {% if site.search %}
-    {# A button that opens the search box, as ⌘K or Ctrl+K does. The script
-       is a module, which can't tell where it was loaded from, so
-       `bundle-path` tells it where the index is. #}
-    <pagefind-config bundle-path="{{ '/search/' | url }}"></pagefind-config>
+    {# A button that opens the search box, as ⌘K or Ctrl+K does. #}
     <pagefind-modal-trigger></pagefind-modal-trigger>
     <pagefind-modal></pagefind-modal>
     {% endif %}

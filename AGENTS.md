@@ -35,7 +35,7 @@ cargo fmt                   # format — run before committing
   to its file there.
 - `src/search.rs` — indexes each page's own content, under its title and URL,
   with Pagefind, in the language the theme gives the page, into the files of
-  the destination's `search/`.
+  the destination's `pagefind/`.
 - `src/links.rs` — checks the links in the built site with lychee-lib: those
   within the site in the destination, as the site is published under its
   `url`, and, for `little build`, those to other sites over the network, but
@@ -62,7 +62,8 @@ Content and theme live outside `src/`:
   (MiniJinja; `default.html` is required) + `_static/` (copied to the site's
   root) + an optional `little.yml`. It's plain CSS: `builtin` has no `_sass/`.
   List every file in it in `builtin` in `src/theme.rs`; a test checks. Its
-  search box is Pagefind's, loaded from the `search/` little writes.
+  search box is Pagefind's, deferred so it finds the `pagefind/` little
+  writes.
 - `little.yml` — example site config (optional). It sets `theme: ./theme`, so
   edits to the built-in theme live-reload.
 - Project meta (`VISION.md`, `AGENTS.md`, `decisions/`) lives at the repo root.
@@ -183,10 +184,16 @@ Record notable choices as short ADRs in `decisions/`. Locked so far:
   [`decisions/0018-sass-in-themes.md`](./decisions/0018-sass-in-themes.md).
 - **Site search:** `search`, which little sets `false` and the built-in
   theme `true`, indexes each page's own content, under its title and URL,
-  with Pagefind, built in, into the destination's `search/`, in the language
+  with Pagefind, built in, into the destination's `pagefind/`, in the language
   of the page's `<html lang>`, but not the 404 page; the theme owns the
   search box, and a page or file where search writes one stops the build —
   see [`decisions/0019-site-search.md`](./decisions/0019-site-search.md).
+- **Where search's files go:** `pagefind/`, Pagefind's default, and the
+  built-in theme loads Pagefind's search box with `defer`, not as a module,
+  so it finds them itself, even under the path of the site's `url`; each
+  page is indexed at its URL from the root of the site, and Pagefind puts
+  the site's path back, from where it finds them — see
+  [`decisions/0021-search-files-in-pagefind.md`](./decisions/0021-search-files-in-pagefind.md).
 - **Linking to a page's file:** `repo`, the repository's address as a
   browser shows it, reaches the theme as `site.repo`, and, on GitHub and
   GitLab, gives each page `page.source_url` and `page.edit_url`, on `branch`,

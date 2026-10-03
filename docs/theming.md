@@ -243,14 +243,13 @@ links into the repository: a new page's file isn't there until it's pushed.
 
 ## A search box
 
-This theme's `little.yml` sets `search: true`, so little indexes every page into `search/` as
+This theme's `little.yml` sets `search: true`, so little indexes every page into `pagefind/` as
 it builds, and the theme puts [Pagefind](https://pagefind.app/)'s search box in its header,
 loaded from there. Press ⌘K or Ctrl+K to try it. A site that sets `search: false` goes
 without, and the theme leaves the box out too:
 
 ```html
 {% if site.search %}
-<pagefind-config bundle-path="{{ '/search/' | url }}"></pagefind-config>
 <pagefind-modal-trigger></pagefind-modal-trigger>
 <pagefind-modal></pagefind-modal>
 {% endif %}

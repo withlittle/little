@@ -325,7 +325,7 @@ pub fn build(site_dir: &Path) -> Result<Built> {
             // around it, but in the language the theme gives it.
             if searchable {
                 searched.push(search::Page {
-                    url: site_url.link(&page.url).into_owned(),
+                    url: &page.url,
                     title: &page.title,
                     content: &page.html,
                     lang: search::lang(&html),
@@ -580,7 +580,7 @@ fn check_static_files(files: &[StaticFile], destination: &Path, outputs: &[Outpu
 
 /// Fail if a static file or a page would land on one of the files little
 /// writes for search, or on a folder they're in, or one of them would land on
-/// it, as a static file named `search` would.
+/// it, as a static file named `pagefind` would.
 fn check_search_files(
     search_files: &[search::File],
     static_files: &[StaticFile],
@@ -987,7 +987,7 @@ mod tests {
     /// What search found in each page of the site built into `dist`, as
     /// Pagefind keeps it: JSON of its URL, content, title, and headings.
     fn indexed(dist: &Path) -> Vec<String> {
-        let fragments = fs::read_dir(dist.join("search/fragment")).unwrap();
+        let fragments = fs::read_dir(dist.join("pagefind/fragment")).unwrap();
         let mut pages: Vec<String> = fragments
             .map(|fragment| {
                 let file = fs::File::open(fragment.unwrap().path()).unwrap();
@@ -1423,7 +1423,7 @@ mod tests {
         let css = fs::read(dist.join("assets/style.css")).unwrap();
         assert_eq!(css, include_bytes!("../theme/_static/assets/style.css"));
         // And it's searchable, from the search box in its header.
-        assert!(dist.join("search/pagefind-component-ui.js").is_file());
+        assert!(dist.join("pagefind/pagefind-component-ui.js").is_file());
         assert!(home.contains("<pagefind-modal-trigger>"), "{home}");
         let _ = fs::remove_dir_all(&site);
     }
@@ -1443,8 +1443,7 @@ mod tests {
         let dist = site.join("dist");
         let home = fs::read_to_string(dist.join("index.html")).unwrap();
         assert!(!home.contains("pagefind"), "{home}");
-        assert!(!home.contains("/search/"), "{home}");
-        assert!(!dist.join("search").exists());
+        assert!(!dist.join("pagefind").exists());
         let _ = fs::remove_dir_all(&site);
     }
 
@@ -2642,21 +2641,23 @@ mod tests {
 
         // Each page but the 404 page, in the language the theme gives it...
         let dist = site.join("dist");
-        let entry = fs::read_to_string(dist.join("search/pagefind-entry.json")).unwrap();
+        let entry = fs::read_to_string(dist.join("pagefind/pagefind-entry.json")).unwrap();
         assert!(entry.contains(r#""wasm":"fr","page_count":2"#), "{entry}");
-        assert!(dist.join("search/pagefind.js").is_file());
+        assert!(dist.join("pagefind/pagefind.js").is_file());
 
-        // ...at its URL, with the site's path, under its title, with its
-        // headings, and with only its own content, not the theme's.
+        // ...at its URL from the root of the site, without the site's path,
+        // which Pagefind puts back from where it finds the index, under its
+        // title, with its headings, and with only its own content, not the
+        // theme's.
         let pages = indexed(&dist);
         let expected = [
             [
-                r#""url":"/docs/""#,
+                r#""url":"/""#,
                 r#""title":"Home""#,
                 r#""content":"Home. Welcome aboard.""#,
             ],
             [
-                r#""url":"/docs/guide/install""#,
+                r#""url":"/guide/install""#,
                 r#""title":"Installing""#,
                 r#""id":"from-source","text":"From source""#,
             ],
@@ -2674,7 +2675,7 @@ mod tests {
         fs::write(site.join("little.yml"), site_cfg).unwrap();
         build(&site).unwrap();
         assert!(dist.join("index.html").is_file());
-        assert!(!dist.join("search").exists());
+        assert!(!dist.join("pagefind").exists());
         let _ = fs::remove_dir_all(&site);
     }
 
@@ -2689,25 +2690,25 @@ mod tests {
                 ("theme/_templates/default.html", "{{ page.title }}"),
             ],
         );
-        // A page at /search, or a file beside search's files, is fine...
-        fs::write(site.join("docs/search.md"), "# Search\n").unwrap();
-        fs::create_dir_all(site.join("docs/search")).unwrap();
-        fs::write(site.join("docs/search/notes.txt"), "notes").unwrap();
+        // A page at /pagefind, or a file beside search's files, is fine...
+        fs::write(site.join("docs/pagefind.md"), "# Pagefind\n").unwrap();
+        fs::create_dir_all(site.join("docs/pagefind")).unwrap();
+        fs::write(site.join("docs/pagefind/notes.txt"), "notes").unwrap();
         build(&site).unwrap();
         let dist = site.join("dist");
         assert_eq!(
-            fs::read_to_string(dist.join("search/index.html")).unwrap(),
-            "Search"
+            fs::read_to_string(dist.join("pagefind/index.html")).unwrap(),
+            "Pagefind"
         );
-        assert!(dist.join("search/notes.txt").is_file());
-        assert!(dist.join("search/pagefind.js").is_file());
+        assert!(dist.join("pagefind/notes.txt").is_file());
+        assert!(dist.join("pagefind/pagefind.js").is_file());
 
         // ...but not one on one of them, whether it's the theme's or one in
         // the source, or a page...
         let docs = site.join("docs");
-        let theme_file = site.join("theme/_static/search/pagefind.js");
-        let source_file = docs.join("search/pagefind.js");
-        let page = docs.join("search/pagefind.js.md");
+        let theme_file = site.join("theme/_static/pagefind/pagefind.js");
+        let source_file = docs.join("pagefind/pagefind.js");
+        let page = docs.join("pagefind/pagefind.js.md");
         for (file, name) in [
             (&theme_file, theme_file.display().to_string()),
             (&source_file, source_file.display().to_string()),
@@ -2717,7 +2718,7 @@ mod tests {
             fs::write(file, "# Mine\n").unwrap();
             let message = format!("{:#}", build(&site).unwrap_err());
             let expected = format!(
-                "{name} clashes with /search/pagefind.js, which little writes for search: \
+                "{name} clashes with /pagefind/pagefind.js, which little writes for search: \
                  rename or move it"
             );
             assert_eq!(message, expected);
@@ -2725,18 +2726,18 @@ mod tests {
         }
 
         // ...or one where their folder goes.
-        fs::remove_file(docs.join("search.md")).unwrap();
-        fs::remove_dir_all(docs.join("search")).unwrap();
-        fs::write(docs.join("search"), "a file, not a folder").unwrap();
+        fs::remove_file(docs.join("pagefind.md")).unwrap();
+        fs::remove_dir_all(docs.join("pagefind")).unwrap();
+        fs::write(docs.join("pagefind"), "a file, not a folder").unwrap();
         let message = format!("{:#}", build(&site).unwrap_err());
         let expected = format!(
-            "{} clashes with /search/, where little writes files for search: rename or move it",
-            docs.join("search").display()
+            "{} clashes with /pagefind/, where little writes files for search: rename or move it",
+            docs.join("pagefind").display()
         );
         assert_eq!(message, expected);
 
         // The last build is left in place.
-        assert!(dist.join("search/pagefind.js").is_file());
+        assert!(dist.join("pagefind/pagefind.js").is_file());
         let _ = fs::remove_dir_all(&site);
     }
 }
