@@ -69,3 +69,8 @@ markdown:
   multiline_blockquotes: false # >>>, then a line of >>>, around a quote
   hard_breaks: false           # a <br> for every line break in a paragraph
   cjk_friendly_emphasis: false # ** and * beside Chinese, Japanese, and Korean punctuation
+  # The classes code is highlighted with, as little builds each page, for the
+  # theme to colour: `pygments`, like `k` for a keyword and `s2` for a string,
+  # `github`, like `pl-k` and `pl-s`, or `false`, for a theme that highlights
+  # code itself.
+  highlight: pygments

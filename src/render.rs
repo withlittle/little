@@ -3,6 +3,7 @@
 
 use anyhow::{Context, Result};
 use comrak::nodes::{AstNode, NodeValue};
+use comrak::options::Plugins;
 use comrak::{Anchorizer, Arena, Options};
 use serde_yaml::Mapping;
 use std::borrow::Cow;
@@ -10,6 +11,7 @@ use std::mem;
 use std::ops::RangeInclusive;
 
 use crate::config::{Markdown, SiteUrl};
+use crate::highlight;
 
 /// One heading in a page's in-page table of contents. They're listed in the
 /// order they come, and the build nests them like `site.nav`.
@@ -49,13 +51,13 @@ pub struct WrittenLink {
 }
 
 /// Parse a document, written with the extensions to CommonMark in
-/// `markdown`, into its frontmatter, rendered HTML, and outline, which lists
-/// its headings at the levels in `toc_depths` (the config's `toc_min_depth`
-/// to `toc_max_depth`). Links and images relative to the document, like
-/// `images/logo.png`, lead from `folder`, the URL of the folder it's in, like
-/// `/guide/`; those from the root of the site get the path of the site's
-/// `url`. A link to a page's Markdown file, like `install.md`, leads to the
-/// page.
+/// `markdown`, into its frontmatter, rendered HTML, with its code highlighted
+/// with `markdown`'s classes, and outline, which lists its headings at the
+/// levels in `toc_depths` (the config's `toc_min_depth` to `toc_max_depth`).
+/// Links and images relative to the document, like `images/logo.png`, lead
+/// from `folder`, the URL of the folder it's in, like `/guide/`; those from
+/// the root of the site get the path of the site's `url`. A link to a page's
+/// Markdown file, like `install.md`, leads to the page.
 pub fn parse_document(
     raw: &str,
     folder: &str,
@@ -79,8 +81,10 @@ pub fn parse_document(
     let links = link_within_site(root, folder, url, &options);
     let (toc, first_h1) = outline(root, toc_depths);
 
+    let mut plugins = Plugins::default();
+    plugins.render.codefence_syntax_highlighter = highlight::highlighter(markdown.highlight);
     let mut html = String::new();
-    comrak::html::format_document(root, &options, &mut html)
+    comrak::html::format_document_with_plugins(root, &options, &mut html, &plugins)
         .context("rendering markdown to HTML")?;
 
     Ok(Rendered {
@@ -333,6 +337,7 @@ fn split_frontmatter(raw: &str) -> (String, String) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::Highlight;
     use serde_yaml::Value;
 
     /// little's defaults, from `src/little.yml`: every heading but the title.
@@ -541,6 +546,66 @@ mod tests {
         let warning = "<div class=\"markdown-alert markdown-alert-warning\">\n\
                        <p class=\"markdown-alert-title\">Before you upgrade</p>";
         assert!(r.html.contains(warning), "{}", r.html);
+    }
+
+    #[test]
+    fn code_is_highlighted_with_the_chosen_classes() {
+        let md = "```rust\nfn main() {}\n```\n";
+        let html = |highlight| {
+            let markdown = Markdown {
+                highlight,
+                ..Markdown::default()
+            };
+            parse_document(md, "/", &TOC_DEPTHS, &SiteUrl::default(), &markdown)
+                .unwrap()
+                .html
+        };
+        assert_eq!(
+            html(Some(Highlight::Pygments)),
+            "<pre class=\"highlight\"><code class=\"language-rust\"><span class=\"kd\">fn</span> \
+             <span class=\"nf\">main</span>() {}\n</code></pre>\n"
+        );
+        assert_eq!(
+            html(Some(Highlight::GitHub)),
+            "<pre class=\"highlight\"><code class=\"language-rust\"><span class=\"pl-k\">fn</span> \
+             <span class=\"pl-en\">main</span>() {}\n</code></pre>\n"
+        );
+        // `false` leaves code as comrak writes it, for a theme's script.
+        assert_eq!(
+            html(None),
+            "<pre><code class=\"language-rust\">fn main() {}\n</code></pre>\n"
+        );
+    }
+
+    #[test]
+    fn code_without_a_language_little_knows_is_plain() {
+        for (md, code) in [
+            (
+                "```mermaid\nA-->B\n```\n",
+                "<code class=\"language-mermaid\">",
+            ),
+            ("```\nA-->B\n```\n", "<code>"),
+            ("    A-->B\n", "<code>"),
+        ] {
+            let expected = format!("<pre class=\"highlight\">{code}A--&gt;B\n</code></pre>\n");
+            assert_eq!(render(md).html, expected, "{md:?}");
+        }
+    }
+
+    #[test]
+    fn math_blocks_arent_highlighted() {
+        for math in [true, false] {
+            let markdown = Markdown {
+                math,
+                ..Markdown::default()
+            };
+            let md = "```math\nx^2\n```\n";
+            let r = parse_document(md, "/", &TOC_DEPTHS, &SiteUrl::default(), &markdown).unwrap();
+            assert_eq!(
+                r.html,
+                "<pre><code class=\"language-math\" data-math-style=\"display\">x^2\n</code></pre>\n"
+            );
+        }
     }
 
     #[test]

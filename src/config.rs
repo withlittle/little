@@ -176,9 +176,9 @@ impl Repo {
     }
 }
 
-/// Which extensions to CommonMark each page is written with, from the
-/// settings under `markdown`, each named for what an author writes, as
-/// `src/little.yml` describes them.
+/// Which extensions to CommonMark each page is written with, and which
+/// classes its code is highlighted with, from the settings under `markdown`,
+/// each named for what an author writes, as `src/little.yml` describes them.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Markdown {
     // As on GitHub.
@@ -203,6 +203,16 @@ pub struct Markdown {
     pub multiline_blockquotes: bool,
     pub hard_breaks: bool,
     pub cjk_friendly_emphasis: bool,
+    /// The classes code is highlighted with, if it's highlighted.
+    pub highlight: Option<Highlight>,
+}
+
+/// A set of classes for highlighted code: Pygments', like `k` for a keyword,
+/// or GitHub's, like `pl-k`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Highlight {
+    Pygments,
+    GitHub,
 }
 
 impl Default for Markdown {
@@ -469,9 +479,10 @@ fn search(values: &Mapping) -> Result<bool> {
     }
 }
 
-/// The extensions to CommonMark each page is written with, from the
-/// settings under `markdown`, each `true` or `false`. little's own config
-/// sets every one, so any other is a typo.
+/// The extensions to CommonMark each page is written with, each `true` or
+/// `false`, and the classes its code is highlighted with, from the settings
+/// under `markdown`. little's own config sets every one, so any other is a
+/// typo.
 fn markdown(values: &Mapping) -> Result<Markdown> {
     let Some(Value::Mapping(settings)) = values.get("markdown") else {
         bail!("`markdown` must be settings, like `math: true`");
@@ -513,6 +524,12 @@ fn markdown(values: &Mapping) -> Result<Markdown> {
         multiline_blockquotes: on("multiline_blockquotes")?,
         hard_breaks: on("hard_breaks")?,
         cjk_friendly_emphasis: on("cjk_friendly_emphasis")?,
+        highlight: match settings.get("highlight") {
+            Some(Value::String(classes)) if classes == "pygments" => Some(Highlight::Pygments),
+            Some(Value::String(classes)) if classes == "github" => Some(Highlight::GitHub),
+            Some(Value::Bool(false)) => None,
+            _ => bail!("`markdown.highlight` must be `pygments`, `github`, or `false`"),
+        },
     };
     // comrak reads `^[…]` only with footnotes, so it'd be left as text.
     if markdown.inline_footnotes && !markdown.footnotes {
@@ -1038,6 +1055,7 @@ mod tests {
         assert_eq!(builtin, Markdown::default());
         assert!(builtin.tables && builtin.alerts && builtin.emoji && builtin.raw_html);
         assert!(!builtin.math && !builtin.mark);
+        assert_eq!(builtin.highlight, Some(Highlight::Pygments));
 
         // A theme turns one on, and a site another off, each merging over the
         // settings beneath it.
@@ -1048,6 +1066,12 @@ mod tests {
             ..Markdown::default()
         };
         assert_eq!(markdown(site_cfg), expected);
+
+        // A site chooses GitHub's classes, or none.
+        let site_cfg = "markdown:\n  highlight: github\n";
+        assert_eq!(markdown(site_cfg).highlight, Some(Highlight::GitHub));
+        let site_cfg = "markdown:\n  highlight: false\n";
+        assert_eq!(markdown(site_cfg).highlight, None);
 
         let _ = std::fs::remove_dir_all(&site);
     }
@@ -1070,7 +1094,19 @@ mod tests {
         let expected = "`markdown` has no setting `tabels`: its settings are tables, \
                         strikethrough, autolinks, ";
         assert!(message.starts_with(expected), "{message}");
-        assert!(message.ends_with(", cjk_friendly_emphasis"), "{message}");
+        assert!(
+            message.ends_with(", cjk_friendly_emphasis, highlight"),
+            "{message}"
+        );
+
+        // Code is highlighted with a set of classes little has, or none.
+        for value in ["true", "monokai", "Pygments", "\"false\"", ""] {
+            let message = error(&site, &format!("markdown:\n  highlight: {value}\n"));
+            assert_eq!(
+                message,
+                "`markdown.highlight` must be `pygments`, `github`, or `false`"
+            );
+        }
 
         // comrak reads `^[…]` only with footnotes.
         let message = error(

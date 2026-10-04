@@ -203,6 +203,21 @@ a:hover { text-decoration: underline; }
 }
 .content pre code { background: none; padding: 0; color: inherit; font-size: 0.86rem; }
 
+/* Highlighted code: Pygments' classes, as little writes them. */
+.highlight :is(.c, .c1, .cm) { color: #94a3b8; font-style: italic; }
+.highlight :is(.k, .kc, .kd, .kn, .kt, .ow, .cp) { color: #c4b5fd; }
+.highlight :is(.nb, .nc, .bp) { color: #67e8f9; }
+.highlight .nf { color: #93c5fd; }
+.highlight :is(.s, .s1, .s2, .sa, .sb, .sc, .sr) { color: #86efac; }
+.highlight :is(.m, .no, .ni, .se, .si) { color: #fdba74; }
+.highlight :is(.nt, .nd) { color: #f9a8d4; }
+.highlight :is(.na, .nl) { color: #fde68a; }
+.highlight .gd { color: #fca5a5; }
+.highlight .gi { color: #86efac; }
+.highlight :is(.gh, .gu) { color: #c4b5fd; font-weight: 600; }
+.highlight .gs { font-weight: 600; }
+.highlight .ge { font-style: italic; }
+
 .content table {
   border-collapse: collapse;
   width: 100%;

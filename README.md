@@ -127,6 +127,12 @@ my-docs/
   Where Markdown doesn't have them, an alert reads as a quote. An alert can
   have a title of its own, after its kind, like
   `> [!WARNING] Before you upgrade`, but on GitHub, that's a quote.
+- **Code.** Name a code block's language after its fence, like
+  ```` ```rust ````, and little highlights it as it builds the page, in any
+  of the 220 languages [bat](https://github.com/sharkdp/bat) has, named as on
+  GitHub, like `rust`, `rs`, `shell`, or `golang`. A block in a language
+  little doesn't have, like `mermaid`, or without one, stays plain. See
+  [Choosing how code is highlighted](#choosing-how-code-is-highlighted).
 - **Links and images.** Write them relative to the file they're in, as on
   GitHub, and they work wherever the site is published: in
   `guide/install.md`, `![Setup](images/setup.png)` shows
@@ -197,7 +203,8 @@ little's own settings, like the [theme](#choosing-a-theme), the
 [folders](#choosing-folders) a site is built from and into, the
 [headings](#choosing-headings-for-tables-of-contents) its tables of contents
 list, the [Markdown](#choosing-markdowns-extensions) its pages are written
-in, [where `little serve` serves it](#choosing-where-to-serve), the
+in, how their [code is highlighted](#choosing-how-code-is-highlighted),
+[where `little serve` serves it](#choosing-where-to-serve), the
 [repository](#choosing-the-sites-repository) its source is in, and whether
 it's [searchable](#search); a site's name, language, and look are up to the
 theme and the site. The
@@ -397,6 +404,38 @@ markdown:
   as text, and `inline_footnotes` needs `footnotes`. A setting little doesn't
   have, like `tabels`, is an error too, which lists those it has. Otherwise,
   every command stops and says why.
+
+### Choosing how code is highlighted
+
+little highlights each code block as it builds the page, with a class on each
+token for the theme to colour, like `k` for a keyword, so code is in colour
+without JavaScript. `markdown.highlight` chooses the classes:
+
+| Value | Classes |
+| ----- | ------- |
+| `pygments` | Pygments', like `k`, `s2`, and `c1`, which Pygments, Rouge, and Chroma write too, so their stylesheets colour them, like the one `pygmentize -S monokai -f html -a .highlight` writes. little's default. |
+| `github` | GitHub's, like `pl-k`, `pl-s`, and `pl-c`, which [github-markdown-css](https://github.com/sindresorhus/github-markdown-css) colours as GitHub does |
+| `false` | none: code is plain, for a theme that highlights it in the browser, with a script like highlight.js or Prism |
+
+```yaml
+# little.yml
+markdown:
+  highlight: github
+```
+
+- A theme sets it in its `little.yml`, for the classes its CSS colours, and
+  the site's `little.yml` has the last word. The built-in theme colours
+  Pygments' classes.
+- A block's language is the first word after its fence, up to a comma, so
+  ```` ```rust,ignore ```` is Rust. It's matched to a language by its name or
+  its files' extension, in any case, and `shell`, `golang`, `csharp`,
+  `jsonc`, `docker`, and `pwsh` are matched as on GitHub.
+- The languages are bat's, not Pygments', so a token can have another class
+  than Pygments would give it, like Rust's `let`, a type to bat.
+- There are no line numbers, or highlighted lines, yet, and a page can't
+  choose its own highlighting in its frontmatter.
+- Anything but `pygments`, `github`, or `false` is an error, and every
+  command stops and says why.
 
 ### Choosing where to serve
 
@@ -681,9 +720,16 @@ to style, as the built-in theme's
   `<a class="anchor" href="#…">` that links to it, labelled for screen
   readers. It shows nothing until a theme gives it something to show, like
   the built-in theme's `#`.
+- A [highlighted](#choosing-how-code-is-highlighted) code block is a
+  `<pre class="highlight">`, around comrak's `<code class="language-rust">`,
+  with a `<span class="k">` around each token that has a class, as Pygments
+  writes them: never nested, and never over the end of a line. A block in a
+  language little doesn't have is plain text in the same
+  `<pre class="highlight">`.
 - A theme gets the site's [extensions](#choosing-markdowns-extensions) as
   `site.markdown`, so it can load a script only for a site that needs it,
-  like KaTeX inside `{% if site.markdown.math %}`.
+  like KaTeX inside `{% if site.markdown.math %}`, or highlight.js inside
+  `{% if not site.markdown.highlight %}`.
 
 ## Checking links
 

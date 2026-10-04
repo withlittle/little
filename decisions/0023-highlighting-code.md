@@ -1,6 +1,6 @@
 # 0023 — Highlighting code
 
-- Status: proposed
+- Status: accepted
 - Date: 2026-10-04
 
 ## Context
@@ -63,8 +63,8 @@ grammars, is already in little, through comrak, though nothing uses it.
   Pygments' stylesheets, which colour `.highlight .k`, find its tokens. Its
   `<code>` keeps comrak's class, like `language-rust`. Each token is a
   `<span>` with its class, in a row, never nested, and never over the end of
-  a line, as Pygments writes them. Spaces, and tokens without a class, are
-  plain text.
+  a line, as Pygments writes them. Spaces between tokens, and tokens without
+  a class, are plain text.
 - Languages are bat's, named as above, with `shell` for Bash, `golang` for
   Go, `csharp` for C#, `jsonc` for JSON, `docker` for a Dockerfile, and
   `pwsh` for PowerShell. A block in a language little doesn't know, or
@@ -85,8 +85,10 @@ grammars, is already in little, through comrak, though nothing uses it.
 - A theme that highlights code in the browser, with highlight.js or Prism,
   sets `markdown.highlight: false` in its `little.yml`, so its script gets
   code as comrak writes it.
-- little grows by bat's grammars, about 1 MB, which are read when little
-  first highlights a block.
+- little grows by 1.7 MB, to 40 MB: bat's grammars are 1 MB of it, and the
+  rest is syntect's code that reads them, and Oniguruma's, which comrak
+  brought in but nothing used. The grammars are read in a few milliseconds,
+  when little first highlights a block.
 - bat's grammars aren't Pygments' lexers, so a token can have a different
   class than Pygments gives it, like Rust's `let`, which is a type to bat's
   grammar.

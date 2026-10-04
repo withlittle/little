@@ -36,6 +36,18 @@ little config     # print the site's config, merged
 > Turn on more of Markdown, like `math` or `smart_punctuation`, under
 > `markdown` in `little.yml`.
 
+## Code, in colour
+
+Name a code block's language after its fence, and little highlights it as it
+builds the page, for the theme to colour:
+
+```yaml
+# little.yml
+markdown:
+  math: true            # $x^2$
+  highlight: pygments   # or github, or false for a theme's own highlighter
+```
+
 ## Emoji, footnotes, and HTML
 
 GitHub's emoji shortcodes work :tada:, and so do footnotes.[^cascade]
