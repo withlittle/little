@@ -23,11 +23,13 @@ cargo fmt                   # format — run before committing
   chain of themes a site uses, its source and destination folders, the levels
   of heading its tables of contents list, the host and port
   `little serve` serves it at, the `url` it's published at, the `repo` and
-  `branch` its source is in, and whether it's indexed for search.
+  `branch` its source is in, whether it's indexed for search, and the
+  extensions to Markdown its pages are written with.
 - `src/little.yml` — little's own defaults (level 1), compiled into the binary.
-- `src/render.rs` — Markdown (comrak) + YAML frontmatter → HTML fragment, with
-  each relative link led from the folder of the file it's in, and each link
-  to a page's `.md` file led to the page, noting each link as it's written.
+- `src/render.rs` — Markdown (comrak, with the extensions the site turns on) +
+  YAML frontmatter → HTML fragment, with each relative link led from the
+  folder of the file it's in, and each link to a page's `.md` file led to the
+  page, noting each link as it's written.
 - `src/site.rs` — build pipeline: walk the source (`docs/`), render its
   Markdown, copy its other files, apply theme, index it for search, write the
   destination (`dist/`), noting the source file and URL of each file it
@@ -201,4 +203,10 @@ Record notable choices as short ADRs in `decisions/`. Locked so far:
   `.git`, else the site's folder; links into the repository aren't
   checked — see
   [`decisions/0020-links-to-a-pages-file-in-its-repo.md`](./decisions/0020-links-to-a-pages-file-in-its-repo.md).
+- **Markdown's extensions:** `markdown` turns each of comrak's extensions
+  to what an author can write on or off, under little's own names, like
+  `emoji` and `raw_html`, and cascades like any config: little turns on
+  GitHub's and leaves the rest off. Callouts are GitHub's alerts, in GitHub's
+  markup — see
+  [`decisions/0022-markdown-extensions.md`](./decisions/0022-markdown-extensions.md).
 - **Plugins:** sandboxed WASM (planned).

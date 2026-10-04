@@ -181,6 +181,7 @@ pub fn build(site_dir: &Path) -> Result<Built> {
         url: site_url,
         repo,
         search: searchable,
+        markdown,
         ..
     } = config::load(site_dir)?;
     if !source_dir.is_dir() {
@@ -221,8 +222,9 @@ pub fn build(site_dir: &Path) -> Result<Built> {
         }
         let raw =
             fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
-        let rendered = render::parse_document(&raw, &folder_url(&rel), &toc_depths, &site_url)
-            .with_context(|| format!("rendering {}", path.display()))?;
+        let rendered =
+            render::parse_document(&raw, &folder_url(&rel), &toc_depths, &site_url, &markdown)
+                .with_context(|| format!("rendering {}", path.display()))?;
 
         // A key left blank is as good as not there: a page never holds null,
         // and `title:` shouldn't wipe out the title little finds.
@@ -1235,9 +1237,15 @@ mod tests {
     fn a_page_toc_nests_its_headings() {
         let md = "### Before\n\n### Also Before\n\n## One\n\n### One A\n\n#### One A i\n\n\
                   ### One B\n\n## Two\n\n#### Two i\n";
-        let toc = render::parse_document(md, "/", &(2..=6), &SiteUrl::default())
-            .unwrap()
-            .toc;
+        let toc = render::parse_document(
+            md,
+            "/",
+            &(2..=6),
+            &SiteUrl::default(),
+            &config::Markdown::default(),
+        )
+        .unwrap()
+        .toc;
 
         // A heading goes under the nearest one above it with fewer `#`s, even
         // two levels up; before the first `##`, it goes at the top, beside the

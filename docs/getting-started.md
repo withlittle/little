@@ -29,3 +29,23 @@ little config     # print the site's config, merged
 - [x] Render a Markdown page
 - [x] Feel the dev loop
 - [ ] Decide on little's language 😉
+
+## An alert, as on GitHub
+
+> [!TIP]
+> Turn on more of Markdown, like `math` or `smart_punctuation`, under
+> `markdown` in `little.yml`.
+
+## Emoji, footnotes, and HTML
+
+GitHub's emoji shortcodes work :tada:, and so do footnotes.[^cascade]
+
+<details>
+<summary>And HTML, like this <code>&lt;details&gt;</code></summary>
+
+Its Markdown is rendered too, after a blank line.
+
+</details>
+
+[^cascade]: Like every setting, `markdown` cascades: little sets it, then the
+    theme, then the site.

@@ -1,6 +1,6 @@
 # 0022 — Choosing Markdown's extensions, and callouts
 
-- Status: proposed
+- Status: accepted
 - Date: 2026-10-04
 
 ## Context
@@ -87,7 +87,8 @@ its theme.
 - A theme reads them as `site.markdown`, like `site.markdown.math`.
 - A setting that isn't `true` or `false` stops the build, as YAML reads
   `yes` and `"true"` as text; so does a setting little doesn't have, like
-  `tabels`, naming it, and listing those it has.
+  `tabels`, naming it, and listing those it has, and `inline_footnotes`
+  without `footnotes`, as comrak would leave `^[a note]` as text.
 - Callouts are GitHub's alerts, in GitHub's markup: `[!NOTE]`, `[!TIP]`,
   `[!IMPORTANT]`, `[!WARNING]`, and `[!CAUTION]`, in any case. An alert can
   have a title of its own, like `> [!WARNING] Before you upgrade`. The
@@ -108,8 +109,8 @@ its theme.
   a quote; and `>[!NOTE]`, with no space, is a quote, where GitHub shows an
   alert. Titles are in English, but an alert's own title can be in any
   language.
-- Nothing new to download or build: every extension is comrak's, and little
-  grows by only a few KB.
+- Nothing new to download or build: every extension is comrak's, already
+  in little, whose binary grows by about 85 KB, under 0.25%.
 - Limits, for now:
   - a page can't choose its own extensions in frontmatter;
   - callouts are GitHub's five kinds, without GitHub's icons;

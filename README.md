@@ -106,10 +106,27 @@ my-docs/
   a PDF, is copied as it is to the same path in the site, so keep it beside
   the pages that use it. One at the same path as one of the theme's files
   replaces it.
-- **Markdown.** CommonMark plus GitHub Flavored Markdown: tables,
-  strikethrough, task lists, autolinks, and footnotes. Every heading gets an
-  `id`, so you can link straight to a section
-  (`guide/install.md#from-source`).
+- **Markdown.** CommonMark plus GitHub's extensions to it: tables,
+  strikethrough, task lists, autolinks, footnotes, callouts, emoji shortcodes
+  like `:tada:`, and HTML, like `<details>`. To turn on others, like math, or
+  to turn these off, see
+  [Choosing Markdown's extensions](#choosing-markdowns-extensions). Every
+  heading gets an `id`, so you can link straight to a section
+  (`guide/install.md#from-source`), and the built-in theme shows a `#` that
+  links to it when you point at the heading.
+- **Callouts.** GitHub's alerts make a note or a warning stand out from the
+  text around it. There are five kinds, `[!NOTE]`, `[!TIP]`, `[!IMPORTANT]`,
+  `[!WARNING]`, and `[!CAUTION]`, each with its own colour in the built-in
+  theme:
+
+  ```markdown
+  > [!TIP]
+  > `little serve` rebuilds the site each time you save.
+  ```
+
+  Where Markdown doesn't have them, an alert reads as a quote. An alert can
+  have a title of its own, after its kind, like
+  `> [!WARNING] Before you upgrade`, but on GitHub, that's a quote.
 - **Links and images.** Write them relative to the file they're in, as on
   GitHub, and they work wherever the site is published: in
   `guide/install.md`, `![Setup](images/setup.png)` shows
@@ -179,7 +196,8 @@ built-in defaults (see [`src/little.yml`](./src/little.yml)) cover only
 little's own settings, like the [theme](#choosing-a-theme), the
 [folders](#choosing-folders) a site is built from and into, the
 [headings](#choosing-headings-for-tables-of-contents) its tables of contents
-list, [where `little serve` serves it](#choosing-where-to-serve), the
+list, the [Markdown](#choosing-markdowns-extensions) its pages are written
+in, [where `little serve` serves it](#choosing-where-to-serve), the
 [repository](#choosing-the-sites-repository) its source is in, and whether
 it's [searchable](#search); a site's name, language, and look are up to the
 theme and the site. The
@@ -324,6 +342,61 @@ toc_max_depth: 4
   frontmatter.
 - Each must be a level from 1 to 6, and `toc_min_depth` can't be more than
   `toc_max_depth`: otherwise, the build stops and says why.
+
+### Choosing Markdown's extensions
+
+`markdown` turns each of little's extensions to CommonMark on or off. little
+turns on GitHub's, so Markdown written for GitHub renders as it does there:
+
+| Key | Default | Lets you write… |
+| --- | ------- | --------------- |
+| `tables` | `true` | tables, with `\|` between cells |
+| `strikethrough` | `true` | `~~struck through~~` text |
+| `autolinks` | `true` | links without `<…>`, like `www.example.com` |
+| `task_lists` | `true` | `- [ ] tasks`, and `- [x] done` ones |
+| `footnotes` | `true` | footnotes, like `[^1]`, with `[^1]: the note` below |
+| `alerts` | `true` | callouts, like `> [!NOTE]` |
+| `emoji` | `true` | emoji shortcodes, like `:tada:` for 🎉 |
+| `raw_html` | `true` | HTML, like `<details>`, rendered as it is |
+| `math` | `false` | math, like `$x^2$`, `$$…$$`, and ```` ```math ```` blocks, for a theme's script to render |
+| `smart_punctuation` | `false` | `"quotes"` that curl, `--` and `---` for – and —, and `...` for … |
+| `superscript` | `false` | `x^2^` |
+| `subscript` | `false` | `H~2~O`, so only `~~` strikes through |
+| `mark` | `false` | `==marked==` text |
+| `insert` | `false` | `++inserted++` text |
+| `description_lists` | `false` | a term, with `: its description` on the line below |
+| `inline_footnotes` | `false` | footnotes in the text, like `^[a note]`; needs `footnotes` |
+| `fenced_divs` | `false` | `:::name`, then a line `:::` below, for a `<div class="name">` |
+| `multiline_blockquotes` | `false` | a quote between two `>>>` lines, as on GitLab |
+| `hard_breaks` | `false` | a line break, kept wherever a paragraph has one |
+| `cjk_friendly_emphasis` | `false` | `**` and `*` beside Chinese, Japanese, and Korean punctuation |
+
+To turn smart punctuation on, say, and HTML off, set them in `little.yml`:
+
+```yaml
+# little.yml
+markdown:
+  smart_punctuation: true
+  raw_html: false
+```
+
+- Set only those you change: the rest stay as they were. A theme can set
+  them in its `little.yml` too, like `math: true` in a theme that renders
+  math, and the site's `little.yml` has the last word. They're the same for
+  every page: a page can't choose its own in its frontmatter.
+- HTML is rendered as it is, `<script>` too, so a site built from Markdown
+  it doesn't trust should set `raw_html: false`. A link or image in HTML
+  leads where a browser takes it: little doesn't lead it from the folder of
+  the file it's in, to a page from its `.md` file, or under the path of the
+  site's [`url`](#choosing-the-sites-url), and warns of a broken one as a
+  reader follows it.
+- `math` finds the math, and leaves it for a theme to render, with a script
+  like KaTeX or MathJax. The built-in theme doesn't, so it shows the math as
+  it's written, without its `$`s.
+- Each must be `true` or `false`, unquoted, as YAML reads `yes` and `"true"`
+  as text, and `inline_footnotes` needs `footnotes`. A setting little doesn't
+  have, like `tabels`, is an error too, which lists those it has. Otherwise,
+  every command stops and says why.
 
 ### Choosing where to serve
 
@@ -593,6 +666,24 @@ box is [Pagefind](https://pagefind.app/)'s own, which the built-in theme uses:
   [JavaScript API](https://pagefind.app/docs/api/), from
   `{{ '/pagefind/pagefind.js' | url }}`.
 - Each page is indexed in the language of its `<html lang>`.
+
+### Styling Markdown
+
+`page.content` is the page's Markdown as comrak renders it, for a theme's CSS
+to style, as the built-in theme's
+[`style.css`](./theme/_static/assets/style.css) does:
+
+- An alert is a `<div class="markdown-alert markdown-alert-note">`, or
+  `-tip`, `-important`, `-warning`, or `-caution`, with its title in a
+  `<p class="markdown-alert-title">`, as on GitHub, so CSS written for
+  GitHub's alerts styles them too.
+- Each heading has an `id`, and after its text, an empty
+  `<a class="anchor" href="#…">` that links to it, labelled for screen
+  readers. It shows nothing until a theme gives it something to show, like
+  the built-in theme's `#`.
+- A theme gets the site's [extensions](#choosing-markdowns-extensions) as
+  `site.markdown`, so it can load a script only for a site that needs it,
+  like KaTeX inside `{% if site.markdown.math %}`.
 
 ## Checking links
 
