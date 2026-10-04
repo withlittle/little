@@ -43,7 +43,8 @@ and a rejection of their worst friction.
 
 ## Tech foundation
 - **Language:** Rust — single binary, fast builds at scale, no runtime deps.
-- **Markdown:** `comrak` (CommonMark + GFM).
+- **Markdown:** `comrak` (CommonMark + GFM), with code highlighted as each
+  page is built (syntect, with bat's grammars, built in).
 - **Theming:** `minijinja` templates; structured data in, any HTML out.
 - **Config:** cascading YAML.
 - **Plugins (planned):** sandboxed **WASM**, so plugins are language-agnostic
@@ -58,7 +59,7 @@ Each slice ships as a small, reviewable PR, dogfooded against the example site i
 
 - [x] **0 — Walking skeleton:** Markdown → themed HTML, cascading config, live reload.
 - [ ] **1 — Navigation & structure:** nested sections, explicit ordering, sidebar tree.
-- [ ] **2 — Authoring essentials:** syntax highlighting, callouts/admonitions, per-page TOC, heading anchors.
+- [x] **2 — Authoring essentials:** syntax highlighting, callouts/admonitions, per-page TOC, heading anchors.
 - [ ] **3 — `little init` + default theme:** scaffold a site in one command; a polished, responsive, accessible default theme.
 - [x] **4 — Search:** client-side search index out of the box.
 - [ ] **5 — Plugin API (WASM):** sandboxed plugins; first plugin — docstring / API extraction.
