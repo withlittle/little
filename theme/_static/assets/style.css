@@ -141,6 +141,21 @@ a:hover { text-decoration: underline; }
 .content h3 { font-size: 1.15rem; margin: 1.8rem 0 0.6rem; }
 .content p { margin: 0.9rem 0; }
 
+/* Each heading's link to itself, after its text: a "#", shown when the
+   heading is hovered or the link has focus. Its label names it to screen
+   readers, so they don't read the "#". */
+.content .anchor {
+  margin-left: 0.4rem;
+  color: #8a909a;
+  opacity: 0;
+}
+.content .anchor::before { content: "#"; }
+.content :is(h1, h2, h3, h4, h5, h6):hover .anchor,
+.content .anchor:focus-visible { opacity: 1; }
+.content .anchor:hover { color: #7c3aed; text-decoration: none; }
+/* Keep what a link jumps to, like a heading, clear of the sticky header. */
+.content [id] { scroll-margin-top: 5rem; }
+
 .content blockquote {
   margin: 1.2rem 0;
   padding: 0.6rem 1rem;
@@ -149,6 +164,28 @@ a:hover { text-decoration: underline; }
   border-radius: 0 8px 8px 0;
   color: #3a4048;
 }
+
+/* Alerts, like GitHub's: `> [!NOTE]` and the rest, in GitHub's colours. */
+.content .markdown-alert {
+  margin: 1.2rem 0;
+  padding: 0.6rem 1rem;
+  border-left: 3px solid var(--alert-color);
+  background: color-mix(in srgb, var(--alert-color) 6%, transparent);
+  border-radius: 0 8px 8px 0;
+}
+.content .markdown-alert > :first-child { margin-top: 0; }
+.content .markdown-alert > :last-child { margin-bottom: 0; }
+.content .markdown-alert-title {
+  margin-bottom: 0.3rem;
+  font-weight: 600;
+  color: var(--alert-color);
+}
+.content .markdown-alert-title + * { margin-top: 0.3rem; }
+.content .markdown-alert-note { --alert-color: #0969da; }
+.content .markdown-alert-tip { --alert-color: #1a7f37; }
+.content .markdown-alert-important { --alert-color: #8250df; }
+.content .markdown-alert-warning { --alert-color: #9a6700; }
+.content .markdown-alert-caution { --alert-color: #d1242f; }
 
 .content code {
   font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
@@ -165,6 +202,21 @@ a:hover { text-decoration: underline; }
   overflow-x: auto;
 }
 .content pre code { background: none; padding: 0; color: inherit; font-size: 0.86rem; }
+
+/* Highlighted code: Pygments' classes, as little writes them. */
+.highlight :is(.c, .c1, .cm) { color: #94a3b8; font-style: italic; }
+.highlight :is(.k, .kc, .kd, .kn, .kt, .ow, .cp) { color: #c4b5fd; }
+.highlight :is(.nb, .nc, .bp) { color: #67e8f9; }
+.highlight .nf { color: #93c5fd; }
+.highlight :is(.s, .s1, .s2, .sa, .sb, .sc, .sr) { color: #86efac; }
+.highlight :is(.m, .no, .ni, .se, .si) { color: #fdba74; }
+.highlight :is(.nt, .nd) { color: #f9a8d4; }
+.highlight :is(.na, .nl) { color: #fde68a; }
+.highlight .gd { color: #fca5a5; }
+.highlight .gi { color: #86efac; }
+.highlight :is(.gh, .gu) { color: #c4b5fd; font-weight: 600; }
+.highlight .gs { font-weight: 600; }
+.highlight .ge { font-style: italic; }
 
 .content table {
   border-collapse: collapse;

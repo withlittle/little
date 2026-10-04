@@ -2413,6 +2413,7 @@ dependencies = [
  "tar",
  "tiny_http",
  "tokio",
+ "two-face",
  "ureq",
  "url",
  "walkdir",
@@ -4790,6 +4791,17 @@ dependencies = [
  "serde_yaml 0.8.26",
  "thiserror 1.0.69",
  "toml 0.5.11",
+]
+
+[[package]]
+name = "two-face"
+version = "0.5.2+bat-0.26.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "915be7adc2ff6f4338acbf71f3eda0a146f46003b992a1669c674308610efdac"
+dependencies = [
+ "serde",
+ "serde_derive",
+ "syntect",
 ]
 
 [[package]]

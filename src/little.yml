@@ -39,3 +39,38 @@ branch: main
 # so readers can search it. It's off unless the theme has a search box to use
 # the index, and a site can still turn it off.
 search: false
+
+# The extensions to CommonMark each page is written with: GitHub's are on, as
+# authors know them, and the rest are off, so their syntax can't catch anyone
+# out. A theme or a site can turn any of them on or off, like `math: true` for
+# a theme that renders math.
+markdown:
+  # As on GitHub.
+  tables: true
+  strikethrough: true          # ~~struck~~
+  autolinks: true              # www.example.com and https://example.com, without <>
+  task_lists: true             # - [x] done
+  footnotes: true              # a note[^1], and below, [^1]: the note
+  alerts: true                 # callouts: > [!NOTE], [!TIP], [!IMPORTANT], [!WARNING], or [!CAUTION]
+  emoji: true                  # :tada:
+  # HTML in Markdown, like <details>, as it's written, scripts and all: turn it
+  # off for Markdown you don't trust.
+  raw_html: true
+  # Beyond GitHub.
+  math: false                  # $x$, $$x$$, $`x`$, and ```math, marked for the theme to render
+  smart_punctuation: false     # "curly quotes", -- and --- for dashes, and ... for …
+  superscript: false           # x^2^
+  subscript: false             # H~2~O, so only ~~ strikes through
+  mark: false                  # ==marked==
+  insert: false                # ++inserted++
+  description_lists: false     # a term, then a line of `: its definition`
+  inline_footnotes: false      # a note^[the note], with `footnotes` on
+  fenced_divs: false           # :::name, then a line of :::, around a <div class="name">
+  multiline_blockquotes: false # >>>, then a line of >>>, around a quote
+  hard_breaks: false           # a <br> for every line break in a paragraph
+  cjk_friendly_emphasis: false # ** and * beside Chinese, Japanese, and Korean punctuation
+  # The classes code is highlighted with, as little builds each page, for the
+  # theme to colour: `pygments`, like `k` for a keyword and `s2` for a string,
+  # `github`, like `pl-k` and `pl-s`, or `false`, for a theme that highlights
+  # code itself.
+  highlight: pygments

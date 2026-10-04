@@ -3,13 +3,15 @@
 
 use anyhow::{Context, Result};
 use comrak::nodes::{AstNode, NodeValue};
+use comrak::options::Plugins;
 use comrak::{Anchorizer, Arena, Options};
 use serde_yaml::Mapping;
 use std::borrow::Cow;
 use std::mem;
 use std::ops::RangeInclusive;
 
-use crate::config::SiteUrl;
+use crate::config::{Markdown, SiteUrl};
+use crate::highlight;
 
 /// One heading in a page's in-page table of contents. They're listed in the
 /// order they come, and the build nests them like `site.nav`.
@@ -48,18 +50,20 @@ pub struct WrittenLink {
     pub href: String,
 }
 
-/// Parse a document into its frontmatter, rendered HTML, and outline, which
-/// lists its headings at the levels in `toc_depths` (the config's
-/// `toc_min_depth` to `toc_max_depth`). Links and images relative to the
-/// document, like `images/logo.png`, lead from `folder`, the URL of the folder
-/// it's in, like `/guide/`; those from the root of the site get the path of
-/// the site's `url`. A link to a page's Markdown file, like `install.md`,
-/// leads to the page.
+/// Parse a document, written with the extensions to CommonMark in
+/// `markdown`, into its frontmatter, rendered HTML, with its code highlighted
+/// with `markdown`'s classes, and outline, which lists its headings at the
+/// levels in `toc_depths` (the config's `toc_min_depth` to `toc_max_depth`).
+/// Links and images relative to the document, like `images/logo.png`, lead
+/// from `folder`, the URL of the folder it's in, like `/guide/`; those from
+/// the root of the site get the path of the site's `url`. A link to a page's
+/// Markdown file, like `install.md`, leads to the page.
 pub fn parse_document(
     raw: &str,
     folder: &str,
     toc_depths: &RangeInclusive<u8>,
     url: &SiteUrl,
+    markdown: &Markdown,
 ) -> Result<Rendered> {
     let (frontmatter_src, body) = split_frontmatter(raw);
 
@@ -70,15 +74,17 @@ pub fn parse_document(
         .context("parsing frontmatter")?
         .unwrap_or_default();
 
-    let options = render_options();
+    let options = render_options(markdown);
     let arena = Arena::new();
     let root = comrak::parse_document(&arena, &body, &options);
 
     let links = link_within_site(root, folder, url, &options);
     let (toc, first_h1) = outline(root, toc_depths);
 
+    let mut plugins = Plugins::default();
+    plugins.render.codefence_syntax_highlighter = highlight::highlighter(markdown.highlight);
     let mut html = String::new();
-    comrak::html::format_document(root, &options, &mut html)
+    comrak::html::format_document_with_plugins(root, &options, &mut html, &plugins)
         .context("rendering markdown to HTML")?;
 
     Ok(Rendered {
@@ -90,17 +96,36 @@ pub fn parse_document(
     })
 }
 
-/// comrak options shared by rendering and outline building. Heading IDs are
-/// enabled (empty prefix) so the anchors the TOC links to actually exist in the
-/// HTML; both sides slugify with comrak's `Anchorizer`, so they stay in sync.
-fn render_options() -> Options<'static> {
+/// comrak's options for a page: the extensions the site chose, and heading
+/// IDs (with an empty prefix), so the anchors the TOC links to actually exist
+/// in the HTML; both sides slugify with comrak's `Anchorizer`, so they stay in
+/// sync.
+fn render_options(markdown: &Markdown) -> Options<'static> {
     let mut options = Options::default();
-    options.extension.table = true;
-    options.extension.strikethrough = true;
-    options.extension.autolink = true;
-    options.extension.tasklist = true;
-    options.extension.footnotes = true;
-    options.extension.header_id_prefix = Some(String::new());
+    let extension = &mut options.extension;
+    extension.table = markdown.tables;
+    extension.strikethrough = markdown.strikethrough;
+    extension.autolink = markdown.autolinks;
+    extension.tasklist = markdown.task_lists;
+    extension.footnotes = markdown.footnotes;
+    extension.alerts = markdown.alerts;
+    extension.shortcodes = markdown.emoji;
+    // GitHub's math: `$…$`, `$$…$$`, `` $`…`$ ``, and ```` ```math ````.
+    extension.math_dollars = markdown.math;
+    extension.math_code = markdown.math;
+    extension.superscript = markdown.superscript;
+    extension.subscript = markdown.subscript;
+    extension.highlight = markdown.mark;
+    extension.insert = markdown.insert;
+    extension.description_lists = markdown.description_lists;
+    extension.inline_footnotes = markdown.inline_footnotes;
+    extension.block_directive = markdown.fenced_divs;
+    extension.multiline_block_quotes = markdown.multiline_blockquotes;
+    extension.cjk_friendly_emphasis = markdown.cjk_friendly_emphasis;
+    extension.header_id_prefix = Some(String::new());
+    options.parse.smart = markdown.smart_punctuation;
+    options.render.hardbreaks = markdown.hard_breaks;
+    options.render.r#unsafe = markdown.raw_html;
     options
 }
 
@@ -110,8 +135,8 @@ fn render_options() -> Options<'static> {
 /// a `/` at the end, as hosts differ. A link to a page's Markdown file leads
 /// to the page, as it leads to the file on GitHub. Then one from the root of
 /// the site gets the site's path, so an author can write `/guide/` wherever
-/// the site is published. Raw HTML isn't rendered, so its links needn't be
-/// found.
+/// the site is published. Links in raw HTML are left as they're written, for
+/// the browser to follow.
 ///
 /// Returns each link and image as it's written, and as it's read from the
 /// HTML.
@@ -218,10 +243,10 @@ fn has_scheme(url: &str) -> bool {
 /// Walk the parsed document once to build the TOC from the headings at the
 /// levels in `toc_depths`, and find the first `<h1>`.
 ///
-/// Every heading is fed to the same `Anchorizer` in document order so the slugs
-/// match the `id`s comrak emits into the HTML (its formatter anchorizes every
-/// heading the same way), including the `-1`, `-2` … suffixes added to
-/// duplicates.
+/// Every heading is fed to the same `Anchorizer` in document order, with the
+/// text comrak gives it its `id` from, so the slugs match the `id`s comrak
+/// emits into the HTML (its formatter anchorizes every heading the same way),
+/// including the `-1`, `-2` … suffixes added to duplicates.
 fn outline<'a>(
     root: &'a AstNode<'a>,
     toc_depths: &RangeInclusive<u8>,
@@ -237,7 +262,7 @@ fn outline<'a>(
         };
 
         let text = heading_text(node);
-        let slug = anchorizer.anchorize(&text);
+        let slug = anchorizer.anchorize(&node.collect_text());
 
         if level == 1 && first_h1.is_none() {
             first_h1 = Some(text.clone());
@@ -255,22 +280,21 @@ fn outline<'a>(
     (toc, first_h1)
 }
 
-/// Collect the plain-text content of a heading (text + inline code, descending
-/// through emphasis/links/etc.).
+/// A heading's text, as a reader sees it: its text and code, its math as
+/// it's written, and its emoji, with a space for each line break.
 fn heading_text<'a>(node: &'a AstNode<'a>) -> String {
-    let mut out = String::new();
-    collect_text(node, &mut out);
-    out
-}
-
-fn collect_text<'a>(node: &'a AstNode<'a>, out: &mut String) {
-    for child in node.children() {
-        match &child.data.borrow().value {
-            NodeValue::Text(text) => out.push_str(text),
-            NodeValue::Code(code) => out.push_str(&code.literal),
-            _ => collect_text(child, out),
+    let mut text = String::new();
+    for node in node.descendants() {
+        match &node.data.borrow().value {
+            NodeValue::Text(literal) => text.push_str(literal),
+            NodeValue::Code(code) => text.push_str(&code.literal),
+            NodeValue::Math(math) => text.push_str(&math.literal),
+            NodeValue::ShortCode(emoji) => text.push_str(&emoji.emoji),
+            NodeValue::LineBreak | NodeValue::SoftBreak => text.push(' '),
+            _ => {}
         }
     }
+    text
 }
 
 /// Split a `---` fenced YAML frontmatter block from the body.
@@ -313,13 +337,21 @@ fn split_frontmatter(raw: &str) -> (String, String) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::Highlight;
     use serde_yaml::Value;
 
     /// little's defaults, from `src/little.yml`: every heading but the title.
     const TOC_DEPTHS: RangeInclusive<u8> = 2..=6;
 
     fn render(md: &str) -> Rendered {
-        parse_document(md, "/", &TOC_DEPTHS, &SiteUrl::default()).expect("document renders")
+        parse_document(
+            md,
+            "/",
+            &TOC_DEPTHS,
+            &SiteUrl::default(),
+            &Markdown::default(),
+        )
+        .expect("document renders")
     }
 
     #[test]
@@ -354,9 +386,15 @@ mod tests {
         ] {
             let message = format!(
                 "{:#}",
-                parse_document(md, "/", &TOC_DEPTHS, &SiteUrl::default())
-                    .err()
-                    .unwrap()
+                parse_document(
+                    md,
+                    "/",
+                    &TOC_DEPTHS,
+                    &SiteUrl::default(),
+                    &Markdown::default()
+                )
+                .err()
+                .unwrap()
             );
             assert!(message.starts_with("parsing frontmatter: "), "{message}");
             assert!(message.contains("expected a YAML mapping"), "{message}");
@@ -375,7 +413,8 @@ mod tests {
         let md = "# Title\n\n## Getting Started\n\n### Install\n\n#### From Source\n\n\
                   ##### On Linux\n\n###### With Nix\n\n# Another Title\n\n## Usage\n";
         let toc = |depths| {
-            let r = parse_document(md, "/", &depths, &SiteUrl::default()).unwrap();
+            let r = parse_document(md, "/", &depths, &SiteUrl::default(), &Markdown::default())
+                .unwrap();
             let items = r.toc.iter().map(|t| format!("{} {}", t.depth, t.anchor));
             items.collect::<Vec<_>>()
         };
@@ -427,6 +466,149 @@ mod tests {
     }
 
     #[test]
+    fn headings_with_math_emoji_or_two_lines_link_from_the_toc() {
+        let markdown = Markdown {
+            math: true,
+            ..Markdown::default()
+        };
+        let md = "## The $x^2$ term\n\n## Done :tada:\n\nTwo\nlines\n---\n";
+        let r = parse_document(md, "/", &TOC_DEPTHS, &SiteUrl::default(), &markdown).unwrap();
+        let titles: Vec<_> = r.toc.iter().map(|item| item.title.as_str()).collect();
+        assert_eq!(titles, ["The x^2 term", "Done 🎉", "Two lines"]);
+        // Each links to its heading's id, as comrak writes it.
+        for item in &r.toc {
+            let id = format!("id=\"{}\"", &item.anchor[1..]);
+            assert!(r.html.contains(&id), "{id} in {}", r.html);
+        }
+    }
+
+    #[test]
+    fn each_extension_turns_on_and_off() {
+        // Each setting, some Markdown, and a piece of the HTML it's rendered
+        // to only with the setting on.
+        type Setting = fn(&mut Markdown) -> &mut bool;
+        let cases: [(Setting, &str, &str); 20] = [
+            (|m| &mut m.tables, "| a |\n| - |\n| b |\n", "<table>"),
+            (|m| &mut m.strikethrough, "~~a~~", "<del>a</del>"),
+            (|m| &mut m.autolinks, "www.example.com", "<a href="),
+            (|m| &mut m.task_lists, "- [x] a", "type=\"checkbox\""),
+            (|m| &mut m.footnotes, "a[^1]\n\n[^1]: b", "data-footnotes"),
+            (|m| &mut m.alerts, "> [!NOTE]\n> a", "markdown-alert-note"),
+            (|m| &mut m.emoji, ":tada:", "🎉"),
+            (|m| &mut m.raw_html, "<kbd>a</kbd>", "<kbd>a</kbd>"),
+            (|m| &mut m.math, "$a$", "data-math-style=\"inline\""),
+            (|m| &mut m.smart_punctuation, "\"a\" -- b", "“a” – b"),
+            (|m| &mut m.superscript, "a^2^", "<sup>2</sup>"),
+            (|m| &mut m.subscript, "H~2~O", "<sub>2</sub>"),
+            (|m| &mut m.mark, "==a==", "<mark>a</mark>"),
+            (|m| &mut m.insert, "++a++", "<ins>a</ins>"),
+            (|m| &mut m.description_lists, "a\n: b", "<dl>"),
+            (|m| &mut m.inline_footnotes, "a^[b]", "data-footnotes"),
+            (
+                |m| &mut m.fenced_divs,
+                ":::note\na\n:::",
+                "<div class=\"note\">",
+            ),
+            (
+                |m| &mut m.multiline_blockquotes,
+                ">>>\na\n\nb\n>>>",
+                "<blockquote>\n<p>a</p>\n<p>b",
+            ),
+            (|m| &mut m.hard_breaks, "a\nb", "a<br />"),
+            (
+                |m| &mut m.cjk_friendly_emphasis,
+                "**これは重要。**だ",
+                "<strong>",
+            ),
+        ];
+        for (setting, md, html) in cases {
+            for on in [true, false] {
+                let mut markdown = Markdown::default();
+                *setting(&mut markdown) = on;
+                let rendered =
+                    parse_document(md, "/", &TOC_DEPTHS, &SiteUrl::default(), &markdown).unwrap();
+                assert_eq!(
+                    rendered.html.contains(html),
+                    on,
+                    "{md:?}: {}",
+                    rendered.html
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn alerts_are_githubs_and_can_have_a_title() {
+        let r = render("> [!TIP]\n> Run it.\n\n> [!warning] Before you upgrade\n> Back up.\n");
+        let tip = "<div class=\"markdown-alert markdown-alert-tip\">\n\
+                   <p class=\"markdown-alert-title\">Tip</p>\n<p>Run it.</p>\n</div>";
+        assert!(r.html.contains(tip), "{}", r.html);
+        let warning = "<div class=\"markdown-alert markdown-alert-warning\">\n\
+                       <p class=\"markdown-alert-title\">Before you upgrade</p>";
+        assert!(r.html.contains(warning), "{}", r.html);
+    }
+
+    #[test]
+    fn code_is_highlighted_with_the_chosen_classes() {
+        let md = "```rust\nfn main() {}\n```\n";
+        let html = |highlight| {
+            let markdown = Markdown {
+                highlight,
+                ..Markdown::default()
+            };
+            parse_document(md, "/", &TOC_DEPTHS, &SiteUrl::default(), &markdown)
+                .unwrap()
+                .html
+        };
+        assert_eq!(
+            html(Some(Highlight::Pygments)),
+            "<pre class=\"highlight\"><code class=\"language-rust\"><span class=\"kd\">fn</span> \
+             <span class=\"nf\">main</span>() {}\n</code></pre>\n"
+        );
+        assert_eq!(
+            html(Some(Highlight::GitHub)),
+            "<pre class=\"highlight\"><code class=\"language-rust\"><span class=\"pl-k\">fn</span> \
+             <span class=\"pl-en\">main</span>() {}\n</code></pre>\n"
+        );
+        // `false` leaves code as comrak writes it, for a theme's script.
+        assert_eq!(
+            html(None),
+            "<pre><code class=\"language-rust\">fn main() {}\n</code></pre>\n"
+        );
+    }
+
+    #[test]
+    fn code_without_a_language_little_knows_is_plain() {
+        for (md, code) in [
+            (
+                "```mermaid\nA-->B\n```\n",
+                "<code class=\"language-mermaid\">",
+            ),
+            ("```\nA-->B\n```\n", "<code>"),
+            ("    A-->B\n", "<code>"),
+        ] {
+            let expected = format!("<pre class=\"highlight\">{code}A--&gt;B\n</code></pre>\n");
+            assert_eq!(render(md).html, expected, "{md:?}");
+        }
+    }
+
+    #[test]
+    fn math_blocks_arent_highlighted() {
+        for math in [true, false] {
+            let markdown = Markdown {
+                math,
+                ..Markdown::default()
+            };
+            let md = "```math\nx^2\n```\n";
+            let r = parse_document(md, "/", &TOC_DEPTHS, &SiteUrl::default(), &markdown).unwrap();
+            assert_eq!(
+                r.html,
+                "<pre><code class=\"language-math\" data-math-style=\"display\">x^2\n</code></pre>\n"
+            );
+        }
+    }
+
+    #[test]
     fn first_h1_is_captured() {
         let r = render("# The Real Title\n\n## Sub\n");
         assert_eq!(r.first_h1.as_deref(), Some("The Real Title"));
@@ -447,7 +629,7 @@ mod tests {
         let md = "[Install](/guide/install) ![Logo](/logo.png) [Guide][guide]\n\n\
                   [Usage](usage) [Top](#top) [little](https://example.com/)\n\n\
                   [guide]: /guide/\n";
-        let html = parse_document(md, "/guide/", &TOC_DEPTHS, &url)
+        let html = parse_document(md, "/guide/", &TOC_DEPTHS, &url, &Markdown::default())
             .unwrap()
             .html;
         for within in [
@@ -513,9 +695,15 @@ mod tests {
         // allows: a space is escaped as the page is written.
         let md = "[Logo](logo.png) ![Logo](<images/the logo.png> \"Logo\") \
                   ![Logo][logo]\n\n[logo]: ../logo.png\n";
-        let html = parse_document(md, "/guide/", &TOC_DEPTHS, &SiteUrl::default())
-            .unwrap()
-            .html;
+        let html = parse_document(
+            md,
+            "/guide/",
+            &TOC_DEPTHS,
+            &SiteUrl::default(),
+            &Markdown::default(),
+        )
+        .unwrap()
+        .html;
         for resolved in [
             r#"<a href="/guide/logo.png">Logo</a>"#,
             r#"<img src="/guide/images/the%20logo.png" alt="Logo" title="Logo" />"#,
@@ -563,7 +751,7 @@ mod tests {
         let md = "[Install](install.md#from-source) [Home](../README.md) \
                   [Guide](./README.md) [Usage][usage] ![Diagram](diagram.md)\n\n\
                   [usage]: /guide/usage.md\n";
-        let html = parse_document(md, "/guide/", &TOC_DEPTHS, &url)
+        let html = parse_document(md, "/guide/", &TOC_DEPTHS, &url, &Markdown::default())
             .unwrap()
             .html;
         for within in [
@@ -586,7 +774,8 @@ mod tests {
         let md = "[Install](install.md#from-source) ![Logo](<images/the logo.png>) \
                   [Top](#top) [Search](https://example.com/?q=a&b='c') [Usage][usage]\n\n\
                   [usage]: /guide/usage\n";
-        let rendered = parse_document(md, "/guide/", &TOC_DEPTHS, &url).unwrap();
+        let rendered =
+            parse_document(md, "/guide/", &TOC_DEPTHS, &url, &Markdown::default()).unwrap();
         let links: Vec<_> = rendered
             .links
             .iter()

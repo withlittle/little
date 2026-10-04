@@ -28,6 +28,10 @@
 //!
 //! `search` is whether each build indexes the site for a search box (see
 //! `search`): little leaves it off, and a theme with a search box turns it on.
+//!
+//! `markdown` holds a setting for each extension to CommonMark, like
+//! `tables` or `math`, that turns it on or off: little turns on GitHub's, and
+//! a theme or a site can change any of them.
 
 use anyhow::{Context, Result, anyhow, bail};
 use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, utf8_percent_encode};
@@ -70,6 +74,9 @@ pub struct Config {
     pub repo: Option<Repo>,
     /// Whether a build indexes the site for search, from `search`.
     pub search: bool,
+    /// The extensions to CommonMark each page is written with, from
+    /// `markdown`.
+    pub markdown: Markdown,
 }
 
 /// Where a site is published, from its `url`. A site that doesn't set one is
@@ -169,6 +176,52 @@ impl Repo {
     }
 }
 
+/// Which extensions to CommonMark each page is written with, and which
+/// classes its code is highlighted with, from the settings under `markdown`,
+/// each named for what an author writes, as `src/little.yml` describes them.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Markdown {
+    // As on GitHub.
+    pub tables: bool,
+    pub strikethrough: bool,
+    pub autolinks: bool,
+    pub task_lists: bool,
+    pub footnotes: bool,
+    pub alerts: bool,
+    pub emoji: bool,
+    pub raw_html: bool,
+    // Beyond GitHub.
+    pub math: bool,
+    pub smart_punctuation: bool,
+    pub superscript: bool,
+    pub subscript: bool,
+    pub mark: bool,
+    pub insert: bool,
+    pub description_lists: bool,
+    pub inline_footnotes: bool,
+    pub fenced_divs: bool,
+    pub multiline_blockquotes: bool,
+    pub hard_breaks: bool,
+    pub cjk_friendly_emphasis: bool,
+    /// The classes code is highlighted with, if it's highlighted.
+    pub highlight: Option<Highlight>,
+}
+
+/// A set of classes for highlighted code: Pygments', like `k` for a keyword,
+/// or GitHub's, like `pl-k`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Highlight {
+    Pygments,
+    GitHub,
+}
+
+impl Default for Markdown {
+    /// little's own settings, from `src/little.yml`.
+    fn default() -> Self {
+        markdown(&builtin_defaults()).expect("src/little.yml sets each Markdown extension")
+    }
+}
+
 /// little's built-in defaults: level 1 of the cascade. They live in
 /// `src/little.yml`, compiled into the binary so little stays a single file
 /// with nothing to install alongside it.
@@ -243,6 +296,7 @@ pub fn load(site_dir: &Path) -> Result<Config> {
     let url = site_url(&values)?;
     let repo = repo(&values)?;
     let search = search(&values)?;
+    let markdown = markdown(&values)?;
     Ok(Config {
         values,
         themes,
@@ -254,6 +308,7 @@ pub fn load(site_dir: &Path) -> Result<Config> {
         url,
         repo,
         search,
+        markdown,
     })
 }
 
@@ -422,6 +477,65 @@ fn search(values: &Mapping) -> Result<bool> {
         Some(Value::Bool(on)) => Ok(*on),
         _ => bail!("`search` must be `true` or `false`"),
     }
+}
+
+/// The extensions to CommonMark each page is written with, each `true` or
+/// `false`, and the classes its code is highlighted with, from the settings
+/// under `markdown`. little's own config sets every one, so any other is a
+/// typo.
+fn markdown(values: &Mapping) -> Result<Markdown> {
+    let Some(Value::Mapping(settings)) = values.get("markdown") else {
+        bail!("`markdown` must be settings, like `math: true`");
+    };
+    let defaults = builtin_defaults();
+    let known = (defaults.get("markdown").and_then(Value::as_mapping))
+        .expect("src/little.yml sets `markdown`");
+    if let Some(key) = settings.keys().find(|key| !known.contains_key(key)) {
+        let key = serde_yaml::to_string(key)?;
+        let names: Vec<&str> = known.keys().filter_map(Value::as_str).collect();
+        bail!(
+            "`markdown` has no setting `{}`: its settings are {}",
+            key.trim_end(),
+            names.join(", ")
+        );
+    }
+    let on = |key: &str| match settings.get(key) {
+        Some(Value::Bool(on)) => Ok(*on),
+        _ => Err(anyhow!("`markdown.{key}` must be `true` or `false`")),
+    };
+    let markdown = Markdown {
+        tables: on("tables")?,
+        strikethrough: on("strikethrough")?,
+        autolinks: on("autolinks")?,
+        task_lists: on("task_lists")?,
+        footnotes: on("footnotes")?,
+        alerts: on("alerts")?,
+        emoji: on("emoji")?,
+        raw_html: on("raw_html")?,
+        math: on("math")?,
+        smart_punctuation: on("smart_punctuation")?,
+        superscript: on("superscript")?,
+        subscript: on("subscript")?,
+        mark: on("mark")?,
+        insert: on("insert")?,
+        description_lists: on("description_lists")?,
+        inline_footnotes: on("inline_footnotes")?,
+        fenced_divs: on("fenced_divs")?,
+        multiline_blockquotes: on("multiline_blockquotes")?,
+        hard_breaks: on("hard_breaks")?,
+        cjk_friendly_emphasis: on("cjk_friendly_emphasis")?,
+        highlight: match settings.get("highlight") {
+            Some(Value::String(classes)) if classes == "pygments" => Some(Highlight::Pygments),
+            Some(Value::String(classes)) if classes == "github" => Some(Highlight::GitHub),
+            Some(Value::Bool(false)) => None,
+            _ => bail!("`markdown.highlight` must be `pygments`, `github`, or `false`"),
+        },
+    };
+    // comrak reads `^[…]` only with footnotes, so it'd be left as text.
+    if markdown.inline_footnotes && !markdown.footnotes {
+        bail!("`markdown.inline_footnotes` needs `markdown.footnotes` to be `true` too");
+    }
+    Ok(markdown)
 }
 
 /// Resolve a path a config names against `dir`: an absolute path is just that
@@ -613,8 +727,11 @@ mod tests {
         let cfg = load(&site).unwrap();
         let fancy = Location::Folder(company.join("../fancy"));
         assert_eq!(cfg.themes, [Location::Folder(company.clone()), fancy]);
+        // Less little's Markdown settings, which `markdown_cascades` checks.
+        let mut values = cfg.values.clone();
+        values.shift_remove("markdown");
         assert_eq!(
-            serde_yaml::to_string(&cfg.values).unwrap(),
+            serde_yaml::to_string(&values).unwrap(),
             "source: ./docs\n\
              destination: ./dist\n\
              theme: ./company\n\
@@ -918,6 +1035,88 @@ mod tests {
             let message = error(&site, &format!("search:{value}\n"));
             assert_eq!(message, "`search` must be `true` or `false`");
         }
+
+        let _ = std::fs::remove_dir_all(&site);
+    }
+
+    #[test]
+    fn markdown_cascades() {
+        let site = scratch(
+            "markdown",
+            &[("theme/little.yml", "markdown:\n  math: true\n")],
+        );
+        let markdown = |site_cfg: &str| {
+            std::fs::write(site.join(CONFIG_FILE), site_cfg).unwrap();
+            load(&site).unwrap().markdown
+        };
+
+        // little turns on GitHub's extensions, and leaves the rest off.
+        let builtin = markdown("");
+        assert_eq!(builtin, Markdown::default());
+        assert!(builtin.tables && builtin.alerts && builtin.emoji && builtin.raw_html);
+        assert!(!builtin.math && !builtin.mark);
+        assert_eq!(builtin.highlight, Some(Highlight::Pygments));
+
+        // A theme turns one on, and a site another off, each merging over the
+        // settings beneath it.
+        let site_cfg = "theme: ./theme\nmarkdown:\n  raw_html: false\n";
+        let expected = Markdown {
+            math: true,
+            raw_html: false,
+            ..Markdown::default()
+        };
+        assert_eq!(markdown(site_cfg), expected);
+
+        // A site chooses GitHub's classes, or none.
+        let site_cfg = "markdown:\n  highlight: github\n";
+        assert_eq!(markdown(site_cfg).highlight, Some(Highlight::GitHub));
+        let site_cfg = "markdown:\n  highlight: false\n";
+        assert_eq!(markdown(site_cfg).highlight, None);
+
+        let _ = std::fs::remove_dir_all(&site);
+    }
+
+    #[test]
+    fn bad_markdown_explains_itself() {
+        let site = scratch("bad-markdown", &[]);
+        // YAML reads `yes` and a quoted `"true"` as text, not `true`.
+        for value in [" yes", " \"true\"", " 1", ""] {
+            let message = error(&site, &format!("markdown:\n  math:{value}\n"));
+            assert_eq!(message, "`markdown.math` must be `true` or `false`");
+        }
+        for site_cfg in ["markdown: true\n", "markdown:\n", "markdown: [math]\n"] {
+            let message = error(&site, site_cfg);
+            assert_eq!(message, "`markdown` must be settings, like `math: true`");
+        }
+
+        // A typo is named, beside the settings there are.
+        let message = error(&site, "markdown:\n  tabels: true\n");
+        let expected = "`markdown` has no setting `tabels`: its settings are tables, \
+                        strikethrough, autolinks, ";
+        assert!(message.starts_with(expected), "{message}");
+        assert!(
+            message.ends_with(", cjk_friendly_emphasis, highlight"),
+            "{message}"
+        );
+
+        // Code is highlighted with a set of classes little has, or none.
+        for value in ["true", "monokai", "Pygments", "\"false\"", ""] {
+            let message = error(&site, &format!("markdown:\n  highlight: {value}\n"));
+            assert_eq!(
+                message,
+                "`markdown.highlight` must be `pygments`, `github`, or `false`"
+            );
+        }
+
+        // comrak reads `^[…]` only with footnotes.
+        let message = error(
+            &site,
+            "markdown:\n  footnotes: false\n  inline_footnotes: true\n",
+        );
+        assert_eq!(
+            message,
+            "`markdown.inline_footnotes` needs `markdown.footnotes` to be `true` too"
+        );
 
         let _ = std::fs::remove_dir_all(&site);
     }

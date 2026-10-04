@@ -1,5 +1,6 @@
 mod config;
 mod download;
+mod highlight;
 mod links;
 mod render;
 mod sass;
