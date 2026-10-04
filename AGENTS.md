@@ -29,16 +29,21 @@ cargo fmt                   # format — run before committing
 - `src/little.yml` — little's own defaults (level 1), compiled into the binary.
 - `src/render.rs` — Markdown (comrak, with the extensions the site turns on) +
   YAML frontmatter → HTML fragment, with each relative link led from the
-  folder of the file it's in, and each link to a page's `.md` file led to the
-  page, noting each link as it's written.
+  folder of the file it's in, and each link to a page's `.md` or `.ipynb`
+  file led to the page, noting each link as it's written. A notebook's tree
+  is written the same way.
+- `src/notebook.rs` — a Jupyter notebook (`.ipynb`, format 4), read with
+  serde into comrak's tree of its page: Markdown cells as Markdown, code
+  cells as code blocks in the notebook's language, and their outputs as
+  `output` code blocks, HTML, or images with `data:` URLs.
 - `src/highlight.rs` — highlights each code block as comrak writes it, with
   bat's grammars, through two-face and syntect: a `<span>` with Pygments' or
   GitHub's class around each token, for the theme to colour.
 - `src/site.rs` — build pipeline: walk the source (`docs/`), render its
-  Markdown, copy its other files, apply theme, index it for search, write the
-  destination (`dist/`), noting the source file and URL of each file it
-  writes. Finds where the source is in its repository, so each page can link
-  to its file there.
+  Markdown and notebooks, copy its other files, apply theme, index it for
+  search, write the destination (`dist/`), noting the source file and URL of
+  each file it writes. Finds where the source is in its repository, so each
+  page can link to its file there.
 - `src/search.rs` — indexes each page's own content, under its title and URL,
   with Pagefind, in the language the theme gives the page, into the files of
   the destination's `pagefind/`.
@@ -220,4 +225,11 @@ Record notable choices as short ADRs in `decisions/`. Locked so far:
   a flat `<span>` for each token with a class; a language bat doesn't have
   stays plain — see
   [`decisions/0023-highlighting-code.md`](./decisions/0023-highlighting-code.md).
+- **Jupyter notebooks:** each `.ipynb` file in the source is a page, as a
+  `.md` file is, read in format 4 with little's own serde types, not the
+  stricter `nbformat` crate, and built into comrak's tree, so it's written as
+  Markdown is. Outputs are code blocks in `output`, HTML and SVG when
+  `raw_html` is on, or images with `data:` URLs; frontmatter is in a raw or
+  Markdown cell at the top — see
+  [`decisions/0024-jupyter-notebooks.md`](./decisions/0024-jupyter-notebooks.md).
 - **Plugins:** sandboxed WASM (planned).

@@ -56,7 +56,7 @@ pub struct Config {
     /// The theme the site chose, then each theme it builds on in turn. Empty
     /// for `theme: false`.
     pub themes: Vec<Location>,
-    /// The folder of Markdown files the site is built from.
+    /// The folder of Markdown files and notebooks the site is built from.
     pub source_dir: PathBuf,
     /// The folder the site is built into, which every build wipes.
     pub destination_dir: PathBuf,

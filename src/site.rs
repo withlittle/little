@@ -16,7 +16,7 @@ use walkdir::WalkDir;
 
 use crate::config::{Repo, SiteUrl};
 use crate::theme::{PageType, StaticFile, Theme};
-use crate::{config, render, search};
+use crate::{config, notebook, render, search};
 
 /// Where a site's 404 page is written: the root of the destination, which is
 /// where static hosts look for it.
@@ -47,7 +47,7 @@ struct Page {
 }
 
 impl Page {
-    /// Is this a folder's `README.md` (its home page)?
+    /// Is this a folder's README (its home page)?
     fn is_index(&self) -> bool {
         matches!(self.page_type, PageType::Home | PageType::Section)
     }
@@ -195,8 +195,9 @@ pub fn build(site_dir: &Path) -> Result<Built> {
 
     // Walk every file in the source folder but hidden ones, without walking
     // hidden folders, or the destination, which can be inside it. The source
-    // folder itself (depth 0) can be hidden. Each Markdown file is rendered
-    // into a page, and every other file, like an image, is copied as it is.
+    // folder itself (depth 0) can be hidden. Each Markdown file and notebook
+    // is rendered into a page, and every other file, like an image, is copied
+    // as it is.
     let destination = destination_in(&source_dir, &destination_dir);
     let mut pages = Vec::new();
     let mut source_files = Vec::new();
@@ -212,19 +213,23 @@ pub fn build(site_dir: &Path) -> Result<Built> {
             continue;
         }
         let rel = path.strip_prefix(&source_dir)?.to_path_buf();
-        if path.extension().and_then(|s| s.to_str()) != Some("md") {
-            source_files.push(StaticFile {
-                contents: fs::read(path).with_context(|| format!("reading {}", path.display()))?,
-                origin: path.display().to_string(),
-                path: rel,
-            });
-            continue;
-        }
+        let parse = match path.extension().and_then(|s| s.to_str()) {
+            Some("md") => render::parse_document,
+            Some("ipynb") => notebook::parse_notebook,
+            _ => {
+                source_files.push(StaticFile {
+                    contents: fs::read(path)
+                        .with_context(|| format!("reading {}", path.display()))?,
+                    origin: path.display().to_string(),
+                    path: rel,
+                });
+                continue;
+            }
+        };
         let raw =
             fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
-        let rendered =
-            render::parse_document(&raw, &folder_url(&rel), &toc_depths, &site_url, &markdown)
-                .with_context(|| format!("rendering {}", path.display()))?;
+        let rendered = parse(&raw, &folder_url(&rel), &toc_depths, &site_url, &markdown)
+            .with_context(|| format!("rendering {}", path.display()))?;
 
         // A key left blank is as good as not there: a page never holds null,
         // and `title:` shouldn't wipe out the title little finds.
@@ -639,8 +644,8 @@ pub fn is_hidden(rel: &Path) -> bool {
 }
 
 /// Is this file a directory's home page? `README.md` is the documentation
-/// convention (mirroring how GitHub renders READMEs); little maps it to the
-/// web's `index.html`.
+/// convention (mirroring how GitHub renders READMEs), as is `README.ipynb`
+/// for a notebook; little maps it to the web's `index.html`.
 fn is_readme(rel: &Path) -> bool {
     rel.file_stem()
         .and_then(|s| s.to_str())
@@ -648,7 +653,7 @@ fn is_readme(rel: &Path) -> bool {
         .unwrap_or(false)
 }
 
-/// What type of page the Markdown file at `rel` makes.
+/// What type of page the Markdown file or notebook at `rel` makes.
 fn page_type(rel: &Path) -> PageType {
     if !is_readme(rel) {
         PageType::Page
@@ -686,12 +691,13 @@ fn folder_url(rel: &Path) -> String {
 }
 
 /// Derive a page's pretty, extensionless URL: its folder's, then its name,
-/// unless it's the folder's `README.md`.
+/// unless it's the folder's `README.md` or `README.ipynb`.
 ///
 /// - `README.md`           -> `/`
 /// - `getting-started.md`  -> `/getting-started`
 /// - `guide/README.md`     -> `/guide/`
 /// - `guide/install.md`    -> `/guide/install`
+/// - `guide/analysis.ipynb` -> `/guide/analysis`
 fn derive_url(rel: &Path) -> String {
     let folder = folder_url(rel);
     if is_readme(rel) {
@@ -1061,6 +1067,7 @@ mod tests {
     fn detects_readme_home_pages() {
         assert!(is_readme(Path::new("README.md")));
         assert!(is_readme(Path::new("guide/readme.md")));
+        assert!(is_readme(Path::new("guide/README.ipynb")));
         assert!(!is_readme(Path::new("index.md")));
         assert!(!is_readme(Path::new("getting-started.md")));
     }
@@ -1075,6 +1082,9 @@ mod tests {
             ("getting-started.md", PageType::Page),
             ("index.md", PageType::Page),
             ("guide/install.md", PageType::Page),
+            ("README.ipynb", PageType::Home),
+            ("guide/README.ipynb", PageType::Section),
+            ("guide/analysis.ipynb", PageType::Page),
         ] {
             assert_eq!(page_type(Path::new(rel)), expected, "{rel}");
         }
@@ -1090,6 +1100,11 @@ mod tests {
         );
         assert_eq!(derive_url(Path::new("guide/README.md")), "/guide/");
         assert_eq!(derive_url(Path::new("guide/install.md")), "/guide/install");
+        assert_eq!(derive_url(Path::new("guide/README.ipynb")), "/guide/");
+        assert_eq!(
+            derive_url(Path::new("guide/analysis.ipynb")),
+            "/guide/analysis"
+        );
     }
 
     #[test]
@@ -1139,6 +1154,11 @@ mod tests {
         assert_eq!(
             check("README.md", "readme.md").unwrap_err(),
             "docs/README.md and docs/readme.md would both be the page at /: rename or move one"
+        );
+        assert_eq!(
+            check("analysis.ipynb", "analysis.md").unwrap_err(),
+            "docs/analysis.ipynb and docs/analysis.md would both be the page at /analysis: \
+             rename or move one"
         );
 
         // A page beside a folder is fine, and so, for now, are URLs that
@@ -1869,6 +1889,81 @@ mod tests {
         for image in ["assets/logo.svg", "guide/images/diagram.svg"] {
             assert!(dist.join(image).is_file(), "{image}");
         }
+        let _ = fs::remove_dir_all(&site);
+    }
+
+    #[test]
+    fn notebooks_are_pages() {
+        let notebook = |cells: serde_json::Value| {
+            let notebook = serde_json::json!({
+                "cells": cells,
+                "metadata": { "language_info": { "name": "python" } },
+                "nbformat": 4,
+                "nbformat_minor": 5
+            });
+            notebook.to_string()
+        };
+        let markdown = |source: &str| serde_json::json!({ "cell_type": "markdown", "metadata": {}, "source": source });
+        let analysis = notebook(serde_json::json!([
+            markdown("# Analysis\n\n## Results\n\n[Home](../README.md)"),
+            {
+                "cell_type": "code",
+                "execution_count": 1,
+                "metadata": {},
+                "outputs": [{ "output_type": "stream", "name": "stdout", "text": "42\n" }],
+                "source": "print(6 * 7)"
+            }
+        ]));
+        let data = notebook(serde_json::json!([markdown("What we have.")]));
+        let site = scratch_site(
+            "notebooks",
+            &[
+                ("little.yml", "theme: ./theme\n"),
+                (
+                    "docs/README.md",
+                    "[Analysis](guide/analysis.ipynb#results)\n",
+                ),
+                ("docs/guide/analysis.ipynb", &analysis),
+                ("docs/data/README.ipynb", &data),
+                (
+                    "theme/_templates/default.html",
+                    "{{ page.title }}\n{{ page.content | safe }}",
+                ),
+            ],
+        );
+        build(&site).unwrap();
+
+        // Each is built into its page, as a Markdown file is, and isn't
+        // copied.
+        let dist = site.join("dist");
+        let built = [
+            MARKER_FILE,
+            "data/index.html",
+            "guide/analysis/index.html",
+            "index.html",
+        ];
+        assert_eq!(files_in(&dist), built.map(PathBuf::from));
+        let read = |path: &str| fs::read_to_string(dist.join(path)).unwrap();
+        let analysis = read("guide/analysis/index.html");
+        assert!(analysis.starts_with("Analysis\n<h1"), "{analysis}");
+        assert!(analysis.contains("<a href=\"/\">Home</a>"), "{analysis}");
+        let output = "<pre class=\"highlight\"><code class=\"language-output\">42\n</code></pre>";
+        assert!(analysis.contains(output), "{analysis}");
+        assert_eq!(read("data/index.html"), "Data\n<p>What we have.</p>\n");
+        // A link to a notebook leads to its page.
+        let home = read("index.html");
+        let link = "<a href=\"/guide/analysis#results\">Analysis</a>";
+        assert!(home.contains(link), "{home}");
+
+        // A notebook little can't read stops the build, naming it.
+        let broken = site.join("docs/broken.ipynb");
+        fs::write(&broken, "{").unwrap();
+        let message = format!("{:#}", build(&site).unwrap_err());
+        let expected = format!(
+            "rendering {}: reading the notebook: EOF while parsing an object at line 1 column 1",
+            broken.display()
+        );
+        assert_eq!(message, expected);
         let _ = fs::remove_dir_all(&site);
     }
 

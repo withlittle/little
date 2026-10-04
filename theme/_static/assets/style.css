@@ -203,6 +203,13 @@ a:hover { text-decoration: underline; }
 }
 .content pre code { background: none; padding: 0; color: inherit; font-size: 0.86rem; }
 
+/* A notebook's output, like what its code printed: lighter than its code. */
+.content pre:has(> code.language-output) {
+  background: #f7f8fa;
+  color: #1f2328;
+  border: 1px solid #ebedf0;
+}
+
 /* Highlighted code: Pygments' classes, as little writes them. */
 .highlight :is(.c, .c1, .cm) { color: #94a3b8; font-style: italic; }
 .highlight :is(.k, .kc, .kd, .kn, .kt, .ow, .cp) { color: #c4b5fd; }
@@ -230,6 +237,14 @@ a:hover { text-decoration: underline; }
   text-align: left;
 }
 .content thead th { background: #f7f8fa; }
+/* A wide table in a `<div>`, as pandas shows one, scrolls within the page. */
+.content div:has(> table) { overflow-x: auto; }
+/* pandas' tables, as Jupyter shows them: as wide as their columns, and
+   aligned right, as pandas' own `<style>` aligns their headings. */
+.content table.dataframe { width: auto; }
+.content .dataframe th, .content .dataframe td { text-align: right; }
+
+.content img { max-width: 100%; height: auto; }
 
 .content ul { padding-left: 1.3rem; }
 .content li { margin: 0.25rem 0; }

@@ -45,6 +45,8 @@ and a rejection of their worst friction.
 - **Language:** Rust — single binary, fast builds at scale, no runtime deps.
 - **Markdown:** `comrak` (CommonMark + GFM), with code highlighted as each
   page is built (syntect, with bat's grammars, built in).
+- **Notebooks:** Jupyter's `.ipynb`, outputs and all, built into comrak's
+  tree, so a notebook is a page as Markdown is, without Python.
 - **Theming:** `minijinja` templates; structured data in, any HTML out.
 - **Config:** cascading YAML.
 - **Plugins (planned):** sandboxed **WASM**, so plugins are language-agnostic

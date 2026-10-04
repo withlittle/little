@@ -1,5 +1,7 @@
 //! Turn a raw Markdown file (with optional YAML frontmatter) into
-//! frontmatter data, an HTML fragment, and an in-page table of contents.
+//! frontmatter data, an HTML fragment, and an in-page table of contents. A
+//! notebook's cells are made into the same tree, in `notebook`, and rendered
+//! here as Markdown's is.
 
 use anyhow::{Context, Result};
 use comrak::nodes::{AstNode, NodeValue};
@@ -25,7 +27,7 @@ pub struct TocItem {
     pub depth: u8,
 }
 
-/// The result of rendering one Markdown document.
+/// The result of rendering one document: a Markdown file, or a notebook.
 pub struct Rendered {
     /// The frontmatter's settings: none when a page has no frontmatter.
     pub frontmatter: Mapping,
@@ -57,7 +59,7 @@ pub struct WrittenLink {
 /// Links and images relative to the document, like `images/logo.png`, lead
 /// from `folder`, the URL of the folder it's in, like `/guide/`; those from
 /// the root of the site get the path of the site's `url`. A link to a page's
-/// Markdown file, like `install.md`, leads to the page.
+/// file, like `install.md`, leads to the page.
 pub fn parse_document(
     raw: &str,
     folder: &str,
@@ -66,25 +68,50 @@ pub fn parse_document(
     markdown: &Markdown,
 ) -> Result<Rendered> {
     let (frontmatter_src, body) = split_frontmatter(raw);
-
-    // Frontmatter is settings, like a `little.yml`, as each one becomes a key
-    // of `page`. Anything else, like a list or plain text, is an error rather
-    // than silently dropped. Empty or comment-only frontmatter has none.
-    let frontmatter = serde_yaml::from_str::<Option<Mapping>>(&frontmatter_src)
-        .context("parsing frontmatter")?
-        .unwrap_or_default();
-
+    let frontmatter = parse_frontmatter(&frontmatter_src)?;
     let options = render_options(markdown);
     let arena = Arena::new();
     let root = comrak::parse_document(&arena, &body, &options);
+    render_tree(
+        root,
+        frontmatter,
+        folder,
+        toc_depths,
+        url,
+        markdown,
+        &options,
+    )
+}
 
-    let links = link_within_site(root, folder, url, &options);
+/// The settings in frontmatter, as `split_frontmatter` finds it.
+pub(crate) fn parse_frontmatter(frontmatter: &str) -> Result<Mapping> {
+    // Frontmatter is settings, like a `little.yml`, as each one becomes a key
+    // of `page`. Anything else, like a list or plain text, is an error rather
+    // than silently dropped. Empty or comment-only frontmatter has none.
+    Ok(serde_yaml::from_str::<Option<Mapping>>(frontmatter)
+        .context("parsing frontmatter")?
+        .unwrap_or_default())
+}
+
+/// Render a document parsed with `options`, as `parse_document` does, from
+/// its tree in comrak's arena: its links led within the site, its outline,
+/// and its HTML.
+pub(crate) fn render_tree<'a>(
+    root: &'a AstNode<'a>,
+    frontmatter: Mapping,
+    folder: &str,
+    toc_depths: &RangeInclusive<u8>,
+    url: &SiteUrl,
+    markdown: &Markdown,
+    options: &Options,
+) -> Result<Rendered> {
+    let links = link_within_site(root, folder, url, options);
     let (toc, first_h1) = outline(root, toc_depths);
 
     let mut plugins = Plugins::default();
     plugins.render.codefence_syntax_highlighter = highlight::highlighter(markdown.highlight);
     let mut html = String::new();
-    comrak::html::format_document_with_plugins(root, &options, &mut html, &plugins)
+    comrak::html::format_document_with_plugins(root, options, &mut html, &plugins)
         .context("rendering markdown to HTML")?;
 
     Ok(Rendered {
@@ -100,7 +127,7 @@ pub fn parse_document(
 /// IDs (with an empty prefix), so the anchors the TOC links to actually exist
 /// in the HTML; both sides slugify with comrak's `Anchorizer`, so they stay in
 /// sync.
-fn render_options(markdown: &Markdown) -> Options<'static> {
+pub(crate) fn render_options(markdown: &Markdown) -> Options<'static> {
     let mut options = Options::default();
     let extension = &mut options.extension;
     extension.table = markdown.tables;
@@ -132,11 +159,11 @@ fn render_options(markdown: &Markdown) -> Options<'static> {
 /// Point each link and image where it leads in the built site. One relative
 /// to the document leads from its `folder`, as where Markdown is read as
 /// files, like on GitHub, whatever URL its page is served at: with or without
-/// a `/` at the end, as hosts differ. A link to a page's Markdown file leads
-/// to the page, as it leads to the file on GitHub. Then one from the root of
-/// the site gets the site's path, so an author can write `/guide/` wherever
-/// the site is published. Links in raw HTML are left as they're written, for
-/// the browser to follow.
+/// a `/` at the end, as hosts differ. A link to a page's file, Markdown or a
+/// notebook, leads to the page, as it leads to the file on GitHub. Then one
+/// from the root of the site gets the site's path, so an author can write
+/// `/guide/` wherever the site is published. Links in raw HTML are left as
+/// they're written, for the browser to follow.
 ///
 /// Returns each link and image as it's written, and as it's read from the
 /// HTML.
@@ -168,21 +195,25 @@ fn link_within_site<'a>(
     links
 }
 
-/// The page built from the Markdown file at `url`, from the root of the
-/// site, which a link to the file leads to, as on GitHub: `/guide/install`
-/// for `/guide/install.md`, and the folder's page, `/guide/`, for
-/// `/guide/README.md`. The `?query` and `#fragment` follow as they are.
-/// `None` for any other URL, like `/logo.png`, or `https://…/README.md`.
+/// The page built from the Markdown file or notebook at `url`, from the root
+/// of the site, which a link to the file leads to, as on GitHub:
+/// `/guide/install` for `/guide/install.md`, or `/guide/install.ipynb`, and
+/// the folder's page, `/guide/`, for `/guide/README.md`. The `?query` and
+/// `#fragment` follow as they are. `None` for any other URL, like
+/// `/logo.png`, or `https://…/README.md`.
 fn page_of(url: &str) -> Option<String> {
     if !url.starts_with('/') || url.starts_with("//") {
         return None;
     }
     let (path, rest) = url.split_at(url.find(['?', '#']).unwrap_or(url.len()));
     let (folder, file) = path.rsplit_once('/')?;
-    // Only a `.md` file is a page: not `.MD`, nor `.md` alone, which is
-    // hidden.
-    let name = file.strip_suffix(".md").filter(|name| !name.is_empty())?;
-    // As in the build, a `README.md` in any case is its folder's page.
+    // Only a `.md` or `.ipynb` file is a page: not `.MD`, nor `.md` alone,
+    // which is hidden.
+    let name = [".md", ".ipynb"]
+        .iter()
+        .find_map(|extension| file.strip_suffix(extension))
+        .filter(|name| !name.is_empty())?;
+    // As in the build, a `README` in any case is its folder's page.
     let page = if name.eq_ignore_ascii_case("readme") {
         ""
     } else {
@@ -298,7 +329,7 @@ fn heading_text<'a>(node: &'a AstNode<'a>) -> String {
 }
 
 /// Split a `---` fenced YAML frontmatter block from the body.
-fn split_frontmatter(raw: &str) -> (String, String) {
+pub(crate) fn split_frontmatter(raw: &str) -> (String, String) {
     let first_line = raw.lines().next().map(str::trim);
     if first_line != Some("---") {
         return (String::new(), raw.to_string());
@@ -715,7 +746,7 @@ mod tests {
 
     #[test]
     fn links_to_a_pages_file_lead_to_the_page() {
-        // As the build makes a page of each `.md` file.
+        // As the build makes a page of each `.md` file, and each notebook.
         for (url, page) in [
             ("/guide/install.md", Some("/guide/install")),
             ("/guide/install.md#usage", Some("/guide/install#usage")),
@@ -727,10 +758,18 @@ mod tests {
             ("/guide/readme.md#usage", Some("/guide/#usage")),
             ("/README.md", Some("/")),
             ("/notes.md.md", Some("/notes.md")),
+            ("/guide/analysis.ipynb", Some("/guide/analysis")),
+            (
+                "/guide/analysis.ipynb#results",
+                Some("/guide/analysis#results"),
+            ),
+            ("/guide/README.ipynb", Some("/guide/")),
             // Anything else is left as it is.
             ("/guide/README.MD", None),
             ("/guide/install.markdown", None),
             ("/guide/.md", None),
+            ("/guide/.ipynb", None),
+            ("/guide/analysis.IPYNB", None),
             ("/guide/install.md/", None),
             ("/guide/", None),
             ("/logo.png", None),

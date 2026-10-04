@@ -17,6 +17,7 @@ little config     # print the site's config, merged
 | Feature            | Status |
 | ------------------ | :----: |
 | Markdown + GFM     | ✅     |
+| Jupyter notebooks  | ✅     |
 | Jekyll-style theme | ✅     |
 | Cascading config   | ✅     |
 | Live reload        | ✅     |

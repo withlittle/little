@@ -1,8 +1,8 @@
 # little
 
-A little static site generator for documentation: drop Markdown into `docs/`
-and get a site. One self-contained binary, a three-level cascading config, and
-themes that own 100% of the markup.
+A little static site generator for documentation: drop Markdown, or Jupyter
+notebooks, into `docs/` and get a site. One self-contained binary, a
+three-level cascading config, and themes that own 100% of the markup.
 
 > **Status:** early development (v0.1). Expect breaking changes. See the
 > [roadmap](./VISION.md#roadmap-thin-vertical-slices).
@@ -81,12 +81,13 @@ little --help                        # list every command and option
 ```text
 my-docs/
 ├── little.yml              # site config (optional)
-├── docs/                   # the source: every .md file becomes a page
+├── docs/                   # the source: each .md and .ipynb file is a page
 │   ├── README.md           # → /
 │   ├── getting-started.md  # → /getting-started
 │   └── guide/
 │       ├── README.md       # → /guide/
 │       ├── install.md      # → /guide/install
+│       ├── analysis.ipynb  # → /guide/analysis
 │       └── images/
 │           └── setup.png   # → /guide/images/setup.png, copied as it is
 └── dist/                   # the destination: build output (generated)
@@ -94,13 +95,15 @@ my-docs/
 
 ## Writing docs
 
-- **Pages and URLs.** Every `.md` file under `docs/` becomes a page at a clean,
-  extensionless URL (see the layout above). As on GitHub, a folder's
-  `README.md` is its landing page. Anything whose name starts with `.`, like a
-  `.drafts/` folder and everything in it, is hidden and left out. Two files
-  that would be the same page, like `guide.md` and `guide/README.md`, stop the
-  build with an error that names both. Pages whose URLs differ only in case,
-  like `API.md` and `api/README.md`, aren't caught, but on macOS and Windows,
+- **Pages and URLs.** Every `.md` file under `docs/`, and every Jupyter
+  notebook (`.ipynb`), becomes a page at a clean, extensionless URL (see the
+  layout above). As on GitHub, a folder's `README.md` is its landing page.
+  Anything whose name starts with `.`, like a `.drafts/` folder and
+  everything in it, or Jupyter's `.ipynb_checkpoints/`, is hidden and left
+  out. Two files that would be the same page, like `guide.md` and
+  `guide/README.md`, or `analysis.md` and `analysis.ipynb`, stop the build
+  with an error that names both. Pages whose URLs differ only in case, like
+  `API.md` and `api/README.md`, aren't caught, but on macOS and Windows,
   which ignore case by default, one replaces the other.
 - **Images and other files.** Every other file under `docs/`, like an image or
   a PDF, is copied as it is to the same path in the site, so keep it beside
@@ -182,6 +185,32 @@ my-docs/
   contents, with each `###` under the `##` above it. To list other levels of
   heading, set [`toc_min_depth` and
   `toc_max_depth`](#choosing-headings-for-tables-of-contents).
+- **Notebooks.** A Jupyter notebook is a page as it's saved, outputs and
+  all, without Jupyter or Python, or converting it first. Its Markdown cells
+  are Markdown, its code cells are code blocks, highlighted in the
+  notebook's language, and each one's outputs follow it:
+  - what the code printed, an error's traceback, and a result that's only
+    text are code blocks in `output`, which aren't highlighted. Terminal
+    colours are left out, and a progress bar shows as it ended;
+  - a chart is an image in the page itself, as a `data:` URL, and so is an
+    image attached to a Markdown cell, as Jupyter shows it, with
+    `![chart.png](attachment:chart.png)`, though not with an HTML `<img>`;
+  - a table pandas shows, and a chart in SVG, need
+    [HTML](#choosing-markdowns-extensions) in Markdown, which is on unless
+    you turn it off; without it, a table shows its text, and a chart its
+    PNG, if it has one, or its text;
+  - an output that needs Jupyter's JavaScript to show it, like a widget,
+    shows its text, or nothing.
+
+  Its title, table of contents, links, and footnotes work as in a Markdown
+  file, but a cell's footnotes are its own: write each note in the cell
+  that refers to it, and give notes in different cells different names. A
+  link to it, like `[Analysis](analysis.ipynb#results)`, leads to its page.
+  Put its frontmatter in a raw or Markdown cell at the top, as
+  Quarto and MyST do; other raw cells are left out. A folder's
+  `README.ipynb` is its landing page, as a `README.md` is. little reads
+  version 4 of Jupyter's format, which Jupyter has saved since 2015: open an
+  older notebook in Jupyter, and save it, to upgrade it.
 
 ## Configuration
 
@@ -300,7 +329,7 @@ A site is built from its `source` folder into its `destination` folder:
 
 | Key | Default | The folder… |
 | --- | ------- | ----------- |
-| `source` | `./docs` | whose `.md` files become the site's pages, and whose other files are copied into it |
+| `source` | `./docs` | whose `.md` and `.ipynb` files become the site's pages, and whose other files are copied into it |
 | `destination` | `./dist` | the site is built into |
 
 To use others, set them in `little.yml`:
@@ -391,12 +420,13 @@ markdown:
   them in its `little.yml` too, like `math: true` in a theme that renders
   math, and the site's `little.yml` has the last word. They're the same for
   every page: a page can't choose its own in its frontmatter.
-- HTML is rendered as it is, `<script>` too, so a site built from Markdown
-  it doesn't trust should set `raw_html: false`. A link or image in HTML
-  leads where a browser takes it: little doesn't lead it from the folder of
-  the file it's in, to a page from its `.md` file, or under the path of the
-  site's [`url`](#choosing-the-sites-url), and warns of a broken one as a
-  reader follows it.
+- HTML is rendered as it is, `<script>` too, and so is the HTML a notebook's
+  code showed, so a site built from Markdown or notebooks it doesn't trust
+  should set `raw_html: false`. A link or image in HTML leads where a
+  browser takes it: little doesn't lead it from the folder of the file it's
+  in, to a page from its `.md` file, or under the path of the site's
+  [`url`](#choosing-the-sites-url), and warns of a broken one as a reader
+  follows it.
 - `math` finds the math, and leaves it for a theme to render, with a script
   like KaTeX or MathJax. The built-in theme doesn't, so it shows the math as
   it's written, without its `$`s.
@@ -560,9 +590,9 @@ the theme doesn't have that template:
 
 | Page type | Pages | Template |
 | --------- | ----- | -------- |
-| `home` | `docs/README.md` | `home.html`, else `default.html` |
-| `section` | a folder's `README.md`, like `docs/guide/README.md` | `section.html`, else `default.html` |
-| `page` | every other `.md` file | `page.html`, else `default.html` |
+| `home` | `docs/README.md`, or `docs/README.ipynb` | `home.html`, else `default.html` |
+| `section` | a folder's `README.md` or `README.ipynb`, like `docs/guide/README.md` | `section.html`, else `default.html` |
+| `page` | every other `.md` or `.ipynb` file | `page.html`, else `default.html` |
 | `404` | the page a host shows for a URL with no page | `404.html`, else none |
 
 A 404 page has no content for `default.html` to show, so a theme without a
@@ -726,6 +756,13 @@ to style, as the built-in theme's
   writes them: never nested, and never over the end of a line. A block in a
   language little doesn't have is plain text in the same
   `<pre class="highlight">`.
+- A notebook's output, like what its code printed, is a code block in
+  `output`, `<pre class="highlight"><code class="language-output">`, which
+  the built-in theme shows lighter than code, with
+  `pre:has(> code.language-output)`. A chart is an `<img>` with a `data:`
+  URL, in a `<p>` of its own, and a table pandas shows is its `<div>`,
+  `<style>`, and `<table class="dataframe">`, which the built-in theme
+  shows as Jupyter does: as wide as its columns, and aligned right.
 - A theme gets the site's [extensions](#choosing-markdowns-extensions) as
   `site.markdown`, so it can load a script only for a site that needs it,
   like KaTeX inside `{% if site.markdown.math %}`, or highlight.js inside
@@ -786,10 +823,10 @@ headings within them, as a reader types.
   up. `little serve` indexes each save. little indexes with
   [Pagefind](https://pagefind.app/), which is built in, so there's nothing
   else to install.
-- What's indexed is each page's own content, from its Markdown, under its
-  title, so nothing the theme puts around it, like its header or nav, fills
-  the results. The 404 page isn't indexed, nor is an HTML file copied from
-  `docs/`.
+- What's indexed is each page's own content, from its Markdown or notebook,
+  under its title, so nothing the theme puts around it, like its header or
+  nav, fills the results. The 404 page isn't indexed, nor is an HTML file
+  copied from `docs/`.
 - Words are matched by their stem in the site's [`lang`](#configuration), so
   "installing" finds "install".
 - To go without, set `search: false`, and the built-in theme leaves out the
@@ -804,7 +841,9 @@ headings within them, as a reader types.
   `docs/pagefind/pagefind.js`, stops the build. A page at `/pagefind`, from
   `docs/pagefind.md`, is fine, and so is any other file in `docs/pagefind/`.
 - `pagefind/` is about 0.7 MB for a site of a few pages, and about 3 MB for one
-  of 450. A reader downloads only the parts of it a search needs.
+  of 450. A reader downloads only the parts of it a search needs. Pagefind
+  keeps each page's first image for its result, so the first image in a
+  notebook is in `pagefind/` too, whole.
 - A page can't leave itself out of search yet. Chinese, Japanese, and Thai,
   which don't put spaces between words, search poorly.
 
