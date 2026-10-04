@@ -2,6 +2,7 @@ mod config;
 mod download;
 mod highlight;
 mod links;
+mod notebook;
 mod render;
 mod sass;
 mod search;

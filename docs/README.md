@@ -14,7 +14,7 @@ subfolder becomes that section's landing page.
 
 ## What this skeleton already does
 
-- Reads every `.md` file in `docs/`
+- Reads every `.md` file in `docs/`, and every Jupyter notebook (`.ipynb`), outputs and all
 - Parses YAML frontmatter (that `title:` above)
 - Renders CommonMark + GFM — tables, ~~strikethrough~~, task lists — via `comrak`
 - Builds a **nested nav** from the folder structure, with clean, extensionless URLs

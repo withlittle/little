@@ -2395,6 +2395,7 @@ name = "little"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "base64 0.23.1",
  "clap",
  "codemap",
  "comrak",
@@ -2409,6 +2410,7 @@ dependencies = [
  "percent-encoding",
  "regex",
  "serde",
+ "serde_json",
  "serde_yaml 0.9.34+deprecated",
  "tar",
  "tiny_http",

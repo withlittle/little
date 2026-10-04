@@ -1,6 +1,6 @@
 # 0024 — Jupyter notebooks as pages
 
-- Status: proposed
+- Status: accepted
 - Date: 2026-10-04
 
 ## Context
@@ -9,8 +9,8 @@ Markdown and code cells, saved with each code cell's outputs, like what it
 printed, a table, or a chart. GitHub shows a notebook as a page, outputs and
 all. little copies an `.ipynb` file as it is, so a reader downloads its JSON.
 To publish one, an author converts it to Markdown first, with
-`jupyter nbconvert --to markdown --embed-images`, which needs Python, and
-keeps the copy in step with the notebook.
+`jupyter nbconvert --to markdown`, which needs Python, and keeps the copy,
+and the images it extracts, in step with the notebook.
 
 A notebook is JSON, in Jupyter's format 4 since 2015: a list of `cells`, each
 `markdown`, `code`, or `raw`, with its `source`. A code cell has its
@@ -64,8 +64,11 @@ A notebook is JSON, in Jupyter's format 4 since 2015: a list of `cells`, each
   Markdown's is, with the site's extensions, links led from the notebook's
   folder, code highlighted, and the table of contents:
   - a Markdown cell is Markdown, read on its own, so a code block it leaves
-    open doesn't swallow the next. An image attached to it, like
-    `attachment:chart.png`, is put in the page as a `data:` URL;
+    open doesn't swallow the next. An image attached to it, and shown with
+    Markdown, like `![chart.png](attachment:chart.png)`, is put in the page
+    as a `data:` URL. Its footnotes are numbered on through the page, and
+    listed at its end, and its inline ones, `^[like this]`, named on, as
+    comrak names each cell's from `__inline_1`;
   - a code cell is a code block in the language of the notebook's
     `language_info`, else its kernel's, highlighted as in Markdown. An empty
     one is left out, and there are no prompts;
@@ -80,13 +83,17 @@ A notebook is JSON, in Jupyter's format 4 since 2015: a list of `cells`, each
   - a result or a display shows the first of its types that little can
     show: HTML, as it is, when `markdown.raw_html` is on; Markdown; an SVG,
     PNG, JPEG, or GIF, as a `data:` URL, in an `<img>` with empty alt text,
-    in a `<p>`; then text. JavaScript, LaTeX, and widgets need Jupyter to
-    show them, so their text shows instead.
+    in a `<p>`; then text. SVG, which can hold script, is shown only when
+    `markdown.raw_html` is on, as comrak leaves out its `data:` URL
+    otherwise. JavaScript, LaTeX, and widgets need Jupyter to show them, so
+    their text shows instead.
 - Frontmatter is in a raw or Markdown cell at the top that starts with
   `---`, as Quarto and MyST write it. A raw cell is only frontmatter; a
   Markdown cell's Markdown goes on after it.
-- The built-in theme shows `output` blocks lighter than code, and keeps
-  images, and a wide table in a `<div>`, as pandas' are, within the page.
+- The built-in theme shows `output` blocks lighter than code, keeps images,
+  and a wide table in a `<div>`, as pandas' are, within the page, and shows
+  pandas' tables as Jupyter does, as wide as their columns, and aligned
+  right.
 - No new crates: little uses serde_json and base64 itself now, which it
   built already, for other crates.
 
@@ -95,18 +102,21 @@ A notebook is JSON, in Jupyter's format 4 since 2015: a list of `cells`, each
 - A notebook's page is as plain as a Markdown page, without Jupyter's
   `<div>`s, prompts, or styles, so a theme styles both alike, and an output
   block by its `language-output`.
-- Each image is in its page, as nbconvert's `--embed-images` puts it, so
-  it's downloaded with the page, not cached on its own. The first one after
-  the title is in the page's search result too, whole.
+- Each image is in its page, as in nbconvert's HTML, so it's downloaded
+  with the page, not cached on its own. A page's first image is in its
+  search result too, whole.
 - Limits, for now:
-  - an output that needs Jupyter's JavaScript, like a widget, or Plotly's,
-    shows its text, or nothing;
+  - an output that needs Jupyter's JavaScript, like a widget, or HTML that
+    loads Plotly with Jupyter's `require`, shows its text, or nothing;
   - math needs `markdown.math`, and a theme that renders it;
   - cells' tags, like `remove-input`, are ignored, and so is an image's
     width and height;
   - a cell magic, like `%%bash`, is highlighted in the notebook's language;
-  - a footnote is its cell's own, and footnotes in two cells shouldn't
-    share a name;
+  - a footnote is its cell's own: a note in another cell isn't found, and
+    named notes in two cells shouldn't share a name;
+  - an attached image is shown from Markdown, not from HTML, like
+    `<img src="attachment:chart.png">`, as little doesn't rewrite HTML; and
+    an attached SVG only when `markdown.raw_html` is on;
   - the notebook isn't in the site to download, but a theme can link to it
     in the repository, with `page.source_url`;
   - notebooks saved as text, like Jupytext's `.py` files and Quarto's
