@@ -43,7 +43,7 @@ pub fn serve(site_dir: &Path, host: Option<String>, port: Option<u16>) -> Result
     // The last build that worked. A rebuild can move its folder, or the path
     // it's served under.
     let built = site::build(&site_dir)?;
-    warn_of_broken_links(&built);
+    warn(&built);
     let home = match built.url.path.as_str() {
         "" => String::new(),
         path => format!("{path}/"),
@@ -81,8 +81,12 @@ fn address(host: &str, port: u16) -> String {
     }
 }
 
-/// Warn of each broken link within the site `built`.
-fn warn_of_broken_links(built: &Built) {
+/// Warn of each formula in the site `built` that can't be rendered, and each
+/// broken link within it.
+fn warn(built: &Built) {
+    for formula in &built.unrendered_math {
+        eprintln!("warning: {formula}");
+    }
     match links::check(built, Scope::Internal) {
         Ok(broken) => {
             for link in broken {
@@ -121,7 +125,7 @@ fn spawn_watcher(site_dir: PathBuf, last: Arc<Mutex<Arc<Built>>>, version: Arc<A
                     version.fetch_add(1, Ordering::SeqCst);
                     println!("rebuilt");
                     // Once browsers can reload, as it takes longer than building.
-                    warn_of_broken_links(&built);
+                    warn(&built);
                 }
                 Err(e) => eprintln!("build error: {e:#}"),
             }

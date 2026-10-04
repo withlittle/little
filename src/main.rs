@@ -2,6 +2,7 @@ mod config;
 mod download;
 mod highlight;
 mod links;
+mod math;
 mod notebook;
 mod render;
 mod sass;
@@ -32,9 +33,10 @@ struct Cli {
 #[derive(Subcommand)]
 enum Commands {
     /// Build the site into its destination folder (dist/ by default), and
-    /// warn of each broken link
+    /// warn of each formula it can't render, and each broken link
     Build {
-        /// Fail on a broken link, rather than warn of it, as for CI
+        /// Fail on a formula that can't be rendered, or a broken link, rather
+        /// than warn of it, as for CI
         #[arg(long)]
         strict: bool,
     },
@@ -56,12 +58,28 @@ fn main() -> Result<()> {
     match cli.command {
         Commands::Build { strict } => {
             let built = site::build(&cli.dir)?;
+            for formula in &built.unrendered_math {
+                eprintln!("warning: {formula}");
+            }
             let broken = links::check(&built, links::Scope::All)?;
             for link in &broken {
                 eprintln!("warning: {link}");
             }
-            if strict && !broken.is_empty() {
-                bail!("{} broken link(s)", broken.len());
+            if strict {
+                let problems: Vec<_> = [
+                    (
+                        built.unrendered_math.len(),
+                        "formula(s) that can't be rendered",
+                    ),
+                    (broken.len(), "broken link(s)"),
+                ]
+                .into_iter()
+                .filter(|&(count, _)| count > 0)
+                .map(|(count, problem)| format!("{count} {problem}"))
+                .collect();
+                if !problems.is_empty() {
+                    bail!("{}", problems.join(" and "));
+                }
             }
         }
         Commands::Serve { host, port } => server::serve(&cli.dir, host, port)?,

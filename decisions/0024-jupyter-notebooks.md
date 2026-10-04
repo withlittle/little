@@ -1,6 +1,7 @@
 # 0024 — Jupyter notebooks as pages
 
-- Status: accepted
+- Status: accepted; amended by [0025](./0025-rendering-math-as-mathml.md),
+  which renders the math in Markdown cells as MathML, without a theme's help
 - Date: 2026-10-04
 
 ## Context

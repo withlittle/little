@@ -34,8 +34,17 @@ little config     # print the site's config, merged
 ## An alert, as on GitHub
 
 > [!TIP]
-> Turn on more of Markdown, like `math` or `smart_punctuation`, under
-> `markdown` in `little.yml`.
+> Turn on more of Markdown, like `smart_punctuation`, under `markdown` in
+> `little.yml`.
+
+## Math, as MathML
+
+little renders math as it builds the page, so it shows without a script,
+like Euler's identity, $e^{i\pi} + 1 = 0$, or the roots of a quadratic:
+
+$$
+x = \frac{-b \pm \sqrt{b^2 - 4ac}}{2a}
+$$
 
 ## Code, in colour
 
@@ -45,7 +54,7 @@ builds the page, for the theme to colour:
 ```yaml
 # little.yml
 markdown:
-  math: true            # $x^2$
+  math: mathml          # or tex, for a theme's own script, or false
   highlight: pygments   # or github, or false for a theme's own highlighter
 ```
 

@@ -30,8 +30,9 @@
 //! `search`): little leaves it off, and a theme with a search box turns it on.
 //!
 //! `markdown` holds a setting for each extension to CommonMark, like
-//! `tables` or `math`, that turns it on or off: little turns on GitHub's, and
-//! a theme or a site can change any of them.
+//! `tables`, that turns it on or off: little turns on GitHub's, and a theme
+//! or a site can change any of them. `math`, also GitHub's, chooses how math
+//! is written, and `highlight` how code is.
 
 use anyhow::{Context, Result, anyhow, bail};
 use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, utf8_percent_encode};
@@ -176,9 +177,10 @@ impl Repo {
     }
 }
 
-/// Which extensions to CommonMark each page is written with, and which
-/// classes its code is highlighted with, from the settings under `markdown`,
-/// each named for what an author writes, as `src/little.yml` describes them.
+/// Which extensions to CommonMark each page is written with, how its math is
+/// written, and which classes its code is highlighted with, from the settings
+/// under `markdown`, each named for what an author writes, as
+/// `src/little.yml` describes them.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Markdown {
     // As on GitHub.
@@ -190,8 +192,9 @@ pub struct Markdown {
     pub alerts: bool,
     pub emoji: bool,
     pub raw_html: bool,
+    /// How math is written, if it's found.
+    pub math: Option<Math>,
     // Beyond GitHub.
-    pub math: bool,
     pub smart_punctuation: bool,
     pub superscript: bool,
     pub subscript: bool,
@@ -205,6 +208,14 @@ pub struct Markdown {
     pub cjk_friendly_emphasis: bool,
     /// The classes code is highlighted with, if it's highlighted.
     pub highlight: Option<Highlight>,
+}
+
+/// How math is written: as MathML, which browsers show as it is, or as its
+/// TeX, marked with `data-math-style` for a theme's script to render.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Math {
+    MathML,
+    Tex,
 }
 
 /// A set of classes for highlighted code: Pygments', like `k` for a keyword,
@@ -480,12 +491,12 @@ fn search(values: &Mapping) -> Result<bool> {
 }
 
 /// The extensions to CommonMark each page is written with, each `true` or
-/// `false`, and the classes its code is highlighted with, from the settings
-/// under `markdown`. little's own config sets every one, so any other is a
-/// typo.
+/// `false`, how its math is written, and the classes its code is highlighted
+/// with, from the settings under `markdown`. little's own config sets every
+/// one, so any other is a typo.
 fn markdown(values: &Mapping) -> Result<Markdown> {
     let Some(Value::Mapping(settings)) = values.get("markdown") else {
-        bail!("`markdown` must be settings, like `math: true`");
+        bail!("`markdown` must be settings, like `mark: true`");
     };
     let defaults = builtin_defaults();
     let known = (defaults.get("markdown").and_then(Value::as_mapping))
@@ -512,7 +523,13 @@ fn markdown(values: &Mapping) -> Result<Markdown> {
         alerts: on("alerts")?,
         emoji: on("emoji")?,
         raw_html: on("raw_html")?,
-        math: on("math")?,
+        // `true` isn't one, as a site's would undo its theme's `tex`.
+        math: match settings.get("math") {
+            Some(Value::String(form)) if form == "mathml" => Some(Math::MathML),
+            Some(Value::String(form)) if form == "tex" => Some(Math::Tex),
+            Some(Value::Bool(false)) => None,
+            _ => bail!("`markdown.math` must be `mathml`, `tex`, or `false`"),
+        },
         smart_punctuation: on("smart_punctuation")?,
         superscript: on("superscript")?,
         subscript: on("subscript")?,
@@ -1043,29 +1060,37 @@ mod tests {
     fn markdown_cascades() {
         let site = scratch(
             "markdown",
-            &[("theme/little.yml", "markdown:\n  math: true\n")],
+            &[("theme/little.yml", "markdown:\n  math: tex\n")],
         );
         let markdown = |site_cfg: &str| {
             std::fs::write(site.join(CONFIG_FILE), site_cfg).unwrap();
             load(&site).unwrap().markdown
         };
 
-        // little turns on GitHub's extensions, and leaves the rest off.
+        // little turns on GitHub's extensions, math as MathML among them, and
+        // leaves the rest off.
         let builtin = markdown("");
         assert_eq!(builtin, Markdown::default());
         assert!(builtin.tables && builtin.alerts && builtin.emoji && builtin.raw_html);
-        assert!(!builtin.math && !builtin.mark);
+        assert_eq!(builtin.math, Some(Math::MathML));
+        assert!(!builtin.mark);
         assert_eq!(builtin.highlight, Some(Highlight::Pygments));
 
-        // A theme turns one on, and a site another off, each merging over the
-        // settings beneath it.
+        // A theme that renders math keeps its TeX, and a site turns another
+        // extension off, each merging over the settings beneath it.
         let site_cfg = "theme: ./theme\nmarkdown:\n  raw_html: false\n";
         let expected = Markdown {
-            math: true,
+            math: Some(Math::Tex),
             raw_html: false,
             ..Markdown::default()
         };
         assert_eq!(markdown(site_cfg), expected);
+
+        // A site has the last word on math, as on anything.
+        let site_cfg = "theme: ./theme\nmarkdown:\n  math: mathml\n";
+        assert_eq!(markdown(site_cfg).math, Some(Math::MathML));
+        let site_cfg = "theme: ./theme\nmarkdown:\n  math: false\n";
+        assert_eq!(markdown(site_cfg).math, None);
 
         // A site chooses GitHub's classes, or none.
         let site_cfg = "markdown:\n  highlight: github\n";
@@ -1081,12 +1106,12 @@ mod tests {
         let site = scratch("bad-markdown", &[]);
         // YAML reads `yes` and a quoted `"true"` as text, not `true`.
         for value in [" yes", " \"true\"", " 1", ""] {
-            let message = error(&site, &format!("markdown:\n  math:{value}\n"));
-            assert_eq!(message, "`markdown.math` must be `true` or `false`");
+            let message = error(&site, &format!("markdown:\n  mark:{value}\n"));
+            assert_eq!(message, "`markdown.mark` must be `true` or `false`");
         }
         for site_cfg in ["markdown: true\n", "markdown:\n", "markdown: [math]\n"] {
             let message = error(&site, site_cfg);
-            assert_eq!(message, "`markdown` must be settings, like `math: true`");
+            assert_eq!(message, "`markdown` must be settings, like `mark: true`");
         }
 
         // A typo is named, beside the settings there are.
@@ -1098,6 +1123,16 @@ mod tests {
             message.ends_with(", cjk_friendly_emphasis, highlight"),
             "{message}"
         );
+
+        // Math is written in a form little has, or not at all: not `true`,
+        // which would undo a theme's `tex`.
+        for value in ["true", "MathML", "katex", "\"false\"", ""] {
+            let message = error(&site, &format!("markdown:\n  math: {value}\n"));
+            assert_eq!(
+                message,
+                "`markdown.math` must be `mathml`, `tex`, or `false`"
+            );
+        }
 
         // Code is highlighted with a set of classes little has, or none.
         for value in ["true", "monokai", "Pygments", "\"false\"", ""] {

@@ -44,7 +44,8 @@ and a rejection of their worst friction.
 ## Tech foundation
 - **Language:** Rust — single binary, fast builds at scale, no runtime deps.
 - **Markdown:** `comrak` (CommonMark + GFM), with code highlighted as each
-  page is built (syntect, with bat's grammars, built in).
+  page is built (syntect, with bat's grammars, built in), and math rendered
+  as MathML, which browsers show without a script (math-core, built in).
 - **Notebooks:** Jupyter's `.ipynb`, outputs and all, built into comrak's
   tree, so a notebook is a page as Markdown is, without Python.
 - **Theming:** `minijinja` templates; structured data in, any HTML out.

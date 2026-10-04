@@ -7,7 +7,7 @@ generator written in Rust. Its mission is **authoring experience** — see
 ## Commands
 ```sh
 cargo run -- build          # build the example site (docs/) into dist/, and check its links
-cargo run -- build --strict # ...and fail on a broken link
+cargo run -- build --strict # ...and fail on a broken link, or math that isn't rendered
 cargo run -- serve          # live-reloading dev server at http://127.0.0.1:8080
 cargo run -- config         # print the example site's merged config
 cargo build --release       # produce the release binary (target/release/little)
@@ -17,21 +17,24 @@ cargo fmt                   # format — run before committing
 ```
 
 ## Architecture (keep the core small)
-- `src/main.rs` — CLI (clap): `build` (`--strict` fails on a broken link),
-  `serve`, `config`.
+- `src/main.rs` — CLI (clap): `build` (`--strict` fails on a broken link,
+  or a formula that isn't rendered), `serve`, `config`.
 - `src/config.rs` — the 3-level cascading config (little → theme → site): the
   chain of themes a site uses, its source and destination folders, the levels
   of heading its tables of contents list, the host and port
   `little serve` serves it at, the `url` it's published at, the `repo` and
   `branch` its source is in, whether it's indexed for search, the extensions
-  to Markdown its pages are written with, and the classes their code is
-  highlighted with.
+  to Markdown its pages are written with, how their math is written, and the
+  classes their code is highlighted with.
 - `src/little.yml` — little's own defaults (level 1), compiled into the binary.
 - `src/render.rs` — Markdown (comrak, with the extensions the site turns on) +
   YAML frontmatter → HTML fragment, with each relative link led from the
   folder of the file it's in, and each link to a page's `.md` or `.ipynb`
   file led to the page, noting each link as it's written. A notebook's tree
   is written the same way.
+- `src/math.rs` — writes each formula as MathML as comrak writes the page,
+  with math-core, each read on its own; one it can't read is written as its
+  TeX, and noted, as it's written, to warn of.
 - `src/notebook.rs` — a Jupyter notebook (`.ipynb`, format 4), read with
   serde into comrak's tree of its page: Markdown cells as Markdown, code
   cells as code blocks in the notebook's language, and their outputs as
@@ -232,4 +235,11 @@ Record notable choices as short ADRs in `decisions/`. Locked so far:
   `raw_html` is on, or images with `data:` URLs; frontmatter is in a raw or
   Markdown cell at the top — see
   [`decisions/0024-jupyter-notebooks.md`](./decisions/0024-jupyter-notebooks.md).
+- **Rendering math:** `markdown.math` writes math as `mathml`, little's
+  default, rendered with math-core, built in, as each page is built; `tex`,
+  marked with `data-math-style` for a theme's script; or `false`, for none,
+  and `true` is an error. Each formula is read on its own, and one that
+  can't be is written as TeX and warned of, as a broken link is; a heading's
+  math is TeX in `page.toc` — see
+  [`decisions/0025-rendering-math-as-mathml.md`](./decisions/0025-rendering-math-as-mathml.md).
 - **Plugins:** sandboxed WASM (planned).
