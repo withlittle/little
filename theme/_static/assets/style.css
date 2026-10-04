@@ -244,6 +244,11 @@ a:hover { text-decoration: underline; }
 .content table.dataframe { width: auto; }
 .content .dataframe th, .content .dataframe td { text-align: right; }
 
+/* A formula too wide for the page scrolls within it, like a wide table,
+   where the browser can scroll one (Safari can't). It doesn't scroll up and
+   down: the boxes of its glyphs can reach a few pixels past its own. */
+.content math[display="block"] { overflow-x: auto; overflow-y: hidden; }
+
 .content img { max-width: 100%; height: auto; }
 
 .content ul { padding-left: 1.3rem; }

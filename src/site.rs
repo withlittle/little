@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use serde_yaml::{Mapping, Value};
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::fmt;
 use std::fs;
 use std::io::ErrorKind;
 use std::iter::Peekable;
@@ -16,7 +17,7 @@ use walkdir::WalkDir;
 
 use crate::config::{Repo, SiteUrl};
 use crate::theme::{PageType, StaticFile, Theme};
-use crate::{config, notebook, render, search};
+use crate::{config, math, notebook, render, search};
 
 /// Where a site's 404 page is written: the root of the destination, which is
 /// where static hosts look for it.
@@ -44,6 +45,8 @@ struct Page {
     page_type: PageType,
     /// The links and images in its Markdown, as they're written.
     links: Vec<render::WrittenLink>,
+    /// The formulas in its Markdown that couldn't be rendered.
+    unrendered_math: Vec<math::Unrendered>,
 }
 
 impl Page {
@@ -164,6 +167,24 @@ pub struct Built {
     /// The repository the site's source is in, if it says, whose links
     /// aren't checked.
     pub repo: Option<Repo>,
+    /// Each formula in its pages that couldn't be rendered, so is shown as
+    /// its TeX, in the order of the pages, to warn of.
+    pub unrendered_math: Vec<UnrenderedMath>,
+}
+
+/// A formula in a page that couldn't be rendered, and the file it's in.
+#[derive(Clone, Debug)]
+pub struct UnrenderedMath {
+    /// What it's in, like `docs/intro.md`.
+    pub origin: String,
+    pub formula: math::Unrendered,
+}
+
+impl fmt::Display for UnrenderedMath {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let math::Unrendered { written, reason } = &self.formula;
+        write!(f, "can't render {written} in {}: {reason}", self.origin)
+    }
 }
 
 /// Build the site rooted at `site_dir`.
@@ -260,6 +281,7 @@ pub fn build(site_dir: &Path) -> Result<Built> {
             toc: nest_headings(&rendered.toc),
             page_type,
             links: rendered.links,
+            unrendered_math: rendered.unrendered_math,
         });
     }
 
@@ -298,6 +320,7 @@ pub fn build(site_dir: &Path) -> Result<Built> {
     };
     let mut outputs = Vec::new();
     let mut searched = Vec::new();
+    let mut unrendered_math = Vec::new();
     for page in &pages {
         let children = page.is_index().then(|| children_of(&tree, &page.rel));
         let (prev, next) = neighbours
@@ -341,6 +364,10 @@ pub fn build(site_dir: &Path) -> Result<Built> {
             let path = page.out_path.clone();
             let url = page.url.clone();
             let origin = source.display().to_string();
+            unrendered_math.extend(page.unrendered_math.iter().map(|formula| UnrenderedMath {
+                origin: origin.clone(),
+                formula: formula.clone(),
+            }));
             let name = format!("the page built from {origin}");
             outputs.push(Output {
                 path,
@@ -440,6 +467,7 @@ pub fn build(site_dir: &Path) -> Result<Built> {
         urls,
         links,
         repo,
+        unrendered_math,
     })
 }
 
@@ -976,6 +1004,7 @@ mod tests {
             toc: Vec::new(),
             page_type,
             links: Vec::new(),
+            unrendered_math: Vec::new(),
         }
     }
 
@@ -1964,6 +1993,50 @@ mod tests {
             broken.display()
         );
         assert_eq!(message, expected);
+        let _ = fs::remove_dir_all(&site);
+    }
+
+    #[test]
+    fn each_formula_that_cant_be_rendered_is_noted() {
+        let notebook = serde_json::json!({
+            "cells": [{ "cell_type": "markdown", "metadata": {}, "source": "$x^2$ and $\\dv{f}{x}$" }],
+            "metadata": {},
+            "nbformat": 4,
+            "nbformat_minor": 5
+        });
+        let site = scratch_site(
+            "math",
+            &[
+                ("little.yml", "theme: ./theme\n"),
+                ("docs/README.md", "$$\\qty{1}{m}$$\n"),
+                ("docs/analysis.ipynb", &notebook.to_string()),
+                ("theme/_templates/default.html", "{{ page.content | safe }}"),
+            ],
+        );
+        let built = build(&site).unwrap();
+
+        // A notebook's math is MathML, as a Markdown file's is.
+        let analysis = fs::read_to_string(site.join("dist/analysis/index.html")).unwrap();
+        assert!(analysis.starts_with("<p><math><msup>"), "{analysis}");
+        // Each formula that isn't is noted, with the file it's in, in the
+        // order of the pages.
+        let docs = site.join("docs");
+        let warnings: Vec<_> = built
+            .unrendered_math
+            .iter()
+            .map(|f| f.to_string())
+            .collect();
+        let expected = [
+            format!(
+                "can't render $$\\qty{{1}}{{m}}$$ in {}: Unknown command \"\\qty\".",
+                docs.join("README.md").display()
+            ),
+            format!(
+                "can't render $\\dv{{f}}{{x}}$ in {}: Unknown command \"\\dv\".",
+                docs.join("analysis.ipynb").display()
+            ),
+        ];
+        assert_eq!(warnings, expected);
         let _ = fs::remove_dir_all(&site);
     }
 

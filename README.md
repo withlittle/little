@@ -50,7 +50,7 @@ Then add a `little.yml` to name your site. See [Configuration](#configuration).
 
 ```sh
 little build                         # render the site into dist/, and warn of broken links
-little build --strict                # fail on a broken link, as for CI
+little build --strict                # fail on a broken link, or math that isn't rendered, as for CI
 little serve                         # dev server with live reload at http://127.0.0.1:8080
 little serve --port 3000             # serve on another port, just this once
 little config                        # print the site's config, merged
@@ -62,7 +62,8 @@ little --help                        # list every command and option
   [destination](#choosing-folders)) every time, so don't keep anything there by
   hand. A build that fails leaves the last one in place. Once it's built the
   site, it [checks every link](#checking-links) in it, and warns of each one
-  that's broken.
+  that's broken, and of each formula it [couldn't
+  render](#choosing-how-math-is-written).
 - `serve` builds first, then watches the source folder, the theme's folder
   (and those of the themes it [builds on](#building-on-another-theme), unless
   they're [downloaded](#downloading-a-theme)), and `little.yml`, rebuilding and
@@ -72,7 +73,7 @@ little --help                        # list every command and option
   port](#choosing-where-to-serve) your config sets, unless `--host` or
   `--port` says otherwise, and under the path of the site's
   [`url`](#choosing-the-sites-url), if it has one. After each build, it warns
-  of broken links within the site.
+  of broken links within the site, and of math it couldn't render.
 - `config` prints the [config](#configuration) the theme gets as `site`
   (without `site.nav`), so you can check a setting without building.
 
@@ -111,8 +112,8 @@ my-docs/
   replaces it.
 - **Markdown.** CommonMark plus GitHub's extensions to it: tables,
   strikethrough, task lists, autolinks, footnotes, callouts, emoji shortcodes
-  like `:tada:`, and HTML, like `<details>`. To turn on others, like math, or
-  to turn these off, see
+  like `:tada:`, HTML, like `<details>`, and math. To turn on others, like
+  `==marked==` text, or to turn these off, see
   [Choosing Markdown's extensions](#choosing-markdowns-extensions). Every
   heading gets an `id`, so you can link straight to a section
   (`guide/install.md#from-source`), and the built-in theme shows a `#` that
@@ -136,6 +137,10 @@ my-docs/
   GitHub, like `rust`, `rs`, `shell`, or `golang`. A block in a language
   little doesn't have, like `mermaid`, or without one, stays plain. See
   [Choosing how code is highlighted](#choosing-how-code-is-highlighted).
+- **Math.** Write it as on GitHub, in LaTeX: `$x^2$` or `` $`x^2`$ `` in a
+  line, and `$$…$$` or a ```` ```math ```` block on its own. little renders
+  it as it builds the page, as MathML, which browsers show without
+  JavaScript. See [Choosing how math is written](#choosing-how-math-is-written).
 - **Links and images.** Write them relative to the file they're in, as on
   GitHub, and they work wherever the site is published: in
   `guide/install.md`, `![Setup](images/setup.png)` shows
@@ -202,10 +207,11 @@ my-docs/
   - an output that needs Jupyter's JavaScript to show it, like a widget,
     shows its text, or nothing.
 
-  Its title, table of contents, links, and footnotes work as in a Markdown
-  file, but a cell's footnotes are its own: write each note in the cell
-  that refers to it, and give notes in different cells different names. A
-  link to it, like `[Analysis](analysis.ipynb#results)`, leads to its page.
+  Its title, table of contents, links, math, and footnotes work as in a
+  Markdown file, but a cell's footnotes are its own: write each note in the
+  cell that refers to it, and give notes in different cells different
+  names. A link to it, like `[Analysis](analysis.ipynb#results)`, leads to
+  its page.
   Put its frontmatter in a raw or Markdown cell at the top, as
   Quarto and MyST do; other raw cells are left out. A folder's
   `README.ipynb` is its landing page, as a `README.md` is. little reads
@@ -394,7 +400,7 @@ turns on GitHub's, so Markdown written for GitHub renders as it does there:
 | `alerts` | `true` | callouts, like `> [!NOTE]` |
 | `emoji` | `true` | emoji shortcodes, like `:tada:` for 🎉 |
 | `raw_html` | `true` | HTML, like `<details>`, rendered as it is |
-| `math` | `false` | math, like `$x^2$`, `$$…$$`, and ```` ```math ```` blocks, for a theme's script to render |
+| `math` | `mathml` | math, like `$x^2$`, `$$…$$`, and ```` ```math ```` blocks, [rendered as MathML](#choosing-how-math-is-written) |
 | `smart_punctuation` | `false` | `"quotes"` that curl, `--` and `---` for – and —, and `...` for … |
 | `superscript` | `false` | `x^2^` |
 | `subscript` | `false` | `H~2~O`, so only `~~` strikes through |
@@ -417,9 +423,9 @@ markdown:
 ```
 
 - Set only those you change: the rest stay as they were. A theme can set
-  them in its `little.yml` too, like `math: true` in a theme that renders
-  math, and the site's `little.yml` has the last word. They're the same for
-  every page: a page can't choose its own in its frontmatter.
+  them in its `little.yml` too, like `math: tex` in a theme that renders
+  math itself, and the site's `little.yml` has the last word. They're the
+  same for every page: a page can't choose its own in its frontmatter.
 - HTML is rendered as it is, `<script>` too, and so is the HTML a notebook's
   code showed, so a site built from Markdown or notebooks it doesn't trust
   should set `raw_html: false`. A link or image in HTML leads where a
@@ -427,13 +433,59 @@ markdown:
   in, to a page from its `.md` file, or under the path of the site's
   [`url`](#choosing-the-sites-url), and warns of a broken one as a reader
   follows it.
-- `math` finds the math, and leaves it for a theme to render, with a script
-  like KaTeX or MathJax. The built-in theme doesn't, so it shows the math as
-  it's written, without its `$`s.
-- Each must be `true` or `false`, unquoted, as YAML reads `yes` and `"true"`
-  as text, and `inline_footnotes` needs `footnotes`. A setting little doesn't
-  have, like `tabels`, is an error too, which lists those it has. Otherwise,
-  every command stops and says why.
+- `math` is `mathml`, `tex`, or `false`: see [Choosing how math is
+  written](#choosing-how-math-is-written). Each other must be `true` or
+  `false`, unquoted, as YAML reads `yes` and `"true"` as text, and
+  `inline_footnotes` needs `footnotes`. A setting little doesn't have, like
+  `tabels`, is an error too, which lists those it has. Otherwise, every
+  command stops and says why.
+
+### Choosing how math is written
+
+little finds math as GitHub does, in `$…$` and `` $`…`$ `` in a line, and in
+`$$…$$` and ```` ```math ```` blocks, and renders it as it builds each page,
+as MathML, HTML's own math, which browsers show without JavaScript.
+`markdown.math` chooses how it's written:
+
+| Value | Math is written… |
+| ----- | ---------------- |
+| `mathml` | as MathML: a `<math>`, or a `<math display="block">` for `$$…$$` and a ```` ```math ```` block. little's default. |
+| `tex` | as its TeX, marked with `data-math-style="inline"` or `"display"` for a theme that renders math in the browser, with a script like KaTeX or MathJax |
+| `false` | not at all: `$` is a dollar, and a ```` ```math ```` block is code |
+
+```yaml
+# little.yml
+markdown:
+  math: tex
+```
+
+- little reads LaTeX's math, with environments like `aligned` and `pmatrix`,
+  with [math-core](https://crates.io/crates/math-core). Each formula is read
+  on its own, so a command that `\newcommand` defines in one isn't in the
+  next, and equations can't be numbered across a page.
+- A formula little can't read, like one with a typo, or a command it doesn't
+  have, is written as its TeX, as with `tex`, and warned of, with the file
+  it's in, so you can search for it:
+
+  ```text
+  warning: can't render $\dv{f}{x}$ in ./docs/calculus.md: Unknown command "\dv".
+  ```
+
+  `little build --strict` fails on one, and `little serve` warns of each
+  after each build.
+- As on GitHub, a `$` before a space doesn't start math, and one after a
+  space, or before a digit, doesn't end it, so `$5 and $10` is text. Write
+  `\$` for a `$` that would, like `\$HOME/\$PATH`.
+- A heading's math is MathML in the heading, and TeX in tables of contents,
+  the nav, and the page's title, which are text.
+- Browsers lay MathML out themselves, in their own math font, so it looks a
+  little different in each. The built-in theme scrolls a formula too wide for
+  the page, but Safari can't, so there it widens the page.
+- A theme that renders math itself sets `tex` in its `little.yml`, and the
+  site's `little.yml` has the last word. A page can't choose its own in its
+  frontmatter.
+- Anything but `mathml`, `tex`, or `false` is an error, `true` too, and every
+  command stops and says why.
 
 ### Choosing how code is highlighted
 
@@ -763,10 +815,14 @@ to style, as the built-in theme's
   URL, in a `<p>` of its own, and a table pandas shows is its `<div>`,
   `<style>`, and `<table class="dataframe">`, which the built-in theme
   shows as Jupyter does: as wide as its columns, and aligned right.
+- [Math](#choosing-how-math-is-written) is MathML: a `<math>` in a line,
+  and a `<math display="block">` on its own, inside a `<p>` for `$$…$$`.
+  The built-in theme scrolls a wide one with
+  `math[display="block"] { overflow-x: auto; overflow-y: hidden; }`.
 - A theme gets the site's [extensions](#choosing-markdowns-extensions) as
   `site.markdown`, so it can load a script only for a site that needs it,
-  like KaTeX inside `{% if site.markdown.math %}`, or highlight.js inside
-  `{% if not site.markdown.highlight %}`.
+  like KaTeX inside `{% if site.markdown.math == "tex" %}`, or highlight.js
+  inside `{% if not site.markdown.highlight %}`.
 
 ## Checking links
 
@@ -786,7 +842,8 @@ warning: broken link https://github.com/withlittle/litle in ./docs/about.md: Rej
   shown as a reader follows it, from the root of the domain. A link on many
   pages, like one in the theme, is one warning, which names a few of them and
   counts the rest.
-- `little build --strict` fails on a broken link, so CI can keep a broken
+- `little build --strict` fails on a broken link, or a formula little
+  [couldn't render](#choosing-how-math-is-written), so CI can keep a broken
   site from being published. `dist/` is written either way.
 - `little serve` checks only the links within the site, so a save needn't
   wait for other sites.

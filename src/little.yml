@@ -42,8 +42,7 @@ search: false
 
 # The extensions to CommonMark each page is written with: GitHub's are on, as
 # authors know them, and the rest are off, so their syntax can't catch anyone
-# out. A theme or a site can turn any of them on or off, like `math: true` for
-# a theme that renders math.
+# out. A theme or a site can turn any of them on or off, like `mark: true`.
 markdown:
   # As on GitHub.
   tables: true
@@ -56,8 +55,11 @@ markdown:
   # HTML in Markdown, like <details>, as it's written, scripts and all: turn it
   # off for Markdown you don't trust.
   raw_html: true
+  # Math, in $x$, $$x$$, $`x`$, and ```math blocks, written as `mathml`, which
+  # browsers show as it is, as `tex`, marked with `data-math-style`, for a
+  # theme that renders math itself, or `false`, for none, so $ is a dollar.
+  math: mathml
   # Beyond GitHub.
-  math: false                  # $x$, $$x$$, $`x`$, and ```math, marked for the theme to render
   smart_punctuation: false     # "curly quotes", -- and --- for dashes, and ... for …
   superscript: false           # x^2^
   subscript: false             # H~2~O, so only ~~ strikes through

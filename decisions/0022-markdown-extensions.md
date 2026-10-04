@@ -1,6 +1,8 @@
 # 0022 — Choosing Markdown's extensions, and callouts
 
-- Status: accepted
+- Status: accepted; amended by [0025](./0025-rendering-math-as-mathml.md),
+  which turns `math` on, as on GitHub, and makes it `mathml`, which renders
+  math as MathML, `tex`, which marks it for a theme's script, or `false`
 - Date: 2026-10-04
 
 ## Context

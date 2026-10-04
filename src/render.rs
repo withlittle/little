@@ -12,8 +12,8 @@ use std::borrow::Cow;
 use std::mem;
 use std::ops::RangeInclusive;
 
-use crate::config::{Markdown, SiteUrl};
-use crate::highlight;
+use crate::config::{Markdown, Math, SiteUrl};
+use crate::{highlight, math};
 
 /// One heading in a page's in-page table of contents. They're listed in the
 /// order they come, and the build nests them like `site.nav`.
@@ -39,6 +39,9 @@ pub struct Rendered {
     pub first_h1: Option<String>,
     /// The body's links and images, in the order they come.
     pub links: Vec<WrittenLink>,
+    /// The formulas in the body that couldn't be written as MathML, so are
+    /// written as TeX, in the order they come.
+    pub unrendered_math: Vec<math::Unrendered>,
 }
 
 /// A link or image in a document, so a broken one can be shown as it's
@@ -53,9 +56,10 @@ pub struct WrittenLink {
 }
 
 /// Parse a document, written with the extensions to CommonMark in
-/// `markdown`, into its frontmatter, rendered HTML, with its code highlighted
-/// with `markdown`'s classes, and outline, which lists its headings at the
-/// levels in `toc_depths` (the config's `toc_min_depth` to `toc_max_depth`).
+/// `markdown`, into its frontmatter, rendered HTML, with its math written and
+/// its code highlighted as `markdown` chooses, and outline, which lists its
+/// headings at the levels in `toc_depths` (the config's `toc_min_depth` to
+/// `toc_max_depth`).
 /// Links and images relative to the document, like `images/logo.png`, lead
 /// from `folder`, the URL of the folder it's in, like `/guide/`; those from
 /// the root of the site get the path of the site's `url`. A link to a page's
@@ -111,8 +115,12 @@ pub(crate) fn render_tree<'a>(
     let mut plugins = Plugins::default();
     plugins.render.codefence_syntax_highlighter = highlight::highlighter(markdown.highlight);
     let mut html = String::new();
-    comrak::html::format_document_with_plugins(root, options, &mut html, &plugins)
-        .context("rendering markdown to HTML")?;
+    let unrendered_math = match markdown.math {
+        Some(Math::MathML) => math::format_document(root, options, &plugins, &mut html),
+        _ => comrak::html::format_document_with_plugins(root, options, &mut html, &plugins)
+            .map(|()| Vec::new()),
+    }
+    .context("rendering markdown to HTML")?;
 
     Ok(Rendered {
         frontmatter,
@@ -120,6 +128,7 @@ pub(crate) fn render_tree<'a>(
         toc,
         first_h1,
         links,
+        unrendered_math,
     })
 }
 
@@ -138,8 +147,8 @@ pub(crate) fn render_options(markdown: &Markdown) -> Options<'static> {
     extension.alerts = markdown.alerts;
     extension.shortcodes = markdown.emoji;
     // GitHub's math: `$…$`, `$$…$$`, `` $`…`$ ``, and ```` ```math ````.
-    extension.math_dollars = markdown.math;
-    extension.math_code = markdown.math;
+    extension.math_dollars = markdown.math.is_some();
+    extension.math_code = markdown.math.is_some();
     extension.superscript = markdown.superscript;
     extension.subscript = markdown.subscript;
     extension.highlight = markdown.mark;
@@ -498,18 +507,21 @@ mod tests {
 
     #[test]
     fn headings_with_math_emoji_or_two_lines_link_from_the_toc() {
-        let markdown = Markdown {
-            math: true,
-            ..Markdown::default()
-        };
         let md = "## The $x^2$ term\n\n## Done :tada:\n\nTwo\nlines\n---\n";
-        let r = parse_document(md, "/", &TOC_DEPTHS, &SiteUrl::default(), &markdown).unwrap();
-        let titles: Vec<_> = r.toc.iter().map(|item| item.title.as_str()).collect();
-        assert_eq!(titles, ["The x^2 term", "Done 🎉", "Two lines"]);
-        // Each links to its heading's id, as comrak writes it.
-        for item in &r.toc {
-            let id = format!("id=\"{}\"", &item.anchor[1..]);
-            assert!(r.html.contains(&id), "{id} in {}", r.html);
+        for math in [Some(Math::MathML), Some(Math::Tex)] {
+            let markdown = Markdown {
+                math,
+                ..Markdown::default()
+            };
+            let r = parse_document(md, "/", &TOC_DEPTHS, &SiteUrl::default(), &markdown).unwrap();
+            // A heading's math is TeX in the outline, which is text.
+            let titles: Vec<_> = r.toc.iter().map(|item| item.title.as_str()).collect();
+            assert_eq!(titles, ["The x^2 term", "Done 🎉", "Two lines"]);
+            // Each links to its heading's id, as comrak writes it.
+            for item in &r.toc {
+                let id = format!("id=\"{}\"", &item.anchor[1..]);
+                assert!(r.html.contains(&id), "{id} in {}", r.html);
+            }
         }
     }
 
@@ -518,7 +530,7 @@ mod tests {
         // Each setting, some Markdown, and a piece of the HTML it's rendered
         // to only with the setting on.
         type Setting = fn(&mut Markdown) -> &mut bool;
-        let cases: [(Setting, &str, &str); 20] = [
+        let cases: [(Setting, &str, &str); 19] = [
             (|m| &mut m.tables, "| a |\n| - |\n| b |\n", "<table>"),
             (|m| &mut m.strikethrough, "~~a~~", "<del>a</del>"),
             (|m| &mut m.autolinks, "www.example.com", "<a href="),
@@ -527,7 +539,6 @@ mod tests {
             (|m| &mut m.alerts, "> [!NOTE]\n> a", "markdown-alert-note"),
             (|m| &mut m.emoji, ":tada:", "🎉"),
             (|m| &mut m.raw_html, "<kbd>a</kbd>", "<kbd>a</kbd>"),
-            (|m| &mut m.math, "$a$", "data-math-style=\"inline\""),
             (|m| &mut m.smart_punctuation, "\"a\" -- b", "“a” – b"),
             (|m| &mut m.superscript, "a^2^", "<sup>2</sup>"),
             (|m| &mut m.subscript, "H~2~O", "<sub>2</sub>"),
@@ -624,16 +635,53 @@ mod tests {
     }
 
     #[test]
-    fn math_blocks_arent_highlighted() {
-        for math in [true, false] {
+    fn math_is_written_as_the_site_chooses() {
+        let html = |math| {
             let markdown = Markdown {
                 math,
                 ..Markdown::default()
             };
-            let md = "```math\nx^2\n```\n";
-            let r = parse_document(md, "/", &TOC_DEPTHS, &SiteUrl::default(), &markdown).unwrap();
+            let md = "$a*b + c*d$ costs $5";
+            parse_document(md, "/", &TOC_DEPTHS, &SiteUrl::default(), &markdown)
+                .unwrap()
+                .html
+        };
+        let mathml = "<math><mi>a</mi><mo lspace=\"0.2222em\" rspace=\"0.2222em\">∗</mo>\
+                      <mi>b</mi><mo>+</mo><mi>c</mi>\
+                      <mo lspace=\"0.2222em\" rspace=\"0.2222em\">∗</mo><mi>d</mi></math>";
+        assert_eq!(
+            html(Some(Math::MathML)),
+            format!("<p>{mathml} costs $5</p>\n")
+        );
+        assert_eq!(
+            html(Some(Math::Tex)),
+            "<p><span data-math-style=\"inline\">a*b + c*d</span> costs $5</p>\n"
+        );
+        // Off, `$` is a dollar, and `*` emphasis, as anywhere.
+        assert_eq!(html(None), "<p>$a<em>b + c</em>d$ costs $5</p>\n");
+    }
+
+    #[test]
+    fn math_blocks_arent_highlighted() {
+        let md = "```math\nx^2\n```\n";
+        let html = |math| {
+            let markdown = Markdown {
+                math,
+                ..Markdown::default()
+            };
+            parse_document(md, "/", &TOC_DEPTHS, &SiteUrl::default(), &markdown)
+                .unwrap()
+                .html
+        };
+        assert_eq!(
+            html(Some(Math::MathML)),
+            "<math display=\"block\"><msup><mi>x</mi><mn>2</mn></msup></math>\n"
+        );
+        // A theme's script finds it by its `data-math-style`, as comrak marks
+        // a block in `math` even with math off.
+        for math in [Some(Math::Tex), None] {
             assert_eq!(
-                r.html,
+                html(math),
                 "<pre><code class=\"language-math\" data-math-style=\"display\">x^2\n</code></pre>\n"
             );
         }

@@ -1,6 +1,6 @@
 # 0025 — Rendering math as MathML
 
-- Status: proposed
+- Status: accepted
 - Date: 2026-10-04
 - Amends: [0016](./0016-checking-links.md),
   [0022](./0022-markdown-extensions.md),
@@ -13,7 +13,7 @@ cells more so. With `markdown.math` on, little finds math as GitHub does, in
 with `data-math-style` for a theme's script to render
 ([0022](./0022-markdown-extensions.md)). The built-in theme doesn't load
 one, so a reader sees TeX. With `math` off, little's default, it's worse:
-`\{` loses its `\`, and `$a_1 * b_1$` turns to emphasis, before any script
+`\{` loses its `\`, and `$a*b + c*d$` turns to emphasis, before any script
 could read it.
 
 Browsers show MathML, HTML's own math, without a script: Chrome and Edge
@@ -68,14 +68,15 @@ little builds each page, when it highlights code
   isn't in the next, and `\eqref` only finds a `\label` in the same formula.
 - A formula math-core can't read is warned of, as a broken link is, as it's
   written, on one line, with the file it's in, like
-  `warning: can't render $\ket{0}$ in docs/intro.md: Unknown command "\ket".`
-  Its TeX is written as with `tex`, so the page still builds, and reads as
-  it was written. `little build --strict` fails on one, as on a broken link,
-  and `little serve` warns of each after each build.
+  `warning: can't render $\dv{f}{x}$ in ./docs/intro.md: Unknown command "\dv".`
+  A ```` ```math ```` block's is shown in `$$…$$`. Its TeX is written as
+  with `tex`, so the page still builds, and reads as it was written.
+  `little build --strict` fails on one, as on a broken link, and
+  `little serve` warns of each after each build.
 - A heading's math is MathML in the heading, but TeX in `page.toc`, the nav,
   and the page's title, which are text; its id doesn't change.
 - The built-in theme scrolls a formula too wide for the page, rather than
-  the page, and leaves its font to the browser.
+  the page, where the browser can, and leaves its font to the browser.
 - New crate: `math-core`.
 
 ## Consequences
@@ -95,6 +96,8 @@ little builds each page, when it highlights code
     or share macros, across formulas;
   - browsers' math fonts differ, and some Linux desktops have none, so math
     looks different there, unless a theme brings its own;
+  - Safari, and every browser on iOS, can't scroll a `<math>`, so there a
+    formula too wide for the page widens it;
   - math in a notebook's `text/latex` outputs, and environments like
     `\begin{align}` outside `$$`, aren't rendered;
   - a page can't choose its own math in frontmatter.

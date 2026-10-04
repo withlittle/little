@@ -1,7 +1,9 @@
 # 0016 — Checking links with lychee
 
 - Status: accepted; amended by [0017](./0017-links-to-pages-files.md),
-  which shows a broken link in Markdown as it's written
+  which shows a broken link in Markdown as it's written, and by
+  [0025](./0025-rendering-math-as-mathml.md), which warns of math that can't
+  be rendered as of a broken link, and fails on it with `--strict`
 - Date: 2026-10-01
 
 ## Context
