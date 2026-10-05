@@ -16,8 +16,10 @@ use serde_json::Value;
 use std::collections::BTreeMap;
 use std::ops::RangeInclusive;
 use std::sync::LazyLock;
+use time::OffsetDateTime;
 
 use crate::config::{Markdown, SiteUrl};
+use crate::mermaid;
 use crate::render::{self, Rendered};
 
 /// The types of image, but SVG, that an output can be shown as, in the order
@@ -152,14 +154,15 @@ fn text_of(value: Value) -> Option<String> {
 
 /// Parse a notebook, `raw`, as `render::parse_document` parses Markdown:
 /// into its frontmatter, rendered HTML, and outline, with its links and
-/// images led from `folder`, the URL of the folder it's in, and its code
-/// highlighted, as `markdown` says.
+/// images led from `folder`, the URL of the folder it's in, its diagrams
+/// drawn, as of `now`, and its code highlighted, as `markdown` says.
 pub fn parse_notebook(
     raw: &str,
     folder: &str,
     toc_depths: &RangeInclusive<u8>,
     url: &SiteUrl,
     markdown: &Markdown,
+    now: OffsetDateTime,
 ) -> Result<Rendered> {
     let Notebook {
         nbformat,
@@ -188,7 +191,9 @@ pub fn parse_notebook(
         page.add_cell(cell);
     }
     let root = page.finish();
-    render::render_tree(
+    // A diagram's line would be its cell's, not the notebook file's.
+    let unrendered_diagrams = mermaid::draw(root, markdown, now, None);
+    let rendered = render::render_tree(
         root,
         frontmatter,
         folder,
@@ -196,7 +201,11 @@ pub fn parse_notebook(
         url,
         markdown,
         &options,
-    )
+    )?;
+    Ok(Rendered {
+        unrendered_diagrams,
+        ..rendered
+    })
 }
 
 /// Take the frontmatter from a raw or Markdown cell at the top of the
@@ -461,7 +470,14 @@ mod tests {
     }
 
     fn parse(raw: &str, markdown: &Markdown) -> Result<Rendered> {
-        parse_notebook(raw, "/", &TOC_DEPTHS, &SiteUrl::default(), markdown)
+        parse_notebook(
+            raw,
+            "/",
+            &TOC_DEPTHS,
+            &SiteUrl::default(),
+            markdown,
+            OffsetDateTime::UNIX_EPOCH,
+        )
     }
 
     /// The page of a notebook of `cells`, without highlighting, so its HTML
@@ -559,6 +575,27 @@ mod tests {
             html(cells),
             "<pre><code class=\"language-python\">print(1)</code></pre>\n<p>After</p>\n"
         );
+    }
+
+    #[test]
+    fn diagrams_are_drawn_through_the_notebook() {
+        let flowchart = markdown("```mermaid\nflowchart LR\n  A --> B\n```");
+        let cells = json!([
+            flowchart,
+            markdown("```mermaid\nflowchat LR\n```"),
+            flowchart
+        ]);
+        let r = parse(&notebook(cells), &Markdown::default()).unwrap();
+        assert!(r.html.starts_with("<svg id=\"mermaid-1\" "), "{}", r.html);
+        let code = "<code class=\"language-mermaid\">flowchat LR\n</code>";
+        assert!(r.html.contains(code), "{}", r.html);
+        assert!(r.html.contains("<svg id=\"mermaid-3\" "), "{}", r.html);
+        // Without a line, which would be its cell's.
+        let unrendered = mermaid::Unrendered {
+            line: None,
+            reason: "No diagram type detected".to_string(),
+        };
+        assert_eq!(r.unrendered_diagrams, [unrendered]);
     }
 
     #[test]

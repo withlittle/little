@@ -81,11 +81,14 @@ fn address(host: &str, port: u16) -> String {
     }
 }
 
-/// Warn of each formula in the site `built` that can't be rendered, and each
-/// broken link within it.
+/// Warn of each formula in the site `built` that can't be rendered, each
+/// diagram that can't be drawn, and each broken link within it.
 fn warn(built: &Built) {
     for formula in &built.unrendered_math {
         eprintln!("warning: {formula}");
+    }
+    for diagram in &built.unrendered_diagrams {
+        eprintln!("warning: {diagram}");
     }
     match links::check(built, Scope::Internal) {
         Ok(broken) => {

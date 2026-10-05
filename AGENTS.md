@@ -7,7 +7,7 @@ generator written in Rust. Its mission is **authoring experience** — see
 ## Commands
 ```sh
 cargo run -- build          # build the example site (docs/) into dist/, and check its links
-cargo run -- build --strict # ...and fail on a broken link, or math that isn't rendered
+cargo run -- build --strict # ...and fail on a broken link, formula, or diagram
 cargo run -- serve          # live-reloading dev server at http://127.0.0.1:8080
 cargo run -- config         # print the example site's merged config
 cargo build --release       # produce the release binary (target/release/little)
@@ -18,23 +18,28 @@ cargo fmt                   # format — run before committing
 
 ## Architecture (keep the core small)
 - `src/main.rs` — CLI (clap): `build` (`--strict` fails on a broken link,
-  or a formula that isn't rendered), `serve`, `config`.
+  a formula that isn't rendered, or a diagram that isn't drawn), `serve`,
+  `config`.
 - `src/config.rs` — the 3-level cascading config (little → theme → site): the
   chain of themes a site uses, its source and destination folders, the levels
   of heading its tables of contents list, the host and port
   `little serve` serves it at, the `url` it's published at, the `repo` and
   `branch` its source is in, whether it's indexed for search, the extensions
-  to Markdown its pages are written with, how their math is written, and the
-  classes their code is highlighted with.
+  to Markdown its pages are written with, how their math is written and
+  their diagrams drawn, and the classes their code is highlighted with.
 - `src/little.yml` — little's own defaults (level 1), compiled into the binary.
 - `src/render.rs` — Markdown (comrak, with the extensions the site turns on) +
   YAML frontmatter → HTML fragment, with each relative link led from the
   folder of the file it's in, and each link to a page's `.md` or `.ipynb`
   file led to the page, noting each link as it's written. A notebook's tree
-  is written the same way.
+  is written the same way, once its diagrams are drawn.
 - `src/math.rs` — writes each formula as MathML as comrak writes the page,
   with math-core, each read on its own; one it can't read is written as its
   TeX, and noted, as it's written, to warn of.
+- `src/mermaid.rs` — draws each Mermaid block in comrak's tree as SVG, with
+  merman, before comrak writes the page, with the id `mermaid-1`, and so on,
+  the same in each build; one it can't draw stays code, and is noted, with
+  its line, to warn of.
 - `src/notebook.rs` — a Jupyter notebook (`.ipynb`, format 4), read with
   serde into comrak's tree of its page: Markdown cells as Markdown, code
   cells as code blocks in the notebook's language, and their outputs as
@@ -46,8 +51,8 @@ cargo fmt                   # format — run before committing
   Markdown and notebooks, copy its other files, apply theme, index it for
   search, write the destination (`dist/`), noting the source file and URL of
   each file it writes. Finds where the source is in its repository, so each
-  page can link to its file there, and works out the year it's built in, for
-  `site.year`.
+  page can link to its file there, and works out when it's built, for
+  `site.year`, and its diagrams' today.
 - `src/search.rs` — indexes each page's own content, under its title and URL,
   with Pagefind, in the language the theme gives the page, into the files of
   the destination's `pagefind/`.
@@ -248,4 +253,11 @@ Record notable choices as short ADRs in `decisions/`. Locked so far:
   for reproducible builds; it's worked out once, beneath the config, like
   `site.nav`, and the built-in theme shows no notice — see
   [`decisions/0026-the-year-a-site-is-built.md`](./decisions/0026-the-year-a-site-is-built.md).
+- **Drawing diagrams:** `markdown.mermaid` writes a ```` ```mermaid ````
+  block as `svg`, little's default, an `<svg>` drawn with merman, built in,
+  as each page is built, with the id `mermaid-N`, the same in each build; or
+  `false`, as code, for a theme's script. One merman can't read is code, and
+  warned of, as a broken link is. A diagram can carry HTML, so `svg` with
+  `raw_html: false` stops the build — see
+  [`decisions/0027-drawing-mermaid-diagrams.md`](./decisions/0027-drawing-mermaid-diagrams.md).
 - **Plugins:** sandboxed WASM (planned).

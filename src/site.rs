@@ -20,7 +20,7 @@ use walkdir::WalkDir;
 
 use crate::config::{Repo, SiteUrl};
 use crate::theme::{PageType, StaticFile, Theme};
-use crate::{config, math, notebook, render, search};
+use crate::{config, math, mermaid, notebook, render, search};
 
 /// Where a site's 404 page is written: the root of the destination, which is
 /// where static hosts look for it.
@@ -50,6 +50,8 @@ struct Page {
     links: Vec<render::WrittenLink>,
     /// The formulas in its Markdown that couldn't be rendered.
     unrendered_math: Vec<math::Unrendered>,
+    /// The diagrams in its Markdown that couldn't be drawn.
+    unrendered_diagrams: Vec<mermaid::Unrendered>,
 }
 
 impl Page {
@@ -173,6 +175,9 @@ pub struct Built {
     /// Each formula in its pages that couldn't be rendered, so is shown as
     /// its TeX, in the order of the pages, to warn of.
     pub unrendered_math: Vec<UnrenderedMath>,
+    /// Each diagram in its pages that couldn't be drawn, so is shown as
+    /// code, in the order of the pages, to warn of.
+    pub unrendered_diagrams: Vec<UnrenderedDiagram>,
 }
 
 /// A formula in a page that couldn't be rendered, and the file it's in.
@@ -187,6 +192,25 @@ impl fmt::Display for UnrenderedMath {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let math::Unrendered { written, reason } = &self.formula;
         write!(f, "can't render {written} in {}: {reason}", self.origin)
+    }
+}
+
+/// A diagram in a page that couldn't be drawn, and the file it's in.
+#[derive(Clone, Debug)]
+pub struct UnrenderedDiagram {
+    /// What it's in, like `docs/intro.md`.
+    pub origin: String,
+    pub diagram: mermaid::Unrendered,
+}
+
+impl fmt::Display for UnrenderedDiagram {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let Self { origin, diagram } = self;
+        match diagram.line {
+            Some(line) => write!(f, "can't draw the diagram on line {line} of {origin}"),
+            None => write!(f, "can't draw a diagram in {origin}"),
+        }?;
+        write!(f, ": {}", diagram.reason)
     }
 }
 
@@ -208,8 +232,9 @@ pub fn build(site_dir: &Path) -> Result<Built> {
         markdown,
         ..
     } = config::load(site_dir)?;
-    // Once, so every page of a build has the same year, even at New Year.
-    let year = year_of_build(env::var_os("SOURCE_DATE_EPOCH"))?;
+    // Once, so every page of a build has the same year, and every diagram
+    // the same today, even at midnight.
+    let now = time_of_build(env::var_os("SOURCE_DATE_EPOCH"))?;
     if !source_dir.is_dir() {
         bail!("there's no source folder at {}", source_dir.display());
     }
@@ -254,8 +279,15 @@ pub fn build(site_dir: &Path) -> Result<Built> {
         };
         let raw =
             fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
-        let rendered = parse(&raw, &folder_url(&rel), &toc_depths, &site_url, &markdown)
-            .with_context(|| format!("rendering {}", path.display()))?;
+        let rendered = parse(
+            &raw,
+            &folder_url(&rel),
+            &toc_depths,
+            &site_url,
+            &markdown,
+            now,
+        )
+        .with_context(|| format!("rendering {}", path.display()))?;
 
         // A key left blank is as good as not there: a page never holds null,
         // and `title:` shouldn't wipe out the title little finds.
@@ -287,6 +319,7 @@ pub fn build(site_dir: &Path) -> Result<Built> {
             page_type,
             links: rendered.links,
             unrendered_math: rendered.unrendered_math,
+            unrendered_diagrams: rendered.unrendered_diagrams,
         });
     }
 
@@ -303,7 +336,7 @@ pub fn build(site_dir: &Path) -> Result<Built> {
     let tree = build_tree(&pages);
     let mut site = Mapping::new();
     site.insert("nav".into(), serde_yaml::to_value(build_nav(&tree))?);
-    site.insert("year".into(), year.into());
+    site.insert("year".into(), now.year().into());
     config::merge(&mut site, site_cfg);
     let nav: Vec<NavItem> = serde_yaml::from_value(site["nav"].clone())
         .context("`nav` in little.yml must be a list of links, each `{ title, url, children }`")?;
@@ -328,6 +361,7 @@ pub fn build(site_dir: &Path) -> Result<Built> {
     let mut outputs = Vec::new();
     let mut searched = Vec::new();
     let mut unrendered_math = Vec::new();
+    let mut unrendered_diagrams = Vec::new();
     for page in &pages {
         let children = page.is_index().then(|| children_of(&tree, &page.rel));
         let (prev, next) = neighbours
@@ -374,6 +408,12 @@ pub fn build(site_dir: &Path) -> Result<Built> {
             unrendered_math.extend(page.unrendered_math.iter().map(|formula| UnrenderedMath {
                 origin: origin.clone(),
                 formula: formula.clone(),
+            }));
+            unrendered_diagrams.extend(page.unrendered_diagrams.iter().map(|diagram| {
+                UnrenderedDiagram {
+                    origin: origin.clone(),
+                    diagram: diagram.clone(),
+                }
             }));
             let name = format!("the page built from {origin}");
             outputs.push(Output {
@@ -475,6 +515,7 @@ pub fn build(site_dir: &Path) -> Result<Built> {
         links,
         repo,
         unrendered_math,
+        unrendered_diagrams,
     })
 }
 
@@ -495,19 +536,18 @@ fn folder_in_repo(source_dir: &Path, site_dir: &Path) -> Result<Option<PathBuf>>
     Ok(source.strip_prefix(&root).ok().map(Path::to_path_buf))
 }
 
-/// The year a build is in, in UTC, for a theme's copyright notice: that of
-/// `SOURCE_DATE_EPOCH`, if it's set, so the build can be reproduced, or this
-/// one. A malformed `SOURCE_DATE_EPOCH` is an error, as its specification
+/// When a build is, in UTC, for a theme's copyright notice, and a diagram's
+/// today: `SOURCE_DATE_EPOCH`, if it's set, so the build can be reproduced,
+/// or now. A malformed `SOURCE_DATE_EPOCH` is an error, as its specification
 /// asks.
-fn year_of_build(source_date_epoch: Option<OsString>) -> Result<i32> {
+fn time_of_build(source_date_epoch: Option<OsString>) -> Result<OffsetDateTime> {
     let Some(epoch) = source_date_epoch else {
-        return Ok(OffsetDateTime::now_utc().year());
+        return Ok(OffsetDateTime::now_utc());
     };
     epoch
         .to_str()
         .and_then(|seconds| seconds.parse().ok())
         .and_then(|seconds| OffsetDateTime::from_unix_timestamp(seconds).ok())
-        .map(OffsetDateTime::year)
         .with_context(|| {
             format!(
                 "SOURCE_DATE_EPOCH must be a whole number of seconds since 1970, \
@@ -1033,6 +1073,7 @@ mod tests {
             page_type,
             links: Vec::new(),
             unrendered_math: Vec::new(),
+            unrendered_diagrams: Vec::new(),
         }
     }
 
@@ -1320,6 +1361,7 @@ mod tests {
             &(2..=6),
             &SiteUrl::default(),
             &config::Markdown::default(),
+            OffsetDateTime::UNIX_EPOCH,
         )
         .unwrap()
         .toc;
@@ -2069,6 +2111,51 @@ mod tests {
     }
 
     #[test]
+    fn each_diagram_that_cant_be_drawn_is_noted() {
+        let notebook = serde_json::json!({
+            "cells": [{ "cell_type": "markdown", "metadata": {}, "source": "```mermaid\nflowchat\n```" }],
+            "metadata": {},
+            "nbformat": 4,
+            "nbformat_minor": 5
+        });
+        let site = scratch_site(
+            "diagrams",
+            &[
+                ("little.yml", "theme: ./theme\n"),
+                (
+                    "docs/README.md",
+                    "---\ntitle: Home\n---\n```mermaid\nflowchart LR\n  A --> B\n```\n\n\
+                     ```mermaid\nflowchat LR\n```\n",
+                ),
+                ("docs/analysis.ipynb", &notebook.to_string()),
+                ("theme/_templates/default.html", "{{ page.content | safe }}"),
+            ],
+        );
+        let built = build(&site).unwrap();
+
+        let home = fs::read_to_string(site.join("dist/index.html")).unwrap();
+        assert!(home.starts_with("<svg id=\"mermaid-1\" "), "{home}");
+        // Each that isn't is noted, with the file it's in, and the line its
+        // block starts on in a Markdown file, in the order of the pages.
+        let docs = site.join("docs");
+        let warnings: Vec<_> = (built.unrendered_diagrams.iter())
+            .map(|d| d.to_string())
+            .collect();
+        let expected = [
+            format!(
+                "can't draw the diagram on line 9 of {}: No diagram type detected",
+                docs.join("README.md").display()
+            ),
+            format!(
+                "can't draw a diagram in {}: No diagram type detected",
+                docs.join("analysis.ipynb").display()
+            ),
+        ];
+        assert_eq!(warnings, expected);
+        let _ = fs::remove_dir_all(&site);
+    }
+
+    #[test]
     fn each_type_of_page_gets_its_template_and_data() {
         // Each template says which it is, and what `page` holds.
         let site = scratch_site(
@@ -2631,7 +2718,9 @@ mod tests {
                 ("theme/_templates/404.html", template),
             ],
         );
-        let year = year_of_build(env::var_os("SOURCE_DATE_EPOCH")).unwrap();
+        let year = time_of_build(env::var_os("SOURCE_DATE_EPOCH"))
+            .unwrap()
+            .year();
 
         build(&site).unwrap();
 
@@ -2649,11 +2738,12 @@ mod tests {
     }
 
     #[test]
-    fn source_date_epoch_chooses_the_year() {
-        let year = |epoch: &str| year_of_build(Some(epoch.into()));
+    fn source_date_epoch_chooses_the_time_of_the_build() {
+        let time = |epoch: &str| time_of_build(Some(epoch.into()));
         // The last second of 2025, and the first of 2026, in UTC.
-        assert_eq!(year("1767225599").unwrap(), 2025);
-        assert_eq!(year("1767225600").unwrap(), 2026);
+        assert_eq!(time("1767225599").unwrap().year(), 2025);
+        let new_year = OffsetDateTime::from_unix_timestamp(1_767_225_600).unwrap();
+        assert_eq!(time("1767225600").unwrap(), new_year);
 
         // Anything but a whole number of seconds stops the build, as does one
         // too far from 1970 to be a date.
@@ -2664,7 +2754,7 @@ mod tests {
             "99999999999999999999",
             "999999999999",
         ] {
-            let message = format!("{:#}", year(epoch).unwrap_err());
+            let message = format!("{:#}", time(epoch).unwrap_err());
             let expected = format!(
                 "SOURCE_DATE_EPOCH must be a whole number of seconds since 1970, \
                  as `date +%s` prints it, not {epoch:?}"
