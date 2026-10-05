@@ -46,7 +46,8 @@ cargo fmt                   # format — run before committing
   Markdown and notebooks, copy its other files, apply theme, index it for
   search, write the destination (`dist/`), noting the source file and URL of
   each file it writes. Finds where the source is in its repository, so each
-  page can link to its file there.
+  page can link to its file there, and works out the year it's built in, for
+  `site.year`.
 - `src/search.rs` — indexes each page's own content, under its title and URL,
   with Pagefind, in the language the theme gives the page, into the files of
   the destination's `pagefind/`.
@@ -242,4 +243,9 @@ Record notable choices as short ADRs in `decisions/`. Locked so far:
   can't be is written as TeX and warned of, as a broken link is; a heading's
   math is TeX in `page.toc` — see
   [`decisions/0025-rendering-math-as-mathml.md`](./decisions/0025-rendering-math-as-mathml.md).
+- **The year a site is built:** `site.year`, for a theme's copyright notice,
+  is the year the build starts in, in UTC, or that of `SOURCE_DATE_EPOCH`,
+  for reproducible builds; it's worked out once, beneath the config, like
+  `site.nav`, and the built-in theme shows no notice — see
+  [`decisions/0026-the-year-a-site-is-built.md`](./decisions/0026-the-year-a-site-is-built.md).
 - **Plugins:** sandboxed WASM (planned).

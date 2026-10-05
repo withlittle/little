@@ -24,6 +24,9 @@ The merged config (little → theme → site), plus a derived nav:
   sidebar by hand.
 - `site.repo` — the address of the repository the site's source is in, if its
   `little.yml` sets `repo` (see below). This theme links to it in its header
+- `site.year` — the year the site is built in, in UTC, like `2026`, for a copyright
+  notice: `&copy; {{ site.year }} {{ site.name }}`. With `SOURCE_DATE_EPOCH` set, for a
+  reproducible build, it's that time's year. This theme shows no notice
 
 ### `page`
 

@@ -7,12 +7,15 @@ use serde::{Deserialize, Serialize};
 use serde_yaml::{Mapping, Value};
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::env;
+use std::ffi::OsString;
 use std::fmt;
 use std::fs;
 use std::io::ErrorKind;
 use std::iter::Peekable;
 use std::path::{Component, Path, PathBuf};
 use std::slice;
+use time::OffsetDateTime;
 use walkdir::WalkDir;
 
 use crate::config::{Repo, SiteUrl};
@@ -205,6 +208,8 @@ pub fn build(site_dir: &Path) -> Result<Built> {
         markdown,
         ..
     } = config::load(site_dir)?;
+    // Once, so every page of a build has the same year, even at New Year.
+    let year = year_of_build(env::var_os("SOURCE_DATE_EPOCH"))?;
     if !source_dir.is_dir() {
         bail!("there's no source folder at {}", source_dir.display());
     }
@@ -291,12 +296,14 @@ pub fn build(site_dir: &Path) -> Result<Built> {
     check_clashes(&pages, &source_dir)?;
 
     // What little works out is the bottom of the cascade: the nav it builds
-    // from the folders goes beneath the config, so a theme or site that sets
-    // `nav` replaces it. `page.breadcrumbs`, `page.prev`, and `page.next`
-    // follow the nav the theme gets, so they agree with its sidebar.
+    // from the folders, and the year, go beneath the config, so a theme or
+    // site that sets `nav` or `year` replaces it. `page.breadcrumbs`,
+    // `page.prev`, and `page.next` follow the nav the theme gets, so they
+    // agree with its sidebar.
     let tree = build_tree(&pages);
     let mut site = Mapping::new();
     site.insert("nav".into(), serde_yaml::to_value(build_nav(&tree))?);
+    site.insert("year".into(), year.into());
     config::merge(&mut site, site_cfg);
     let nav: Vec<NavItem> = serde_yaml::from_value(site["nav"].clone())
         .context("`nav` in little.yml must be a list of links, each `{ title, url, children }`")?;
@@ -486,6 +493,27 @@ fn folder_in_repo(source_dir: &Path, site_dir: &Path) -> Result<Option<PathBuf>>
         None => canonical(site_dir)?,
     };
     Ok(source.strip_prefix(&root).ok().map(Path::to_path_buf))
+}
+
+/// The year a build is in, in UTC, for a theme's copyright notice: that of
+/// `SOURCE_DATE_EPOCH`, if it's set, so the build can be reproduced, or this
+/// one. A malformed `SOURCE_DATE_EPOCH` is an error, as its specification
+/// asks.
+fn year_of_build(source_date_epoch: Option<OsString>) -> Result<i32> {
+    let Some(epoch) = source_date_epoch else {
+        return Ok(OffsetDateTime::now_utc().year());
+    };
+    epoch
+        .to_str()
+        .and_then(|seconds| seconds.parse().ok())
+        .and_then(|seconds| OffsetDateTime::from_unix_timestamp(seconds).ok())
+        .map(OffsetDateTime::year)
+        .with_context(|| {
+            format!(
+                "SOURCE_DATE_EPOCH must be a whole number of seconds since 1970, \
+                 as `date +%s` prints it, not {epoch:?}"
+            )
+        })
 }
 
 /// What a template sees as `page`: what little works out for it, with the
@@ -2588,6 +2616,61 @@ mod tests {
             assert!(message.starts_with(expected), "{message}");
         }
         let _ = fs::remove_dir_all(&site);
+    }
+
+    #[test]
+    fn every_page_gets_the_year_of_the_build() {
+        let template = "&copy; {{ site.year }} {{ site.name }}";
+        let site = scratch_site(
+            "year",
+            &[
+                ("little.yml", "theme: ./theme\nname: Little\n"),
+                ("docs/README.md", "# Home\n"),
+                ("docs/guide.md", "# Guide\n"),
+                ("theme/_templates/default.html", template),
+                ("theme/_templates/404.html", template),
+            ],
+        );
+        let year = year_of_build(env::var_os("SOURCE_DATE_EPOCH")).unwrap();
+
+        build(&site).unwrap();
+
+        let read = |path: &str| fs::read_to_string(site.join("dist").join(path)).unwrap();
+        for path in ["index.html", "guide/index.html", "404.html"] {
+            assert_eq!(read(path), format!("&copy; {year} Little"), "{path}");
+        }
+
+        // It's beneath the config, like the nav, so a `year` there replaces it.
+        let site_cfg = "theme: ./theme\nname: Little\nyear: 2019–2026\n";
+        fs::write(site.join("little.yml"), site_cfg).unwrap();
+        build(&site).unwrap();
+        assert_eq!(read("index.html"), "&copy; 2019–2026 Little");
+        let _ = fs::remove_dir_all(&site);
+    }
+
+    #[test]
+    fn source_date_epoch_chooses_the_year() {
+        let year = |epoch: &str| year_of_build(Some(epoch.into()));
+        // The last second of 2025, and the first of 2026, in UTC.
+        assert_eq!(year("1767225599").unwrap(), 2025);
+        assert_eq!(year("1767225600").unwrap(), 2026);
+
+        // Anything but a whole number of seconds stops the build, as does one
+        // too far from 1970 to be a date.
+        for epoch in [
+            "",
+            "soon",
+            "1767225600.5",
+            "99999999999999999999",
+            "999999999999",
+        ] {
+            let message = format!("{:#}", year(epoch).unwrap_err());
+            let expected = format!(
+                "SOURCE_DATE_EPOCH must be a whole number of seconds since 1970, \
+                 as `date +%s` prints it, not {epoch:?}"
+            );
+            assert_eq!(message, expected);
+        }
     }
 
     #[test]

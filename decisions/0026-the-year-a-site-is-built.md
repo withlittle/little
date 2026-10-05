@@ -1,6 +1,6 @@
 # 0026 — The year a site is built
 
-- Status: proposed
+- Status: accepted
 - Date: 2026-10-05
 
 ## Context
