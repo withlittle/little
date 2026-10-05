@@ -54,7 +54,7 @@ draws a diagram as SVG, in a browser.
 - **What a diagram can do:** mermaid.js cleans each diagram, so it can't
   reach the page around it. merman 0.7 doesn't clean them as well: CSS in
   a diagram's config, or in a `classDef`, can style the whole page, and a
-  class diagram can carry HTML past its cleaning, scripts and all. So a
+  class or ER diagram can carry HTML into it, scripts and all. So a
   diagram can do what raw HTML can, and a site that turns raw HTML off for
   Markdown it doesn't trust ([0022](./0022-markdown-extensions.md)) needs
   diagrams off too: without a word, or by stopping the build until it says
