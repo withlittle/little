@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 anyhow = "1.0.104"
 base64 = "0.23.1"
+chrono = { version = "0.4.45", default-features = false }
 clap = { version = "4.6.7", features = ["derive"] }
 codemap = "0.1.3"
 comrak = "0.55.0"
@@ -14,6 +15,7 @@ futures = "0.3.34"
 grass = { version = "0.13.4", default-features = false, features = ["random"] }
 lychee-lib = { version = "0.24.2", default-features = false }
 math-core = "0.8.2"
+merman = { version = "0.7.0", features = ["render"] }
 minijinja = { version = "2.24.0", features = ["loader"] }
 notify = "8.2.0"
 notify-debouncer-mini = "0.7.0"

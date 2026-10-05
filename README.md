@@ -50,7 +50,7 @@ Then add a `little.yml` to name your site. See [Configuration](#configuration).
 
 ```sh
 little build                         # render the site into dist/, and warn of broken links
-little build --strict                # fail on a broken link, or math that isn't rendered, as for CI
+little build --strict                # fail on a broken link, formula, or diagram, as for CI
 little serve                         # dev server with live reload at http://127.0.0.1:8080
 little serve --port 3000             # serve on another port, just this once
 little config                        # print the site's config, merged
@@ -62,8 +62,9 @@ little --help                        # list every command and option
   [destination](#choosing-folders)) every time, so don't keep anything there by
   hand. A build that fails leaves the last one in place. Once it's built the
   site, it [checks every link](#checking-links) in it, and warns of each one
-  that's broken, and of each formula it [couldn't
-  render](#choosing-how-math-is-written).
+  that's broken, of each formula it [couldn't
+  render](#choosing-how-math-is-written), and of each diagram it [couldn't
+  draw](#choosing-how-diagrams-are-drawn).
 - `serve` builds first, then watches the source folder, the theme's folder
   (and those of the themes it [builds on](#building-on-another-theme), unless
   they're [downloaded](#downloading-a-theme)), and `little.yml`, rebuilding and
@@ -73,7 +74,8 @@ little --help                        # list every command and option
   port](#choosing-where-to-serve) your config sets, unless `--host` or
   `--port` says otherwise, and under the path of the site's
   [`url`](#choosing-the-sites-url), if it has one. After each build, it warns
-  of broken links within the site, and of math it couldn't render.
+  of broken links within the site, of math it couldn't render, and of
+  diagrams it couldn't draw.
 - `config` prints the [config](#configuration) the theme gets as `site`
   (without `site.nav` and `site.year`), so you can check a setting without
   building.
@@ -113,8 +115,8 @@ my-docs/
   replaces it.
 - **Markdown.** CommonMark plus GitHub's extensions to it: tables,
   strikethrough, task lists, autolinks, footnotes, callouts, emoji shortcodes
-  like `:tada:`, HTML, like `<details>`, and math. To turn on others, like
-  `==marked==` text, or to turn these off, see
+  like `:tada:`, HTML, like `<details>`, math, and diagrams. To turn on
+  others, like `==marked==` text, or to turn these off, see
   [Choosing Markdown's extensions](#choosing-markdowns-extensions). Every
   heading gets an `id`, so you can link straight to a section
   (`guide/install.md#from-source`), and the built-in theme shows a `#` that
@@ -136,12 +138,17 @@ my-docs/
   ```` ```rust ````, and little highlights it as it builds the page, in any
   of the 220 languages [bat](https://github.com/sharkdp/bat) has, named as on
   GitHub, like `rust`, `rs`, `shell`, or `golang`. A block in a language
-  little doesn't have, like `mermaid`, or without one, stays plain. See
+  little doesn't have, like `plantuml`, or without one, stays plain. See
   [Choosing how code is highlighted](#choosing-how-code-is-highlighted).
 - **Math.** Write it as on GitHub, in LaTeX: `$x^2$` or `` $`x^2`$ `` in a
   line, and `$$…$$` or a ```` ```math ```` block on its own. little renders
   it as it builds the page, as MathML, which browsers show without
   JavaScript. See [Choosing how math is written](#choosing-how-math-is-written).
+- **Diagrams.** Write them as on GitHub, in
+  [Mermaid](https://mermaid.js.org), in a ```` ```mermaid ```` block:
+  flowcharts, sequence diagrams, gantt charts, and more. little draws each
+  as it builds the page, as SVG, which browsers show without JavaScript.
+  See [Choosing how diagrams are drawn](#choosing-how-diagrams-are-drawn).
 - **Links and images.** Write them relative to the file they're in, as on
   GitHub, and they work wherever the site is published: in
   `guide/install.md`, `![Setup](images/setup.png)` shows
@@ -208,9 +215,9 @@ my-docs/
   - an output that needs Jupyter's JavaScript to show it, like a widget,
     shows its text, or nothing.
 
-  Its title, table of contents, links, math, and footnotes work as in a
-  Markdown file, but a cell's footnotes are its own: write each note in the
-  cell that refers to it, and give notes in different cells different
+  Its title, table of contents, links, math, diagrams, and footnotes work as
+  in a Markdown file, but a cell's footnotes are its own: write each note in
+  the cell that refers to it, and give notes in different cells different
   names. A link to it, like `[Analysis](analysis.ipynb#results)`, leads to
   its page.
   Put its frontmatter in a raw or Markdown cell at the top, as
@@ -239,7 +246,8 @@ little's own settings, like the [theme](#choosing-a-theme), the
 [folders](#choosing-folders) a site is built from and into, the
 [headings](#choosing-headings-for-tables-of-contents) its tables of contents
 list, the [Markdown](#choosing-markdowns-extensions) its pages are written
-in, how their [code is highlighted](#choosing-how-code-is-highlighted),
+in, how their [code is highlighted](#choosing-how-code-is-highlighted) and
+[diagrams drawn](#choosing-how-diagrams-are-drawn),
 [where `little serve` serves it](#choosing-where-to-serve), the
 [repository](#choosing-the-sites-repository) its source is in, and whether
 it's [searchable](#search); a site's name, language, and look are up to the
@@ -402,6 +410,7 @@ turns on GitHub's, so Markdown written for GitHub renders as it does there:
 | `emoji` | `true` | emoji shortcodes, like `:tada:` for 🎉 |
 | `raw_html` | `true` | HTML, like `<details>`, rendered as it is |
 | `math` | `mathml` | math, like `$x^2$`, `$$…$$`, and ```` ```math ```` blocks, [rendered as MathML](#choosing-how-math-is-written) |
+| `mermaid` | `svg` | diagrams, in ```` ```mermaid ```` blocks, [drawn as SVG](#choosing-how-diagrams-are-drawn) |
 | `smart_punctuation` | `false` | `"quotes"` that curl, `--` and `---` for – and —, and `...` for … |
 | `superscript` | `false` | `x^2^` |
 | `subscript` | `false` | `H~2~O`, so only `~~` strikes through |
@@ -414,13 +423,15 @@ turns on GitHub's, so Markdown written for GitHub renders as it does there:
 | `hard_breaks` | `false` | a line break, kept wherever a paragraph has one |
 | `cjk_friendly_emphasis` | `false` | `**` and `*` beside Chinese, Japanese, and Korean punctuation |
 
-To turn smart punctuation on, say, and HTML off, set them in `little.yml`:
+To turn smart punctuation on, say, and HTML off, with the diagrams that can
+carry it, set them in `little.yml`:
 
 ```yaml
 # little.yml
 markdown:
   smart_punctuation: true
   raw_html: false
+  mermaid: false
 ```
 
 - Set only those you change: the rest stay as they were. A theme can set
@@ -429,17 +440,19 @@ markdown:
   same for every page: a page can't choose its own in its frontmatter.
 - HTML is rendered as it is, `<script>` too, and so is the HTML a notebook's
   code showed, so a site built from Markdown or notebooks it doesn't trust
-  should set `raw_html: false`. A link or image in HTML leads where a
+  should set `raw_html: false`, and `mermaid: false` with it, as a diagram
+  can carry HTML too. A link or image in HTML leads where a
   browser takes it: little doesn't lead it from the folder of the file it's
   in, to a page from its `.md` file, or under the path of the site's
   [`url`](#choosing-the-sites-url), and warns of a broken one as a reader
   follows it.
-- `math` is `mathml`, `tex`, or `false`: see [Choosing how math is
-  written](#choosing-how-math-is-written). Each other must be `true` or
-  `false`, unquoted, as YAML reads `yes` and `"true"` as text, and
-  `inline_footnotes` needs `footnotes`. A setting little doesn't have, like
-  `tabels`, is an error too, which lists those it has. Otherwise, every
-  command stops and says why.
+- `math` is `mathml`, `tex`, or `false`, and `mermaid` is `svg` or `false`:
+  see [Choosing how math is written](#choosing-how-math-is-written) and
+  [Choosing how diagrams are drawn](#choosing-how-diagrams-are-drawn). Each
+  other must be `true` or `false`, unquoted, as YAML reads `yes` and `"true"`
+  as text. `inline_footnotes` needs `footnotes`, and `mermaid: svg` needs
+  `raw_html`. A setting little doesn't have, like `tabels`, is an error too,
+  which lists those it has. Otherwise, every command stops and says why.
 
 ### Choosing how math is written
 
@@ -487,6 +500,70 @@ markdown:
   frontmatter.
 - Anything but `mathml`, `tex`, or `false` is an error, `true` too, and every
   command stops and says why.
+
+### Choosing how diagrams are drawn
+
+little finds diagrams as GitHub does, in [Mermaid](https://mermaid.js.org),
+in ```` ```mermaid ```` blocks, and draws each as it builds the page, as SVG,
+which browsers show without JavaScript:
+
+````markdown
+```mermaid
+flowchart LR
+  docs["docs/"] --> build(["little build"]) --> dist["dist/"]
+```
+````
+
+`markdown.mermaid` chooses how a ```` ```mermaid ```` block is written:
+
+| Value | A diagram is written… |
+| ----- | --------------------- |
+| `svg` | as an `<svg>`, drawn as little builds the page. little's default. |
+| `false` | as code, in a `<code class="language-mermaid">`, for a theme that draws diagrams in the browser, with Mermaid's own script |
+
+```yaml
+# little.yml
+markdown:
+  mermaid: false
+```
+
+- little draws diagrams with [merman](https://crates.io/crates/merman), a
+  port of Mermaid to Rust, which is built in: flowcharts, sequence, class,
+  state, and ER diagrams, gantt and pie charts, git graphs, mindmaps, and
+  Mermaid's other types. It isn't Mermaid's own script, so a diagram can
+  look a little different than on GitHub, and Mermaid's newest syntax may
+  need a newer little.
+- A block is Mermaid by its language, the first word after its fence, up to
+  a comma, in any case, as for [highlighting](#choosing-how-code-is-highlighted).
+- A diagram little can't read, like one with a typo in its type, is written
+  as code, as with `false`, and warned of, with the file and line it's on:
+
+  ```text
+  warning: can't draw the diagram on line 12 of ./docs/guide.md: No diagram type detected
+  ```
+
+  `little build --strict` fails on one, and `little serve` warns of each
+  after each build. One in a notebook is warned of without a line.
+- A diagram is drawn the same in each build. A gantt chart is drawn 800
+  pixels wide, and its line at today's date is at the day the site was
+  built, in UTC, or at [`SOURCE_DATE_EPOCH`](#a-copyright-notice), unless
+  the diagram turns it off, with `todayMarker off`.
+- Diagrams have Mermaid's default look, on the page's background, and a
+  theme can't change it, or show them dark in dark mode. A diagram's own
+  config still applies to it, like `%%{init: {"theme": "dark"}}%%` on its
+  first line.
+- A diagram can carry HTML, as Markdown's HTML can, so `mermaid: svg` needs
+  `raw_html: true`: with `raw_html: false`, every command stops until you
+  set `mermaid: false` too.
+- Search doesn't find the words in a diagram. A link in one, from a
+  `click`, isn't led from the page's folder, or under the path of the
+  site's [`url`](#choosing-the-sites-url), and isn't
+  [checked](#checking-links). Math in its labels isn't rendered.
+- A theme that draws diagrams itself sets `false` in its `little.yml`, and
+  the site's `little.yml` has the last word. A page can't choose its own in
+  its frontmatter.
+- Anything but `svg` or `false` is an error, `true` too, and every command
+  stops and says why.
 
 ### Choosing how code is highlighted
 
@@ -840,10 +917,16 @@ to style, as the built-in theme's
   and a `<math display="block">` on its own, inside a `<p>` for `$$…$$`.
   The built-in theme scrolls a wide one with
   `math[display="block"] { overflow-x: auto; overflow-y: hidden; }`.
+- A [diagram](#choosing-how-diagrams-are-drawn) is an `<svg>` with the id
+  `mermaid-1`, `mermaid-2`, and so on, in the order they're in the page,
+  which its own styles are scoped to. It's as wide as it's drawn, but no
+  wider than the page. The built-in theme centres each with
+  `svg[id^="mermaid-"] { display: block; margin: 1.2rem auto; }`.
 - A theme gets the site's [extensions](#choosing-markdowns-extensions) as
   `site.markdown`, so it can load a script only for a site that needs it,
-  like KaTeX inside `{% if site.markdown.math == "tex" %}`, or highlight.js
-  inside `{% if not site.markdown.highlight %}`.
+  like KaTeX inside `{% if site.markdown.math == "tex" %}`, highlight.js
+  inside `{% if not site.markdown.highlight %}`, or Mermaid's inside
+  `{% if not site.markdown.mermaid %}`.
 
 ## Checking links
 
@@ -863,8 +946,9 @@ warning: broken link https://github.com/withlittle/litle in ./docs/about.md: Rej
   shown as a reader follows it, from the root of the domain. A link on many
   pages, like one in the theme, is one warning, which names a few of them and
   counts the rest.
-- `little build --strict` fails on a broken link, or a formula little
-  [couldn't render](#choosing-how-math-is-written), so CI can keep a broken
+- `little build --strict` fails on a broken link, a formula little
+  [couldn't render](#choosing-how-math-is-written), or a diagram it
+  [couldn't draw](#choosing-how-diagrams-are-drawn), so CI can keep a broken
   site from being published. `dist/` is written either way.
 - `little serve` checks only the links within the site, so a save needn't
   wait for other sites.
@@ -880,7 +964,8 @@ warning: broken link https://github.com/withlittle/litle in ./docs/about.md: Rej
   skip one yet.
 - Links that only work on your computer or network, like
   `http://localhost:8080/`, and example domains, like `example.com`, aren't
-  checked. Nor are `mailto:` and `tel:` links, or URLs in code.
+  checked. Nor are `mailto:` and `tel:` links, URLs in code, or links in
+  [diagrams](#choosing-how-diagrams-are-drawn).
 - Links into the site's [repository](#choosing-the-sites-repository), like
   the theme's links to edit each page, aren't checked either: a new page's
   file isn't there until you push it, and a link checker can't see the files
@@ -904,7 +989,8 @@ headings within them, as a reader types.
 - What's indexed is each page's own content, from its Markdown or notebook,
   under its title, so nothing the theme puts around it, like its header or
   nav, fills the results. The 404 page isn't indexed, nor is an HTML file
-  copied from `docs/`.
+  copied from `docs/`, or the words in a
+  [diagram](#choosing-how-diagrams-are-drawn).
 - Words are matched by their stem in the site's [`lang`](#configuration), so
   "installing" finds "install".
 - To go without, set `search: false`, and the built-in theme leaves out the

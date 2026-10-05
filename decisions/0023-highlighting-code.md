@@ -1,6 +1,8 @@
 # 0023 — Highlighting code
 
-- Status: accepted
+- Status: accepted; amended by [0027](./0027-drawing-mermaid-diagrams.md),
+  which draws a ```` ```mermaid ```` block as a diagram, unless
+  `markdown.mermaid` is `false`
 - Date: 2026-10-04
 
 ## Context

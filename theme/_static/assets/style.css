@@ -249,6 +249,10 @@ a:hover { text-decoration: underline; }
    down: the boxes of its glyphs can reach a few pixels past its own. */
 .content math[display="block"] { overflow-x: auto; overflow-y: hidden; }
 
+/* A diagram is centred. merman draws one as wide as it is, but no wider
+   than the page; this shrinks one that sets its own width, too. */
+.content svg[id^="mermaid-"] { display: block; max-width: 100%; height: auto; margin: 1.2rem auto; }
+
 .content img { max-width: 100%; height: auto; }
 
 .content ul { padding-left: 1.3rem; }

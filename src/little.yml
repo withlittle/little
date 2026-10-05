@@ -53,12 +53,16 @@ markdown:
   alerts: true                 # callouts: > [!NOTE], [!TIP], [!IMPORTANT], [!WARNING], or [!CAUTION]
   emoji: true                  # :tada:
   # HTML in Markdown, like <details>, as it's written, scripts and all: turn it
-  # off for Markdown you don't trust.
+  # off for Markdown you don't trust, and `mermaid` with it.
   raw_html: true
   # Math, in $x$, $$x$$, $`x`$, and ```math blocks, written as `mathml`, which
   # browsers show as it is, as `tex`, marked with `data-math-style`, for a
   # theme that renders math itself, or `false`, for none, so $ is a dollar.
   math: mathml
+  # Diagrams, in ```mermaid blocks, drawn as `svg` as each page is built, or
+  # `false`, to leave them as code, for a theme that draws them itself. A
+  # diagram can carry HTML, so `svg` needs `raw_html`.
+  mermaid: svg
   # Beyond GitHub.
   smart_punctuation: false     # "curly quotes", -- and --- for dashes, and ... for …
   superscript: false           # x^2^

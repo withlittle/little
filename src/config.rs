@@ -32,7 +32,7 @@
 //! `markdown` holds a setting for each extension to CommonMark, like
 //! `tables`, that turns it on or off: little turns on GitHub's, and a theme
 //! or a site can change any of them. `math`, also GitHub's, chooses how math
-//! is written, and `highlight` how code is.
+//! is written, `mermaid` how diagrams are drawn, and `highlight` how code is.
 
 use anyhow::{Context, Result, anyhow, bail};
 use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, utf8_percent_encode};
@@ -178,9 +178,9 @@ impl Repo {
 }
 
 /// Which extensions to CommonMark each page is written with, how its math is
-/// written, and which classes its code is highlighted with, from the settings
-/// under `markdown`, each named for what an author writes, as
-/// `src/little.yml` describes them.
+/// written, how its diagrams are drawn, and which classes its code is
+/// highlighted with, from the settings under `markdown`, each named for what
+/// an author writes, as `src/little.yml` describes them.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Markdown {
     // As on GitHub.
@@ -194,6 +194,8 @@ pub struct Markdown {
     pub raw_html: bool,
     /// How math is written, if it's found.
     pub math: Option<Math>,
+    /// How a Mermaid block is drawn, if it's drawn rather than left as code.
+    pub mermaid: Option<Mermaid>,
     // Beyond GitHub.
     pub smart_punctuation: bool,
     pub superscript: bool,
@@ -216,6 +218,12 @@ pub struct Markdown {
 pub enum Math {
     MathML,
     Tex,
+}
+
+/// How a Mermaid block is drawn: as an `<svg>`, as little builds the page.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Mermaid {
+    Svg,
 }
 
 /// A set of classes for highlighted code: Pygments', like `k` for a keyword,
@@ -491,9 +499,9 @@ fn search(values: &Mapping) -> Result<bool> {
 }
 
 /// The extensions to CommonMark each page is written with, each `true` or
-/// `false`, how its math is written, and the classes its code is highlighted
-/// with, from the settings under `markdown`. little's own config sets every
-/// one, so any other is a typo.
+/// `false`, how its math is written, how its diagrams are drawn, and the
+/// classes its code is highlighted with, from the settings under `markdown`.
+/// little's own config sets every one, so any other is a typo.
 fn markdown(values: &Mapping) -> Result<Markdown> {
     let Some(Value::Mapping(settings)) = values.get("markdown") else {
         bail!("`markdown` must be settings, like `mark: true`");
@@ -530,6 +538,12 @@ fn markdown(values: &Mapping) -> Result<Markdown> {
             Some(Value::Bool(false)) => None,
             _ => bail!("`markdown.math` must be `mathml`, `tex`, or `false`"),
         },
+        // Nor here, as a site's would undo its theme's `false`.
+        mermaid: match settings.get("mermaid") {
+            Some(Value::String(form)) if form == "svg" => Some(Mermaid::Svg),
+            Some(Value::Bool(false)) => None,
+            _ => bail!("`markdown.mermaid` must be `svg` or `false`"),
+        },
         smart_punctuation: on("smart_punctuation")?,
         superscript: on("superscript")?,
         subscript: on("subscript")?,
@@ -551,6 +565,13 @@ fn markdown(values: &Mapping) -> Result<Markdown> {
     // comrak reads `^[…]` only with footnotes, so it'd be left as text.
     if markdown.inline_footnotes && !markdown.footnotes {
         bail!("`markdown.inline_footnotes` needs `markdown.footnotes` to be `true` too");
+    }
+    // merman doesn't clean every diagram, so one can carry HTML into the page.
+    if markdown.mermaid.is_some() && !markdown.raw_html {
+        bail!(
+            "`markdown.mermaid: svg` needs `markdown.raw_html` to be `true`, as a diagram can \
+             carry HTML: set `markdown.mermaid: false` too"
+        );
     }
     Ok(markdown)
 }
@@ -1073,15 +1094,17 @@ mod tests {
         assert_eq!(builtin, Markdown::default());
         assert!(builtin.tables && builtin.alerts && builtin.emoji && builtin.raw_html);
         assert_eq!(builtin.math, Some(Math::MathML));
+        assert_eq!(builtin.mermaid, Some(Mermaid::Svg));
         assert!(!builtin.mark);
         assert_eq!(builtin.highlight, Some(Highlight::Pygments));
 
-        // A theme that renders math keeps its TeX, and a site turns another
-        // extension off, each merging over the settings beneath it.
-        let site_cfg = "theme: ./theme\nmarkdown:\n  raw_html: false\n";
+        // A theme that renders math keeps its TeX, and a site turns other
+        // extensions off, each merging over the settings beneath it.
+        let site_cfg = "theme: ./theme\nmarkdown:\n  raw_html: false\n  mermaid: false\n";
         let expected = Markdown {
             math: Some(Math::Tex),
             raw_html: false,
+            mermaid: None,
             ..Markdown::default()
         };
         assert_eq!(markdown(site_cfg), expected);
@@ -1091,6 +1114,12 @@ mod tests {
         assert_eq!(markdown(site_cfg).math, Some(Math::MathML));
         let site_cfg = "theme: ./theme\nmarkdown:\n  math: false\n";
         assert_eq!(markdown(site_cfg).math, None);
+
+        // A site leaves diagrams as code, for a theme that draws them.
+        let site_cfg = "markdown:\n  mermaid: false\n";
+        assert_eq!(markdown(site_cfg).mermaid, None);
+        let site_cfg = "markdown:\n  mermaid: svg\n";
+        assert_eq!(markdown(site_cfg).mermaid, Some(Mermaid::Svg));
 
         // A site chooses GitHub's classes, or none.
         let site_cfg = "markdown:\n  highlight: github\n";
@@ -1140,6 +1169,26 @@ mod tests {
             assert_eq!(
                 message,
                 "`markdown.highlight` must be `pygments`, `github`, or `false`"
+            );
+        }
+
+        // Diagrams are drawn as SVG or left as code: not `true`, which would
+        // undo a theme's `false`.
+        for value in ["true", "SVG", "png", "\"false\"", ""] {
+            let message = error(&site, &format!("markdown:\n  mermaid: {value}\n"));
+            assert_eq!(message, "`markdown.mermaid` must be `svg` or `false`");
+        }
+
+        // A diagram can carry HTML, so a site without raw HTML says so.
+        for site_cfg in [
+            "markdown:\n  raw_html: false\n",
+            "markdown:\n  raw_html: false\n  mermaid: svg\n",
+        ] {
+            let message = error(&site, site_cfg);
+            assert_eq!(
+                message,
+                "`markdown.mermaid: svg` needs `markdown.raw_html` to be `true`, as a diagram \
+                 can carry HTML: set `markdown.mermaid: false` too"
             );
         }
 

@@ -1,6 +1,6 @@
 # 0027 — Drawing Mermaid diagrams as SVG
 
-- Status: proposed
+- Status: accepted
 - Date: 2026-10-05
 - Amends: [0016](./0016-checking-links.md),
   [0022](./0022-markdown-extensions.md),

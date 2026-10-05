@@ -46,6 +46,18 @@ $$
 x = \frac{-b \pm \sqrt{b^2 - 4ac}}{2a}
 $$
 
+## Diagrams, as SVG
+
+Write a diagram in Mermaid, as on GitHub, and little draws it as it builds
+the page, so it shows without a script too:
+
+```mermaid
+flowchart LR
+  docs["docs/"] --> build(["little build"])
+  theme["theme/"] --> build
+  build --> dist["dist/"]
+```
+
 ## Code, in colour
 
 Name a code block's language after its fence, and little highlights it as it
@@ -55,6 +67,7 @@ builds the page, for the theme to colour:
 # little.yml
 markdown:
   math: mathml          # or tex, for a theme's own script, or false
+  mermaid: svg          # or false, for a theme's own script
   highlight: pygments   # or github, or false for a theme's own highlighter
 ```
 

@@ -99,10 +99,19 @@ mod tests {
     use super::*;
     use crate::config::{Markdown, SiteUrl};
     use crate::render::{Rendered, parse_document};
+    use time::OffsetDateTime;
 
     /// Render `md` with little's defaults, which write math as MathML.
     fn render(md: &str) -> Rendered {
-        parse_document(md, "/", &(2..=6), &SiteUrl::default(), &Markdown::default()).unwrap()
+        parse_document(
+            md,
+            "/",
+            &(2..=6),
+            &SiteUrl::default(),
+            &Markdown::default(),
+            OffsetDateTime::UNIX_EPOCH,
+        )
+        .unwrap()
     }
 
     const X_SQUARED: &str = "<msup><mi>x</mi><mn>2</mn></msup>";

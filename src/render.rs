@@ -11,9 +11,10 @@ use serde_yaml::Mapping;
 use std::borrow::Cow;
 use std::mem;
 use std::ops::RangeInclusive;
+use time::OffsetDateTime;
 
 use crate::config::{Markdown, Math, SiteUrl};
-use crate::{highlight, math};
+use crate::{highlight, math, mermaid};
 
 /// One heading in a page's in-page table of contents. They're listed in the
 /// order they come, and the build nests them like `site.nav`.
@@ -42,6 +43,9 @@ pub struct Rendered {
     /// The formulas in the body that couldn't be written as MathML, so are
     /// written as TeX, in the order they come.
     pub unrendered_math: Vec<math::Unrendered>,
+    /// The diagrams in the body that couldn't be drawn, so are written as
+    /// code, in the order they come.
+    pub unrendered_diagrams: Vec<mermaid::Unrendered>,
 }
 
 /// A link or image in a document, so a broken one can be shown as it's
@@ -56,10 +60,10 @@ pub struct WrittenLink {
 }
 
 /// Parse a document, written with the extensions to CommonMark in
-/// `markdown`, into its frontmatter, rendered HTML, with its math written and
-/// its code highlighted as `markdown` chooses, and outline, which lists its
-/// headings at the levels in `toc_depths` (the config's `toc_min_depth` to
-/// `toc_max_depth`).
+/// `markdown`, into its frontmatter, rendered HTML, with its math written,
+/// its diagrams drawn, as of `now`, and its code highlighted as `markdown`
+/// chooses, and outline, which lists its headings at the levels in
+/// `toc_depths` (the config's `toc_min_depth` to `toc_max_depth`).
 /// Links and images relative to the document, like `images/logo.png`, lead
 /// from `folder`, the URL of the folder it's in, like `/guide/`; those from
 /// the root of the site get the path of the site's `url`. A link to a page's
@@ -70,13 +74,17 @@ pub fn parse_document(
     toc_depths: &RangeInclusive<u8>,
     url: &SiteUrl,
     markdown: &Markdown,
+    now: OffsetDateTime,
 ) -> Result<Rendered> {
     let (frontmatter_src, body) = split_frontmatter(raw);
     let frontmatter = parse_frontmatter(&frontmatter_src)?;
     let options = render_options(markdown);
     let arena = Arena::new();
     let root = comrak::parse_document(&arena, &body, &options);
-    render_tree(
+    // comrak counts the body's lines, but a warning names the file's.
+    let lines_before = raw.lines().count() - body.lines().count();
+    let unrendered_diagrams = mermaid::draw(root, markdown, now, Some(lines_before));
+    let rendered = render_tree(
         root,
         frontmatter,
         folder,
@@ -84,7 +92,11 @@ pub fn parse_document(
         url,
         markdown,
         &options,
-    )
+    )?;
+    Ok(Rendered {
+        unrendered_diagrams,
+        ..rendered
+    })
 }
 
 /// The settings in frontmatter, as `split_frontmatter` finds it.
@@ -98,8 +110,8 @@ pub(crate) fn parse_frontmatter(frontmatter: &str) -> Result<Mapping> {
 }
 
 /// Render a document parsed with `options`, as `parse_document` does, from
-/// its tree in comrak's arena: its links led within the site, its outline,
-/// and its HTML.
+/// its tree in comrak's arena, whose diagrams the caller has drawn: its
+/// links led within the site, its outline, and its HTML.
 pub(crate) fn render_tree<'a>(
     root: &'a AstNode<'a>,
     frontmatter: Mapping,
@@ -129,6 +141,7 @@ pub(crate) fn render_tree<'a>(
         first_h1,
         links,
         unrendered_math,
+        unrendered_diagrams: Vec::new(),
     })
 }
 
@@ -383,6 +396,9 @@ mod tests {
     /// little's defaults, from `src/little.yml`: every heading but the title.
     const TOC_DEPTHS: RangeInclusive<u8> = 2..=6;
 
+    /// When each test's page is built, for its diagrams.
+    const NOW: OffsetDateTime = OffsetDateTime::UNIX_EPOCH;
+
     fn render(md: &str) -> Rendered {
         parse_document(
             md,
@@ -390,6 +406,7 @@ mod tests {
             &TOC_DEPTHS,
             &SiteUrl::default(),
             &Markdown::default(),
+            NOW,
         )
         .expect("document renders")
     }
@@ -431,7 +448,8 @@ mod tests {
                     "/",
                     &TOC_DEPTHS,
                     &SiteUrl::default(),
-                    &Markdown::default()
+                    &Markdown::default(),
+                    NOW
                 )
                 .err()
                 .unwrap()
@@ -453,8 +471,15 @@ mod tests {
         let md = "# Title\n\n## Getting Started\n\n### Install\n\n#### From Source\n\n\
                   ##### On Linux\n\n###### With Nix\n\n# Another Title\n\n## Usage\n";
         let toc = |depths| {
-            let r = parse_document(md, "/", &depths, &SiteUrl::default(), &Markdown::default())
-                .unwrap();
+            let r = parse_document(
+                md,
+                "/",
+                &depths,
+                &SiteUrl::default(),
+                &Markdown::default(),
+                NOW,
+            )
+            .unwrap();
             let items = r.toc.iter().map(|t| format!("{} {}", t.depth, t.anchor));
             items.collect::<Vec<_>>()
         };
@@ -513,7 +538,8 @@ mod tests {
                 math,
                 ..Markdown::default()
             };
-            let r = parse_document(md, "/", &TOC_DEPTHS, &SiteUrl::default(), &markdown).unwrap();
+            let r =
+                parse_document(md, "/", &TOC_DEPTHS, &SiteUrl::default(), &markdown, NOW).unwrap();
             // A heading's math is TeX in the outline, which is text.
             let titles: Vec<_> = r.toc.iter().map(|item| item.title.as_str()).collect();
             assert_eq!(titles, ["The x^2 term", "Done 🎉", "Two lines"]);
@@ -568,7 +594,8 @@ mod tests {
                 let mut markdown = Markdown::default();
                 *setting(&mut markdown) = on;
                 let rendered =
-                    parse_document(md, "/", &TOC_DEPTHS, &SiteUrl::default(), &markdown).unwrap();
+                    parse_document(md, "/", &TOC_DEPTHS, &SiteUrl::default(), &markdown, NOW)
+                        .unwrap();
                 assert_eq!(
                     rendered.html.contains(html),
                     on,
@@ -598,7 +625,7 @@ mod tests {
                 highlight,
                 ..Markdown::default()
             };
-            parse_document(md, "/", &TOC_DEPTHS, &SiteUrl::default(), &markdown)
+            parse_document(md, "/", &TOC_DEPTHS, &SiteUrl::default(), &markdown, NOW)
                 .unwrap()
                 .html
         };
@@ -623,8 +650,8 @@ mod tests {
     fn code_without_a_language_little_knows_is_plain() {
         for (md, code) in [
             (
-                "```mermaid\nA-->B\n```\n",
-                "<code class=\"language-mermaid\">",
+                "```plantuml\nA-->B\n```\n",
+                "<code class=\"language-plantuml\">",
             ),
             ("```\nA-->B\n```\n", "<code>"),
             ("    A-->B\n", "<code>"),
@@ -642,7 +669,7 @@ mod tests {
                 ..Markdown::default()
             };
             let md = "$a*b + c*d$ costs $5";
-            parse_document(md, "/", &TOC_DEPTHS, &SiteUrl::default(), &markdown)
+            parse_document(md, "/", &TOC_DEPTHS, &SiteUrl::default(), &markdown, NOW)
                 .unwrap()
                 .html
         };
@@ -669,7 +696,7 @@ mod tests {
                 math,
                 ..Markdown::default()
             };
-            parse_document(md, "/", &TOC_DEPTHS, &SiteUrl::default(), &markdown)
+            parse_document(md, "/", &TOC_DEPTHS, &SiteUrl::default(), &markdown, NOW)
                 .unwrap()
                 .html
         };
@@ -708,7 +735,7 @@ mod tests {
         let md = "[Install](/guide/install) ![Logo](/logo.png) [Guide][guide]\n\n\
                   [Usage](usage) [Top](#top) [little](https://example.com/)\n\n\
                   [guide]: /guide/\n";
-        let html = parse_document(md, "/guide/", &TOC_DEPTHS, &url, &Markdown::default())
+        let html = parse_document(md, "/guide/", &TOC_DEPTHS, &url, &Markdown::default(), NOW)
             .unwrap()
             .html;
         for within in [
@@ -780,6 +807,7 @@ mod tests {
             &TOC_DEPTHS,
             &SiteUrl::default(),
             &Markdown::default(),
+            NOW,
         )
         .unwrap()
         .html;
@@ -838,7 +866,7 @@ mod tests {
         let md = "[Install](install.md#from-source) [Home](../README.md) \
                   [Guide](./README.md) [Usage][usage] ![Diagram](diagram.md)\n\n\
                   [usage]: /guide/usage.md\n";
-        let html = parse_document(md, "/guide/", &TOC_DEPTHS, &url, &Markdown::default())
+        let html = parse_document(md, "/guide/", &TOC_DEPTHS, &url, &Markdown::default(), NOW)
             .unwrap()
             .html;
         for within in [
@@ -862,7 +890,7 @@ mod tests {
                   [Top](#top) [Search](https://example.com/?q=a&b='c') [Usage][usage]\n\n\
                   [usage]: /guide/usage\n";
         let rendered =
-            parse_document(md, "/guide/", &TOC_DEPTHS, &url, &Markdown::default()).unwrap();
+            parse_document(md, "/guide/", &TOC_DEPTHS, &url, &Markdown::default(), NOW).unwrap();
         let links: Vec<_> = rendered
             .links
             .iter()
