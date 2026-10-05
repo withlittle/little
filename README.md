@@ -75,7 +75,8 @@ little --help                        # list every command and option
   [`url`](#choosing-the-sites-url), if it has one. After each build, it warns
   of broken links within the site, and of math it couldn't render.
 - `config` prints the [config](#configuration) the theme gets as `site`
-  (without `site.nav`), so you can check a setting without building.
+  (without `site.nav` and `site.year`), so you can check a setting without
+  building.
 
 ## Site layout
 
@@ -660,6 +661,7 @@ rather than setting it to null, so `{% if page.description %}` and
 | -------- | -------- |
 | `site` | The merged config: `site.name`, `site.description`, and any keys you add |
 | `site.nav` | The nav tree: a list of `{ title, url, children }`; a folder without a `README.md` has no `url`. A `nav` in `little.yml` replaces it |
+| `site.year` | The year the site is built in, in UTC, like `2026`, for a [copyright notice](#a-copyright-notice). A `year` in `little.yml` replaces it |
 | `page.type` | The page's type: `home`, `section`, `page`, or `404` |
 | `page.url` | The page's URL, e.g. `/guide/install`; compare it with `item.url` to mark the current nav item |
 | `page.title` | The page title |
@@ -787,6 +789,25 @@ box is [Pagefind](https://pagefind.app/)'s own, which the built-in theme uses:
   [JavaScript API](https://pagefind.app/docs/api/), from
   `{{ '/pagefind/pagefind.js' | url }}`.
 - Each page is indexed in the language of its `<html lang>`.
+
+### A copyright notice
+
+`site.year` is the year little builds the site in, so a theme's copyright
+notice stays current without editing it each January:
+
+```html
+<footer>&copy; {{ site.year }} {{ site.name }}. All rights reserved.</footer>
+```
+
+- It's the year in UTC, as CI builds in, so in Sydney it turns over at 11am
+  on 1 January. Every page of a build has the same year, and a site that
+  isn't rebuilt keeps the year it was last built in.
+- With [`SOURCE_DATE_EPOCH`](https://reproducible-builds.org/specs/source-date-epoch/)
+  set, as reproducible builds set it, it's that time's year, so the same
+  source always builds the same site. It must be a whole number of seconds
+  since 1970, as `date +%s` prints it, or the build stops.
+- The built-in theme shows no notice: whether a site has one, and what it
+  says, is up to the site.
 
 ### Styling Markdown
 
