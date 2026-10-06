@@ -1,6 +1,6 @@
 # 0028 — How diagrams look
 
-- Status: proposed
+- Status: accepted
 - Date: 2026-10-06
 - Amends: [0027](./0027-drawing-mermaid-diagrams.md)
 

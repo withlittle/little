@@ -61,7 +61,8 @@ markdown:
   math: mathml
   # Diagrams, in ```mermaid blocks, drawn as `svg` as each page is built, or
   # `false`, to leave them as code, for a theme that draws them itself. A
-  # diagram can carry HTML, so `svg` needs `raw_html`.
+  # diagram can carry HTML, so `svg` needs `raw_html`. `mermaid`, below,
+  # chooses how one drawn as `svg` looks.
   mermaid: svg
   # Beyond GitHub.
   smart_punctuation: false     # "curly quotes", -- and --- for dashes, and ... for …
@@ -80,3 +81,8 @@ markdown:
   # `github`, like `pl-k` and `pl-s`, or `false`, for a theme that highlights
   # code itself.
   highlight: pygments
+
+# `mermaid`, how diagrams look, has no default: that's the theme's to choose,
+# and the site's to change. It holds Mermaid's own config, in Mermaid's own
+# names, like `theme: forest`, or `theme: base` with `themeVariables`, each
+# colour in quotes, like "#6f42c1".

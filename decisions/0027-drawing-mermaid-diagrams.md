@@ -1,6 +1,8 @@
 # 0027 — Drawing Mermaid diagrams as SVG
 
-- Status: accepted
+- Status: accepted; amended by [0028](./0028-how-diagrams-look.md), which
+  lets a theme and a site choose how diagrams look, with Mermaid's own
+  config, in `mermaid`, and a theme widen a gantt chart
 - Date: 2026-10-05
 - Amends: [0016](./0016-checking-links.md),
   [0022](./0022-markdown-extensions.md),

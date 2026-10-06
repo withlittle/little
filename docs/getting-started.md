@@ -58,6 +58,10 @@ flowchart LR
   build --> dist["dist/"]
 ```
 
+It has Mermaid's default look, unless the theme or the site chooses another,
+in Mermaid's own settings, under `mermaid` in its `little.yml`, like
+`theme: forest`.
+
 ## Code, in colour
 
 Name a code block's language after its fence, and little highlights it as it
