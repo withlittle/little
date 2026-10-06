@@ -25,8 +25,9 @@ cargo fmt                   # format — run before committing
   of heading its tables of contents list, the host and port
   `little serve` serves it at, the `url` it's published at, the `repo` and
   `branch` its source is in, whether it's indexed for search, the extensions
-  to Markdown its pages are written with, how their math is written and
-  their diagrams drawn, and the classes their code is highlighted with.
+  to Markdown its pages are written with, how their math is written, how
+  their diagrams are drawn, and look, with Mermaid's own config, and the
+  classes their code is highlighted with.
 - `src/little.yml` — little's own defaults (level 1), compiled into the binary.
 - `src/render.rs` — Markdown (comrak, with the extensions the site turns on) +
   YAML frontmatter → HTML fragment, with each relative link led from the
@@ -37,9 +38,9 @@ cargo fmt                   # format — run before committing
   with math-core, each read on its own; one it can't read is written as its
   TeX, and noted, as it's written, to warn of.
 - `src/mermaid.rs` — draws each Mermaid block in comrak's tree as SVG, with
-  merman, before comrak writes the page, with the id `mermaid-1`, and so on,
-  the same in each build; one it can't draw stays code, and is noted, with
-  its line, to warn of.
+  merman, before comrak writes the page, from the site's Mermaid config, over
+  little's own, with the id `mermaid-1`, and so on, the same in each build;
+  one it can't draw stays code, and is noted, with its line, to warn of.
 - `src/notebook.rs` — a Jupyter notebook (`.ipynb`, format 4), read with
   serde into comrak's tree of its page: Markdown cells as Markdown, code
   cells as code blocks in the notebook's language, and their outputs as
@@ -260,4 +261,12 @@ Record notable choices as short ADRs in `decisions/`. Locked so far:
   warned of, as a broken link is. A diagram can carry HTML, so `svg` with
   `raw_html: false` stops the build — see
   [`decisions/0027-drawing-mermaid-diagrams.md`](./decisions/0027-drawing-mermaid-diagrams.md).
+- **How diagrams look:** `mermaid` holds Mermaid's own config, in Mermaid's
+  own names, like `theme` and `themeVariables`, which each diagram little
+  draws starts from, as a site passes it to `mermaid.initialize()`. It
+  cascades like any config, but little sets none, keeping its seeds and a
+  gantt chart's width in code, beneath it; a diagram's own config goes over
+  it. little checks only that `theme` is one of Mermaid's and that no
+  setting is empty, as an unquoted `#` colour is — see
+  [`decisions/0028-how-diagrams-look.md`](./decisions/0028-how-diagrams-look.md).
 - **Plugins:** sandboxed WASM (planned).

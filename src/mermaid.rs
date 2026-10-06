@@ -1,7 +1,8 @@
 //! Draw each Mermaid diagram in a page as SVG, with merman, before comrak
 //! writes the page: a ```` ```mermaid ```` block becomes an `<svg>` with the
 //! id `mermaid-1`, `mermaid-2`, and so on, in the order they come in the
-//! page, which its own styles are scoped to.
+//! page, which its own styles are scoped to. Each starts from the site's
+//! `mermaid` config, which chooses how it looks.
 
 use chrono::NaiveDate;
 use comrak::nodes::{AstNode, NodeValue};
@@ -36,9 +37,9 @@ pub fn draw<'a>(
     lines_before: Option<usize>,
 ) -> Vec<Unrendered> {
     let mut unrendered = Vec::new();
-    if markdown.mermaid != Some(Mermaid::Svg) {
+    let Some(Mermaid::Svg(config)) = &markdown.mermaid else {
         return unrendered;
-    }
+    };
     // Made only for a page with a diagram in it, as it takes a moment.
     let mut renderer = None;
     let mut diagrams = 0;
@@ -53,7 +54,7 @@ pub fn draw<'a>(
         // One that can't be drawn keeps its number, so those after it keep
         // their ids while its author fixes it.
         diagrams += 1;
-        let renderer = renderer.get_or_insert_with(|| renderer_at(now));
+        let renderer = renderer.get_or_insert_with(|| renderer_at(now, config));
         renderer.svg.diagram_id = Some(format!("mermaid-{diagrams}"));
         match svg(renderer, &block.literal) {
             Ok(svg) => data.value = NodeValue::Raw(format!("{}\n", svg.trim_end())),
@@ -76,9 +77,11 @@ fn is_mermaid(info: &str) -> bool {
 /// A renderer that draws a diagram the same in each build: with Mermaid's
 /// random seeds fixed, and its today `now`, in UTC. A gantt chart is drawn
 /// 800 pixels wide, as little can't measure the page, and each diagram on a
-/// transparent background, so it's on the theme's.
-fn renderer_at(now: OffsetDateTime) -> HeadlessRenderer {
-    let config = json!({
+/// transparent background, so it's on the theme's. The site's `config` goes
+/// over little's, so a theme can widen a gantt chart, and a diagram's own
+/// config over that.
+fn renderer_at(now: OffsetDateTime, config: &serde_json::Value) -> HeadlessRenderer {
+    let little = json!({
         "handDrawnSeed": 1,
         "gitGraph": { "seed": 1 },
         "gantt": { "useWidth": 800 },
@@ -86,7 +89,8 @@ fn renderer_at(now: OffsetDateTime) -> HeadlessRenderer {
     let today = NaiveDate::from_ymd_opt(now.year(), u8::from(now.month()).into(), now.day().into());
     let mut renderer = HeadlessRenderer::new()
         .with_strict_parsing()
-        .with_site_config(MermaidConfig::from_value(config))
+        .with_site_config(MermaidConfig::from_value(little))
+        .with_site_config(MermaidConfig::from_value(config.clone()))
         .with_fixed_today(today)
         .with_fixed_local_offset_minutes(Some(0))
         .with_svg_pipeline(
@@ -229,5 +233,45 @@ mod tests {
         assert_eq!(first.unrendered_diagrams, []);
         assert_eq!(first.html.matches("<svg id=\"mermaid-").count(), 3);
         assert_eq!(render(md).html, first.html);
+    }
+
+    /// little's defaults, drawing diagrams with Mermaid's `config`.
+    fn with_config(config: serde_json::Value) -> Markdown {
+        Markdown {
+            mermaid: Some(Mermaid::Svg(config)),
+            ..Markdown::default()
+        }
+    }
+
+    #[test]
+    fn the_site_chooses_how_diagrams_look() {
+        // The default theme's nodes are lavender, and forest's green.
+        let fill = |html: &str| html.contains("#mermaid-1 .node path{fill:#cde498;");
+        assert!(!fill(&render(FLOWCHART).html));
+        let forest = with_config(json!({ "theme": "forest" }));
+        let r = render_with(FLOWCHART, &forest);
+        assert!(fill(&r.html), "{}", r.html);
+
+        // A diagram's own config goes over the site's.
+        let dark = "```mermaid\n%%{init: {\"theme\": \"dark\"}}%%\nflowchart LR\n  A --> B\n```\n";
+        let r = render_with(dark, &forest);
+        assert!(
+            r.html.contains("#mermaid-1 .node path{fill:#1f2020;"),
+            "{}",
+            r.html
+        );
+    }
+
+    #[test]
+    fn the_site_can_widen_a_gantt_chart() {
+        let gantt = "```mermaid\ngantt\n  dateFormat YYYY-MM-DD\n  section Build\n  \
+                     Draw :a1, 2025-12-01, 60d\n```\n";
+        let r = render(gantt);
+        assert!(r.html.contains(" viewBox=\"0 0 800 "), "{}", r.html);
+        let r = render_with(
+            gantt,
+            &with_config(json!({ "gantt": { "useWidth": 1000 } })),
+        );
+        assert!(r.html.contains(" viewBox=\"0 0 1000 "), "{}", r.html);
     }
 }

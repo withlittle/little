@@ -261,3 +261,23 @@ without, and the theme leaves the box out too:
 little indexes each page's own content, under its title, so nothing the theme puts around
 it, like its header or sidebar, turns up in results. The theme gives the box its font and
 colours with Pagefind's `--pf-*` CSS variables.
+
+## Diagrams in the theme's colours
+
+little draws each Mermaid diagram as SVG as it builds the page, with styles scoped to its own
+id, which outweigh the theme's CSS. So a theme gives diagrams its colours and font in its
+`little.yml` instead, under `mermaid`, in Mermaid's own settings, as a site passes them to
+`mermaid.initialize()`:
+
+```yaml
+mermaid:
+  theme: base
+  themeVariables:
+    primaryColor: "#f3eefc"
+    primaryBorderColor: "#6f42c1"
+    lineColor: "#6f42c1"
+```
+
+A site changes any of them in its own `little.yml`, setting by setting, and a diagram's own
+config, like `%%{init: {"theme": "dark"}}%%` on its first line, goes over both. This theme
+keeps Mermaid's default look.

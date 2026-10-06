@@ -148,7 +148,8 @@ my-docs/
   [Mermaid](https://mermaid.js.org), in a ```` ```mermaid ```` block:
   flowcharts, sequence diagrams, gantt charts, and more. little draws each
   as it builds the page, as SVG, which browsers show without JavaScript.
-  See [Choosing how diagrams are drawn](#choosing-how-diagrams-are-drawn).
+  See [Choosing how diagrams are drawn](#choosing-how-diagrams-are-drawn),
+  and [how they look](#choosing-how-diagrams-look).
 - **Links and images.** Write them relative to the file they're in, as on
   GitHub, and they work wherever the site is published: in
   `guide/install.md`, `![Setup](images/setup.png)` shows
@@ -250,8 +251,9 @@ in, how their [code is highlighted](#choosing-how-code-is-highlighted) and
 [diagrams drawn](#choosing-how-diagrams-are-drawn),
 [where `little serve` serves it](#choosing-where-to-serve), the
 [repository](#choosing-the-sites-repository) its source is in, and whether
-it's [searchable](#search); a site's name, language, and look are up to the
-theme and the site. The
+it's [searchable](#search); a site's name, language, and look, its
+[diagrams'](#choosing-how-diagrams-look) too, are up to the theme and the
+site. The
 built-in theme uses these keys, with defaults from its
 [`little.yml`](./theme/little.yml):
 
@@ -545,13 +547,14 @@ markdown:
   `little build --strict` fails on one, and `little serve` warns of each
   after each build. One in a notebook is warned of without a line.
 - A diagram is drawn the same in each build. A gantt chart is drawn 800
-  pixels wide, and its line at today's date is at the day the site was
+  pixels wide, unless [`mermaid`](#choosing-how-diagrams-look) says
+  otherwise, and its line at today's date is at the day the site was
   built, in UTC, or at [`SOURCE_DATE_EPOCH`](#a-copyright-notice), unless
   the diagram turns it off, with `todayMarker off`.
-- Diagrams have Mermaid's default look, on the page's background, and a
-  theme can't change it, or show them dark in dark mode. A diagram's own
-  config still applies to it, like `%%{init: {"theme": "dark"}}%%` on its
-  first line.
+- Diagrams have Mermaid's default look, on the page's background, unless
+  the theme or the site [chooses another](#choosing-how-diagrams-look). A
+  diagram's own config still applies to it, like
+  `%%{init: {"theme": "dark"}}%%` on its first line.
 - A diagram can carry HTML, as Markdown's HTML can, so `mermaid: svg` needs
   `raw_html: true`: with `raw_html: false`, every command stops until you
   set `mermaid: false` too.
@@ -564,6 +567,58 @@ markdown:
   its frontmatter.
 - Anything but `svg` or `false` is an error, `true` too, and every command
   stops and says why.
+
+### Choosing how diagrams look
+
+`mermaid` holds [Mermaid's own
+config](https://mermaid.js.org/config/schema-docs/config.html), in
+Mermaid's own names, which each diagram little draws starts from, as a site
+passes it to `mermaid.initialize()`. little sets none, so diagrams have
+Mermaid's default look. To give them your colours, start from Mermaid's
+`base` theme, and [set its
+variables](https://mermaid.js.org/config/theming.html):
+
+```yaml
+# little.yml
+mermaid:
+  theme: base
+  themeVariables:
+    primaryColor: "#f3eefc"
+    primaryBorderColor: "#6f42c1"
+    lineColor: "#6f42c1"
+    fontFamily: Inter, sans-serif
+```
+
+- `theme` is one of Mermaid's: `default`, `base`, `dark`, `forest`,
+  `neutral`, `neo`, `neo-dark`, `redux`, `redux-dark`, `redux-color`, or
+  `redux-dark-color`. `themeVariables` change only `base`, and Mermaid works
+  out the colours you don't set from those you do, so each must be hex, like
+  `"#6f42c1"`, not `purple`. Put each in quotes, as YAML reads what follows
+  a `#` as a comment.
+- Mermaid's other settings work too, like `look: handDrawn`, `themeCSS`, or
+  `flowchart: { curve: linear }`. A gantt chart is drawn 800 pixels wide, as
+  little can't measure the page, so a theme with a wider page can set
+  `gantt: { useWidth: 1000 }`.
+- A theme sets its diagrams' look in its `little.yml`, and the site's
+  `little.yml` has the last word, setting by setting, so a site can change
+  one of its theme's colours and keep the rest. The built-in theme keeps
+  Mermaid's default look.
+- A diagram's own config goes over it, like `%%{init: {"theme": "dark"}}%%`
+  on its first line, as in Mermaid, but its own `themeCSS` replaces the
+  site's, rather than adding to it.
+- little sizes each box for its label from the metrics of Mermaid's default
+  font, Courier, and a generic sans-serif, as it can't see the font itself,
+  so in another font, a label can fit a little loosely, or tightly.
+- A build draws each diagram in one look, so diagrams don't turn dark in
+  dark mode: a dark theme can set `theme: dark`. A page can't choose its
+  diagrams' look in its frontmatter.
+- `mermaid` must be settings, its `theme` one of Mermaid's, and no setting
+  can be empty: otherwise, every command stops and says why. little doesn't
+  check the rest, so a setting Mermaid doesn't have, like `themeVariable`,
+  does nothing, as in a diagram's own config.
+- With [`markdown.mermaid: false`](#choosing-how-diagrams-are-drawn), little
+  doesn't draw diagrams, so it ignores `mermaid`, but the theme still gets
+  it, as `site.mermaid`.
 
 ### Choosing how code is highlighted
 
@@ -919,8 +974,11 @@ to style, as the built-in theme's
   `math[display="block"] { overflow-x: auto; overflow-y: hidden; }`.
 - A [diagram](#choosing-how-diagrams-are-drawn) is an `<svg>` with the id
   `mermaid-1`, `mermaid-2`, and so on, in the order they're in the page,
-  which its own styles are scoped to. It's as wide as it's drawn, but no
-  wider than the page. The built-in theme centres each with
+  which its own styles are scoped to, so they outweigh a theme's CSS: a
+  theme gives diagrams its colours and font with
+  [`mermaid`](#choosing-how-diagrams-look) in its `little.yml` instead. It's
+  as wide as it's drawn, but no wider than the page. The built-in theme
+  centres each with
   `svg[id^="mermaid-"] { display: block; margin: 1.2rem auto; }`.
 - A theme gets the site's [extensions](#choosing-markdowns-extensions) as
   `site.markdown`, so it can load a script only for a site that needs it,

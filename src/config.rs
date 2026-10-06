@@ -33,6 +33,10 @@
 //! `tables`, that turns it on or off: little turns on GitHub's, and a theme
 //! or a site can change any of them. `math`, also GitHub's, chooses how math
 //! is written, `mermaid` how diagrams are drawn, and `highlight` how code is.
+//!
+//! `mermaid` holds Mermaid's own config, in Mermaid's own names, like `theme`
+//! and `themeVariables`, which each diagram little draws starts from: little
+//! sets none, so a theme can choose how diagrams look, and a site change it.
 
 use anyhow::{Context, Result, anyhow, bail};
 use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, utf8_percent_encode};
@@ -180,7 +184,8 @@ impl Repo {
 /// Which extensions to CommonMark each page is written with, how its math is
 /// written, how its diagrams are drawn, and which classes its code is
 /// highlighted with, from the settings under `markdown`, each named for what
-/// an author writes, as `src/little.yml` describes them.
+/// an author writes, as `src/little.yml` describes them; and how its diagrams
+/// look, from `mermaid`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Markdown {
     // As on GitHub.
@@ -220,10 +225,11 @@ pub enum Math {
     Tex,
 }
 
-/// How a Mermaid block is drawn: as an `<svg>`, as little builds the page.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// How a Mermaid block is drawn: as an `<svg>`, as little builds the page,
+/// with Mermaid's config from `mermaid`, as JSON, as Mermaid reads it.
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Mermaid {
-    Svg,
+    Svg(serde_json::Value),
 }
 
 /// A set of classes for highlighted code: Pygments', like `k` for a keyword,
@@ -501,7 +507,8 @@ fn search(values: &Mapping) -> Result<bool> {
 /// The extensions to CommonMark each page is written with, each `true` or
 /// `false`, how its math is written, how its diagrams are drawn, and the
 /// classes its code is highlighted with, from the settings under `markdown`.
-/// little's own config sets every one, so any other is a typo.
+/// little's own config sets every one, so any other is a typo. Diagrams
+/// drawn as SVG look as `mermaid` says.
 fn markdown(values: &Mapping) -> Result<Markdown> {
     let Some(Value::Mapping(settings)) = values.get("markdown") else {
         bail!("`markdown` must be settings, like `mark: true`");
@@ -540,7 +547,7 @@ fn markdown(values: &Mapping) -> Result<Markdown> {
         },
         // Nor here, as a site's would undo its theme's `false`.
         mermaid: match settings.get("mermaid") {
-            Some(Value::String(form)) if form == "svg" => Some(Mermaid::Svg),
+            Some(Value::String(form)) if form == "svg" => Some(Mermaid::Svg(mermaid(values)?)),
             Some(Value::Bool(false)) => None,
             _ => bail!("`markdown.mermaid` must be `svg` or `false`"),
         },
@@ -574,6 +581,50 @@ fn markdown(values: &Mapping) -> Result<Markdown> {
         );
     }
     Ok(markdown)
+}
+
+/// Mermaid's config, which each diagram starts from, from the settings under
+/// `mermaid`, as they're written, in Mermaid's own names. Mermaid ignores a
+/// setting it doesn't have, as in a diagram's own config, so little checks
+/// only for the mistakes that change every diagram without a word: a theme
+/// Mermaid doesn't have, which it swaps for its default, and an empty
+/// setting, as a colour like #6f42c1 is without quotes.
+fn mermaid(values: &Mapping) -> Result<serde_json::Value> {
+    let settings = match values.get("mermaid") {
+        None => return Ok(serde_json::json!({})),
+        Some(Value::Mapping(settings)) => settings,
+        Some(_) => bail!("`mermaid` must be Mermaid's settings, like `theme: forest`"),
+    };
+    let themes = merman::supported_themes();
+    if let Some(theme) = settings.get("theme")
+        && !theme.as_str().is_some_and(|theme| themes.contains(&theme))
+    {
+        bail!(
+            "`mermaid.theme` must be one of Mermaid's themes: {}",
+            themes.join(", ")
+        );
+    }
+    if let Some(path) = empty_setting(settings, "mermaid") {
+        bail!(
+            "`{path}` is empty: put a colour in quotes, like \"#6f42c1\", or YAML reads it as \
+             a comment"
+        );
+    }
+    serde_json::to_value(settings).context("reading `mermaid`")
+}
+
+/// The first setting in `settings`, or in the settings within them, that's
+/// empty, named from `path`, like `mermaid.themeVariables.primaryColor`.
+fn empty_setting(settings: &Mapping, path: &str) -> Option<String> {
+    settings.iter().find_map(|(key, value)| {
+        let key = serde_yaml::to_string(key).unwrap_or_default();
+        let path = format!("{path}.{}", key.trim_end());
+        match value {
+            Value::Null => Some(path),
+            Value::Mapping(settings) => empty_setting(settings, &path),
+            _ => None,
+        }
+    })
 }
 
 /// Resolve a path a config names against `dir`: an absolute path is just that
@@ -617,6 +668,7 @@ pub fn merge(base: &mut Mapping, over: Mapping) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
 
     fn get<'a>(cfg: &'a Mapping, key: &str) -> Option<&'a str> {
         cfg.get(key).and_then(Value::as_str)
@@ -1094,7 +1146,7 @@ mod tests {
         assert_eq!(builtin, Markdown::default());
         assert!(builtin.tables && builtin.alerts && builtin.emoji && builtin.raw_html);
         assert_eq!(builtin.math, Some(Math::MathML));
-        assert_eq!(builtin.mermaid, Some(Mermaid::Svg));
+        assert_eq!(builtin.mermaid, Some(Mermaid::Svg(json!({}))));
         assert!(!builtin.mark);
         assert_eq!(builtin.highlight, Some(Highlight::Pygments));
 
@@ -1119,7 +1171,7 @@ mod tests {
         let site_cfg = "markdown:\n  mermaid: false\n";
         assert_eq!(markdown(site_cfg).mermaid, None);
         let site_cfg = "markdown:\n  mermaid: svg\n";
-        assert_eq!(markdown(site_cfg).mermaid, Some(Mermaid::Svg));
+        assert_eq!(markdown(site_cfg).mermaid, Some(Mermaid::Svg(json!({}))));
 
         // A site chooses GitHub's classes, or none.
         let site_cfg = "markdown:\n  highlight: github\n";
@@ -1200,6 +1252,99 @@ mod tests {
         assert_eq!(
             message,
             "`markdown.inline_footnotes` needs `markdown.footnotes` to be `true` too"
+        );
+
+        let _ = std::fs::remove_dir_all(&site);
+    }
+
+    #[test]
+    fn mermaid_cascades() {
+        let theme_cfg = "mermaid:\n  theme: base\n  themeVariables:\n    primaryColor: \"#6f42c1\"\n    \
+                         lineColor: \"#333333\"\n";
+        let site = scratch("mermaid", &[("theme/little.yml", theme_cfg)]);
+        let mermaid = |site_cfg: &str| {
+            std::fs::write(site.join(CONFIG_FILE), site_cfg).unwrap();
+            match load(&site).unwrap().markdown.mermaid {
+                Some(Mermaid::Svg(config)) => config,
+                None => panic!("diagrams should be drawn"),
+            }
+        };
+
+        // little sets no look, so diagrams have Mermaid's default.
+        assert_eq!(mermaid(""), json!({}));
+
+        // A theme sets its look, and a site changes it, setting by setting.
+        let theme = json!({
+            "theme": "base",
+            "themeVariables": { "primaryColor": "#6f42c1", "lineColor": "#333333" },
+        });
+        assert_eq!(mermaid("theme: ./theme\n"), theme);
+        let site_cfg =
+            "theme: ./theme\nmermaid:\n  themeVariables:\n    primaryColor: \"#0969da\"\n";
+        let expected = json!({
+            "theme": "base",
+            "themeVariables": { "primaryColor": "#0969da", "lineColor": "#333333" },
+        });
+        assert_eq!(mermaid(site_cfg), expected);
+
+        // Every setting is passed on as it's written, in Mermaid's names, for
+        // Mermaid to read, or, like a typo, ignore.
+        let site_cfg = "mermaid:\n  look: handDrawn\n  fontFamily: Georgia, serif\n  gantt:\n    \
+                        useWidth: 1000\n  themeVariable:\n    primaryColor: \"#0969da\"\n";
+        let expected = json!({
+            "look": "handDrawn",
+            "fontFamily": "Georgia, serif",
+            "gantt": { "useWidth": 1000 },
+            "themeVariable": { "primaryColor": "#0969da" },
+        });
+        assert_eq!(mermaid(site_cfg), expected);
+
+        // Diagrams left as code, for a theme's script, aren't drawn, so their
+        // look isn't read, but the theme still has it.
+        let site_cfg = "theme: ./theme\nmarkdown:\n  mermaid: false\nmermaid:\n  theme: drak\n";
+        std::fs::write(site.join(CONFIG_FILE), site_cfg).unwrap();
+        let config = load(&site).unwrap();
+        assert_eq!(config.markdown.mermaid, None);
+        let theme = config.values.get("mermaid").and_then(|m| m.get("theme"));
+        assert_eq!(theme.and_then(Value::as_str), Some("drak"));
+
+        let _ = std::fs::remove_dir_all(&site);
+    }
+
+    #[test]
+    fn bad_mermaid_explains_itself() {
+        let site = scratch("bad-mermaid", &[]);
+        for site_cfg in ["mermaid: forest\n", "mermaid:\n", "mermaid: [theme]\n"] {
+            let message = error(&site, site_cfg);
+            assert_eq!(
+                message,
+                "`mermaid` must be Mermaid's settings, like `theme: forest`"
+            );
+        }
+
+        // Mermaid would swap a theme it doesn't have for its default.
+        for value in ["drak", "Dark", "3", "true", "\"\"", ""] {
+            let message = error(&site, &format!("mermaid:\n  theme: {value}\n"));
+            assert_eq!(
+                message,
+                "`mermaid.theme` must be one of Mermaid's themes: default, base, dark, forest, \
+                 neutral, neo, neo-dark, redux, redux-dark, redux-color, redux-dark-color"
+            );
+        }
+
+        // YAML reads a colour after `#` as a comment, leaving its setting
+        // empty, which is named, however deep it is.
+        let site_cfg = "mermaid:\n  theme: base\n  themeVariables:\n    primaryColor: #6f42c1\n";
+        let message = error(&site, site_cfg);
+        assert_eq!(
+            message,
+            "`mermaid.themeVariables.primaryColor` is empty: put a colour in quotes, like \
+             \"#6f42c1\", or YAML reads it as a comment"
+        );
+        let message = error(&site, "mermaid:\n  fontFamily:\n");
+        assert!(
+            message.starts_with("`mermaid.fontFamily` is empty: "),
+            "{message}"
         );
 
         let _ = std::fs::remove_dir_all(&site);
@@ -1541,7 +1686,7 @@ mod tests {
         // Search is a theme's to turn on, with a box to search in.
         assert_eq!(cfg.get("search"), Some(&Value::Bool(false)));
         // A site's name, language, and look are the theme's to default.
-        for key in ["name", "lang"] {
+        for key in ["name", "lang", "mermaid"] {
             assert_eq!(cfg.get(key), None, "little shouldn't default `{key}`");
         }
         // And only the site knows where it's published, and where its
