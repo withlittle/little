@@ -1,18 +1,21 @@
-//! Themes downloaded from a URL. The first build that needs one downloads its
-//! archive over HTTPS and unpacks it into the site's `.little/` folder; every
-//! build after that uses it from there, offline too.
+//! Themes and plugins downloaded from a URL. The first build that needs one
+//! downloads it over HTTPS into the site's `.little/` folder, unpacking a
+//! theme's archive; every build after that uses it from there, offline too.
 //!
 //! ```text
 //! my-docs/
-//! └── .little/          made by the first download
-//!     ├── .gitignore    `*`, so git ignores the folder
-//!     └── themes/
-//!         └── 3f9c…e1/  a theme, in a folder named for its URL
+//! └── .little/               made by the first download
+//!     ├── .gitignore         `*`, so git ignores the folder
+//!     ├── themes/
+//!     │   └── 3f9c…e1/       a theme, in a folder named for its URL
+//!     └── plugins/
+//!         └── 8a0d…5b.wasm   a plugin, in a file named for its URL
 //! ```
 //!
 //! A theme's archive is a .zip or a .tar.gz that holds one folder, as GitHub's
-//! archives of a tag or a branch do. little never downloads a URL again: to
-//! pick up changes to a branch's archive, delete `.little/`.
+//! archives of a tag or a branch do, and a plugin is a `.wasm` file. little
+//! never downloads a URL again: to pick up changes to a branch's archive,
+//! delete `.little/`.
 
 use anyhow::{Context, Result, anyhow, bail};
 use std::fs;
@@ -63,6 +66,51 @@ fn theme_with(
     Ok(dir)
 }
 
+/// The file of `url`'s plugin, downloaded first unless it's already there.
+/// An error finishes the sentence "…, but", as for a theme.
+pub fn plugin(site_dir: &Path, url: &str) -> Result<PathBuf> {
+    plugin_with(site_dir, url, fetch)
+}
+
+/// `plugin`, downloading with `fetch`, so that tests needn't use the network.
+fn plugin_with(
+    site_dir: &Path,
+    url: &str,
+    fetch: impl FnOnce(&str) -> Result<Vec<u8>>,
+) -> Result<PathBuf> {
+    let file = site_dir
+        .join(CACHE_DIR)
+        .join("plugins")
+        .join(format!("{}.wasm", cache_name(url)));
+    if file.is_file() {
+        return Ok(file);
+    }
+    eprintln!("downloading plugin {url}");
+    let wasm = fetch(url).context("little couldn't download it")?;
+    // A web page, say, from the URL of a release rather than of its file.
+    if !wasm.starts_with(b"\0asm") {
+        bail!(
+            "it isn't a WebAssembly file (on GitHub, a release's file is at \
+             https://github.com/OWNER/REPO/releases/download/TAG/FILE.wasm)"
+        );
+    }
+
+    // Written beside it, then moved in, in one step, as a theme is unpacked.
+    make_cache(site_dir, "plugins").context("little couldn't save it")?;
+    let downloading = file.with_extension(format!("wasm.{}.download", std::process::id()));
+    let saved = fs::write(&downloading, &wasm)
+        .with_context(|| format!("writing {}", downloading.display()))
+        .and_then(|()| match fs::rename(&downloading, &file) {
+            Ok(()) => Ok(()),
+            // Another build downloaded it first.
+            Err(_) if file.is_file() => Ok(()),
+            Err(e) => Err(e).with_context(|| format!("moving it to {}", file.display())),
+        });
+    let _ = fs::remove_file(&downloading);
+    saved.context("little couldn't save it")?;
+    Ok(file)
+}
+
 /// Unpack `archive` into `unpacking`, then move the folder it holds to `dir`.
 fn save(archive: &[u8], site_dir: &Path, unpacking: &Path, dir: &Path) -> Result<()> {
     // Told apart by how they start, as a URL needn't end in .zip or .tar.gz.
@@ -73,7 +121,7 @@ fn save(archive: &[u8], site_dir: &Path, unpacking: &Path, dir: &Path) -> Result
              https://github.com/OWNER/REPO/archive/refs/tags/TAG.tar.gz)"
         );
     }
-    make_cache(site_dir)?;
+    make_cache(site_dir, "themes")?;
     let _ = fs::remove_dir_all(unpacking); // left by a build that was stopped
     create_dir(unpacking)?;
     if is_zip {
@@ -90,11 +138,11 @@ fn save(archive: &[u8], site_dir: &Path, unpacking: &Path, dir: &Path) -> Result
     }
 }
 
-/// Make the site's `.little/` folder, unless it's there, with a `.gitignore`
-/// that keeps it out of git.
-fn make_cache(site_dir: &Path) -> Result<()> {
+/// Make the folder `kind`, like `themes`, in the site's `.little/` folder,
+/// unless it's there, with a `.gitignore` that keeps `.little/` out of git.
+fn make_cache(site_dir: &Path, kind: &str) -> Result<()> {
     let cache = site_dir.join(CACHE_DIR);
-    create_dir(&cache.join("themes"))?;
+    create_dir(&cache.join(kind))?;
     let gitignore = cache.join(".gitignore");
     if !gitignore.exists() {
         fs::write(&gitignore, GITIGNORE)
@@ -223,10 +271,10 @@ fn fetch(url: &str) -> Result<Vec<u8>> {
     Ok(archive)
 }
 
-/// The name of the folder `url`'s theme is kept in: a hash of the URL, which
-/// has characters a folder's name can't. It's 64-bit FNV-1a, written out here
-/// because Rust's own hash can change with the version of Rust, and then every
-/// theme would be downloaded again.
+/// The name of the folder `url`'s theme, or the file its plugin, is kept in:
+/// a hash of the URL, which has characters a file's name can't. It's 64-bit
+/// FNV-1a, written out here because Rust's own hash can change with the
+/// version of Rust, and then every theme would be downloaded again.
 fn cache_name(url: &str) -> String {
     let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
     for byte in url.bytes() {
@@ -506,6 +554,48 @@ mod tests {
 
         assert!(!site.join("outside").exists());
         assert!(!folder(&site, URL).exists());
+        let _ = fs::remove_dir_all(&site);
+    }
+
+    #[test]
+    fn a_plugin_is_downloaded_once_into_its_own_file() {
+        let site = scratch("plugin");
+        let url = "https://example.invalid/bob-1.0.wasm";
+        // How every WebAssembly component starts.
+        let wasm = b"\0asm\x0d\x00\x01\x00".to_vec();
+        let file = plugin_with(&site, url, |_| Ok(wasm.clone())).unwrap();
+        let expected = site
+            .join(".little/plugins")
+            .join(format!("{}.wasm", cache_name(url)));
+        assert_eq!(file, expected);
+        assert_eq!(fs::read(&file).unwrap(), wasm);
+        let gitignore = fs::read_to_string(site.join(CACHE_DIR).join(".gitignore")).unwrap();
+        assert_eq!(gitignore, GITIGNORE);
+        let kept = fs::read_dir(site.join(".little/plugins")).unwrap().count();
+        assert_eq!(kept, 1, "nothing is left over from downloading it");
+
+        // Later builds use the plugin that was downloaded, even offline.
+        let again = plugin_with(&site, url, |_| panic!("it downloaded the plugin again"));
+        assert_eq!(again.unwrap(), file);
+
+        let _ = fs::remove_dir_all(&site);
+    }
+
+    #[test]
+    fn a_plugin_that_fails_to_download_leaves_nothing() {
+        let site = scratch("plugin-fails");
+        let url = "https://example.invalid/bob-1.0.wasm";
+        let failed = plugin_with(&site, url, |_| bail!("the server answered 404 Not Found"));
+        let expected = "little couldn't download it: the server answered 404 Not Found";
+        assert_eq!(format!("{:#}", failed.unwrap_err()), expected);
+
+        // A web page, say, from the URL of a release, not of its file.
+        let page = plugin_with(&site, url, |_| Ok(b"\n<!DOCTYPE html>\n<html>".to_vec()));
+        let expected = "it isn't a WebAssembly file (on GitHub, a release's file is at \
+             https://github.com/OWNER/REPO/releases/download/TAG/FILE.wasm)";
+        assert_eq!(format!("{:#}", page.unwrap_err()), expected);
+
+        assert!(!site.join(CACHE_DIR).exists());
         let _ = fs::remove_dir_all(&site);
     }
 

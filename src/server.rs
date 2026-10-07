@@ -12,6 +12,10 @@
 //! After each build, it warns of each broken link within the site. Links
 //! that leave it are left to `little build`, so a save never waits on the
 //! network.
+//!
+//! It rebuilds when anything a build reads changes: the site's config, its
+//! source, its themes, and its plugins, with the folders they read, but
+//! those that are built in or downloaded, which don't change.
 
 use anyhow::{Result, anyhow};
 use notify::{Event, RecommendedWatcher, RecursiveMode, Watcher};
@@ -26,6 +30,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tiny_http::{Header, Response, Server};
 
+use crate::config::Wasm;
 use crate::links::{self, Scope};
 use crate::site::Built;
 use crate::theme::Location;
@@ -82,13 +87,17 @@ fn address(host: &str, port: u16) -> String {
 }
 
 /// Warn of each formula in the site `built` that can't be rendered, each
-/// diagram that can't be drawn, and each broken link within it.
+/// diagram that can't be drawn, each code block a plugin can't render, and
+/// each broken link within it.
 fn warn(built: &Built) {
     for formula in &built.unrendered_math {
         eprintln!("warning: {formula}");
     }
     for diagram in &built.unrendered_diagrams {
         eprintln!("warning: {diagram}");
+    }
+    for block in &built.unrendered_blocks {
+        eprintln!("warning: {block}");
     }
     match links::check(built, Scope::Internal) {
         Ok(broken) => {
@@ -148,15 +157,21 @@ struct Sources {
     /// isn't built in or downloaded.
     source: Option<(Watched, RecommendedWatcher)>,
     themes: Vec<(Watched, RecommendedWatcher)>,
+    /// The file of each plugin that isn't downloaded, and each folder a
+    /// plugin reads.
+    plugins: Vec<(PathBuf, RecommendedWatcher)>,
+    reads: Vec<(Watched, RecommendedWatcher)>,
 }
 
 impl Sources {
     fn watch(site_dir: &Path, tx: Sender<notify::Result<Event>>) -> notify::Result<Self> {
         let mut sources = Self {
-            _config: watch_config(site_dir, tx.clone())?,
+            _config: watch_file(&site_dir.join(config::CONFIG_FILE), tx.clone())?,
             tx,
             source: None,
             themes: Vec::new(),
+            plugins: Vec::new(),
+            reads: Vec::new(),
         };
         sources.follow(site_dir)?;
         Ok(sources)
@@ -200,23 +215,68 @@ impl Sources {
             }
             self.themes = watchers;
         }
+        // Like a theme, a downloaded plugin never changes. A plugin's file,
+        // or a folder it reads, that isn't there fails the build, which says
+        // why; it's watched once it's there and something else changes.
+        let plugins: Vec<PathBuf> = (cfg.plugins.iter())
+            .filter_map(|plugin| match &plugin.wasm {
+                Wasm::File(file) => Some(file.clone()),
+                Wasm::Url(_) => None,
+            })
+            .filter(|file| file.parent().is_some_and(Path::is_dir))
+            .collect();
+        if !plugins
+            .iter()
+            .eq(self.plugins.iter().map(|(watched, _)| watched))
+        {
+            let mut watchers = Vec::new();
+            for plugin in plugins {
+                let watcher = watch_file(&plugin, self.tx.clone())?;
+                watchers.push((plugin, watcher));
+            }
+            self.plugins = watchers;
+        }
+        let reads: Vec<Watched> = (cfg.plugins.iter())
+            .flat_map(|plugin| &plugin.read)
+            .filter(|read| read.folder.is_dir())
+            .map(|read| (read.folder.clone(), cfg.destination_dir.clone()))
+            .collect();
+        if !reads
+            .iter()
+            .eq(self.reads.iter().map(|(watched, _)| watched))
+        {
+            let mut watchers = Vec::new();
+            for read in reads {
+                let watcher = watch_folder(&read.0, &read.1, false, self.tx.clone())?;
+                watchers.push((read, watcher));
+            }
+            self.reads = watchers;
+        }
         Ok(())
     }
 }
 
-/// Watch the site's config. It's optional and may not exist yet, so watch the
-/// site's folder rather than the file, forwarding only changes to the config
-/// (the folder may hold the destination too, which every build recreates).
-fn watch_config(
-    site_dir: &Path,
+/// Watch a file: the site's config, or a plugin's. A config is optional, and
+/// a plugin can be built again, so either may not exist for a while: watch
+/// its folder rather than the file, forwarding only changes to the file (the
+/// folder may hold the destination too, which every build recreates).
+fn watch_file(
+    file: &Path,
     tx: Sender<notify::Result<Event>>,
 ) -> notify::Result<RecommendedWatcher> {
+    let name = file.file_name().unwrap_or_default().to_os_string();
     let mut watcher = notify::recommended_watcher(move |res: notify::Result<Event>| {
-        if res.as_ref().is_ok_and(changes_site_config) {
+        if res.as_ref().is_ok_and(|event| changes(event, &name)) {
             let _ = tx.send(res);
         }
     })?;
-    watcher.watch(site_dir, RecursiveMode::NonRecursive)?;
+    let folder = file
+        .parent()
+        .filter(|folder| !folder.as_os_str().is_empty());
+    watcher.watch(
+        folder.unwrap_or(Path::new(".")),
+        RecursiveMode::NonRecursive,
+    )?;
     Ok(watcher)
 }
 
@@ -298,13 +358,13 @@ fn is_hidden_in(event: &Event, source: &Path) -> bool {
             .all(|path| path.strip_prefix(source).is_ok_and(site::is_hidden))
 }
 
-/// Does this root-folder event change the site's config file?
-fn changes_site_config(event: &Event) -> bool {
+/// Does this event, in a watched file's folder, change the file named `name`?
+fn changes(event: &Event, name: &OsStr) -> bool {
     !is_read(event)
         && event
             .paths
             .iter()
-            .any(|path| path.file_name() == Some(OsStr::new(config::CONFIG_FILE)))
+            .any(|path| path.file_name() == Some(name))
 }
 
 fn serve_file(built: &Built, request: tiny_http::Request) {
@@ -614,6 +674,7 @@ mod tests {
         use notify::event::{AccessKind, CreateKind, ModifyKind, RemoveKind};
 
         let event = |kind, name: &str| Event::new(kind).add_path(Path::new("/site").join(name));
+        let changes_site_config = |event: &Event| changes(event, OsStr::new(config::CONFIG_FILE));
 
         // Creating, editing, or deleting little.yml rebuilds — including a
         // config that didn't exist when `little serve` started.
@@ -776,6 +837,25 @@ mod tests {
             assert!(event.is_err(), "a downloaded theme is watched: {event:?}");
         }
         assert_only_edits_wake(&site_dir, &company_css);
+        let _ = std::fs::remove_dir_all(&site_dir);
+    }
+
+    #[test]
+    fn the_watcher_watches_each_plugin_and_the_folders_it_reads() {
+        let site_dir = scratch_site("plugins");
+        let site_cfg =
+            "theme: ./theme\nplugins:\n  test:\n    wasm: ./plugins/test.wasm\n    read: data\n";
+        std::fs::write(site_dir.join("little.yml"), site_cfg).unwrap();
+        let wasm = site_dir.join("plugins/test.wasm");
+        std::fs::create_dir_all(wasm.parent().unwrap()).unwrap();
+        std::fs::copy(crate::plugin::tests::test_plugin(), &wasm).unwrap();
+        let data = site_dir.join("data/example.txt");
+        std::fs::create_dir_all(data.parent().unwrap()).unwrap();
+        std::fs::write(&data, "Hello\n").unwrap();
+
+        // That edit breaks the plugin, so it goes last.
+        assert_only_edits_wake(&site_dir, &data);
+        assert_only_edits_wake(&site_dir, &wasm);
         let _ = std::fs::remove_dir_all(&site_dir);
     }
 

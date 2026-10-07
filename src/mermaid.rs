@@ -118,6 +118,7 @@ fn svg(renderer: &HeadlessRenderer, diagram: &str) -> Result<String, String> {
 mod tests {
     use super::*;
     use crate::config::SiteUrl;
+    use crate::plugin::PagePlugins;
     use crate::render::{Rendered, parse_document};
 
     const FLOWCHART: &str = "```mermaid\nflowchart LR\n  A --> B\n```\n";
@@ -125,7 +126,16 @@ mod tests {
     /// Render `md` with `markdown`, as if built at the start of 2026.
     fn render_with(md: &str, markdown: &Markdown) -> Rendered {
         let now = OffsetDateTime::from_unix_timestamp(1_767_225_600).unwrap();
-        parse_document(md, "/", &(2..=6), &SiteUrl::default(), markdown, now).unwrap()
+        parse_document(
+            md,
+            "/",
+            &(2..=6),
+            &SiteUrl::default(),
+            markdown,
+            now,
+            &mut PagePlugins::none(),
+        )
+        .unwrap()
     }
 
     /// Render `md` with little's defaults, which draw diagrams as SVG.

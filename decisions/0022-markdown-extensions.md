@@ -3,8 +3,10 @@
 - Status: accepted; amended by [0025](./0025-rendering-math-as-mathml.md),
   which turns `math` on, as on GitHub, and makes it `mathml`, which renders
   math as MathML, `tex`, which marks it for a theme's script, or `false`,
-  and by [0027](./0027-drawing-mermaid-diagrams.md), which adds `mermaid`,
-  `svg` or `false`, and needs `raw_html` for `svg`
+  by [0027](./0027-drawing-mermaid-diagrams.md), which adds `mermaid`,
+  `svg` or `false`, and needs `raw_html` for `svg`, and by
+  [0029](./0029-plugins-that-render-code-blocks.md), which needs `raw_html`
+  for a plugin's HTML
 - Date: 2026-10-04
 
 ## Context

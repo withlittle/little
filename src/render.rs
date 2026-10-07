@@ -14,6 +14,7 @@ use std::ops::RangeInclusive;
 use time::OffsetDateTime;
 
 use crate::config::{Markdown, Math, SiteUrl};
+use crate::plugin::{self, PagePlugins};
 use crate::{highlight, math, mermaid};
 
 /// One heading in a page's in-page table of contents. They're listed in the
@@ -46,6 +47,9 @@ pub struct Rendered {
     /// The diagrams in the body that couldn't be drawn, so are written as
     /// code, in the order they come.
     pub unrendered_diagrams: Vec<mermaid::Unrendered>,
+    /// The code blocks in the body that plugins couldn't render, so are
+    /// left as they were, in the order they come.
+    pub unrendered_blocks: Vec<plugin::Unrendered>,
 }
 
 /// A link or image in a document, so a broken one can be shown as it's
@@ -60,10 +64,11 @@ pub struct WrittenLink {
 }
 
 /// Parse a document, written with the extensions to CommonMark in
-/// `markdown`, into its frontmatter, rendered HTML, with its math written,
-/// its diagrams drawn, as of `now`, and its code highlighted as `markdown`
-/// chooses, and outline, which lists its headings at the levels in
-/// `toc_depths` (the config's `toc_min_depth` to `toc_max_depth`).
+/// `markdown`, into its frontmatter, rendered HTML, with the code blocks
+/// `plugins` render rendered, its math written, its diagrams drawn, as of
+/// `now`, and its code highlighted as `markdown` chooses, and outline, which
+/// lists its headings at the levels in `toc_depths` (the config's
+/// `toc_min_depth` to `toc_max_depth`).
 /// Links and images relative to the document, like `images/logo.png`, lead
 /// from `folder`, the URL of the folder it's in, like `/guide/`; those from
 /// the root of the site get the path of the site's `url`. A link to a page's
@@ -75,6 +80,7 @@ pub fn parse_document(
     url: &SiteUrl,
     markdown: &Markdown,
     now: OffsetDateTime,
+    plugins: &mut PagePlugins<'_>,
 ) -> Result<Rendered> {
     let (frontmatter_src, body) = split_frontmatter(raw);
     let frontmatter = parse_frontmatter(&frontmatter_src)?;
@@ -83,6 +89,9 @@ pub fn parse_document(
     let root = comrak::parse_document(&arena, &body, &options);
     // comrak counts the body's lines, but a warning names the file's.
     let lines_before = raw.lines().count() - body.lines().count();
+    // Before the diagrams, as a plugin's Markdown can have them.
+    let unrendered_blocks =
+        plugins.render(&arena, root.descendants(), &options, Some(lines_before))?;
     let unrendered_diagrams = mermaid::draw(root, markdown, now, Some(lines_before));
     let rendered = render_tree(
         root,
@@ -95,6 +104,7 @@ pub fn parse_document(
     )?;
     Ok(Rendered {
         unrendered_diagrams,
+        unrendered_blocks,
         ..rendered
     })
 }
@@ -142,6 +152,7 @@ pub(crate) fn render_tree<'a>(
         links,
         unrendered_math,
         unrendered_diagrams: Vec::new(),
+        unrendered_blocks: Vec::new(),
     })
 }
 
@@ -407,6 +418,7 @@ mod tests {
             &SiteUrl::default(),
             &Markdown::default(),
             NOW,
+            &mut PagePlugins::none(),
         )
         .expect("document renders")
     }
@@ -449,7 +461,8 @@ mod tests {
                     &TOC_DEPTHS,
                     &SiteUrl::default(),
                     &Markdown::default(),
-                    NOW
+                    NOW,
+                    &mut PagePlugins::none()
                 )
                 .err()
                 .unwrap()
@@ -478,6 +491,7 @@ mod tests {
                 &SiteUrl::default(),
                 &Markdown::default(),
                 NOW,
+                &mut PagePlugins::none(),
             )
             .unwrap();
             let items = r.toc.iter().map(|t| format!("{} {}", t.depth, t.anchor));
@@ -538,8 +552,16 @@ mod tests {
                 math,
                 ..Markdown::default()
             };
-            let r =
-                parse_document(md, "/", &TOC_DEPTHS, &SiteUrl::default(), &markdown, NOW).unwrap();
+            let r = parse_document(
+                md,
+                "/",
+                &TOC_DEPTHS,
+                &SiteUrl::default(),
+                &markdown,
+                NOW,
+                &mut PagePlugins::none(),
+            )
+            .unwrap();
             // A heading's math is TeX in the outline, which is text.
             let titles: Vec<_> = r.toc.iter().map(|item| item.title.as_str()).collect();
             assert_eq!(titles, ["The x^2 term", "Done 🎉", "Two lines"]);
@@ -593,9 +615,16 @@ mod tests {
             for on in [true, false] {
                 let mut markdown = Markdown::default();
                 *setting(&mut markdown) = on;
-                let rendered =
-                    parse_document(md, "/", &TOC_DEPTHS, &SiteUrl::default(), &markdown, NOW)
-                        .unwrap();
+                let rendered = parse_document(
+                    md,
+                    "/",
+                    &TOC_DEPTHS,
+                    &SiteUrl::default(),
+                    &markdown,
+                    NOW,
+                    &mut PagePlugins::none(),
+                )
+                .unwrap();
                 assert_eq!(
                     rendered.html.contains(html),
                     on,
@@ -625,9 +654,17 @@ mod tests {
                 highlight,
                 ..Markdown::default()
             };
-            parse_document(md, "/", &TOC_DEPTHS, &SiteUrl::default(), &markdown, NOW)
-                .unwrap()
-                .html
+            parse_document(
+                md,
+                "/",
+                &TOC_DEPTHS,
+                &SiteUrl::default(),
+                &markdown,
+                NOW,
+                &mut PagePlugins::none(),
+            )
+            .unwrap()
+            .html
         };
         assert_eq!(
             html(Some(Highlight::Pygments)),
@@ -669,9 +706,17 @@ mod tests {
                 ..Markdown::default()
             };
             let md = "$a*b + c*d$ costs $5";
-            parse_document(md, "/", &TOC_DEPTHS, &SiteUrl::default(), &markdown, NOW)
-                .unwrap()
-                .html
+            parse_document(
+                md,
+                "/",
+                &TOC_DEPTHS,
+                &SiteUrl::default(),
+                &markdown,
+                NOW,
+                &mut PagePlugins::none(),
+            )
+            .unwrap()
+            .html
         };
         let mathml = "<math><mi>a</mi><mo lspace=\"0.2222em\" rspace=\"0.2222em\">∗</mo>\
                       <mi>b</mi><mo>+</mo><mi>c</mi>\
@@ -696,9 +741,17 @@ mod tests {
                 math,
                 ..Markdown::default()
             };
-            parse_document(md, "/", &TOC_DEPTHS, &SiteUrl::default(), &markdown, NOW)
-                .unwrap()
-                .html
+            parse_document(
+                md,
+                "/",
+                &TOC_DEPTHS,
+                &SiteUrl::default(),
+                &markdown,
+                NOW,
+                &mut PagePlugins::none(),
+            )
+            .unwrap()
+            .html
         };
         assert_eq!(
             html(Some(Math::MathML)),
@@ -735,9 +788,17 @@ mod tests {
         let md = "[Install](/guide/install) ![Logo](/logo.png) [Guide][guide]\n\n\
                   [Usage](usage) [Top](#top) [little](https://example.com/)\n\n\
                   [guide]: /guide/\n";
-        let html = parse_document(md, "/guide/", &TOC_DEPTHS, &url, &Markdown::default(), NOW)
-            .unwrap()
-            .html;
+        let html = parse_document(
+            md,
+            "/guide/",
+            &TOC_DEPTHS,
+            &url,
+            &Markdown::default(),
+            NOW,
+            &mut PagePlugins::none(),
+        )
+        .unwrap()
+        .html;
         for within in [
             r#"<a href="/little/guide/install">Install</a>"#,
             r#"<img src="/little/logo.png" alt="Logo" />"#,
@@ -808,6 +869,7 @@ mod tests {
             &SiteUrl::default(),
             &Markdown::default(),
             NOW,
+            &mut PagePlugins::none(),
         )
         .unwrap()
         .html;
@@ -866,9 +928,17 @@ mod tests {
         let md = "[Install](install.md#from-source) [Home](../README.md) \
                   [Guide](./README.md) [Usage][usage] ![Diagram](diagram.md)\n\n\
                   [usage]: /guide/usage.md\n";
-        let html = parse_document(md, "/guide/", &TOC_DEPTHS, &url, &Markdown::default(), NOW)
-            .unwrap()
-            .html;
+        let html = parse_document(
+            md,
+            "/guide/",
+            &TOC_DEPTHS,
+            &url,
+            &Markdown::default(),
+            NOW,
+            &mut PagePlugins::none(),
+        )
+        .unwrap()
+        .html;
         for within in [
             r#"<a href="/little/guide/install#from-source">Install</a>"#,
             r#"<a href="/little/">Home</a>"#,
@@ -889,8 +959,16 @@ mod tests {
         let md = "[Install](install.md#from-source) ![Logo](<images/the logo.png>) \
                   [Top](#top) [Search](https://example.com/?q=a&b='c') [Usage][usage]\n\n\
                   [usage]: /guide/usage\n";
-        let rendered =
-            parse_document(md, "/guide/", &TOC_DEPTHS, &url, &Markdown::default(), NOW).unwrap();
+        let rendered = parse_document(
+            md,
+            "/guide/",
+            &TOC_DEPTHS,
+            &url,
+            &Markdown::default(),
+            NOW,
+            &mut PagePlugins::none(),
+        )
+        .unwrap();
         let links: Vec<_> = rendered
             .links
             .iter()

@@ -26,15 +26,21 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
+          # For the plugin the tests build, tests/plugin.
+          targets: wasm32-wasip2
 
       - name: Cache cargo build artifacts
         uses: Swatinem/rust-cache@v2
 
       - name: Check formatting
-        run: cargo fmt --check
+        run: |
+          cargo fmt --check
+          cargo fmt --check --manifest-path tests/plugin/Cargo.toml
 
       - name: Lint (clippy, warnings are errors)
-        run: cargo clippy --all-targets -- -D warnings
+        run: |
+          cargo clippy --all-targets -- -D warnings
+          cargo clippy --manifest-path tests/plugin/Cargo.toml --target wasm32-wasip2 --target-dir target/test-plugin -- -D warnings
 
       - name: Test
         run: cargo test

@@ -1,6 +1,6 @@
 # 0029 — Plugins that render code blocks
 
-- Status: proposed
+- Status: accepted
 - Date: 2026-10-07
 - Amends: [0004](./0004-downloading-themes.md),
   [0016](./0016-checking-links.md),
@@ -40,7 +40,7 @@ where a page names the module.
 - **What runs a component:**
   - wasmtime, the Bytecode Alliance's runtime, which compiles it to machine
     code with Cranelift, and passes strings, records, and results across
-    its interface: little grows by about 20 MB;
+    its interface: about 20 MB, on its own;
   - wasmtime with Winch, its quicker compiler: 18 MB, and no quicker to
     start a small plugin;
   - wasmi, an interpreter: 4 MB, but it runs only core modules, which pass
@@ -110,9 +110,10 @@ where a page names the module.
 
   world plugin { export code-blocks; }
   ```
-  - `setup`, given the plugin's settings as a JSON object, gives back the
-    languages it renders. little calls it once per build, before any page
-    is built, and an error stops the build.
+  - `setup`, given the plugin's settings as a JSON object, without `wasm`,
+    and with `read` as a list, gives back the languages it renders, each
+    one word. little calls it as each build starts, before any page is
+    built, and an error stops the build.
   - `render`, given a block's language, its info string, its text, and its
     page's file, from the site's folder, like `docs/guide.md`, gives back
     Markdown or HTML, or an error.
@@ -130,10 +131,12 @@ where a page names the module.
   ``warning: plugin `bob` can't render the block on line 12 of ./docs/guide.md: …``,
   and left as it was, so a ```` ```mermaid ```` block is still drawn, and
   any other is shown as code. `little build --strict` fails on one. After
-  a crash, little starts the plugin again for the next block.
-- A notebook's Markdown cells' blocks go to plugins too
-  ([0024](./0024-jupyter-notebooks.md)), and are warned of without a line;
-  its code cells and their outputs don't.
+  a crash, little starts the plugin again, and calls `setup`, for the next
+  block.
+- The blocks in a notebook's Markdown cells, and in its cells' Markdown
+  outputs, go to plugins too ([0024](./0024-jupyter-notebooks.md)), and
+  are warned of without a line; its code cells, and their other outputs,
+  don't.
 - A plugin reaches nothing little doesn't give it: no network, no
   environment variables, and no files but its `read` folders, at their
   paths from the site's folder, like `src/app.py`. What it prints goes to
@@ -159,11 +162,12 @@ where a page names the module.
   changes, until the interface's version does.
 - A site whose plugins come from URLs builds offline once they're
   downloaded, as with themes.
-- little grows by about 20 MB, to about 72 MB, for wasmtime, Cranelift,
-  and WASI.
-- A small plugin in Rust, of 90 KB, starts in about 30 ms. One in Python
-  carries Python with it, in 18 MB, and starts in about a second, then
-  renders a block in about 30 ms.
+- little grows by about 17 MB, to about 69 MB, and by about 60 crates, for
+  wasmtime, Cranelift, and WASI.
+- A small plugin in Rust, like one of 77 KB that renders CSV as a table,
+  adds about 10 ms to a build. The same plugin in Python carries Python
+  with it, in 18 MB, and adds about a second, as wasmtime compiles it.
+  Either renders 200 tables as quickly as one.
 - little's tests build a plugin, so running them needs Rust's
   `wasm32-wasip2` target, which `rust-toolchain.toml` asks rustup for.
 - Limits, for now:
@@ -175,6 +179,6 @@ where a page names the module.
   - each `little build` compiles each plugin again, as compiled plugins
     aren't kept;
   - a plugin's Markdown is read on its own, so it can't use the page's
-    link references, and its footnotes are numbered apart from the page's;
+    link references, nor have footnotes;
   - a page can't change a plugin's settings in its frontmatter, but a
     block can pass it options in its info string, which the plugin reads.
