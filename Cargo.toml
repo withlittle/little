@@ -21,6 +21,7 @@ notify = "8.2.0"
 notify-debouncer-mini = "0.7.0"
 pagefind = { version = "1.5.2", default-features = false }
 percent-encoding = "2.3.2"
+rand = { version = "0.10.3", default-features = false, features = ["std_rng"] }
 regex = "1.13.1"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
@@ -33,4 +34,6 @@ two-face = "0.5.2"
 ureq = { version = "3.4.2", default-features = false, features = ["rustls"] }
 url = "2.5.8"
 walkdir = "2.5.0"
+wasmtime = { version = "49.0.2", default-features = false, features = ["anyhow", "runtime", "std", "cranelift", "component-model", "parallel-compilation"] }
+wasmtime-wasi = { version = "49.0.2", default-features = false, features = ["p2"] }
 zip = { version = "8.6.0", default-features = false, features = ["deflate-flate2"] }

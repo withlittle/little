@@ -2,8 +2,10 @@
 
 - Status: accepted; amended by [0025](./0025-rendering-math-as-mathml.md),
   which renders the math in Markdown cells as MathML, without a theme's
-  help, and by [0027](./0027-drawing-mermaid-diagrams.md), which draws their
-  Mermaid diagrams as SVG
+  help, by [0027](./0027-drawing-mermaid-diagrams.md), which draws their
+  Mermaid diagrams as SVG, and by
+  [0029](./0029-plugins-that-render-code-blocks.md), which gives the code
+  blocks in their Markdown, but not their code cells, to plugins
 - Date: 2026-10-04
 
 ## Context

@@ -3,9 +3,11 @@
 - Status: accepted; amended by [0017](./0017-links-to-pages-files.md),
   which shows a broken link in Markdown as it's written, by
   [0025](./0025-rendering-math-as-mathml.md), which warns of math that can't
-  be rendered as of a broken link, and fails on it with `--strict`, and by
+  be rendered as of a broken link, and fails on it with `--strict`, by
   [0027](./0027-drawing-mermaid-diagrams.md), which does the same for a
-  diagram that can't be drawn
+  diagram that can't be drawn, and by
+  [0029](./0029-plugins-that-render-code-blocks.md), which does the same
+  for a code block a plugin can't render
 - Date: 2026-10-01
 
 ## Context

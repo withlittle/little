@@ -1,0 +1,46 @@
+/// The interface a little plugin exports: see decisions/0029 and the
+/// README's "Writing a plugin".
+package little:plugin@0.1.0;
+
+/// Renders fenced code blocks in the languages the plugin chooses.
+interface code-blocks {
+    /// A fenced code block, like ```` ```bob ````, in a page.
+    record block {
+        /// Its language, the first word of its info string, up to a comma,
+        /// in lowercase, like `bob`.
+        language: string,
+        /// Its whole info string, as it's written after the fence, like
+        /// `bob {width=10}`.
+        info: string,
+        /// Its text, which ends in a newline unless the block is empty.
+        text: string,
+        /// Its page's file, from the site's folder, like `docs/guide.md`.
+        page: string,
+    }
+
+    /// What a block becomes.
+    variant output {
+        /// Markdown, which little writes as if the page's author had: its
+        /// headings join the page's table of contents, its links are
+        /// checked, and its code is highlighted.
+        markdown(string),
+        /// HTML, which little writes as it is.
+        html(string),
+    }
+
+    /// Called as each build starts, before any page is built, and again
+    /// before the next block after the plugin crashes, with its settings
+    /// from `little.yml` as a JSON object, without `wasm`, where `read` is
+    /// always a list. Gives back the languages the plugin renders, each one
+    /// word, or an error, which stops the build.
+    setup: func(settings: string) -> result<list<string>, string>;
+
+    /// Renders a block in one of the plugin's languages, or gives back an
+    /// error, which little warns of, leaving the block as it was.
+    render: func(block: block) -> result<output, string>;
+}
+
+/// A little plugin.
+world plugin {
+    export code-blocks;
+}

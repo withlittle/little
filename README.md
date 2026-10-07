@@ -50,7 +50,7 @@ Then add a `little.yml` to name your site. See [Configuration](#configuration).
 
 ```sh
 little build                         # render the site into dist/, and warn of broken links
-little build --strict                # fail on a broken link, formula, or diagram, as for CI
+little build --strict                # fail on anything it would warn of, as for CI
 little serve                         # dev server with live reload at http://127.0.0.1:8080
 little serve --port 3000             # serve on another port, just this once
 little config                        # print the site's config, merged
@@ -63,19 +63,22 @@ little --help                        # list every command and option
   hand. A build that fails leaves the last one in place. Once it's built the
   site, it [checks every link](#checking-links) in it, and warns of each one
   that's broken, of each formula it [couldn't
-  render](#choosing-how-math-is-written), and of each diagram it [couldn't
-  draw](#choosing-how-diagrams-are-drawn).
-- `serve` builds first, then watches the source folder, the theme's folder
-  (and those of the themes it [builds on](#building-on-another-theme), unless
-  they're [downloaded](#downloading-a-theme)), and `little.yml`, rebuilding and
-  refreshing open browser tabs whenever you save. If you switch folders or
-  themes, it follows. If a save breaks the build, `serve` prints why and keeps
+  render](#choosing-how-math-is-written), of each diagram it [couldn't
+  draw](#choosing-how-diagrams-are-drawn), and of each code block a
+  [plugin](#adding-plugins) couldn't render.
+- `serve` builds first, then watches `little.yml`, the source folder, the
+  theme's folder (and those of the themes it [builds
+  on](#building-on-another-theme)), each [plugin's](#adding-plugins) file, and
+  the folders plugins read, but not a theme or plugin that's
+  [downloaded](#downloading-a-theme), as it never changes, rebuilding and
+  refreshing open browser tabs whenever you save. If you switch folders,
+  themes, or plugins, it follows. If a save breaks the build, `serve` prints why and keeps
   serving the last build. It serves at the [host and
   port](#choosing-where-to-serve) your config sets, unless `--host` or
   `--port` says otherwise, and under the path of the site's
   [`url`](#choosing-the-sites-url), if it has one. After each build, it warns
-  of broken links within the site, of math it couldn't render, and of
-  diagrams it couldn't draw.
+  of broken links within the site, of math it couldn't render, of diagrams
+  it couldn't draw, and of code blocks plugins couldn't render.
 - `config` prints the [config](#configuration) the theme gets as `site`
   (without `site.nav` and `site.year`), so you can check a setting without
   building.
@@ -138,7 +141,8 @@ my-docs/
   ```` ```rust ````, and little highlights it as it builds the page, in any
   of the 220 languages [bat](https://github.com/sharkdp/bat) has, named as on
   GitHub, like `rust`, `rs`, `shell`, or `golang`. A block in a language
-  little doesn't have, like `plantuml`, or without one, stays plain. See
+  little doesn't have, like `plantuml`, or without one, stays plain, unless
+  a [plugin](#adding-plugins) renders it. See
   [Choosing how code is highlighted](#choosing-how-code-is-highlighted).
 - **Math.** Write it as on GitHub, in LaTeX: `$x^2$` or `` $`x^2`$ `` in a
   line, and `$$…$$` or a ```` ```math ```` block on its own. little renders
@@ -248,7 +252,8 @@ little's own settings, like the [theme](#choosing-a-theme), the
 [headings](#choosing-headings-for-tables-of-contents) its tables of contents
 list, the [Markdown](#choosing-markdowns-extensions) its pages are written
 in, how their [code is highlighted](#choosing-how-code-is-highlighted) and
-[diagrams drawn](#choosing-how-diagrams-are-drawn),
+[diagrams drawn](#choosing-how-diagrams-are-drawn), the
+[plugins](#adding-plugins) that render their code blocks,
 [where `little serve` serves it](#choosing-where-to-serve), the
 [repository](#choosing-the-sites-repository) its source is in, and whether
 it's [searchable](#search); a site's name, language, and look, its
@@ -652,6 +657,85 @@ markdown:
 - Anything but `pygments`, `github`, or `false` is an error, and every
   command stops and says why.
 
+### Adding plugins
+
+A plugin renders code blocks in a language of its own, as little builds each
+page, like a table from a ```` ```csv ```` block, or a diagram from one in a
+language little doesn't draw. It's one `.wasm` file, which runs wherever
+little does, in a sandbox. `plugins` names each plugin a site uses, and its
+file, by a path or a URL:
+
+```yaml
+# little.yml
+plugins:
+  csv: ./plugins/little_csv.wasm
+  bob: https://example.com/svgbob-1.0.wasm
+```
+
+A plugin's settings, which it reads itself, go beside its file, in `wasm`:
+
+```yaml
+# little.yml
+plugins:
+  python:
+    wasm: ./plugins/little_python.wasm
+    read: src
+    style: google
+```
+
+- A path is relative to the folder of the `little.yml` that sets it, as for a
+  [theme](#choosing-a-theme). A URL must start with `https://`: the first
+  build downloads it into the site's `.little/plugins/`, and little never
+  downloads that URL again, so later builds work offline. To use another
+  version, change the URL.
+- A block is a plugin's by its language, the first word after its fence, up
+  to a comma, in any case, as for
+  [highlighting](#choosing-how-code-is-highlighted). The plugin says which
+  languages it renders, and two plugins that render the same one stop the
+  build. A block can pass the plugin options after its language, like
+  ```` ```csv headers=false ````, for it to read.
+- A plugin gives back Markdown, which little writes as if you had: its
+  headings join the page's table of contents, its links are checked, its math
+  is rendered, its diagrams drawn, and its code highlighted. Or it gives back
+  HTML, which little writes as it is, so it needs
+  [`raw_html`](#choosing-markdowns-extensions): with `raw_html: false`, the
+  build stops.
+- A plugin reaches nothing little doesn't give it: not the network, your
+  environment variables, or your files, but the folders `read` names, from
+  the site's folder, like `src` or `[src, examples]`, which it can read, but
+  not change. Only the site's `little.yml` can set `read`, so a theme's
+  plugin reads your files only when you say so. What it prints goes to
+  little's stderr. Its clock reads the time the build started, and its
+  random numbers are the same in each build, so a site builds the same each
+  time.
+- A block a plugin can't render, as it gives back an error, or crashes, is
+  left as it was, as code, and warned of, with the file and line it's on:
+
+  ```text
+  warning: plugin `csv` can't render the block on line 9 of ./docs/sizes.md: the table is empty
+  ```
+
+  `little build --strict` fails on one, and `little serve` warns of each
+  after each build. After a crash, little starts the plugin again for the
+  next block. A plugin that can't start, as its settings are wrong, say,
+  stops the build.
+- A theme can name plugins in its `little.yml`, for its sites to use, and the
+  site's `little.yml` has the last word, plugin by plugin and setting by
+  setting, so a site can change a setting of its theme's plugin, or turn one
+  off, like `python: false`. A page can't change them in its frontmatter.
+- In a [notebook](#writing-docs), the blocks in Markdown cells, and in
+  Markdown a cell showed, go to plugins too, and are warned of without a
+  line. Its code cells don't.
+- Limits, for now: a plugin's Markdown can't use the page's link references,
+  or have footnotes; a plugin has no time limit, so one that never returns
+  holds the build up until you press Ctrl-C; a download isn't checked
+  against a hash, so little trusts the site it's on; and each `little build`
+  compiles each plugin again, which takes a moment for a small plugin, and
+  about a second for one in Python. `little serve` compiles each once, and
+  again when it changes.
+
+To write your own, see [Writing a plugin](#writing-a-plugin).
+
 ### Choosing where to serve
 
 `little serve` serves the site at <http://127.0.0.1:8080> unless you choose
@@ -986,6 +1070,115 @@ to style, as the built-in theme's
   inside `{% if not site.markdown.highlight %}`, or Mermaid's inside
   `{% if not site.markdown.mermaid %}`.
 
+## Writing a plugin
+
+A [plugin](#adding-plugins) is a
+[WebAssembly component](https://component-model.bytecodealliance.org/),
+built for WASI 0.2, that exports the interface in little's
+[`wit/plugin.wit`](./wit/plugin.wit). Rust's `wasm32-wasip2` target builds
+one, and so can Python, Go, JavaScript, and C. This one, in Rust, renders a
+```` ```csv ```` block as a table, in Markdown:
+
+```toml
+# Cargo.toml
+[package]
+name = "little-csv"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+wit-bindgen = "0.62"
+```
+
+```rust
+// src/lib.rs
+wit_bindgen::generate!({ path: "wit/plugin.wit", world: "plugin" });
+
+use exports::little::plugin::code_blocks::{Block, Guest, Output};
+
+struct Csv;
+
+impl Guest for Csv {
+    fn setup(_settings: String) -> Result<Vec<String>, String> {
+        Ok(vec!["csv".to_string()])
+    }
+
+    fn render(block: Block) -> Result<Output, String> {
+        let mut rows = block.text.lines().map(|line| line.split(',').collect::<Vec<_>>());
+        let header = rows.next().ok_or("the table is empty")?;
+        let mut table = format!("| {} |\n|{}\n", header.join(" | "), " --- |".repeat(header.len()));
+        for row in rows {
+            table += &format!("| {} |\n", row.join(" | "));
+        }
+        Ok(Output::Markdown(table))
+    }
+}
+
+export!(Csv);
+```
+
+Copy little's `wit/plugin.wit` into the crate's `wit/` folder, and build it:
+
+```sh
+rustup target add wasm32-wasip2
+cargo build --release --target wasm32-wasip2
+```
+
+Then name `target/wasm32-wasip2/release/little_csv.wasm` in a site's
+[`plugins`](#adding-plugins).
+
+- `setup` is called as each build starts, before any page is built, with
+  the plugin's settings from `little.yml` as a JSON object, without `wasm`,
+  like `{"read":["src"],"style":"google"}`, where `read` is always a list.
+  It gives back the languages the plugin renders, each one word, which little
+  matches in any case, or an error, which stops the build.
+- `render` is given each block in those languages, with:
+  - `language`, its language, in lowercase, like `csv`;
+  - `info`, all that's after its fence, like `csv headers=false`;
+  - `text`, its text, which ends in a newline unless the block is empty;
+  - `page`, its page's file, from the site's folder, like `docs/sizes.md`.
+
+  It gives back `Output::Markdown` or `Output::Html`, or an error, which
+  little warns of, leaving the block as it was.
+- little starts each plugin once a build, so a plugin keeps its state from
+  block to block, and page to page. If it crashes, as a Rust plugin does
+  when it panics, little starts it again, and calls `setup` again, before
+  the next block.
+- A plugin reads the folders `read` names at their paths from the site's
+  folder, like `std::fs::read_to_string("src/app.py")`. It can't change
+  them, or reach anything else.
+- A plugin keeps working as little changes, until the interface's version,
+  `little:plugin@0.1.0`, does.
+
+In Python, [componentize-py](https://github.com/bytecodealliance/componentize-py)
+builds the same plugin from `app.py`, with
+`componentize-py -d plugin.wit -w plugin componentize app -o csv.wasm`:
+
+```python
+import csv
+from componentize_py_types import Err
+from wit_world import exports
+from wit_world.exports.code_blocks import Block, Output, Output_Markdown
+
+class CodeBlocks(exports.CodeBlocks):
+    def setup(self, settings: str) -> list[str]:
+        return ["csv"]
+
+    def render(self, block: Block) -> Output:
+        rows = list(csv.reader(block.text.splitlines()))
+        if not rows:
+            raise Err("the table is empty")
+        table = ["| " + " | ".join(rows[0]) + " |", "|" + " --- |" * len(rows[0])]
+        table += ["| " + " | ".join(row) + " |" for row in rows[1:]]
+        return Output_Markdown("\n".join(table))
+```
+
+It carries Python with it, so it's about 18 MB, rather than Rust's 77 KB,
+and adds about a second to `little build`, rather than 10 ms.
+
 ## Checking links
 
 Once it's built the site, `little build` checks every link and image in it,
@@ -1005,9 +1198,10 @@ warning: broken link https://github.com/withlittle/litle in ./docs/about.md: Rej
   pages, like one in the theme, is one warning, which names a few of them and
   counts the rest.
 - `little build --strict` fails on a broken link, a formula little
-  [couldn't render](#choosing-how-math-is-written), or a diagram it
-  [couldn't draw](#choosing-how-diagrams-are-drawn), so CI can keep a broken
-  site from being published. `dist/` is written either way.
+  [couldn't render](#choosing-how-math-is-written), a diagram it
+  [couldn't draw](#choosing-how-diagrams-are-drawn), or a code block a
+  [plugin](#adding-plugins) couldn't render, so CI can keep a broken site
+  from being published. `dist/` is written either way.
 - `little serve` checks only the links within the site, so a save needn't
   wait for other sites.
 - The site is checked as it's published. Under the path of its
@@ -1091,6 +1285,10 @@ cargo test                  # run the tests
 cargo clippy --all-targets  # lint (CI fails on warnings)
 cargo fmt                   # format
 ```
+
+The tests build a [plugin](#writing-a-plugin), [`tests/plugin/`](./tests/plugin/),
+with Rust's `wasm32-wasip2` target, which
+[`rust-toolchain.toml`](./rust-toolchain.toml) has rustup install.
 
 See [`AGENTS.md`](./AGENTS.md) for architecture and conventions,
 [`VISION.md`](./VISION.md) for where little is headed, and

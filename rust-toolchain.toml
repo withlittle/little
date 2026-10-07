@@ -1,0 +1,4 @@
+# No channel, so little builds with whichever Rust you use; the tests build
+# a plugin, tests/plugin, which needs this target.
+[toolchain]
+targets = ["wasm32-wasip2"]

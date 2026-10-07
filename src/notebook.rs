@@ -20,6 +20,7 @@ use time::OffsetDateTime;
 
 use crate::config::{Markdown, SiteUrl};
 use crate::mermaid;
+use crate::plugin::PagePlugins;
 use crate::render::{self, Rendered};
 
 /// The types of image, but SVG, that an output can be shown as, in the order
@@ -154,8 +155,9 @@ fn text_of(value: Value) -> Option<String> {
 
 /// Parse a notebook, `raw`, as `render::parse_document` parses Markdown:
 /// into its frontmatter, rendered HTML, and outline, with its links and
-/// images led from `folder`, the URL of the folder it's in, its diagrams
-/// drawn, as of `now`, and its code highlighted, as `markdown` says.
+/// images led from `folder`, the URL of the folder it's in, the code blocks
+/// in its Markdown that `plugins` render rendered, its diagrams drawn, as of
+/// `now`, and its code highlighted, as `markdown` says.
 pub fn parse_notebook(
     raw: &str,
     folder: &str,
@@ -163,6 +165,7 @@ pub fn parse_notebook(
     url: &SiteUrl,
     markdown: &Markdown,
     now: OffsetDateTime,
+    plugins: &mut PagePlugins<'_>,
 ) -> Result<Rendered> {
     let Notebook {
         nbformat,
@@ -186,12 +189,16 @@ pub fn parse_notebook(
         language: metadata.language(),
         footnotes: 0,
         inline_footnotes: 0,
+        markdown_blocks: Vec::new(),
     };
     for cell in cells {
         page.add_cell(cell);
     }
+    let markdown_blocks = std::mem::take(&mut page.markdown_blocks);
     let root = page.finish();
-    // A diagram's line would be its cell's, not the notebook file's.
+    // A block's or a diagram's line would be its cell's, not the notebook
+    // file's.
+    let unrendered_blocks = plugins.render(&arena, markdown_blocks, &options, None)?;
     let unrendered_diagrams = mermaid::draw(root, markdown, now, None);
     let rendered = render::render_tree(
         root,
@@ -204,6 +211,7 @@ pub fn parse_notebook(
     )?;
     Ok(Rendered {
         unrendered_diagrams,
+        unrendered_blocks,
         ..rendered
     })
 }
@@ -234,6 +242,9 @@ struct Page<'a> {
     footnotes: u32,
     /// How many names inline footnotes, `^[like this]`, have taken so far.
     inline_footnotes: u32,
+    /// The code blocks in its Markdown, for plugins: not its code cells, nor
+    /// what they wrote.
+    markdown_blocks: Vec<&'a AstNode<'a>>,
 }
 
 impl<'a> Page<'a> {
@@ -281,6 +292,7 @@ impl<'a> Page<'a> {
                     let n = self.rename_inline_footnote(&mut definition.name);
                     inline_footnotes = inline_footnotes.max(n);
                 }
+                NodeValue::CodeBlock(_) => self.markdown_blocks.push(node),
                 _ => {}
             }
         }
@@ -477,6 +489,7 @@ mod tests {
             &SiteUrl::default(),
             markdown,
             OffsetDateTime::UNIX_EPOCH,
+            &mut PagePlugins::none(),
         )
     }
 

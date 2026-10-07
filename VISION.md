@@ -51,7 +51,9 @@ and a rejection of their worst friction.
   tree, so a notebook is a page as Markdown is, without Python.
 - **Theming:** `minijinja` templates; structured data in, any HTML out.
 - **Config:** cascading YAML.
-- **Plugins (planned):** sandboxed **WASM**, so plugins are language-agnostic
+- **Plugins:** sandboxed **WASM** components (wasmtime, built in), so
+  plugins are language-agnostic, and one `.wasm` file runs wherever little
+  does. For now, they render fenced code blocks in languages of their own
   (e.g. Sphinx-style docstring extraction as a plugin).
 - **Styling:** bring-your-own; little compiles a theme's Sass (grass, built
   in), and pairs with the standalone Tailwind CLI (no Node).

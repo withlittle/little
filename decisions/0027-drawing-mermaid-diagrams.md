@@ -2,7 +2,10 @@
 
 - Status: accepted; amended by [0028](./0028-how-diagrams-look.md), which
   lets a theme and a site choose how diagrams look, with Mermaid's own
-  config, in `mermaid`, and a theme widen a gantt chart
+  config, in `mermaid`, and a theme widen a gantt chart, and by
+  [0029](./0029-plugins-that-render-code-blocks.md), which leaves diagrams
+  in other languages to plugins, which render their blocks before
+  diagrams are drawn
 - Date: 2026-10-05
 - Amends: [0016](./0016-checking-links.md),
   [0022](./0022-markdown-extensions.md),

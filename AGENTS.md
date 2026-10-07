@@ -7,33 +7,42 @@ generator written in Rust. Its mission is **authoring experience** — see
 ## Commands
 ```sh
 cargo run -- build          # build the example site (docs/) into dist/, and check its links
-cargo run -- build --strict # ...and fail on a broken link, formula, or diagram
+cargo run -- build --strict # ...and fail on anything it warns of
 cargo run -- serve          # live-reloading dev server at http://127.0.0.1:8080
 cargo run -- config         # print the example site's merged config
 cargo build --release       # produce the release binary (target/release/little)
-cargo test                  # run tests
+cargo test                  # run tests (they build tests/plugin for wasm32-wasip2)
 cargo clippy --all-targets  # lint — keep it clean
 cargo fmt                   # format — run before committing
 ```
 
 ## Architecture (keep the core small)
 - `src/main.rs` — CLI (clap): `build` (`--strict` fails on a broken link,
-  a formula that isn't rendered, or a diagram that isn't drawn), `serve`,
-  `config`.
+  a formula that isn't rendered, a diagram that isn't drawn, or a code block
+  a plugin can't render), `serve`, `config`.
 - `src/config.rs` — the 3-level cascading config (little → theme → site): the
   chain of themes a site uses, its source and destination folders, the levels
   of heading its tables of contents list, the host and port
   `little serve` serves it at, the `url` it's published at, the `repo` and
   `branch` its source is in, whether it's indexed for search, the extensions
   to Markdown its pages are written with, how their math is written, how
-  their diagrams are drawn, and look, with Mermaid's own config, and the
-  classes their code is highlighted with.
+  their diagrams are drawn, and look, with Mermaid's own config, the
+  classes their code is highlighted with, and the plugins that render their
+  code blocks, each with its `.wasm` file, the folders it reads, and its
+  settings.
 - `src/little.yml` — little's own defaults (level 1), compiled into the binary.
 - `src/render.rs` — Markdown (comrak, with the extensions the site turns on) +
   YAML frontmatter → HTML fragment, with each relative link led from the
   folder of the file it's in, and each link to a page's `.md` or `.ipynb`
   file led to the page, noting each link as it's written. A notebook's tree
-  is written the same way, once its diagrams are drawn.
+  is written the same way, once plugins have rendered its blocks and its
+  diagrams are drawn.
+- `src/plugin.rs` — plugins: WebAssembly components, run with wasmtime, built
+  in, that export `wit/plugin.wit`. Starts each a build uses once, in a
+  sandbox that reaches only the folders it reads, and gives it each fenced
+  code block in its languages, before diagrams are drawn, putting the
+  Markdown or HTML it gives back in the block's place; one it can't render
+  stays code, and is noted, with its line, to warn of.
 - `src/math.rs` — writes each formula as MathML as comrak writes the page,
   with math-core, each read on its own; one it can't read is written as its
   TeX, and noted, as it's written, to warn of.
@@ -48,12 +57,13 @@ cargo fmt                   # format — run before committing
 - `src/highlight.rs` — highlights each code block as comrak writes it, with
   bat's grammars, through two-face and syntect: a `<span>` with Pygments' or
   GitHub's class around each token, for the theme to colour.
-- `src/site.rs` — build pipeline: walk the source (`docs/`), render its
-  Markdown and notebooks, copy its other files, apply theme, index it for
-  search, write the destination (`dist/`), noting the source file and URL of
-  each file it writes. Finds where the source is in its repository, so each
-  page can link to its file there, and works out when it's built, for
-  `site.year`, and its diagrams' today.
+- `src/site.rs` — build pipeline: walk the source (`docs/`), start the
+  site's plugins, render its Markdown and notebooks, copy its other files,
+  apply theme, index it for search, write the destination (`dist/`), noting
+  the source file and URL of each file it writes. Finds where the source is
+  in its repository, so each page can link to its file there, and works out
+  when it's built, for `site.year`, its diagrams' today, and its plugins'
+  clocks.
 - `src/search.rs` — indexes each page's own content, under its title and URL,
   with Pagefind, in the language the theme gives the page, into the files of
   the destination's `pagefind/`.
@@ -72,9 +82,11 @@ cargo fmt                   # format — run before committing
   each error and warning.
 - `src/download.rs` — a theme downloaded from a URL: fetched over HTTPS,
   unpacked from its `.zip` or `.tar.gz`, and kept in the site's `.little/`, so
-  it's downloaded only once.
-- `src/server.rs` — dev server + file watcher + live reload; checks the links
-  within the site after each build.
+  it's downloaded only once; and a plugin's `.wasm` file, kept in
+  `.little/plugins/`.
+- `src/server.rs` — dev server + file watcher + live reload, watching the
+  config, source, themes, plugins, and the folders they read; checks the
+  links within the site after each build.
 
 Content and theme live outside `src/`:
 - `docs/` — the example/dogfood site content. This is little's **input**, not
@@ -87,6 +99,11 @@ Content and theme live outside `src/`:
   writes.
 - `little.yml` — example site config (optional). It sets `theme: ./theme`, so
   edits to the built-in theme live-reload.
+- `wit/plugin.wit` — the interface a plugin exports, which little's bindings
+  are generated from; plugin authors copy it.
+- `tests/plugin/` — a plugin, in Rust, with its own workspace, that the tests
+  build for `wasm32-wasip2` (which `rust-toolchain.toml` asks rustup for) and
+  drive, block by block, to check what plugins can and can't do.
 - Project meta (`VISION.md`, `AGENTS.md`, `decisions/`) lives at the repo root.
 
 ## Core principles (do not violate)
@@ -101,7 +118,8 @@ Content and theme live outside `src/`:
    site that doesn't set it gets little's built-in theme (`theme: true`). A
    theme that sets it builds on that theme, whose config goes beneath its own.
 3. **Keep the core small; push features to plugins.** Sphinx-style API extraction,
-   niche renderers, etc. are plugins (planned WASM API), not core code.
+   niche renderers, etc. are plugins (WASM components that render code
+   blocks), not core code.
 4. **No mandatory Node toolchain.** Never add a build step that requires Node.
 5. **Authoring experience wins ties.** When unsure, pick what makes writing docs
    simpler.
@@ -269,4 +287,15 @@ Record notable choices as short ADRs in `decisions/`. Locked so far:
   it. little checks only that `theme` is one of Mermaid's and that no
   setting is empty, as an unquoted `#` colour is — see
   [`decisions/0028-how-diagrams-look.md`](./decisions/0028-how-diagrams-look.md).
-- **Plugins:** sandboxed WASM (planned).
+- **Plugins that render code blocks:** `plugins` names each plugin and its
+  `.wasm` file, a WebAssembly component built for WASI 0.2 that exports
+  `wit/plugin.wit`, by a path or an HTTPS URL, downloaded once into
+  `.little/plugins/`, and cascades plugin by plugin and setting by setting;
+  only the site can set `read`, the folders a plugin reads. A fenced block in
+  a plugin's language goes to it, before diagrams are drawn, and the Markdown
+  it gives back is written as the author's, or the HTML as it is. A plugin
+  runs in wasmtime's sandbox, with no network, environment, or files but
+  those it reads, a clock at the build's start, and the same random numbers
+  each build; a block it can't render is warned of, as a broken link is —
+  see
+  [`decisions/0029-plugins-that-render-code-blocks.md`](./decisions/0029-plugins-that-render-code-blocks.md).

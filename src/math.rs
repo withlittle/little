@@ -98,6 +98,7 @@ fn format_node<'a>(
 mod tests {
     use super::*;
     use crate::config::{Markdown, SiteUrl};
+    use crate::plugin::PagePlugins;
     use crate::render::{Rendered, parse_document};
     use time::OffsetDateTime;
 
@@ -110,6 +111,7 @@ mod tests {
             &SiteUrl::default(),
             &Markdown::default(),
             OffsetDateTime::UNIX_EPOCH,
+            &mut PagePlugins::none(),
         )
         .unwrap()
     }

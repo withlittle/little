@@ -37,6 +37,12 @@
 //! `mermaid` holds Mermaid's own config, in Mermaid's own names, like `theme`
 //! and `themeVariables`, which each diagram little draws starts from: little
 //! sets none, so a theme can choose how diagrams look, and a site change it.
+//!
+//! `plugins` names each plugin and its `.wasm` file (see `plugin`), by a path
+//! from the `little.yml` that names it, or an `https://` URL, with the
+//! plugin's own settings beside it. They cascade plugin by plugin and setting
+//! by setting, and `false` turns a theme's plugin off. Only the site can set
+//! `read`, the folders a plugin can read.
 
 use anyhow::{Context, Result, anyhow, bail};
 use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, utf8_percent_encode};
@@ -82,6 +88,41 @@ pub struct Config {
     /// The extensions to CommonMark each page is written with, from
     /// `markdown`.
     pub markdown: Markdown,
+    /// The plugins that render code blocks, from `plugins`, in the order
+    /// they're named.
+    pub plugins: Vec<Plugin>,
+}
+
+/// A plugin a site uses, from `plugins`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Plugin {
+    /// Its name, like `bob`.
+    pub name: String,
+    /// Its `.wasm` file.
+    pub wasm: Wasm,
+    /// The folders it can read, from `read`.
+    pub read: Vec<Read>,
+    /// Its settings, all but `wasm`, as a JSON object, for its `setup`.
+    pub settings: String,
+}
+
+/// Where a plugin's `.wasm` file is.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Wasm {
+    /// A file, at its path from the `little.yml` that names it.
+    File(PathBuf),
+    /// An `https://` URL, which a build downloads once (see `download`).
+    Url(String),
+}
+
+/// A folder a plugin can read.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Read {
+    /// The folder, from the site's folder.
+    pub folder: PathBuf,
+    /// Its path as the plugin sees it, as the site's little.yml writes it,
+    /// like `src`.
+    pub path: String,
 }
 
 /// Where a site is published, from its `url`. A site that doesn't set one is
@@ -260,7 +301,8 @@ pub fn load(site_dir: &Path) -> Result<Config> {
     let defaults = builtin_defaults();
     let site_file = site_dir.join(CONFIG_FILE);
     let site_name = site_file.display().to_string();
-    let site_cfg = read_config(&site_file, &site_name)?;
+    let mut site_cfg = read_config(&site_file, &site_name)?;
+    long_form_plugins(&mut site_cfg, &site_name, site_dir, true)?;
 
     let mut next = match site_cfg.get("theme").or(defaults.get("theme")) {
         Some(value) => choose_theme(value, site_dir, &site_name, site_dir)?,
@@ -294,7 +336,8 @@ pub fn load(site_dir: &Path) -> Result<Config> {
                 }
                 seen.push(real);
                 let file = location.describe(CONFIG_FILE);
-                let cfg = read_config(&dir.join(CONFIG_FILE), &file)?;
+                let mut cfg = read_config(&dir.join(CONFIG_FILE), &file)?;
+                long_form_plugins(&mut cfg, &file, dir, false)?;
                 next = match cfg.get("theme") {
                     Some(value) => choose_theme(value, dir, &file, site_dir)?,
                     None => None,
@@ -322,6 +365,7 @@ pub fn load(site_dir: &Path) -> Result<Config> {
     let repo = repo(&values)?;
     let search = search(&values)?;
     let markdown = markdown(&values)?;
+    let plugins = plugins(&values, site_dir)?;
     Ok(Config {
         values,
         themes,
@@ -334,6 +378,7 @@ pub fn load(site_dir: &Path) -> Result<Config> {
         repo,
         search,
         markdown,
+        plugins,
     })
 }
 
@@ -625,6 +670,125 @@ fn empty_setting(settings: &Mapping, path: &str) -> Option<String> {
             _ => None,
         }
     })
+}
+
+/// Write each plugin the config in `file`, in `dir`, names in the long form,
+/// as settings with `wasm`, its path from `dir`, so the levels merge setting
+/// by setting, and each path leads from the `little.yml` that wrote it. Only
+/// the site's config, `is_site`, can set `read`.
+fn long_form_plugins(cfg: &mut Mapping, file: &str, dir: &Path, is_site: bool) -> Result<()> {
+    let plugins = match cfg.get_mut("plugins") {
+        None => return Ok(()),
+        Some(Value::Mapping(plugins)) => plugins,
+        // `plugins:` with nothing after it.
+        Some(Value::Null) => {
+            cfg.shift_remove("plugins");
+            return Ok(());
+        }
+        Some(_) => bail!(
+            "`plugins` in {file} must name each plugin and its `.wasm` file, like \
+             `bob: ./plugins/bob.wasm`"
+        ),
+    };
+    for (name, plugin) in plugins.iter_mut() {
+        let Some(name) = name.as_str() else {
+            bail!(
+                "`plugins` in {file} must name each plugin and its `.wasm` file, like \
+                 `bob: ./plugins/bob.wasm`"
+            );
+        };
+        if let Value::String(wasm) = plugin {
+            *plugin = Value::Mapping(Mapping::from_iter([("wasm".into(), wasm.as_str().into())]));
+        }
+        let settings = match plugin {
+            Value::Mapping(settings) => settings,
+            Value::Bool(false) => continue,
+            _ => bail!(
+                "plugin `{name}` in {file} must be its `.wasm` file, its settings, or `false`"
+            ),
+        };
+        if !is_site && settings.contains_key("read") {
+            bail!(
+                "plugin `{name}` in {file} sets `read`, but only the site's {CONFIG_FILE} can \
+                 choose what a plugin reads"
+            );
+        }
+        match settings.get_mut("wasm") {
+            None => {}
+            Some(Value::String(url)) if url.starts_with("https://") => {}
+            Some(Value::String(url)) if url.starts_with("http://") => bail!(
+                "plugin `{name}` in {file} is at `{url}`, but little only downloads plugins \
+                 over HTTPS"
+            ),
+            Some(Value::String(path)) => {
+                *path = resolve(dir, path).to_string_lossy().into_owned();
+            }
+            Some(_) => bail!(
+                "`wasm` of plugin `{name}` in {file} must be the path or URL of its `.wasm` file"
+            ),
+        }
+    }
+    Ok(())
+}
+
+/// The plugins the merged config names, each in the long form, but those
+/// turned off with `false`.
+fn plugins(values: &Mapping, site_dir: &Path) -> Result<Vec<Plugin>> {
+    let Some(Value::Mapping(plugins)) = values.get("plugins") else {
+        return Ok(Vec::new());
+    };
+    let mut on = Vec::new();
+    for (name, settings) in plugins {
+        let Value::Mapping(settings) = settings else {
+            continue; // `false`
+        };
+        let name = name.as_str().expect("each plugin has a name").to_string();
+        let wasm = match settings.get("wasm") {
+            Some(Value::String(url)) if url.starts_with("https://") => Wasm::Url(url.clone()),
+            Some(Value::String(path)) => Wasm::File(PathBuf::from(path)),
+            _ => bail!("plugin `{name}` needs `wasm`, the path or URL of its `.wasm` file"),
+        };
+        let folders = match settings.get("read") {
+            None => Vec::new(),
+            Some(Value::String(folder)) => vec![folder.as_str()],
+            Some(Value::Sequence(folders)) => (folders.iter())
+                .map(Value::as_str)
+                .collect::<Option<_>>()
+                .ok_or_else(|| read_error(&name))?,
+            Some(_) => return Err(read_error(&name)),
+        };
+        let read: Vec<Read> = (folders.into_iter())
+            .map(|folder| Read {
+                folder: resolve(site_dir, folder),
+                path: match folder.trim_start_matches("./").trim_end_matches('/') {
+                    "" => ".".to_string(),
+                    path => path.to_string(),
+                },
+            })
+            .collect();
+        // The plugin is told the folders it can read as it sees them, and its
+        // settings in the order they're written.
+        let mut settings = settings.clone();
+        settings.shift_remove("wasm");
+        if let Some(folders) = settings.get_mut("read") {
+            *folders = read.iter().map(|read| read.path.as_str()).collect();
+        }
+        let settings = serde_json::to_string(&settings).with_context(|| {
+            format!("plugin `{name}`'s settings must each be named, like `style: google`")
+        })?;
+        on.push(Plugin {
+            name,
+            wasm,
+            read,
+            settings,
+        });
+    }
+    Ok(on)
+}
+
+/// The error for a plugin's `read` that isn't a folder or a list of them.
+fn read_error(name: &str) -> anyhow::Error {
+    anyhow!("`read` of plugin `{name}` must be a folder, or a list of them, from the site's folder")
 }
 
 /// Resolve a path a config names against `dir`: an absolute path is just that
@@ -1728,5 +1892,151 @@ mod tests {
         // Anything but settings, like a list, is replaced whole.
         let b: Value = serde_yaml::from_str("[3]").unwrap();
         assert_eq!(cfg.get("b"), Some(&b));
+    }
+
+    /// A plugin, as `load` gives it.
+    fn plugin(name: &str, wasm: Wasm, read: &[(PathBuf, &str)], settings: &str) -> Plugin {
+        Plugin {
+            name: name.to_string(),
+            wasm,
+            read: (read.iter())
+                .map(|(folder, path)| Read {
+                    folder: folder.clone(),
+                    path: path.to_string(),
+                })
+                .collect(),
+            settings: settings.to_string(),
+        }
+    }
+
+    #[test]
+    fn plugins_cascade_plugin_by_plugin_and_setting_by_setting() {
+        let theme_cfg = "plugins:\n  bob: ./plugins/bob.wasm\n  \
+                         ann:\n    wasm: https://example.com/ann.wasm\n    style: plain\n    \
+                         width: 80\n  old: ./old.wasm\n";
+        let site = scratch(
+            "plugins",
+            &[
+                ("theme/_templates/default.html", ""),
+                ("theme/little.yml", theme_cfg),
+            ],
+        );
+        // The site changes one of the theme's settings, turns one of its
+        // plugins off, and adds its own, which reads two folders.
+        let site_cfg = "theme: ./theme\nplugins:\n  ann:\n    style: fancy\n  old: false\n  \
+                        cal:\n    wasm: tools/cal.wasm\n    read: [./src/, examples]\n    depth: 2\n";
+        std::fs::write(site.join(CONFIG_FILE), site_cfg).unwrap();
+
+        // Each path leads from the little.yml that wrote it, and the plugin
+        // is told the folders it reads as it sees them, in its settings.
+        let url = Wasm::Url("https://example.com/ann.wasm".to_string());
+        assert_eq!(
+            load(&site).unwrap().plugins,
+            [
+                plugin(
+                    "bob",
+                    Wasm::File(site.join("theme/plugins/bob.wasm")),
+                    &[],
+                    "{}"
+                ),
+                plugin("ann", url, &[], r#"{"style":"fancy","width":80}"#),
+                plugin(
+                    "cal",
+                    Wasm::File(site.join("tools/cal.wasm")),
+                    &[
+                        (site.join("src"), "src"),
+                        (site.join("examples"), "examples")
+                    ],
+                    r#"{"read":["src","examples"],"depth":2}"#
+                ),
+            ]
+        );
+
+        // `read` can name one folder, like the site's own.
+        let site_cfg = "plugins:\n  cal:\n    wasm: ./cal.wasm\n    read: .\n";
+        std::fs::write(site.join(CONFIG_FILE), site_cfg).unwrap();
+        assert_eq!(
+            load(&site).unwrap().plugins,
+            [plugin(
+                "cal",
+                Wasm::File(site.join("cal.wasm")),
+                &[(site.clone(), ".")],
+                r#"{"read":["."]}"#
+            )]
+        );
+
+        // A site can name none.
+        for site_cfg in ["", "plugins:\n", "plugins: {}\n"] {
+            std::fs::write(site.join(CONFIG_FILE), site_cfg).unwrap();
+            assert_eq!(load(&site).unwrap().plugins, [], "{site_cfg}");
+        }
+        let _ = std::fs::remove_dir_all(&site);
+    }
+
+    #[test]
+    fn plugins_must_be_named_with_their_wasm() {
+        let site = scratch("bad-plugins", &[("theme/_templates/default.html", "")]);
+        let file = site.join(CONFIG_FILE);
+        let file = file.display();
+        for (site_cfg, expected) in [
+            (
+                "plugins: [./bob.wasm]\n",
+                format!(
+                    "`plugins` in {file} must name each plugin and its `.wasm` file, like \
+                     `bob: ./plugins/bob.wasm`"
+                ),
+            ),
+            (
+                "plugins:\n  bob: true\n",
+                format!(
+                    "plugin `bob` in {file} must be its `.wasm` file, its settings, or `false`"
+                ),
+            ),
+            (
+                "plugins:\n  bob:\n    style: plain\n",
+                "plugin `bob` needs `wasm`, the path or URL of its `.wasm` file".to_string(),
+            ),
+            (
+                "plugins:\n  bob: http://example.com/bob.wasm\n",
+                format!(
+                    "plugin `bob` in {file} is at `http://example.com/bob.wasm`, but little only \
+                     downloads plugins over HTTPS"
+                ),
+            ),
+            (
+                "plugins:\n  bob:\n    wasm: [./bob.wasm]\n",
+                format!(
+                    "`wasm` of plugin `bob` in {file} must be the path or URL of its `.wasm` file"
+                ),
+            ),
+            (
+                "plugins:\n  bob:\n    wasm: ./bob.wasm\n    read: { src: true }\n",
+                "`read` of plugin `bob` must be a folder, or a list of them, from the site's \
+                 folder"
+                    .to_string(),
+            ),
+            (
+                "plugins:\n  bob:\n    wasm: ./bob.wasm\n    sizes: { ~: small }\n",
+                "plugin `bob`'s settings must each be named, like `style: google`".to_string(),
+            ),
+        ] {
+            let message = error(&site, site_cfg);
+            assert!(message.starts_with(&expected), "{site_cfg}: {message}");
+        }
+
+        // Only the site chooses what a plugin reads, not a theme it uses.
+        let theme_cfg = "plugins:\n  bob:\n    wasm: ./bob.wasm\n    read: /\n";
+        std::fs::write(site.join("theme").join(CONFIG_FILE), theme_cfg).unwrap();
+        let message = error(&site, "theme: ./theme\n");
+        let theme_file = site.join("theme").join(CONFIG_FILE);
+        let theme_file = theme_file.display();
+        assert!(
+            message.contains(&format!(
+                "plugin `bob` in {theme_file} sets `read`, but only the site's little.yml can \
+                 choose what a plugin reads"
+            )),
+            "{message}"
+        );
+        let _ = std::fs::remove_dir_all(&site);
     }
 }

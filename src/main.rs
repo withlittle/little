@@ -5,6 +5,7 @@ mod links;
 mod math;
 mod mermaid;
 mod notebook;
+mod plugin;
 mod render;
 mod sass;
 mod search;
@@ -34,11 +35,12 @@ struct Cli {
 #[derive(Subcommand)]
 enum Commands {
     /// Build the site into its destination folder (dist/ by default), and
-    /// warn of each formula it can't render, each diagram it can't draw, and
-    /// each broken link
+    /// warn of each formula it can't render, each diagram it can't draw,
+    /// each code block a plugin can't render, and each broken link
     Build {
         /// Fail on a formula that can't be rendered, a diagram that can't be
-        /// drawn, or a broken link, rather than warn of it, as for CI
+        /// drawn, a code block a plugin can't render, or a broken link,
+        /// rather than warn of it, as for CI
         #[arg(long)]
         strict: bool,
     },
@@ -66,6 +68,9 @@ fn main() -> Result<()> {
             for diagram in &built.unrendered_diagrams {
                 eprintln!("warning: {diagram}");
             }
+            for block in &built.unrendered_blocks {
+                eprintln!("warning: {block}");
+            }
             let broken = links::check(&built, links::Scope::All)?;
             for link in &broken {
                 eprintln!("warning: {link}");
@@ -79,6 +84,10 @@ fn main() -> Result<()> {
                     (
                         built.unrendered_diagrams.len(),
                         "diagram(s) that can't be drawn",
+                    ),
+                    (
+                        built.unrendered_blocks.len(),
+                        "code block(s) that plugins can't render",
                     ),
                     (broken.len(), "broken link(s)"),
                 ]

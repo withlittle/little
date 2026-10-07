@@ -20,7 +20,7 @@ use walkdir::WalkDir;
 
 use crate::config::{Repo, SiteUrl};
 use crate::theme::{PageType, StaticFile, Theme};
-use crate::{config, math, mermaid, notebook, render, search};
+use crate::{config, math, mermaid, notebook, plugin, render, search};
 
 /// Where a site's 404 page is written: the root of the destination, which is
 /// where static hosts look for it.
@@ -52,6 +52,8 @@ struct Page {
     unrendered_math: Vec<math::Unrendered>,
     /// The diagrams in its Markdown that couldn't be drawn.
     unrendered_diagrams: Vec<mermaid::Unrendered>,
+    /// The code blocks in its Markdown that plugins couldn't render.
+    unrendered_blocks: Vec<plugin::Unrendered>,
 }
 
 impl Page {
@@ -178,6 +180,9 @@ pub struct Built {
     /// Each diagram in its pages that couldn't be drawn, so is shown as
     /// code, in the order of the pages, to warn of.
     pub unrendered_diagrams: Vec<UnrenderedDiagram>,
+    /// Each code block in its pages that a plugin couldn't render, so is
+    /// left as it was, in the order of the pages, to warn of.
+    pub unrendered_blocks: Vec<UnrenderedBlock>,
 }
 
 /// A formula in a page that couldn't be rendered, and the file it's in.
@@ -214,6 +219,30 @@ impl fmt::Display for UnrenderedDiagram {
     }
 }
 
+/// A code block in a page that a plugin couldn't render, and the file it's
+/// in.
+#[derive(Clone, Debug)]
+pub struct UnrenderedBlock {
+    /// What it's in, like `docs/intro.md`.
+    pub origin: String,
+    pub block: plugin::Unrendered,
+}
+
+impl fmt::Display for UnrenderedBlock {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let Self { origin, block } = self;
+        let plugin = &block.plugin;
+        match block.line {
+            Some(line) => write!(
+                f,
+                "plugin `{plugin}` can't render the block on line {line} of {origin}"
+            ),
+            None => write!(f, "plugin `{plugin}` can't render a block in {origin}"),
+        }?;
+        write!(f, ": {}", block.reason)
+    }
+}
+
 /// Build the site rooted at `site_dir`.
 ///
 /// Pages, and the nav and links between them, are worked out at their URLs
@@ -230,6 +259,7 @@ pub fn build(site_dir: &Path) -> Result<Built> {
         repo,
         search: searchable,
         markdown,
+        plugins,
         ..
     } = config::load(site_dir)?;
     // Once, so every page of a build has the same year, and every diagram
@@ -243,6 +273,10 @@ pub fn build(site_dir: &Path) -> Result<Built> {
         Some(_) => folder_in_repo(&source_dir, site_dir)?,
         None => None,
     };
+    let mut plugins = plugin::Plugins::start(&plugins, site_dir, now)?;
+    // A plugin's page is its file from the site's folder, like
+    // `docs/guide.md`, wherever little is run from.
+    let source_in_site = source_dir.strip_prefix(site_dir).unwrap_or(&source_dir);
 
     // Walk every file in the source folder but hidden ones, without walking
     // hidden folders, or the destination, which can be inside it. The source
@@ -279,6 +313,10 @@ pub fn build(site_dir: &Path) -> Result<Built> {
         };
         let raw =
             fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
+        let page_file = source_in_site
+            .join(&rel)
+            .to_string_lossy()
+            .replace('\\', "/");
         let rendered = parse(
             &raw,
             &folder_url(&rel),
@@ -286,6 +324,7 @@ pub fn build(site_dir: &Path) -> Result<Built> {
             &site_url,
             &markdown,
             now,
+            &mut plugins.on(&page_file),
         )
         .with_context(|| format!("rendering {}", path.display()))?;
 
@@ -320,6 +359,7 @@ pub fn build(site_dir: &Path) -> Result<Built> {
             links: rendered.links,
             unrendered_math: rendered.unrendered_math,
             unrendered_diagrams: rendered.unrendered_diagrams,
+            unrendered_blocks: rendered.unrendered_blocks,
         });
     }
 
@@ -362,6 +402,7 @@ pub fn build(site_dir: &Path) -> Result<Built> {
     let mut searched = Vec::new();
     let mut unrendered_math = Vec::new();
     let mut unrendered_diagrams = Vec::new();
+    let mut unrendered_blocks = Vec::new();
     for page in &pages {
         let children = page.is_index().then(|| children_of(&tree, &page.rel));
         let (prev, next) = neighbours
@@ -414,6 +455,10 @@ pub fn build(site_dir: &Path) -> Result<Built> {
                     origin: origin.clone(),
                     diagram: diagram.clone(),
                 }
+            }));
+            unrendered_blocks.extend(page.unrendered_blocks.iter().map(|block| UnrenderedBlock {
+                origin: origin.clone(),
+                block: block.clone(),
             }));
             let name = format!("the page built from {origin}");
             outputs.push(Output {
@@ -516,6 +561,7 @@ pub fn build(site_dir: &Path) -> Result<Built> {
         repo,
         unrendered_math,
         unrendered_diagrams,
+        unrendered_blocks,
     })
 }
 
@@ -1055,6 +1101,7 @@ fn push_trails<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::plugin::PagePlugins;
     use std::io::Read;
 
     fn page(rel: &str, title: &str) -> Page {
@@ -1074,6 +1121,7 @@ mod tests {
             links: Vec::new(),
             unrendered_math: Vec::new(),
             unrendered_diagrams: Vec::new(),
+            unrendered_blocks: Vec::new(),
         }
     }
 
@@ -1362,6 +1410,7 @@ mod tests {
             &SiteUrl::default(),
             &config::Markdown::default(),
             OffsetDateTime::UNIX_EPOCH,
+            &mut PagePlugins::none(),
         )
         .unwrap()
         .toc;
@@ -2148,6 +2197,59 @@ mod tests {
             ),
             format!(
                 "can't draw a diagram in {}: No diagram type detected",
+                docs.join("analysis.ipynb").display()
+            ),
+        ];
+        assert_eq!(warnings, expected);
+        let _ = fs::remove_dir_all(&site);
+    }
+
+    #[test]
+    fn each_block_a_plugin_cant_render_is_noted() {
+        let notebook = serde_json::json!({
+            "cells": [{ "cell_type": "markdown", "metadata": {}, "source": "```test\nerror it is lost\n```" }],
+            "metadata": {},
+            "nbformat": 4,
+            "nbformat_minor": 5
+        });
+        let site_cfg = format!(
+            "theme: ./theme\nplugins:\n  test: {}\n",
+            crate::plugin::tests::test_plugin().display()
+        );
+        let site = scratch_site(
+            "plugins",
+            &[
+                ("little.yml", &site_cfg),
+                (
+                    "docs/README.md",
+                    "---\ntitle: Home\n---\n```test\nblock\n```\n\n```test\nerror it is broken\n```\n",
+                ),
+                ("docs/analysis.ipynb", &notebook.to_string()),
+                ("theme/_templates/default.html", "{{ page.content | safe }}"),
+            ],
+        );
+        let built = build(&site).unwrap();
+
+        // A plugin is told the file of each block's page from the site's
+        // folder, wherever the site is.
+        let home = fs::read_to_string(site.join("dist/index.html")).unwrap();
+        assert!(
+            home.starts_with("<p>test | test | docs/README.md</p>\n"),
+            "{home}"
+        );
+        // Each block it can't render is noted, with the file it's in, and the
+        // line it starts on in a Markdown file, in the order of the pages.
+        let docs = site.join("docs");
+        let warnings: Vec<_> = (built.unrendered_blocks.iter())
+            .map(|b| b.to_string())
+            .collect();
+        let expected = [
+            format!(
+                "plugin `test` can't render the block on line 8 of {}: it is broken",
+                docs.join("README.md").display()
+            ),
+            format!(
+                "plugin `test` can't render a block in {}: it is lost",
                 docs.join("analysis.ipynb").display()
             ),
         ];
