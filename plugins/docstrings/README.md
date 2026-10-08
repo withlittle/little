@@ -110,7 +110,11 @@ them:
 A docstring's text is Markdown, as in mkdocstrings, and an example after
 `>>>` is Python code. A section of anything but parameters, attributes,
 values, and exceptions, like `Notes` or `Examples`, is kept as text, under
-its title.
+its title; in NumPy's style, which doesn't indent a section's text, text
+that's indented is code, as in Markdown. A title reStructuredText
+underlines, and perhaps overlines, like `requests.api` over
+`~~~~~~~~~~~~`, is bold, as in Markdown it would be a heading, or start a
+block of code that runs to the end of the page.
 
 A docstring in NumPy's style that borrows from Google's is read as its
 author meant it, where griffe and Napoleon misread it: a title may have a
@@ -139,7 +143,7 @@ warning: plugin `docstrings`: can't parse `mypackage/broken.py`: Expected a para
   isn't documented, as the plugin documents an object where it's defined.
 - A class's methods don't include those it inherits.
 - reStructuredText in a docstring, like `:class:` and `.. note::`, shows as
-  it's written.
+  it's written, but for a title, which is bold.
 - The source has no line numbers, and doesn't link to the file in the
   site's repository.
 - Its `.wasm` file isn't released, so you build it.

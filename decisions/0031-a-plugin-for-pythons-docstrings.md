@@ -99,7 +99,11 @@ and PHP's docblocks, and will want the same.
 - Docstrings are NumPy's, Google's, or Sphinx's style, found for each
   docstring. Their text is Markdown, as in mkdocstrings, and examples
   after `>>>` are Python code. A section the plugin doesn't know, like
-  `Notes` in a style without it, is kept, under its title.
+  `Notes` in a style without it, is kept, under its title; in NumPy's
+  style, its text that's indented is code, as griffe reads it. A title
+  reStructuredText underlines, and perhaps overlines, like `requests.api`
+  over `~~~~~~~~~~~~`, is bold, as in Markdown it would be a heading, or
+  start a block of code that runs to the end of the page.
 - Docstrings in NumPy's style that borrow from Google's are read as their
   authors meant them, where griffe and Napoleon misread them: a title may
   have a colon after it, like `Parameters:`; an item may be written like
@@ -125,7 +129,7 @@ and PHP's docblocks, and will want the same.
     defined;
   - a class's methods don't include those it inherits;
   - reStructuredText in a docstring, like `:class:` and `.. note::`, shows
-    as it's written;
+    as it's written, but for a title, which is bold;
   - the source has no line numbers, and doesn't link to the file in the
     site's repository;
   - the `.wasm` file isn't released, so a site builds it, or downloads it

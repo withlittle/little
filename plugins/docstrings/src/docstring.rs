@@ -9,13 +9,23 @@ use crate::model::{Item, Items, Section};
 pub fn parse(docstring: &str) -> Vec<Section> {
     let cleaned = clean(docstring);
     let lines: Vec<&str> = cleaned.lines().collect();
-    if (0..lines.len()).any(|i| numpy_title(&lines, i).is_some()) {
+    let mut sections = if (0..lines.len()).any(|i| numpy_title(&lines, i).is_some()) {
         numpy(&lines)
     } else if lines.iter().any(|line| sphinx_field(line).is_some()) {
         sphinx(&lines)
     } else {
         google(&lines)
+    };
+    // A name written as reStructuredText needs it, like `\*\*kwargs`, is
+    // shown, and found in the signature, as Python writes it.
+    for section in &mut sections {
+        if let Section::Items { items, .. } = section {
+            for name in items.iter_mut().filter_map(|item| item.name.as_mut()) {
+                *name = name.replace("\\*", "*");
+            }
+        }
     }
+    sections
 }
 
 /// The first paragraph of the text a docstring starts with, on one line.
@@ -89,16 +99,20 @@ fn dedent<'a>(lines: &[&'a str]) -> Vec<&'a str> {
         .collect()
 }
 
-/// `lines` as text, without the indentation they share or blank lines at
-/// either end.
-fn block(lines: &[&str]) -> String {
-    let lines = dedent(lines);
+/// `lines` as text, without blank lines at either end.
+fn trimmed(lines: &[&str]) -> String {
     let start = lines.iter().position(|line| !line.trim().is_empty());
     let end = lines.iter().rposition(|line| !line.trim().is_empty());
     match (start, end) {
         (Some(start), Some(end)) => lines[start..=end].join("\n"),
         _ => String::new(),
     }
+}
+
+/// `lines` as text, without the indentation they share or blank lines at
+/// either end.
+fn block(lines: &[&str]) -> String {
+    trimmed(&dedent(lines))
 }
 
 /// `first`, the text after an item's name or type on its line, then the
@@ -135,9 +149,9 @@ fn kind_of(title: &str) -> Option<Items> {
 }
 
 /// Add the section of text titled `title`, if it has one, written in
-/// `lines`, unless they're blank.
+/// `lines`, indented as they are, unless they're blank.
 fn text(sections: &mut Vec<Section>, title: Option<&str>, lines: &[&str]) {
-    let text = doctests(&block(lines));
+    let text = markdown(&trimmed(lines));
     if !text.is_empty() {
         let title = title.map(str::to_string);
         sections.push(Section::Text { title, text });
@@ -151,9 +165,12 @@ fn items(sections: &mut Vec<Section>, kind: Items, items: Vec<Item>) {
     }
 }
 
-/// `text` with each example after `>>>`, up to a blank line, fenced as
-/// Python's code.
-fn doctests(text: &str) -> String {
+/// The Markdown of `text`, a docstring's: each example after `>>>`, up to a
+/// blank line, fenced as Python's code, and each title reStructuredText
+/// adorns, like `requests.api` over `~~~~~~~~~~~~`, in bold, as in Markdown
+/// it would be a heading in the page, or start a block of code that runs to
+/// the page's end.
+fn markdown(text: &str) -> String {
     let lines: Vec<&str> = text.lines().collect();
     let mut written: Vec<String> = Vec::new();
     // The fence of a code block the docstring writes itself.
@@ -166,9 +183,6 @@ fn doctests(text: &str) -> String {
             if trimmed.starts_with(open.as_str()) {
                 fence = None;
             }
-        } else if trimmed.starts_with("```") || trimmed.starts_with("~~~") {
-            let c = trimmed.chars().next().unwrap_or('`');
-            fence = Some(trimmed.chars().take_while(|&d| d == c).collect());
         } else if trimmed.starts_with(">>>") {
             let margin = line.len() - trimmed.len();
             let end = (i..lines.len())
@@ -182,11 +196,47 @@ fn doctests(text: &str) -> String {
             written.push(format!("{ticks}python\n{example}\n{ticks}"));
             i = end;
             continue;
+        } else if let Some((title, taken)) = adorned_title(&lines, i) {
+            written.push(format!("**{title}**"));
+            i += taken;
+            if lines.get(i).is_some_and(|line| !line.is_empty()) {
+                written.push(String::new());
+            }
+            continue;
+        } else if trimmed.starts_with("```") || trimmed.starts_with("~~~") {
+            let c = trimmed.chars().next().unwrap_or('`');
+            fence = Some(trimmed.chars().take_while(|&d| d == c).collect());
         }
         written.push(line.to_string());
         i += 1;
     }
     written.join("\n")
+}
+
+/// The title that starts on line `i` of `lines`, if one does, as
+/// reStructuredText adorns it, and the lines it takes: a line after a blank
+/// one, over a line of one punctuation character, at least as long as it,
+/// and perhaps under the same line too. A line of backticks is Markdown's
+/// fence, not an adornment.
+fn adorned_title<'a>(lines: &[&'a str], i: usize) -> Option<(&'a str, usize)> {
+    let adornment = |line: &str| {
+        (line.chars().next()).is_some_and(|first| {
+            first.is_ascii_punctuation() && first != '`' && line.chars().all(|c| c == first)
+        })
+    };
+    let covers = |line: &str, title: &str| line.len() >= title.chars().count();
+    if i > 0 && !lines[i - 1].is_empty() {
+        return None;
+    }
+    let (first, second) = (lines[i], *lines.get(i + 1)?);
+    if adornment(first) {
+        let title = second.trim();
+        let under = *lines.get(i + 2)?;
+        let titled = !title.is_empty() && !adornment(title) && under == first;
+        return (titled && covers(first, title)).then_some((title, 3));
+    }
+    let titled = !first.is_empty() && !first.starts_with(' ') && adornment(second);
+    (titled && covers(second, first)).then_some((first, 2))
 }
 
 /// The fence for a code block of `code`: three backticks, or more than it
@@ -388,8 +438,10 @@ fn numpy(lines: &[&str]) -> Vec<Section> {
                     .flat_map(split_names)
                     .collect();
                 items(&mut sections, kind, listed);
-                text(&mut sections, None, after);
+                text(&mut sections, None, &dedent(after));
             }
+            // NumPy's style doesn't indent a section's text, so text that
+            // is indented is code, as in Markdown, and as griffe reads it.
             None => text(&mut sections, Some(title), body),
         }
     }
@@ -482,7 +534,7 @@ fn google(lines: &[&str]) -> Vec<Section> {
         let body = &lines[i + 1..end];
         match kind_of(title) {
             Some(kind) => items(&mut sections, kind, google_items(kind, body)),
-            None => text(&mut sections, Some(title), body),
+            None => text(&mut sections, Some(title), &dedent(body)),
         }
         (start, i) = (end, end);
     }
@@ -975,6 +1027,26 @@ mod tests {
     }
 
     #[test]
+    fn numpy_text_that_is_indented_is_code_but_googles_is_not() {
+        let docstring = "Run.
+
+            Usage
+            -----
+                # Every option.
+                python run.py --all
+            ";
+        assert_eq!(
+            parse(docstring)[1],
+            titled("Usage", "    # Every option.\n    python run.py --all")
+        );
+        let docstring = "Run.\n\nNote:\n    Every option:\n\n        python run.py --all";
+        assert_eq!(
+            parse(docstring)[1],
+            titled("Note", "Every option:\n\n    python run.py --all")
+        );
+    }
+
+    #[test]
     fn google_sections_are_read() {
         let docstring = "
             Solve a problem.
@@ -1121,6 +1193,49 @@ mod tests {
             [text(
                 "Use it.\n\n```python\n>>> as written\n```\n\n```python\n>>> x = 1\n>>> x\n1\n```\n\nDone."
             )]
+        );
+    }
+
+    #[test]
+    fn a_title_restructuredtext_adorns_is_bold() {
+        let docstring = "
+            requests.api
+            ~~~~~~~~~~~~
+
+            Send requests.
+
+            *******
+            GraphML
+            *******
+            Read and write.
+            ";
+        assert_eq!(
+            parse(docstring),
+            [text(
+                "**requests.api**\n\nSend requests.\n\n**GraphML**\n\nRead and write."
+            )]
+        );
+    }
+
+    #[test]
+    fn a_fence_under_a_longer_line_or_an_examples_output_is_not_a_title() {
+        let docstring = "Use it:\n~~~~\nx = 1\n~~~~\n\n>>> print(table)\nName\n====";
+        assert_eq!(
+            parse(docstring),
+            [text(
+                "Use it:\n~~~~\nx = 1\n~~~~\n\n```python\n>>> print(table)\nName\n====\n```"
+            )]
+        );
+    }
+
+    #[test]
+    fn a_name_loses_the_backslashes_that_escape_its_stars() {
+        assert_eq!(
+            parse(":param \\*\\*kwargs: Options."),
+            [Section::Items {
+                kind: Items::Parameters,
+                items: vec![listed(Some("**kwargs"), None, "Options.")]
+            }]
         );
     }
 
