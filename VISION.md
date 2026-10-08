@@ -68,6 +68,6 @@ Each slice ships as a small, reviewable PR, dogfooded against the example site i
 - [x] **2 — Authoring essentials:** syntax highlighting, callouts/admonitions, per-page TOC, heading anchors.
 - [ ] **3 — `little init` + default theme:** scaffold a site in one command; a polished, responsive, accessible default theme.
 - [x] **4 — Search:** client-side search index out of the box.
-- [ ] **5 — Plugin API (WASM):** sandboxed plugins; first plugin — docstring / API extraction.
+- [x] **5 — Plugin API (WASM):** sandboxed plugins; first plugin — docstring / API extraction.
 - [ ] **6 — Versioning:** multiple doc versions for large product sites.
 - [ ] **7 — Performance:** incremental builds for large sites.

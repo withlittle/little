@@ -1,6 +1,8 @@
 # 0013 — Two files can't be the same page
 
-- Status: accepted
+- Status: accepted; amended by [0030](./0030-plugins-that-add-pages.md),
+  which stops the build, the same way, for a plugin's page that would be
+  the same page as a file in the source, or as another plugin's page
 - Date: 2026-10-01
 
 ## Context

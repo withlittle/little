@@ -44,3 +44,37 @@ interface code-blocks {
 world plugin {
     export code-blocks;
 }
+
+/// Adds pages to a site: see decisions/0030.
+interface pages {
+    /// A page, which little builds as if it were a Markdown file in the
+    /// site's source.
+    record page {
+        /// Where the file would be, from the source's folder, with `/`
+        /// between its parts, like `reference/mypackage/README.md`: no part
+        /// is empty, `.`, or `..`, and it ends in `.md`.
+        path: string,
+        /// What the file would hold: Markdown, with frontmatter if it likes.
+        markdown: string,
+    }
+
+    /// What `pages` adds.
+    record added {
+        /// The pages.
+        pages: list<page>,
+        /// Anything little should warn of, like a file the plugin couldn't
+        /// read, each one line.
+        warnings: list<string>,
+    }
+
+    /// Called once each build, after `setup`, before any page is built.
+    /// Gives back the pages the plugin adds, or an error, which stops the
+    /// build.
+    pages: func() -> result<added, string>;
+}
+
+/// A little plugin that adds pages, and can render code blocks too.
+world plugin-with-pages {
+    include plugin;
+    export pages;
+}

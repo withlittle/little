@@ -661,9 +661,10 @@ markdown:
 
 A plugin renders code blocks in a language of its own, as little builds each
 page, like a table from a ```` ```csv ```` block, or a diagram from one in a
-language little doesn't draw. It's one `.wasm` file, which runs wherever
-little does, in a sandbox. `plugins` names each plugin a site uses, and its
-file, by a path or a URL:
+language little doesn't draw, or adds pages to the site, like an
+[API reference](#adding-an-api-reference). It's one `.wasm` file, which runs
+wherever little does, in a sandbox. `plugins` names each plugin a site uses,
+and its file, by a path or a URL:
 
 ```yaml
 # little.yml
@@ -700,6 +701,23 @@ plugins:
   HTML, which little writes as it is, so it needs
   [`raw_html`](#choosing-markdowns-extensions): with `raw_html: false`, the
   build stops.
+- A plugin can add pages, each built as if it were a Markdown file in the
+  source, at a path the plugin chooses, like `reference/mypackage/README.md`,
+  for `/reference/mypackage/`: it's in the nav and search, its links are
+  checked, and its code blocks go to plugins. A page that would be the same
+  page as a file in the source, or as another plugin's page, stops the
+  build, naming both. It has no file in the site's
+  [repository](#choosing-the-sites-repository), so no `page.source_url` or
+  `page.edit_url`. What a plugin warns of as it adds its pages, like a file
+  it can't read, is warned of, and `little build --strict` fails on it:
+
+  ```text
+  warning: plugin `docstrings`: can't parse `mypackage/broken.py`: Expected a parameter or the end of the parameter list on line 3
+  ```
+
+  A plugin that can't add its pages stops the build. `little serve` asks
+  for them again in each build, which a change in a folder the plugin reads
+  starts.
 - A plugin reaches nothing little doesn't give it: not the network, your
   environment variables, or your files, but the folders `read` names, from
   the site's folder, like `src` or `[src, examples]`, which it can read, but
@@ -727,14 +745,48 @@ plugins:
   Markdown a cell showed, go to plugins too, and are warned of without a
   line. Its code cells don't.
 - Limits, for now: a plugin's Markdown can't use the page's link references,
-  or have footnotes; a plugin has no time limit, so one that never returns
-  holds the build up until you press Ctrl-C; a download isn't checked
-  against a hash, so little trusts the site it's on; and each `little build`
-  compiles each plugin again, which takes a moment for a small plugin, and
-  about a second for one in Python. `little serve` compiles each once, and
-  again when it changes.
+  or have footnotes; a plugin's pages can't be notebooks, and are all added
+  again in each build, even for a change to one; a plugin has no time limit,
+  so one that never returns holds the build up until you press Ctrl-C; a
+  download isn't checked against a hash, so little trusts the site it's on;
+  and each `little build` compiles each plugin again, which takes a moment
+  for a small plugin, and about a second for one in Python. `little serve`
+  compiles each once, and again when it changes.
 
 To write your own, see [Writing a plugin](#writing-a-plugin).
+
+### Adding an API reference
+
+little's repository has a plugin, [`docstrings`](./plugins/docstrings/),
+that adds a page for each module of a Python package, built from its
+docstrings, in NumPy's, Google's, or Sphinx's style, as mkdocstrings builds
+them. It reads the package's code without running it, so it needs neither
+Python nor the package's dependencies. Build it, in a clone of little's
+repository:
+
+```sh
+cargo build --release --target wasm32-wasip2 --manifest-path plugins/docstrings/Cargo.toml
+```
+
+Then copy the file it builds,
+`plugins/docstrings/target/wasm32-wasip2/release/little_docstrings.wasm`,
+into your site's folder, and name it in your site's `little.yml`, with the
+package's folder in `read`:
+
+```yaml
+# little.yml
+plugins:
+  docstrings:
+    wasm: ./little_docstrings.wasm
+    read: ./mypackage
+```
+
+It adds `reference/mypackage/README.md`, for the package, and a page for each
+of its modules and packages, like `reference/mypackage/solvers/base.md`, each
+linked from the page above it. `docs/reference/README.md` is yours to write,
+if you like, linking to them by their paths, like
+`[mypackage](mypackage/README.md)`. `url: /api` puts them in `api/` instead.
+Its [README](./plugins/docstrings/README.md) says what it documents, and how.
 
 ### Choosing where to serve
 
@@ -1179,6 +1231,49 @@ class CodeBlocks(exports.CodeBlocks):
 It carries Python with it, so it's about 18 MB, rather than Rust's 77 KB,
 and adds about a second to `little build`, rather than 10 ms.
 
+A plugin can [add pages](#adding-plugins), too, as
+[`docstrings`](./plugins/docstrings/) does, when it's built for
+`world plugin-with-pages`, which exports `pages` beside `setup` and
+`render`. For the plugin above to add a page that shows the site's
+`data/sizes.csv`, in a ```` ```csv ```` block its own `render` renders,
+change the world it's built for, and add `pages`:
+
+````rust
+// src/lib.rs
+wit_bindgen::generate!({ path: "wit/plugin.wit", world: "plugin-with-pages" });
+
+use exports::little::plugin::pages::{self, Added, Page};
+
+impl pages::Guest for Csv {
+    fn pages() -> Result<Added, String> {
+        let text = std::fs::read_to_string("data/sizes.csv").map_err(|error| error.to_string())?;
+        let markdown = format!("# Sizes\n\n```csv\n{}\n```\n", text.trim_end());
+        let page = Page { path: "data/sizes.md".to_string(), markdown };
+        Ok(Added { pages: vec![page], warnings: Vec::new() })
+    }
+}
+````
+
+Then name the folder it reads, `read: data`, beside its `wasm` in the
+site's `little.yml`, and the site has a page at `/data/sizes/`, with the
+table on it.
+
+- `pages` is called once each build, after `setup`, before any page is
+  built. It gives back the pages the plugin adds, and what little should
+  warn of, each one line, like a file it can't read, which
+  `little build --strict` fails on; or an error, which stops the build, as
+  a crash does.
+- A page's `path` is where its file would be, from the source's folder,
+  with `/` between its parts, like `reference/README.md`: no part is empty,
+  `.`, or `..`, and it ends in `.md`, or the build stops.
+- The page is built as a Markdown file at that path would be: its
+  frontmatter is read, its relative links lead from its folder, and its
+  code blocks go to plugins, with `page` the file it would be, like
+  `docs/data/sizes.md`. A page that would be the same page as a file in the
+  source, or as another plugin's page, stops the build.
+- A plugin that only adds pages gives back no languages from `setup`, so
+  its `render` is never called.
+
 ## Checking links
 
 Once it's built the site, `little build` checks every link and image in it,
@@ -1289,6 +1384,9 @@ cargo fmt                   # format
 The tests build a [plugin](#writing-a-plugin), [`tests/plugin/`](./tests/plugin/),
 with Rust's `wasm32-wasip2` target, which
 [`rust-toolchain.toml`](./rust-toolchain.toml) has rustup install.
+The [`docstrings`](./plugins/docstrings/) plugin is a crate of its own, with
+its own tests, which its [README](./plugins/docstrings/README.md#developing-it)
+says how to run.
 
 See [`AGENTS.md`](./AGENTS.md) for architecture and conventions,
 [`VISION.md`](./VISION.md) for where little is headed, and

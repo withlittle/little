@@ -32,8 +32,15 @@ const MARKER_FILE: &str = ".little-build";
 
 /// A rendered content page.
 struct Page {
-    /// Path relative to the source folder (e.g. `guide/install.md`).
+    /// Path relative to the source folder (e.g. `guide/install.md`), or, for
+    /// a page a plugin adds, where its file would be.
     rel: PathBuf,
+    /// What it's built from, for an error or a warning: its file, like
+    /// `./docs/guide/install.md`, or the plugin that adds it and where, like
+    /// ``plugin `docstrings`'s reference/README.md``.
+    origin: String,
+    /// Whether a plugin adds it, so it has no file in the site's repository.
+    added: bool,
     /// Pretty, extensionless URL (`/`, `/getting-started`, `/guide/install`).
     url: String,
     /// Output file on disk (`dist/guide/install/index.html`).
@@ -183,6 +190,9 @@ pub struct Built {
     /// Each code block in its pages that a plugin couldn't render, so is
     /// left as it was, in the order of the pages, to warn of.
     pub unrendered_blocks: Vec<UnrenderedBlock>,
+    /// What each plugin warned of as it added its pages, in the order of the
+    /// plugins.
+    pub plugin_warnings: Vec<plugin::Warning>,
 }
 
 /// A formula in a page that couldn't be rendered, and the file it's in.
@@ -274,9 +284,17 @@ pub fn build(site_dir: &Path) -> Result<Built> {
         None => None,
     };
     let mut plugins = plugin::Plugins::start(&plugins, site_dir, now)?;
+    // Before any page is built, so a plugin can't change the pages it adds
+    // as it renders blocks.
+    let added = plugins.pages()?;
     // A plugin's page is its file from the site's folder, like
-    // `docs/guide.md`, wherever little is run from.
+    // `docs/guide.md`, wherever little is run from, even if a plugin adds it.
     let source_in_site = source_dir.strip_prefix(site_dir).unwrap_or(&source_dir);
+    let page_file = |rel: &Path| {
+        (source_in_site.join(rel))
+            .to_string_lossy()
+            .replace('\\', "/")
+    };
 
     // Walk every file in the source folder but hidden ones, without walking
     // hidden folders, or the destination, which can be inside it. The source
@@ -313,10 +331,6 @@ pub fn build(site_dir: &Path) -> Result<Built> {
         };
         let raw =
             fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
-        let page_file = source_in_site
-            .join(&rel)
-            .to_string_lossy()
-            .replace('\\', "/");
         let rendered = parse(
             &raw,
             &folder_url(&rel),
@@ -324,49 +338,39 @@ pub fn build(site_dir: &Path) -> Result<Built> {
             &site_url,
             &markdown,
             now,
-            &mut plugins.on(&page_file),
+            &mut plugins.on(&page_file(&rel)),
         )
         .with_context(|| format!("rendering {}", path.display()))?;
+        let origin = path.display().to_string();
+        pages.push(page_from(rel, origin, false, rendered, &destination_dir));
+    }
 
-        // A key left blank is as good as not there: a page never holds null,
-        // and `title:` shouldn't wipe out the title little finds.
-        let mut frontmatter = rendered.frontmatter;
-        frontmatter.retain(|_, value| !value.is_null());
-
-        let is_index = is_readme(&rel);
-
-        // Title: frontmatter `title` -> first <h1> -> filename/folder-derived.
-        let title = frontmatter
-            .get("title")
-            .and_then(Value::as_str)
-            .map(str::to_string)
-            .or(rendered.first_h1)
-            .unwrap_or_else(|| fallback_title(&rel, is_index));
-
-        let url = derive_url(&rel);
-        let out_path = out_path_for_url(&destination_dir, &url);
-        let page_type = page_type(&rel);
-
-        pages.push(Page {
+    // A plugin's page is built as a Markdown file at its path would be.
+    for page in &added.pages {
+        let rel = PathBuf::from(&page.path);
+        let rendered = render::parse_document(
+            &page.markdown,
+            &folder_url(&rel),
+            &toc_depths,
+            &site_url,
+            &markdown,
+            now,
+            &mut plugins.on(&page_file(&rel)),
+        )
+        .with_context(|| format!("rendering {page}"))?;
+        pages.push(page_from(
             rel,
-            url,
-            out_path,
-            title,
-            frontmatter,
-            html: rendered.html,
-            toc: nest_headings(&rendered.toc),
-            page_type,
-            links: rendered.links,
-            unrendered_math: rendered.unrendered_math,
-            unrendered_diagrams: rendered.unrendered_diagrams,
-            unrendered_blocks: rendered.unrendered_blocks,
-        });
+            page.to_string(),
+            true,
+            rendered,
+            &destination_dir,
+        ));
     }
 
     // Deterministic output order (nav has its own ordering), and so a
     // deterministic error for files that would be the same page.
     pages.sort_by(|a, b| (&a.url, &a.rel).cmp(&(&b.url, &b.rel)));
-    check_clashes(&pages, &source_dir)?;
+    check_clashes(&pages)?;
 
     // What little works out is the bottom of the cascade: the nav it builds
     // from the folders, and the year, go beneath the config, so a theme or
@@ -414,7 +418,9 @@ pub fn build(site_dir: &Path) -> Result<Built> {
             .get(page.url.as_str())
             .map(Vec::as_slice)
             .unwrap_or_default();
+        // A page a plugin adds has no file in the site's repository.
         let file_urls = (repo.as_ref().zip(source_in_repo.as_ref()))
+            .filter(|_| !page.added)
             .and_then(|(repo, folder)| repo.file_urls(&folder.join(&page.rel)));
         let data = PageData {
             page_type: page.page_type.name(),
@@ -429,9 +435,8 @@ pub fn build(site_dir: &Path) -> Result<Built> {
             source_url: file_urls.as_ref().map(|urls| urls.source.as_str()),
             edit_url: file_urls.as_ref().map(|urls| urls.edit.as_str()),
         };
-        let source = source_dir.join(&page.rel);
         if let Some(html) = render(page.page_type, &data, &page.frontmatter)
-            .with_context(|| format!("rendering {}", source.display()))?
+            .with_context(|| format!("rendering {}", page.origin))?
         {
             // Search indexes the page's own content, not the theme's markup
             // around it, but in the language the theme gives it.
@@ -445,7 +450,7 @@ pub fn build(site_dir: &Path) -> Result<Built> {
             }
             let path = page.out_path.clone();
             let url = page.url.clone();
-            let origin = source.display().to_string();
+            let origin = page.origin.clone();
             unrendered_math.extend(page.unrendered_math.iter().map(|formula| UnrenderedMath {
                 origin: origin.clone(),
                 formula: formula.clone(),
@@ -562,7 +567,55 @@ pub fn build(site_dir: &Path) -> Result<Built> {
         unrendered_math,
         unrendered_diagrams,
         unrendered_blocks,
+        plugin_warnings: added.warnings,
     })
+}
+
+/// The page built from what `rendered` was rendered from, at `rel` in the
+/// source, and what it's built from, `origin`, whether a plugin `added` it,
+/// to be written to `destination`.
+fn page_from(
+    rel: PathBuf,
+    origin: String,
+    added: bool,
+    rendered: render::Rendered,
+    destination: &Path,
+) -> Page {
+    // A key left blank is as good as not there: a page never holds null,
+    // and `title:` shouldn't wipe out the title little finds.
+    let mut frontmatter = rendered.frontmatter;
+    frontmatter.retain(|_, value| !value.is_null());
+
+    let is_index = is_readme(&rel);
+
+    // Title: frontmatter `title` -> first <h1> -> filename/folder-derived.
+    let title = frontmatter
+        .get("title")
+        .and_then(Value::as_str)
+        .map(str::to_string)
+        .or(rendered.first_h1)
+        .unwrap_or_else(|| fallback_title(&rel, is_index));
+
+    let url = derive_url(&rel);
+    let out_path = out_path_for_url(destination, &url);
+    let page_type = page_type(&rel);
+
+    Page {
+        rel,
+        origin,
+        added,
+        url,
+        out_path,
+        title,
+        frontmatter,
+        html: rendered.html,
+        toc: nest_headings(&rendered.toc),
+        page_type,
+        links: rendered.links,
+        unrendered_math: rendered.unrendered_math,
+        unrendered_diagrams: rendered.unrendered_diagrams,
+        unrendered_blocks: rendered.unrendered_blocks,
+    }
 }
 
 /// Where the source folder is in the site's repository, like `docs`: from
@@ -691,10 +744,11 @@ fn clear_destination(destination: &Path) -> Result<()> {
 
 /// Fail if two files in the source would be the same page, like `guide.md`
 /// and `guide/README.md`, or `README.md` and `readme.md`: one would silently
-/// overwrite the other. Files whose URLs differ only in case, like `API.md`
-/// and `api/README.md`, aren't caught, though they clash on a disk that
-/// ignores case, as macOS's and Windows' do by default.
-fn check_clashes(pages: &[Page], source_dir: &Path) -> Result<()> {
+/// overwrite the other. So would a page a plugin adds, as a file at its path.
+/// Files whose URLs differ only in case, like `API.md` and `api/README.md`,
+/// aren't caught, though they clash on a disk that ignores case, as macOS's
+/// and Windows' do by default.
+fn check_clashes(pages: &[Page]) -> Result<()> {
     let mut seen: HashMap<&Path, &Page> = HashMap::new();
     for page in pages {
         if let Some(other) = seen.insert(&page.out_path, page) {
@@ -707,8 +761,8 @@ fn check_clashes(pages: &[Page], source_dir: &Path) -> Result<()> {
             };
             bail!(
                 "{} and {} would both be the page at {url}: rename or move one",
-                source_dir.join(&other.rel).display(),
-                source_dir.join(&page.rel).display(),
+                other.origin,
+                page.origin,
             );
         }
     }
@@ -1105,12 +1159,15 @@ mod tests {
     use std::io::Read;
 
     fn page(rel: &str, title: &str) -> Page {
+        let origin = Path::new("docs").join(rel).display().to_string();
         let rel = PathBuf::from(rel);
         let url = derive_url(&rel);
         let out_path = out_path_for_url(Path::new("dist"), &url);
         let page_type = page_type(&rel);
         Page {
             rel,
+            origin,
+            added: false,
             url,
             out_path,
             title: title.to_string(),
@@ -1291,7 +1348,7 @@ mod tests {
     fn two_files_cannot_be_the_same_page() {
         let check = |a: &str, b: &str| {
             let pages = [page(a, "A"), page(b, "B")];
-            check_clashes(&pages, Path::new("docs")).map_err(|e| e.to_string())
+            check_clashes(&pages).map_err(|e| e.to_string())
         };
         assert_eq!(
             check("guide.md", "guide/README.md").unwrap_err(),
@@ -2255,6 +2312,141 @@ mod tests {
         ];
         assert_eq!(warnings, expected);
         let _ = fs::remove_dir_all(&site);
+    }
+
+    /// A site's config that has the test plugin, built to add pages, add
+    /// `pages`, and warn of `warnings`, as `api`, beside `config`.
+    fn adding_pages(config: &str, pages: serde_json::Value, warnings: &[&str]) -> String {
+        let plugin = serde_json::json!({
+            "wasm": crate::plugin::tests::test_plugin_with_pages(),
+            "pages": pages,
+            "warnings": warnings,
+        });
+        format!("{config}plugins:\n  api: {plugin}\n")
+    }
+
+    #[test]
+    fn a_plugins_pages_are_built_as_files_at_their_paths_would_be() {
+        let pages = serde_json::json!([
+            {
+                "path": "reference/README.md",
+                "markdown": "# Reference\n\nSee [base](pkg/base.md#thing), and [the guide](../guide.md).\n",
+            },
+            {
+                "path": "reference/pkg/base.md",
+                "markdown": "---\ntitle: The base\n---\n## `Thing`\n\n```test\nblock\n```\n\n\
+                             [Up](../README.md) [Gone](gone.md)\n",
+            },
+        ]);
+        let site_cfg = adding_pages(
+            "theme: ./theme\nrepo: https://github.com/withlittle/little\n",
+            pages,
+            &["can't read pkg/broken.py"],
+        );
+        let site = scratch_site(
+            "added",
+            &[
+                ("little.yml", &site_cfg),
+                ("docs/README.md", "# Home\n"),
+                (
+                    "docs/guide.md",
+                    "# Guide\n\nSee [the API](reference/README.md).\n",
+                ),
+                (
+                    "theme/_templates/default.html",
+                    "{{ page.title }} | {{ 'source_url' in page }} | \
+                     {{ page.breadcrumbs | map(attribute='title') | join(', ') }} | \
+                     {{ page.prev.title if page.prev }} | {{ page.next.title if page.next }}\n\
+                     {{ page.content | safe }}",
+                ),
+            ],
+        );
+        let built = build(&site).unwrap();
+        let read = |file: &str| fs::read_to_string(site.join("dist").join(file)).unwrap();
+
+        // Each is at its file's URL, in the nav, and its relative links lead
+        // from its folder, but it has no file in the repository.
+        let reference = read("reference/index.html");
+        assert!(
+            reference
+                .starts_with("Reference | False | Home | Guide | The base\n<h1 id=\"reference\">"),
+            "{reference}"
+        );
+        assert!(
+            reference.contains(
+                "<p>See <a href=\"/reference/pkg/base#thing\">base</a>, and \
+                 <a href=\"/guide\">the guide</a>.</p>"
+            ),
+            "{reference}"
+        );
+        // Its frontmatter is read, and its blocks go to plugins, which are
+        // told it's the file at its path.
+        let base = read("reference/pkg/base/index.html");
+        assert!(
+            base.starts_with(
+                "The base | False | Home, Reference, Pkg | Reference | \n<h2 id=\"thing\">"
+            ),
+            "{base}"
+        );
+        assert!(
+            base.contains("<p>test | test | docs/reference/pkg/base.md</p>"),
+            "{base}"
+        );
+        let guide = read("guide/index.html");
+        assert!(
+            guide.starts_with("Guide | True | Home | Home | Reference\n"),
+            "{guide}"
+        );
+
+        // What it warns of is noted, and its links are checked, naming it.
+        let warnings: Vec<_> = (built.plugin_warnings.iter())
+            .map(|w| w.to_string())
+            .collect();
+        assert_eq!(warnings, ["plugin `api`: can't read pkg/broken.py"]);
+        let broken: Vec<_> = (crate::links::check(&built, crate::links::Scope::Internal))
+            .unwrap()
+            .iter()
+            .map(|b| b.to_string())
+            .collect();
+        assert_eq!(broken.len(), 1, "{broken:?}");
+        assert!(
+            broken[0].starts_with("broken link gone.md in plugin `api`'s reference/pkg/base.md: "),
+            "{broken:?}"
+        );
+        let _ = fs::remove_dir_all(&site);
+    }
+
+    #[test]
+    fn a_plugins_page_cant_be_the_same_page_as_another() {
+        let clash = |label: &str, files: &[(&str, &str)], pages: serde_json::Value| {
+            let site_cfg = adding_pages("theme: ./theme\n", pages, &[]);
+            let mut files = files.to_vec();
+            files.push(("little.yml", &site_cfg));
+            files.push(("theme/_templates/default.html", "{{ page.content | safe }}"));
+            let site = scratch_site(label, &files);
+            let error = format!("{:#}", build(&site).err().unwrap());
+            let _ = fs::remove_dir_all(&site);
+            error.replace(&site.display().to_string(), ".")
+        };
+        let page = |path: &str| serde_json::json!({ "path": path, "markdown": "# API\n" });
+        assert_eq!(
+            clash(
+                "clash-file",
+                &[("docs/reference.md", "# Reference\n")],
+                serde_json::json!([page("reference/README.md")]),
+            ),
+            "./docs/reference.md and plugin `api`'s reference/README.md would both be the page \
+             at /reference/: rename or move one"
+        );
+        assert_eq!(
+            clash(
+                "clash-plugin",
+                &[("docs/README.md", "# Home\n")],
+                serde_json::json!([page("api.md"), page("api/README.md")]),
+            ),
+            "plugin `api`'s api.md and plugin `api`'s api/README.md would both be the page at \
+             /api/: rename or move one"
+        );
     }
 
     #[test]

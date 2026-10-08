@@ -14,12 +14,17 @@ cargo build --release       # produce the release binary (target/release/little)
 cargo test                  # run tests (they build tests/plugin for wasm32-wasip2)
 cargo clippy --all-targets  # lint — keep it clean
 cargo fmt                   # format — run before committing
+
+# the docstrings plugin, in its own workspace
+cargo build --release --target wasm32-wasip2 --manifest-path plugins/docstrings/Cargo.toml
+cargo test --manifest-path plugins/docstrings/Cargo.toml
+cargo clippy --manifest-path plugins/docstrings/Cargo.toml --all-targets --target wasm32-wasip2
 ```
 
 ## Architecture (keep the core small)
 - `src/main.rs` — CLI (clap): `build` (`--strict` fails on a broken link,
-  a formula that isn't rendered, a diagram that isn't drawn, or a code block
-  a plugin can't render), `serve`, `config`.
+  a formula that isn't rendered, a diagram that isn't drawn, a code block
+  a plugin can't render, or a plugin's warning), `serve`, `config`.
 - `src/config.rs` — the 3-level cascading config (little → theme → site): the
   chain of themes a site uses, its source and destination folders, the levels
   of heading its tables of contents list, the host and port
@@ -28,8 +33,8 @@ cargo fmt                   # format — run before committing
   to Markdown its pages are written with, how their math is written, how
   their diagrams are drawn, and look, with Mermaid's own config, the
   classes their code is highlighted with, and the plugins that render their
-  code blocks, each with its `.wasm` file, the folders it reads, and its
-  settings.
+  code blocks, or add pages, each with its `.wasm` file, the folders it
+  reads, and its settings.
 - `src/little.yml` — little's own defaults (level 1), compiled into the binary.
 - `src/render.rs` — Markdown (comrak, with the extensions the site turns on) +
   YAML frontmatter → HTML fragment, with each relative link led from the
@@ -42,7 +47,8 @@ cargo fmt                   # format — run before committing
   sandbox that reaches only the folders it reads, and gives it each fenced
   code block in its languages, before diagrams are drawn, putting the
   Markdown or HTML it gives back in the block's place; one it can't render
-  stays code, and is noted, with its line, to warn of.
+  stays code, and is noted, with its line, to warn of. Asks each that adds
+  pages for them, and what it warns of, checking each page's path.
 - `src/math.rs` — writes each formula as MathML as comrak writes the page,
   with math-core, each read on its own; one it can't read is written as its
   TeX, and noted, as it's written, to warn of.
@@ -58,12 +64,13 @@ cargo fmt                   # format — run before committing
   bat's grammars, through two-face and syntect: a `<span>` with Pygments' or
   GitHub's class around each token, for the theme to colour.
 - `src/site.rs` — build pipeline: walk the source (`docs/`), start the
-  site's plugins, render its Markdown and notebooks, copy its other files,
-  apply theme, index it for search, write the destination (`dist/`), noting
-  the source file and URL of each file it writes. Finds where the source is
-  in its repository, so each page can link to its file there, and works out
-  when it's built, for `site.year`, its diagrams' today, and its plugins'
-  clocks.
+  site's plugins, render its Markdown and notebooks, and the pages plugins
+  add, as Markdown files at their paths, stopping on two that would be the
+  same page, copy its other files, apply theme, index it for search, write
+  the destination (`dist/`), noting the source file and URL of each file it
+  writes. Finds where the source is in its repository, so each page can
+  link to its file there, and works out when it's built, for `site.year`,
+  its diagrams' today, and its plugins' clocks.
 - `src/search.rs` — indexes each page's own content, under its title and URL,
   with Pagefind, in the language the theme gives the page, into the files of
   the destination's `pagefind/`.
@@ -99,11 +106,19 @@ Content and theme live outside `src/`:
   writes.
 - `little.yml` — example site config (optional). It sets `theme: ./theme`, so
   edits to the built-in theme live-reload.
-- `wit/plugin.wit` — the interface a plugin exports, which little's bindings
-  are generated from; plugin authors copy it.
+- `wit/plugin.wit` — the interfaces a plugin exports, which little's bindings
+  are generated from; plugin authors copy it. `world plugin` renders code
+  blocks; `world plugin-with-pages` adds pages, too.
 - `tests/plugin/` — a plugin, in Rust, with its own workspace, that the tests
   build for `wasm32-wasip2` (which `rust-toolchain.toml` asks rustup for) and
-  drive, block by block, to check what plugins can and can't do.
+  drive, block by block, to check what plugins can and can't do; with its
+  `pages` feature, it's built for `plugin-with-pages`, and adds the pages its
+  settings name.
+- `plugins/docstrings/` — the `docstrings` plugin, a crate in its own
+  workspace, built for `wasm32-wasip2`, that adds an API reference: a page
+  for each Python module in the folders it reads, from its docstrings, in
+  NumPy's, Google's, or Sphinx's style, parsed with Ruff's parser. Its tests
+  run natively; only its glue to `wit/plugin.wit` needs WebAssembly.
 - Project meta (`VISION.md`, `AGENTS.md`, `decisions/`) lives at the repo root.
 
 ## Core principles (do not violate)
@@ -119,7 +134,7 @@ Content and theme live outside `src/`:
    theme that sets it builds on that theme, whose config goes beneath its own.
 3. **Keep the core small; push features to plugins.** Sphinx-style API extraction,
    niche renderers, etc. are plugins (WASM components that render code
-   blocks), not core code.
+   blocks, or add pages), not core code.
 4. **No mandatory Node toolchain.** Never add a build step that requires Node.
 5. **Authoring experience wins ties.** When unsure, pick what makes writing docs
    simpler.
@@ -299,3 +314,18 @@ Record notable choices as short ADRs in `decisions/`. Locked so far:
   each build; a block it can't render is warned of, as a broken link is —
   see
   [`decisions/0029-plugins-that-render-code-blocks.md`](./decisions/0029-plugins-that-render-code-blocks.md).
+- **Plugins that add pages:** a plugin built for `world plugin-with-pages`
+  exports `pages`, which little calls once each build, after `setup`,
+  before any page is built. Each page is built as if it were a Markdown file
+  at its `path` in the source, relative, ending in `.md`, but has no file in
+  the repository; one that would be the same page as a file or another
+  plugin's page stops the build, as does an error from `pages`, or a crash.
+  Its warnings are warned of, and `--strict` fails on them — see
+  [`decisions/0030-plugins-that-add-pages.md`](./decisions/0030-plugins-that-add-pages.md).
+- **A plugin for Python's docstrings:** `plugins/docstrings/`, in little's
+  repository, in its own workspace, adds a page for each module and package
+  in the folders it reads, under `url`, `/reference` by default, like
+  mkdocstrings', parsing Python with Ruff's parser, without running it, and
+  finding each docstring's style, NumPy's, Google's, or Sphinx's, for
+  itself. A module it can't parse is warned of, and left out — see
+  [`decisions/0031-a-plugin-for-pythons-docstrings.md`](./decisions/0031-a-plugin-for-pythons-docstrings.md).

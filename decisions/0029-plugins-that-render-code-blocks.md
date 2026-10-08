@@ -1,6 +1,8 @@
 # 0029 — Plugins that render code blocks
 
-- Status: accepted
+- Status: accepted; amended by [0030](./0030-plugins-that-add-pages.md),
+  which lets a plugin add pages, too, exporting `pages` in a second world,
+  `plugin-with-pages`
 - Date: 2026-10-07
 - Amends: [0004](./0004-downloading-themes.md),
   [0016](./0016-checking-links.md),

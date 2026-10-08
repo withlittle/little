@@ -86,10 +86,13 @@ fn address(host: &str, port: u16) -> String {
     }
 }
 
-/// Warn of each formula in the site `built` that can't be rendered, each
-/// diagram that can't be drawn, each code block a plugin can't render, and
-/// each broken link within it.
+/// Warn of each warning from a plugin, each formula in the site `built`
+/// that can't be rendered, each diagram that can't be drawn, each code block
+/// a plugin can't render, and each broken link within it.
 fn warn(built: &Built) {
+    for warning in &built.plugin_warnings {
+        eprintln!("warning: {warning}");
+    }
     for formula in &built.unrendered_math {
         eprintln!("warning: {formula}");
     }
