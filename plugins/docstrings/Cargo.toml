@@ -1,0 +1,28 @@
+[package]
+name = "little-docstrings"
+version = "0.1.0"
+edition = "2024"
+description = "A plugin for little that builds an API reference from Python's docstrings"
+license = "MIT"
+publish = false
+
+# A WebAssembly component, built for wasm32-wasip2.
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+ruff_python_ast = "0.0.16"
+ruff_python_codegen = "0.0.16"
+ruff_python_parser = "0.0.16"
+ruff_source_file = "0.0.16"
+ruff_text_size = "0.0.16"
+serde_json = "1.0.151"
+wit-bindgen = "0.62"
+
+[profile.release]
+opt-level = "s"
+lto = true
+strip = true
+
+# Its own workspace, apart from little's.
+[workspace]

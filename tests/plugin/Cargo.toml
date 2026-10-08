@@ -12,5 +12,10 @@ crate-type = ["cdylib"]
 serde_json = "1.0.151"
 wit-bindgen = "0.62"
 
+[features]
+# Exports `plugin-with-pages`, adding the pages its settings list, rather than
+# `plugin`.
+pages = []
+
 # Its own workspace, apart from little's.
 [workspace]

@@ -26,7 +26,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
-          # For the plugin the tests build, tests/plugin.
+          # For the plugins: tests/plugin, which the tests build, and plugins/docstrings.
           targets: wasm32-wasip2
 
       - name: Cache cargo build artifacts
@@ -36,14 +36,21 @@ jobs:
         run: |
           cargo fmt --check
           cargo fmt --check --manifest-path tests/plugin/Cargo.toml
+          cargo fmt --check --manifest-path plugins/docstrings/Cargo.toml
 
       - name: Lint (clippy, warnings are errors)
         run: |
           cargo clippy --all-targets -- -D warnings
           cargo clippy --manifest-path tests/plugin/Cargo.toml --target wasm32-wasip2 --target-dir target/test-plugin -- -D warnings
+          cargo clippy --manifest-path tests/plugin/Cargo.toml --target wasm32-wasip2 --target-dir target/test-plugin-pages --features pages -- -D warnings
+          cargo clippy --manifest-path plugins/docstrings/Cargo.toml --all-targets --target wasm32-wasip2 --target-dir target/docstrings -- -D warnings
 
       - name: Test
-        run: cargo test
+        run: |
+          cargo test
+          cargo test --manifest-path plugins/docstrings/Cargo.toml --target-dir target/docstrings
 
       - name: Build release
-        run: cargo build --release
+        run: |
+          cargo build --release
+          cargo build --release --target wasm32-wasip2 --manifest-path plugins/docstrings/Cargo.toml --target-dir target/docstrings

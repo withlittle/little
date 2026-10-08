@@ -3,6 +3,11 @@
 //! `markdown` and `html` give back the lines after it, `error` and `panic`
 //! fail with the rest of the line, and the others report what the plugin
 //! can reach.
+//!
+//! Built with the `pages` feature, it also adds the pages its settings list
+//! in `pages`, each `{ "path": …, "markdown": … }`, or `{ "path": …,
+//! "read": … }` for a page that's the file it reads, with the `warnings`
+//! they list, or fails with `pages_error`, or panics with `pages_panic`.
 
 use std::collections::hash_map::RandomState;
 use std::hash::BuildHasher;
@@ -12,7 +17,10 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use exports::little::plugin::code_blocks::{Block, Guest, Output};
 
+#[cfg(not(feature = "pages"))]
 wit_bindgen::generate!({ path: "../../wit/plugin.wit", world: "plugin" });
+#[cfg(feature = "pages")]
+wit_bindgen::generate!({ path: "../../wit/plugin.wit", world: "plugin-with-pages" });
 
 static SETTINGS: Mutex<String> = Mutex::new(String::new());
 static COUNT: AtomicU32 = AtomicU32::new(0);
@@ -78,6 +86,42 @@ impl Guest for Plugin {
             }
             _ => Err(format!("there's no command `{command}`")),
         }
+    }
+}
+
+#[cfg(feature = "pages")]
+impl exports::little::plugin::pages::Guest for Plugin {
+    fn pages() -> Result<exports::little::plugin::pages::Added, String> {
+        use exports::little::plugin::pages::{Added, Page};
+
+        let settings: serde_json::Value =
+            serde_json::from_str(&SETTINGS.lock().unwrap()).map_err(|error| error.to_string())?;
+        let setting = |key: &str| settings.get(key).and_then(|value| value.as_str());
+        if let Some(reason) = setting("pages_error") {
+            return Err(reason.to_string());
+        }
+        if let Some(message) = setting("pages_panic") {
+            panic!("{message}");
+        }
+        let mut pages = Vec::new();
+        for page in settings["pages"].as_array().into_iter().flatten() {
+            let field = |key: &str| page.get(key).and_then(|value| value.as_str());
+            let markdown = match field("read") {
+                Some(file) => std::fs::read_to_string(file).map_err(|error| error.to_string())?,
+                None => field("markdown").unwrap_or_default().to_string(),
+            };
+            pages.push(Page {
+                path: field("path").unwrap_or_default().to_string(),
+                markdown,
+            });
+        }
+        let warnings = settings["warnings"].as_array().into_iter().flatten();
+        Ok(Added {
+            pages,
+            warnings: warnings
+                .filter_map(|warning| warning.as_str().map(str::to_string))
+                .collect(),
+        })
     }
 }
 

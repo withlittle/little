@@ -1,6 +1,7 @@
-//! Plugins that render fenced code blocks: WebAssembly components, built for
-//! WASI 0.2, that export the interface in `wit/plugin.wit`. A build starts
-//! each plugin the site names once, and gives it each block in its languages
+//! Plugins that render fenced code blocks, and add pages: WebAssembly
+//! components, built for WASI 0.2, that export the interfaces in
+//! `wit/plugin.wit`. A build starts each plugin the site names once, asks
+//! each that adds pages for them, and gives it each block in its languages
 //! as each page is read, before diagrams are drawn; the Markdown or HTML it
 //! gives back takes the block's place.
 //!
@@ -16,11 +17,12 @@ use comrak::{Arena, Options};
 use rand::SeedableRng;
 use rand::rngs::StdRng;
 use std::collections::HashMap;
+use std::fmt;
 use std::path::{Path, PathBuf};
 use std::sync::{LazyLock, Mutex, PoisonError};
 use std::time::{Duration, SystemTime};
 use time::OffsetDateTime;
-use wasmtime::component::{Component, Linker, ResourceTable};
+use wasmtime::component::{Component, InstancePre, Linker, ResourceTable};
 use wasmtime::{Engine, Store};
 use wasmtime_wasi::{FsPerms, HostWallClock, WasiCtx, WasiCtxBuilder, WasiCtxView, WasiView};
 
@@ -28,11 +30,12 @@ use crate::config::{self, Wasm};
 use crate::download;
 
 mod bindings {
-    wasmtime::component::bindgen!({ path: "wit/plugin.wit", world: "plugin" });
+    // `plugin-with-pages` includes `plugin`, so these bindings run either.
+    wasmtime::component::bindgen!({ path: "wit/plugin.wit", world: "plugin-with-pages" });
 }
 
-use bindings::exports::little::plugin::code_blocks::{Block, Output};
-use bindings::{Plugin, PluginPre};
+use bindings::exports::little::plugin::code_blocks::{self, Block, Output};
+use bindings::exports::little::plugin::pages;
 
 /// One engine compiles and runs every plugin.
 static ENGINE: LazyLock<Engine> = LazyLock::new(Engine::default);
@@ -43,10 +46,61 @@ static COMPILED: LazyLock<Mutex<HashMap<PathBuf, Compiled>>> = LazyLock::new(Mut
 
 /// A plugin compiled from its file, with when the file was changed, and its
 /// size, then.
-type Compiled = (Stamp, PluginPre<State>);
+type Compiled = (Stamp, Pre);
 
 /// When a file was changed, and its size.
 type Stamp = (Option<SystemTime>, u64);
+
+/// A plugin compiled, and linked to WASI, ready to start, with where its
+/// exports are.
+#[derive(Clone)]
+struct Pre {
+    instance: InstancePre<State>,
+    code_blocks: code_blocks::GuestIndices,
+    /// Unless it adds no pages, as a plugin built for `world plugin` doesn't.
+    pages: Option<pages::GuestIndices>,
+}
+
+/// A page a plugin adds, which a build builds as if it were a Markdown file
+/// in the source.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AddedPage {
+    /// The plugin's name, like `docstrings`.
+    pub plugin: String,
+    /// Where the file would be, from the source's folder, with `/` between
+    /// its parts, like `reference/README.md`.
+    pub path: String,
+    pub markdown: String,
+}
+
+impl fmt::Display for AddedPage {
+    /// What a warning or an error names it: ``plugin `docstrings`'s
+    /// reference/README.md``.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "plugin `{}`'s {}", self.plugin, self.path)
+    }
+}
+
+/// Something a plugin warns of as it adds its pages.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Warning {
+    /// The plugin's name, like `docstrings`.
+    pub plugin: String,
+    pub message: String,
+}
+
+impl fmt::Display for Warning {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "plugin `{}`: {}", self.plugin, self.message)
+    }
+}
+
+/// What the plugins a build has started add.
+#[derive(Debug, Default)]
+pub struct Added {
+    pub pages: Vec<AddedPage>,
+    pub warnings: Vec<Warning>,
+}
 
 /// A block a plugin couldn't render, which is left as it was.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -71,13 +125,21 @@ pub struct Plugins {
 /// A plugin a build has started.
 struct Running {
     name: String,
-    pre: PluginPre<State>,
+    pre: Pre,
     read: Vec<config::Read>,
     settings: String,
     /// The time its clock reads, from 1970.
     now: Duration,
-    /// The plugin, unless it crashed, in the store that holds its memory.
-    instance: Option<(Store<State>, Plugin)>,
+    /// The plugin, unless it crashed.
+    instance: Option<Instance>,
+}
+
+/// A plugin that's started, in the store that holds its memory.
+struct Instance {
+    store: Store<State>,
+    code_blocks: code_blocks::Guest,
+    /// Unless it adds no pages.
+    pages: Option<pages::Guest>,
 }
 
 /// What a plugin's store holds: what it can reach through WASI.
@@ -186,6 +248,56 @@ impl Plugins {
             plugins: Some(self),
             page,
         }
+    }
+
+    /// The pages each plugin that adds pages adds, in turn, and what each
+    /// warns of. Stops at the first that can't add its pages, or that adds
+    /// one at a path that can't be a Markdown file in the source.
+    pub fn pages(&mut self) -> Result<Added> {
+        let mut added = Added::default();
+        for plugin in &mut self.plugins {
+            let Some(pages) = plugin.pages() else {
+                continue;
+            };
+            let pages::Added { pages, warnings } = pages.map_err(|reason| {
+                anyhow!("plugin `{}` can't add its pages: {reason}", plugin.name)
+            })?;
+            for pages::Page { path, markdown } in pages {
+                if let Some(why) = bad_path(&path) {
+                    bail!(
+                        "plugin `{}` adds a page at `{path}`, but {why}",
+                        plugin.name
+                    );
+                }
+                added.pages.push(AddedPage {
+                    plugin: plugin.name.clone(),
+                    path,
+                    markdown,
+                });
+            }
+            added
+                .warnings
+                .extend(warnings.into_iter().map(|message| Warning {
+                    plugin: plugin.name.clone(),
+                    message,
+                }));
+        }
+        Ok(added)
+    }
+}
+
+/// Why a page a plugin adds can't be at `path`, as if it were a Markdown
+/// file in the source, if it can't: it's from the source's folder, with `/`
+/// between its parts, so a page can't be outside it.
+fn bad_path(path: &str) -> Option<&'static str> {
+    if path.starts_with('/') {
+        Some("a page's path is from the source's folder, without a `/` before it")
+    } else if (path.split('/')).any(|part| matches!(part, "" | "." | "..") || part.contains('\\')) {
+        Some("a page's path has `/` between its parts, and no part is empty, `.`, or `..`")
+    } else if !path.ends_with(".md") {
+        Some("a page's path ends in `.md`")
+    } else {
+        None
     }
 }
 
@@ -316,22 +428,30 @@ impl Running {
             table: ResourceTable::new(),
         };
         let mut store = Store::new(&ENGINE, state);
-        let plugin = self.pre.instantiate(&mut store).map_err(|e| crashed(&e))?;
-        let languages = (plugin.little_plugin_code_blocks())
-            .call_setup(&mut store, &self.settings)
-            .map_err(|e| crashed(&e))??;
-        self.instance = Some((store, plugin));
+        let instance = (self.pre.instance.instantiate(&mut store)).map_err(|e| crashed(&e))?;
+        let code_blocks =
+            (self.pre.code_blocks.load(&mut store, &instance)).map_err(|e| crashed(&e))?;
+        let pages = (self.pre.pages.as_ref())
+            .map(|pages| pages.load(&mut store, &instance))
+            .transpose()
+            .map_err(|e| crashed(&e))?;
+        let languages =
+            (code_blocks.call_setup(&mut store, &self.settings)).map_err(|e| crashed(&e))??;
+        self.instance = Some(Instance {
+            store,
+            code_blocks,
+            pages,
+        });
         Ok(languages)
     }
 
     /// The plugin's rendering of `block`, or why it can't. After a crash,
     /// it's started again for the next block.
     fn render(&mut self, block: &Block) -> Result<Output, String> {
-        if self.instance.is_none() {
-            (self.start()).map_err(|reason| format!("it can't start again: {reason}"))?;
-        }
-        let (store, plugin) = self.instance.as_mut().expect("the plugin started");
-        match plugin.little_plugin_code_blocks().call_render(store, block) {
+        let Instance {
+            store, code_blocks, ..
+        } = self.started()?;
+        match code_blocks.call_render(store, block) {
             Ok(rendered) => rendered,
             Err(e) => {
                 self.instance = None;
@@ -339,10 +459,36 @@ impl Running {
             }
         }
     }
+
+    /// The pages the plugin adds, or why it can't add them, unless it adds
+    /// none.
+    fn pages(&mut self) -> Option<Result<pages::Added, String>> {
+        self.pre.pages.as_ref()?;
+        let Instance { store, pages, .. } = match self.started() {
+            Ok(instance) => instance,
+            Err(reason) => return Some(Err(reason)),
+        };
+        let pages = pages.as_ref().expect("it adds pages");
+        Some(match pages.call_pages(store) {
+            Ok(added) => added,
+            Err(e) => {
+                self.instance = None;
+                Err(crashed(&e))
+            }
+        })
+    }
+
+    /// The plugin, started again if it crashed.
+    fn started(&mut self) -> Result<&mut Instance, String> {
+        if self.instance.is_none() {
+            (self.start()).map_err(|reason| format!("it can't start again: {reason}"))?;
+        }
+        Ok(self.instance.as_mut().expect("the plugin started"))
+    }
 }
 
 /// The plugin in `file`, compiled, and linked to WASI, ready to start.
-fn compile(file: &Path) -> Result<PluginPre<State>> {
+fn compile(file: &Path) -> Result<Pre> {
     let metadata = std::fs::metadata(file)?;
     let stamp = (metadata.modified().ok(), metadata.len());
     // Held while compiling, so a plugin is compiled once even if two builds
@@ -366,7 +512,13 @@ fn compile(file: &Path) -> Result<PluginPre<State>> {
     let component = Component::new(&ENGINE, &wasm)?;
     let mut linker = Linker::new(&ENGINE);
     wasmtime_wasi::p2::add_to_linker_sync(&mut linker)?;
-    let pre = PluginPre::new(linker.instantiate_pre(&component)?)?;
+    let instance = linker.instantiate_pre(&component)?;
+    let pre = Pre {
+        code_blocks: code_blocks::GuestIndices::new(&instance)?,
+        // A plugin built for `world plugin` exports no pages.
+        pages: pages::GuestIndices::new(&instance).ok(),
+        instance,
+    };
     compiled.insert(file.to_path_buf(), (stamp, pre.clone()));
     Ok(pre)
 }
@@ -403,26 +555,38 @@ pub(crate) mod tests {
     const NOW: i64 = 1_767_225_600;
 
     /// The plugin in `tests/plugin`, built once for every test that needs
-    /// it.
+    /// it, for `world plugin`, as plugins built before `pages` were.
     pub(crate) fn test_plugin() -> &'static Path {
         static BUILT: OnceLock<PathBuf> = OnceLock::new();
-        BUILT.get_or_init(|| {
-            let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-            let target = root.join("target/test-plugin");
-            let status = Command::new(env!("CARGO"))
-                .args(["build", "--quiet", "--release", "--target", "wasm32-wasip2"])
-                .arg("--manifest-path")
-                .arg(root.join("tests/plugin/Cargo.toml"))
-                .env("CARGO_TARGET_DIR", &target)
-                .status()
-                .expect("cargo runs");
-            assert!(
-                status.success(),
-                "the test plugin doesn't build: is Rust's wasm32-wasip2 target installed? \
-                 `rustup target add wasm32-wasip2` installs it"
-            );
-            target.join("wasm32-wasip2/release/little_test_plugin.wasm")
-        })
+        BUILT.get_or_init(|| build_test_plugin("test-plugin", &[]))
+    }
+
+    /// The plugin in `tests/plugin`, built once with its `pages` feature, for
+    /// `world plugin-with-pages`, for every test that needs it.
+    pub(crate) fn test_plugin_with_pages() -> &'static Path {
+        static BUILT: OnceLock<PathBuf> = OnceLock::new();
+        BUILT.get_or_init(|| build_test_plugin("test-plugin-pages", &["--features", "pages"]))
+    }
+
+    /// Build the plugin in `tests/plugin`, with `args`, in `target/{target}`,
+    /// and return where its `.wasm` file is.
+    fn build_test_plugin(target: &str, args: &[&str]) -> PathBuf {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let target = root.join("target").join(target);
+        let status = Command::new(env!("CARGO"))
+            .args(["build", "--quiet", "--release", "--target", "wasm32-wasip2"])
+            .args(args)
+            .arg("--manifest-path")
+            .arg(root.join("tests/plugin/Cargo.toml"))
+            .env("CARGO_TARGET_DIR", &target)
+            .status()
+            .expect("cargo runs");
+        assert!(
+            status.success(),
+            "the test plugin doesn't build: is Rust's wasm32-wasip2 target installed? \
+             `rustup target add wasm32-wasip2` installs it"
+        );
+        target.join("wasm32-wasip2/release/little_test_plugin.wasm")
     }
 
     /// The test plugin, as a site's config names it, with `settings`, as
@@ -431,6 +595,17 @@ pub(crate) mod tests {
         config::Plugin {
             name: name.to_string(),
             wasm: Wasm::File(test_plugin().to_path_buf()),
+            read: read.to_vec(),
+            settings: settings.to_string(),
+        }
+    }
+
+    /// The test plugin, built to add pages, as a site's config names it,
+    /// with `settings`, as JSON, reading `read`.
+    fn with_pages(name: &str, settings: &str, read: &[config::Read]) -> config::Plugin {
+        config::Plugin {
+            name: name.to_string(),
+            wasm: Wasm::File(test_plugin_with_pages().to_path_buf()),
             read: read.to_vec(),
             settings: settings.to_string(),
         }
@@ -797,6 +972,115 @@ pub(crate) mod tests {
                 line: None,
                 reason: "in an output".to_string(),
             }]
+        );
+    }
+
+    #[test]
+    fn a_plugin_adds_pages_and_warns() {
+        let site = scratch("pages", &[("pkg/hello.md", "# Hello\n")]);
+        let read = [config::Read {
+            folder: site.join("pkg"),
+            path: "pkg".to_string(),
+        }];
+        let settings = serde_json::json!({
+            "pages": [
+                { "path": "reference/README.md", "markdown": "# Reference\n" },
+                { "path": "reference/hello.md", "read": "pkg/hello.md" },
+            ],
+            "warnings": ["can't read pkg/broken.py"],
+        });
+        let mut plugins = start(&[with_pages("api", &settings.to_string(), &read)]).unwrap();
+        let added = plugins.pages().unwrap();
+
+        // It reads the folders it reads as it adds them.
+        let page = |path: &str, markdown: &str| AddedPage {
+            plugin: "api".to_string(),
+            path: path.to_string(),
+            markdown: markdown.to_string(),
+        };
+        assert_eq!(
+            added.pages,
+            [
+                page("reference/README.md", "# Reference\n"),
+                page("reference/hello.md", "# Hello\n"),
+            ]
+        );
+        assert_eq!(
+            added.pages[0].to_string(),
+            "plugin `api`'s reference/README.md"
+        );
+        let warnings: Vec<_> = added.warnings.iter().map(Warning::to_string).collect();
+        assert_eq!(warnings, ["plugin `api`: can't read pkg/broken.py"]);
+
+        // And it renders blocks, as any plugin does.
+        assert_eq!(
+            render("```test\ncount\n```\n", &mut plugins).html,
+            "<p>1</p>\n"
+        );
+        let _ = std::fs::remove_dir_all(&site);
+    }
+
+    #[test]
+    fn a_plugin_built_before_pages_adds_none() {
+        let settings = |language: &str| {
+            let pages = serde_json::json!([{ "path": "api.md", "markdown": "# API" }]);
+            serde_json::json!({ "languages": [language], "pages": pages, "warnings": ["Hi"] })
+                .to_string()
+        };
+        let mut plugins = start(&[
+            named("old", &settings("old"), &[]),
+            with_pages("new", &settings("new"), &[]),
+        ])
+        .unwrap();
+        let added = plugins.pages().unwrap();
+        let plugins: Vec<_> = (added.pages.iter())
+            .map(|page| page.plugin.as_str())
+            .chain(added.warnings.iter().map(|warning| warning.plugin.as_str()))
+            .collect();
+        assert_eq!(plugins, ["new", "new"]);
+    }
+
+    #[test]
+    fn a_page_a_plugin_adds_is_a_markdown_file_in_the_source() {
+        let error = |path: &str| {
+            let settings = serde_json::json!({ "pages": [{ "path": path, "markdown": "" }] });
+            let mut plugins = start(&[with_pages("api", &settings.to_string(), &[])]).unwrap();
+            format!("{:#}", plugins.pages().unwrap_err())
+        };
+        let message =
+            |path: &str, why: &str| format!("plugin `api` adds a page at `{path}`, but {why}");
+        let from_source = "a page's path is from the source's folder, without a `/` before it";
+        assert_eq!(error("/api.md"), message("/api.md", from_source));
+        let parts = "a page's path has `/` between its parts, and no part is empty, `.`, or `..`";
+        for path in [
+            "",
+            "reference/",
+            "reference//api.md",
+            "./api.md",
+            "reference/../../api.md",
+            "reference\\api.md",
+        ] {
+            assert_eq!(error(path), message(path, parts));
+        }
+        for path in ["api", "api.txt", "api.MD", "api.ipynb"] {
+            assert_eq!(error(path), message(path, "a page's path ends in `.md`"));
+        }
+    }
+
+    #[test]
+    fn a_plugin_that_cant_add_its_pages_stops_the_build() {
+        let error = |settings: &str| {
+            let mut plugins = start(&[with_pages("api", settings, &[])]).unwrap();
+            format!("{:#}", plugins.pages().unwrap_err())
+        };
+        assert_eq!(
+            error(r#"{"pages_error":"there's no package to read"}"#),
+            "plugin `api` can't add its pages: there's no package to read"
+        );
+        assert_eq!(
+            error(r#"{"pages_panic":"Oh no"}"#),
+            "plugin `api` can't add its pages: it crashed: wasm trap: wasm `unreachable` \
+             instruction executed"
         );
     }
 }

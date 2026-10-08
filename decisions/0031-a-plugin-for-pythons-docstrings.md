@@ -83,7 +83,8 @@ and PHP's docblocks, and will want the same.
 - A page looks like mkdocstrings':
   - its module's name, its docstring, and tables of its classes,
     functions, and attributes, each linked to its heading;
-  - each object under a heading of its name, in code, in order of name,
+  - each object under a heading of its name, in code, with its attributes
+    first, then its classes, then its functions, each in order of name,
     like ``## `Solver` `` and, for its methods, ``### `Solver.solve` ``,
     with labels, like `dataclass` and `abstractmethod`;
   - each class's and function's signature, as Python, wrapped at about 60
@@ -99,13 +100,21 @@ and PHP's docblocks, and will want the same.
   docstring. Their text is Markdown, as in mkdocstrings, and examples
   after `>>>` are Python code. A section the plugin doesn't know, like
   `Notes` in a style without it, is kept, under its title.
+- Docstrings in NumPy's style that borrow from Google's are read as their
+  authors meant them, where griffe and Napoleon misread them: a title may
+  have a colon after it, like `Parameters:`; an item may be written like
+  `name (type): text`; a value may be given by its type alone, like
+  `nx.Graph: A graph.`; and a paragraph that doesn't start with a name,
+  like `Returns a dict.`, ends a section of parameters or attributes, and
+  is kept as text.
 - A module Ruff can't parse is warned of, and left out.
 
 ## Consequences
 - A Python package gets an API reference without Python, its
   dependencies, or a page in the docs for each module, so a site builds it
   offline, in its sandbox, the same each time.
-- The plugin is about 1.3 MB, and parses 150 modules in about a second.
+- The plugin is about 1.6 MB, and adds about a fifth of a second to a
+  build of a package of 138 modules.
 - A plugin for another language, like TypeScript's, starts with this
   one's model and Markdown, which move to a library they share.
 - Limits, for now:
