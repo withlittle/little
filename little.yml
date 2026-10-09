@@ -1,11 +1,50 @@
 # Site config — the LAST word in the cascade (little -> theme -> site).
 # Optional: without this file, the theme's config and little's defaults apply.
-
-# The built-in theme is compiled from ./theme; building with the folder instead
-# means editing it live-reloads. Without this, little uses its built-in copy.
-name: Little
-description: A little static documentationsite site generator
+name: little
+description: A little static documentation site generator
 url: https://withlittle.github.io/little
 # Where the site's source is, so each page can link to its file there.
 repo: https://github.com/withlittle/little
+
+# The built-in theme is compiled from ./theme; building with the folder instead
+# means editing it live-reloads. Without this, little uses its built-in copy.
 theme: ./theme
+
+# The manual's pages in the order to read them, rather than by title. A page
+# that isn't listed isn't in the nav, so list each new one.
+nav:
+  - { title: Home, url: / }
+  - title: Getting started
+    children:
+      - { title: Install, url: /getting-started/install }
+      - { title: Your first site, url: /getting-started/first-site }
+      - { title: Configuring, url: /getting-started/configuring }
+      - { title: Publishing, url: /getting-started/publishing }
+  - title: Writing
+    children:
+      - { title: Pages and files, url: /writing/pages-and-files }
+      - { title: Markdown, url: /writing/markdown }
+      - { title: Links and images, url: /writing/links-and-images }
+      - { title: Code, url: /writing/code }
+      - { title: Math, url: /writing/math }
+      - { title: Diagrams, url: /writing/diagrams }
+      - { title: Notebooks, url: /writing/notebooks }
+      - { title: Frontmatter, url: /writing/frontmatter }
+      - { title: Navigation, url: /writing/navigation }
+      - { title: Search, url: /writing/search }
+  - title: Themes
+    children:
+      - { title: Choosing a theme, url: /themes/choosing-a-theme }
+      - { title: Making a theme, url: /themes/making-a-theme }
+      - { title: Sass, url: /themes/sass }
+      - { title: Styling Markdown, url: /themes/styling-markdown }
+  - title: Plugins
+    children:
+      - { title: Using plugins, url: /plugins/using-plugins }
+      - { title: Python API reference, url: /plugins/python-api-reference }
+      - { title: Writing a plugin, url: /plugins/writing-a-plugin }
+  - title: Reference
+    children:
+      - { title: Commands, url: /reference/commands }
+      - { title: Settings, url: /reference/settings }
+      - { title: Template data, url: /reference/template-data }
