@@ -61,7 +61,7 @@ and a rejection of their worst friction.
   theme's search box to search in the browser.
 
 ## Roadmap (thin vertical slices)
-Each slice ships as a small, reviewable PR, dogfooded against the example site in `docs/`.
+Each slice ships as a small, reviewable PR, dogfooded against little's own manual in `docs/`.
 
 - [x] **0 — Walking skeleton:** Markdown → themed HTML, cascading config, live reload.
 - [ ] **1 — Navigation & structure:** nested sections, explicit ordering, sidebar tree.

@@ -6,10 +6,10 @@ generator written in Rust. Its mission is **authoring experience** — see
 
 ## Commands
 ```sh
-cargo run -- build          # build the example site (docs/) into dist/, and check its links
+cargo run -- build          # build little's manual (docs/) into dist/, and check its links
 cargo run -- build --strict # ...and fail on anything it warns of
 cargo run -- serve          # live-reloading dev server at http://127.0.0.1:8080
-cargo run -- config         # print the example site's merged config
+cargo run -- config         # print the manual's merged config
 cargo build --release       # produce the release binary (target/release/little)
 cargo test                  # run tests (they build tests/plugin for wasm32-wasip2)
 cargo clippy --all-targets  # lint — keep it clean
@@ -96,16 +96,20 @@ cargo clippy --manifest-path plugins/docstrings/Cargo.toml --all-targets --targe
   links within the site after each build.
 
 Content and theme live outside `src/`:
-- `docs/` — the example/dogfood site content. This is little's **input**, not
-  project documentation — don't put meta docs here.
+- `docs/` — little's manual, for people who use little, published at
+  <https://withlittle.github.io/little>. It's a little site, so each page
+  uses what it documents, where it can, and the README links to it. Pages
+  link to each other by their files, and to little's own files on GitHub.
+  Meta docs, like ADRs, don't go here.
 - `theme/` — little's built-in theme, compiled into the binary: `_templates/`
   (MiniJinja; `default.html` is required) + `_static/` (copied to the site's
   root) + an optional `little.yml`. It's plain CSS: `builtin` has no `_sass/`.
   List every file in it in `builtin` in `src/theme.rs`; a test checks. Its
   search box is Pagefind's, deferred so it finds the `pagefind/` little
   writes.
-- `little.yml` — example site config (optional). It sets `theme: ./theme`, so
-  edits to the built-in theme live-reload.
+- `little.yml` — the manual's config: its `url`, `repo`, and `nav`, which
+  orders its pages by hand. It sets `theme: ./theme`, so edits to the
+  built-in theme live-reload.
 - `wit/plugin.wit` — the interfaces a plugin exports, which little's bindings
   are generated from; plugin authors copy it. `world plugin` renders code
   blocks; `world plugin-with-pages` adds pages, too.
@@ -154,6 +158,10 @@ Content and theme live outside `src/`:
   heavy dependency in an ADR.
 - Comment the *why*, not the *what*; don't over-comment.
 - Add unit tests for parsing/merging logic (frontmatter, config cascade).
+- A change people using little can see updates its page in the manual
+  (`docs/`), and the reference pages, in the same PR; a new page goes in
+  `nav` in `little.yml`. Keep the README short: it links to the manual.
+  `cargo run -- build --strict` checks the manual's links.
 - Commits: imperative subject; include the Copilot co-author trailer.
 
 ## Decisions
@@ -329,3 +337,8 @@ Record notable choices as short ADRs in `decisions/`. Locked so far:
   finding each docstring's style, NumPy's, Google's, or Sphinx's, for
   itself. A module it can't parse is warned of, and left out — see
   [`decisions/0031-a-plugin-for-pythons-docstrings.md`](./decisions/0031-a-plugin-for-pythons-docstrings.md).
+- **Docs are the manual:** `docs/` is little's manual, published at
+  `https://withlittle.github.io/little`, grouped by what a reader is trying
+  to do, and ordered by `nav` in `little.yml`; each page uses what it
+  documents, and the README points to it — see
+  [`decisions/0032-docs-are-the-manual.md`](./decisions/0032-docs-are-the-manual.md).

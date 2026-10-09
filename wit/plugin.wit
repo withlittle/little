@@ -1,5 +1,5 @@
-/// The interface a little plugin exports: see decisions/0029 and the
-/// README's "Writing a plugin".
+/// The interface a little plugin exports: see decisions/0029, and "Writing a
+/// plugin" in little's manual, docs/plugins/writing-a-plugin.md.
 package little:plugin@0.1.0;
 
 /// Renders fenced code blocks in the languages the plugin chooses.
