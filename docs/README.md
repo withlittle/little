@@ -1,27 +1,62 @@
 ---
 title: Home
-description: little turns a folder of Markdown into a documentation site.
+description: little turns a folder of Markdown, or Jupyter notebooks, into a documentation site, with one binary and no config.
 ---
 
-# Welcome to **little**
+# little
 
-little is a tiny static documentation generator: drop Markdown into `docs/` and —
-*wham* — you get a site. No boilerplate, no config required to start.
+A little static site generator for documentation: drop Markdown, or Jupyter
+notebooks, into `docs/` and get a site. One self-contained binary, a
+three-level cascading config, and themes that own 100% of the markup.
 
-This very page is `docs/README.md`. Like on GitHub, a folder's `README.md` is its
-home page — little serves it at the site root (`/`), and a `README.md` inside any
-subfolder becomes that section's landing page.
+> [!WARNING]
+> little is in early development, at v0.1, so expect breaking changes. This
+> manual describes little as it is on its `main` branch.
 
-## What this skeleton already does
+## Start in a minute
 
-- Reads every `.md` file in `docs/`, and every Jupyter notebook (`.ipynb`), outputs and all
-- Parses YAML frontmatter (that `title:` above)
-- Renders CommonMark + GFM — tables, ~~strikethrough~~, task lists — via `comrak`
-- Builds a **nested nav** from the folder structure, with clean, extensionless URLs
-- Adds an **on-this-page TOC** from each page's headings
-- Hands **structured data** to a theme template (little bakes in *zero* HTML)
-- Merges a **3-level cascading config**: little → theme → site
-- Indexes every page for **search**: press ⌘K or Ctrl+K
-- Serves it all with **live reload**
+With little [installed](getting-started/install.md), make a folder with a
+page in it, and serve it:
 
-> Try it: run `little serve`, edit this sentence, and watch the browser refresh itself.
+```sh
+mkdir -p my-docs/docs && cd my-docs
+echo "# Hello, little" > docs/README.md
+little serve
+```
+
+Open <http://127.0.0.1:8080>, edit `docs/README.md`, and the page reloads
+itself. [Your first site](getting-started/first-site.md) goes on from there.
+
+## Why little
+
+- **Markdown that just works.** Write as you would on GitHub, with tables,
+  callouts, footnotes, emoji, math, and Mermaid diagrams, and link to a page
+  by its file. Code is highlighted, math rendered, and diagrams drawn as each
+  page is built, so readers' browsers show them without JavaScript.
+- **One binary.** No runtime, no `node_modules`, and no version managers:
+  search, link checking, Sass, math, and diagrams are built in.
+- **Themes own the markup.** little gives a theme its pages as data, and
+  writes no HTML of its own, so a theme can be anything, with Bootstrap,
+  Tailwind, or CSS of your own.
+- **Config that cascades.** little's defaults, then the theme's, then the
+  site's: a site sets only what it changes.
+- **Plugins in a sandbox.** A plugin is one WebAssembly file, written in Rust,
+  Python, or another language, that renders code blocks, or adds pages, like
+  an [API reference](plugins/python-api-reference.md) from Python's docstrings.
+
+## This manual
+
+| Section | Read it to… |
+| ------- | ----------- |
+| [Getting started](getting-started/install.md) | install little, start a site, configure it, and publish it |
+| [Writing](writing/pages-and-files.md) | write pages, with links, code, math, diagrams, notebooks, and navigation |
+| [Themes](themes/choosing-a-theme.md) | choose a theme for a site, or make one |
+| [Plugins](plugins/using-plugins.md) | use plugins, add an API reference, or write a plugin |
+| [Reference](reference/commands.md) | look up a command, a setting, or what a theme's templates get |
+
+> [!TIP]
+> This manual is a little site, in the `docs/` folder of little's
+> [repository](https://github.com/withlittle/little), and each page uses what
+> it describes: the page on [math](writing/math.md) has math in it, and the
+> page on [notebooks](writing/notebooks.ipynb) is a notebook. To read it
+> offline, run `little serve` in a clone of the repository.
