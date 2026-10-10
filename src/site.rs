@@ -1028,8 +1028,9 @@ fn children_of(root: &DirNode, rel: &Path) -> Vec<NavItem> {
 }
 
 /// The child nav items of a folder (its leaf pages + subsections), sorted by
-/// title. A folder's own README is rendered by its parent as the section link,
-/// so it's excluded here.
+/// title, whatever its case, with the numbers in titles in order, so "2." comes
+/// before "10.". A folder's own README is rendered by its parent as the
+/// section link, so it's excluded here.
 fn child_items(node: &DirNode) -> Vec<NavItem> {
     let mut items: Vec<NavItem> = Vec::new();
     for leaf in &node.pages {
@@ -1042,7 +1043,9 @@ fn child_items(node: &DirNode) -> Vec<NavItem> {
     for (name, sub) in &node.dirs {
         items.push(section_item(name, sub));
     }
-    items.sort_by_key(|item| item.title.to_lowercase());
+    items.sort_by(|a, b| {
+        alphanumeric_sort::compare_str(a.title.to_lowercase(), b.title.to_lowercase())
+    });
     items
 }
 
@@ -1403,6 +1406,46 @@ mod tests {
         assert_eq!(guide.children.len(), 1);
         assert_eq!(guide.children[0].title, "Install");
         assert_eq!(guide.children[0].url.as_deref(), Some("/guide/install"));
+    }
+
+    #[test]
+    fn nav_puts_numbers_in_order() {
+        let pages = vec![
+            page("README.md", "Home"),
+            page("adr/0010-research.md", "10. Create a research cluster"),
+            page("adr/0002-hierarchy.md", "2. Use hierarchical elements"),
+            page("adr/0001-record.md", "1. Record architecture decisions"),
+            page("adr/0012-oidc.md", "8. OIDC with other platforms"),
+            page("adr/0008-github.md", "8. GitHub OIDC"),
+            page("adr/0014-registry.md", "ADR: Docker registry strategy"),
+            page("adr/zebra.md", "about zebras"),
+            page("steps/README.md", "Steps"),
+            page("steps/ten.md", "Step 10"),
+            page("steps/nine.md", "Step 9"),
+            page("steps/one.md", "Step 1"),
+        ];
+        let nav = build_nav(&build_tree(&pages));
+
+        // Numbers sort by their value, then by what follows them, and before
+        // letters; letters sort as before, whatever their case.
+        assert_eq!(
+            outline(&nav),
+            [
+                "Home /",
+                "Adr (label)",
+                "  1. Record architecture decisions /adr/0001-record",
+                "  2. Use hierarchical elements /adr/0002-hierarchy",
+                "  8. GitHub OIDC /adr/0008-github",
+                "  8. OIDC with other platforms /adr/0012-oidc",
+                "  10. Create a research cluster /adr/0010-research",
+                "  about zebras /adr/zebra",
+                "  ADR: Docker registry strategy /adr/0014-registry",
+                "Steps /steps/",
+                "  Step 1 /steps/one",
+                "  Step 9 /steps/nine",
+                "  Step 10 /steps/ten",
+            ]
+        );
     }
 
     #[test]
@@ -2654,6 +2697,97 @@ mod tests {
         // 404 page has none.
         for path in ["index.html", "api/errors/index.html", NOT_FOUND_FILE] {
             assert!(!read(path).contains(nav), "{path}");
+        }
+        let _ = fs::remove_dir_all(&site);
+    }
+
+    #[test]
+    fn the_builtin_theme_folds_the_nav() {
+        let site = scratch_site(
+            "builtin-folds",
+            &[
+                ("docs/README.md", "# Home\n"),
+                ("docs/api/reference.md", "# Reference\n"),
+                ("docs/guide/README.md", "# Guide\n"),
+                ("docs/guide/install.md", "# Install\n"),
+                ("docs/guide/advanced/README.md", "# Advanced\n"),
+                ("docs/guide/advanced/tuning.md", "# Tuning\n"),
+                ("docs/guide/advanced/deep/limits.md", "# Limits\n"),
+                ("docs/guide/recipes/bake.md", "# Bake\n"),
+                (
+                    "docs/guide/recipes/marks.md",
+                    "# Marking the aria-current=\"page\"\n",
+                ),
+            ],
+        );
+
+        build(&site).unwrap();
+
+        // The sidebar's links, labels, and folds, which the theme writes one
+        // to a line.
+        let sidebar = |path: &str| -> Vec<String> {
+            fs::read_to_string(site.join("dist").join(path))
+                .unwrap()
+                .lines()
+                .map(str::trim)
+                .skip_while(|line| *line != r#"<ul class="nav">"#)
+                .take_while(|line| *line != "</nav>")
+                .filter(|line| {
+                    ["<a ", "<span", "<details", "<summary"]
+                        .iter()
+                        .any(|tag| line.starts_with(tag))
+                })
+                .map(str::to_string)
+                .collect()
+        };
+        // A top-level folder is a group, which doesn't fold; a folder within
+        // one folds, from a button beside its link, if it has a README.md, or
+        // from its label. Only the folders the current page is in are open.
+        assert_eq!(
+            sidebar("guide/advanced/deep/limits/index.html"),
+            [
+                r#"<a href="/">Home</a>"#,
+                r#"<span class="nav-label">Api</span>"#,
+                r#"<a href="/api/reference">Reference</a>"#,
+                r#"<a href="/guide/">Guide</a>"#,
+                r#"<a href="/guide/advanced/">Advanced</a>"#,
+                "<details open>",
+                r#"<summary><span class="visually-hidden">Advanced</span></summary>"#,
+                "<details open>",
+                r#"<summary class="nav-label">Deep</summary>"#,
+                r#"<a href="/guide/advanced/deep/limits" aria-current="page">Limits</a>"#,
+                r#"<a href="/guide/advanced/tuning">Tuning</a>"#,
+                r#"<a href="/guide/install">Install</a>"#,
+                "<details>",
+                r#"<summary class="nav-label">Recipes</summary>"#,
+                r#"<a href="/guide/recipes/bake">Bake</a>"#,
+                r#"<a href="/guide/recipes/marks">Marking the aria-current=&quot;page&quot;</a>"#,
+            ]
+        );
+        // Whether each folder within a group is open, top down.
+        let folds = |path: &str| -> Vec<String> {
+            sidebar(path)
+                .into_iter()
+                .filter(|line| line.starts_with("<details"))
+                .collect()
+        };
+        // A folder's own page opens it, but not the folders in it.
+        assert_eq!(
+            folds("guide/advanced/index.html"),
+            ["<details open>", "<details>", "<details>"]
+        );
+        assert_eq!(
+            folds("guide/recipes/bake/index.html"),
+            ["<details>", "<details>", "<details open>"]
+        );
+        // Elsewhere, each is closed, even one with a title like the current
+        // page's mark.
+        for path in ["index.html", "guide/index.html", NOT_FOUND_FILE] {
+            assert_eq!(
+                folds(path),
+                ["<details>", "<details>", "<details>"],
+                "{path}"
+            );
         }
         let _ = fs::remove_dir_all(&site);
     }

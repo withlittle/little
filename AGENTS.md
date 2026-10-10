@@ -365,3 +365,16 @@ Record notable choices as short ADRs in `decisions/`. Locked so far:
   It uses nothing newer than Baseline 2024, so not the `popover`
   property — see
   [`decisions/0034-the-built-in-themes-script.md`](./decisions/0034-the-built-in-themes-script.md).
+- **Numbers in the nav's order:** little sorts each folder's pages and
+  folders by title, whatever their case, with each run of digits as a
+  number, by its value, with alphanumeric-sort, 1.5.8 or later, for a total
+  order: `2.` before `10.`, and `1` before `01`. A `nav` in `little.yml` is
+  kept as it's written — see
+  [`decisions/0035-numbers-in-the-navs-order.md`](./decisions/0035-numbers-in-the-navs-order.md).
+- **Folding the built-in theme's nav:** each folder within a top-level one
+  is a `<details>`, folded, but for those the current page is in, which the
+  template finds from the `aria-current="page"` in its items' HTML, so
+  little's data doesn't change. A folder with a page folds from a button
+  beside its link. The script scrolls only the sidebar to the current page;
+  which folders are open isn't remembered — see
+  [`decisions/0036-folding-the-built-in-themes-nav.md`](./decisions/0036-folding-the-built-in-themes-nav.md).

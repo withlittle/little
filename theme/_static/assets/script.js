@@ -1,6 +1,7 @@
 // The built-in theme's script. Every page works without it: it adds a toggle
-// between light and dark, a button to copy each code block, and marks where
-// the reader is in the table of contents.
+// between light and dark, scrolls the nav to the current page, adds a button
+// to copy each code block, and marks where the reader is in the table of
+// contents.
 (() => {
   const root = document.documentElement;
 
@@ -31,6 +32,22 @@
   wide.addEventListener("change", () => {
     if (wide.matches && nav?.matches(":popover-open")) nav.hidePopover();
   });
+
+  // A long nav scrolls by itself, so scroll it, but not the page, to bring
+  // the current page's link into sight, a third of the way down: as the page
+  // opens, or the drawer does.
+  const reveal = () => {
+    const link = nav?.querySelector('a[aria-current="page"]');
+    if (!link) return;
+    const box = nav.getBoundingClientRect();
+    const { top, bottom } = link.getBoundingClientRect();
+    if (top >= box.top && bottom <= box.bottom) return;
+    nav.scrollTop += top - box.top - box.height / 3;
+  };
+  nav?.addEventListener("toggle", (event) => {
+    if (event.newState === "open") reveal();
+  });
+  reveal();
 
   // The table of contents folded above the page folds again once the reader
   // picks a heading.

@@ -1,6 +1,8 @@
 # 0034 — The built-in theme's script
 
-- Status: accepted
+- Status: accepted; amended by
+  [0036](./0036-folding-the-built-in-themes-nav.md), whose script also
+  scrolls the nav to the current page
 - Date: 2026-10-10
 - Amends: [0033](./0033-the-built-in-themes-design.md)
 

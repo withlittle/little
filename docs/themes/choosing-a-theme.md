@@ -46,15 +46,19 @@ it](#building-on-another-theme), file by file.
 - It fits any screen: on a phone or a tablet, the nav is a menu, opened from
   the header, and the table of contents folds up above the page. See
   [Navigation](../writing/navigation.md).
+- Its sidebar shows each top-level folder as a group, and folds up each
+  folder within one, but those the current page is in, so a large site's
+  nav stays short. See [The nav](../writing/navigation.md#the-nav).
 - It's built to be accessible: a link to skip to the content, a visible
   focus ring for the keyboard, text that meets WCAG's AA contrast, underlined
   links, and no sliding or smooth scrolling for a reader who prefers reduced
   motion. It works in forced colours, like Windows' contrast themes, and
   prints each page without its header and nav.
 - It works without JavaScript, but for search. Its script only adds to it:
-  the button to choose light or dark, a button to [copy each code
-  block](../writing/code.md#copying-code), and, in the table of contents
-  beside the page, a mark on the section being read.
+  the button to choose light or dark, scrolling the sidebar to the current
+  page, a button to [copy each code block](../writing/code.md#copying-code),
+  and, in the table of contents beside the page, a mark on the section being
+  read.
 - It needs a browser from 2024 or later.
 - It's plain CSS, in cascade layers, so CSS that isn't in a layer, like a
   stylesheet that a theme building on it links from its own `default.html`,

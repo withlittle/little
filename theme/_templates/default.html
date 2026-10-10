@@ -98,16 +98,32 @@
       </div>
       {# site.nav is shared across pages; the current page is the one whose url
          matches page.url. A folder without a README is a plain label, and
-         each top-level folder is a group. #}
+         each top-level folder is a group. A folder within one folds up, but
+         for the folders the current page is in. #}
       <ul class="nav">
         {% for item in site.nav recursive %}
+        {#- A folder's items are written before the folder, to find out if
+            the current page is among them. -#}
+        {%- set children = loop(item.children) if item.children else "" %}
         <li{% if item.children %} class="nav-group"{% endif %}>
           {% if item.url %}
           <a href="{{ item.url | safe }}"{% if item.url == page.url %} aria-current="page"{% endif %}>{{ item.title }}</a>
-          {% else %}
-          <span class="nav-label">{{ item.title }}</span>
           {% endif %}
-          {% if item.children %}<ul>{{ loop(item.children) }}</ul>{% endif %}
+          {% if item.children and loop.depth > 1 %}
+          <details{% if item.url == page.url or 'aria-current="page"' in children %} open{% endif %}>
+            {# A folder with a README folds from a button beside its page's
+               link, which names the folder to a screen reader. #}
+            {% if item.url %}
+            <summary><span class="visually-hidden">{{ item.title }}</span></summary>
+            {% else %}
+            <summary class="nav-label">{{ item.title }}</summary>
+            {% endif %}
+            <ul>{{ children }}</ul>
+          </details>
+          {% else %}
+          {% if not item.url %}<span class="nav-label">{{ item.title }}</span>{% endif %}
+          {% if item.children %}<ul>{{ children }}</ul>{% endif %}
+          {% endif %}
         </li>
         {% endfor %}
       </ul>

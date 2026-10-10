@@ -3,7 +3,9 @@
 - Status: accepted; amended by [0034](./0034-the-built-in-themes-script.md),
   whose script lets a reader choose light or dark, closes the drawer when
   the window widens, and folds the table of contents above the page once a
-  link in it is followed
+  link in it is followed, and by
+  [0036](./0036-folding-the-built-in-themes-nav.md), which folds each
+  folder in the nav within a top-level one
 - Date: 2026-10-10
 - Amends: [0023](./0023-highlighting-code.md),
   [0024](./0024-jupyter-notebooks.md)
