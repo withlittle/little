@@ -24,7 +24,9 @@ does:
   `<code class="language-rust">`, with a `<span class="k">` around each token
   that has a class, as Pygments writes them: never nested, and never over the
   end of a line. A block in a language little doesn't have is plain text in
-  the same `<pre class="highlight">`.
+  the same `<pre class="highlight">`. Once the page has loaded, the built-in
+  theme's script puts each in a `<div class="code-block">`, with its [copy
+  button](../writing/code.md#copying-code).
 - A [notebook](../writing/notebooks.ipynb)'s output, like what its code
   printed, is a code block in `output`,
   `<pre class="highlight"><code class="language-output">`, which the built-in

@@ -5,6 +5,8 @@
 <svg class="icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
 {%- if name == "menu" -%}<path d="M4 6h16M4 12h16M4 18h16"/>
 {%- elif name == "close" -%}<path d="M6 6l12 12M18 6L6 18"/>
+{%- elif name == "sun" -%}<circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"/>
+{%- elif name == "moon" -%}<path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/>
 {%- elif name == "repo" -%}<circle cx="6" cy="5" r="2"/><circle cx="6" cy="19" r="2"/><circle cx="18" cy="7" r="2"/><path d="M6 7v10M18 9c0 4.5-6 3.5-11 8.2"/>
 {%- elif name == "edit" -%}<path d="M4 20h4L19 9a2.1 2.1 0 0 0-3-3L5 17z"/><path d="M14 8l2 2"/>
 {%- elif name == "source" -%}<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M10.5 12.5L8.5 14.5l2 2M13.5 12.5l2 2-2 2"/>
@@ -34,6 +36,15 @@
   <meta name="color-scheme" content="light dark">
   <title>{% block title %}{{ page.title }} · {{ site.name }}{% endblock %}</title>
   {% if page.description %}<meta name="description" content="{{ page.description }}">{% endif %}
+  {# Before anything is drawn, so a page opens in the colours the reader
+     chose, if they chose any; without a script, it follows the system's. #}
+  <script>
+    document.documentElement.classList.add("js");
+    try {
+      const theme = localStorage.getItem("little-theme");
+      if (theme) document.documentElement.dataset.theme = theme;
+    } catch {}
+  </script>
   {# The theme's own URLs go through `url`, which puts the path of the site's
      `url` before them, if it has one. little's URLs, like page.url, already
      have it. #}
@@ -46,6 +57,7 @@
   <script src="{{ '/pagefind/pagefind-component-ui.js' | url }}" defer></script>
   {% endif %}
   <link rel="stylesheet" href="{{ '/assets/style.css' | url }}">
+  <script src="{{ '/assets/script.js' | url }}" defer></script>
   <style>
     :root {
       --font: {{ site.font | default('system-ui, sans-serif') | safe }};
@@ -70,6 +82,8 @@
         <pagefind-modal-trigger></pagefind-modal-trigger>
         <pagefind-modal></pagefind-modal>
         {% endif %}
+        {# Switches between light and dark; it needs the theme's script. #}
+        <button class="icon-button theme-toggle" type="button" aria-label="Dark mode" aria-pressed="false">{{ icon("sun") }}{{ icon("moon") }}</button>
         {% if site.repo %}<a class="icon-button repo-link" href="{{ site.repo | safe }}" aria-label="Repository">{{ icon("repo") }}</a>{% endif %}
       </div>
     </div>

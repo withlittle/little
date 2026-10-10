@@ -1,6 +1,9 @@
 # 0033 — The built-in theme's design
 
-- Status: accepted
+- Status: accepted; amended by [0034](./0034-the-built-in-themes-script.md),
+  whose script lets a reader choose light or dark, closes the drawer when
+  the window widens, and folds the table of contents above the page once a
+  link in it is followed
 - Date: 2026-10-10
 - Amends: [0023](./0023-highlighting-code.md),
   [0024](./0024-jupyter-notebooks.md)

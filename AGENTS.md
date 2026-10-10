@@ -103,8 +103,8 @@ Content and theme live outside `src/`:
   Meta docs, like ADRs, don't go here.
 - `theme/` — little's built-in theme, compiled into the binary: `_templates/`
   (MiniJinja; `default.html` is required) + `_static/` (copied to the site's
-  root) + an optional `little.yml`. It's plain CSS, in cascade layers:
-  `builtin` has no `_sass/`.
+  root) + an optional `little.yml`. It's plain CSS, in cascade layers, with
+  a script that only adds to it: `builtin` has no `_sass/`.
   List every file in it in `builtin` in `src/theme.rs`; a test checks. Its
   search box is Pagefind's, deferred so it finds the `pagefind/` little
   writes.
@@ -353,3 +353,15 @@ Record notable choices as short ADRs in `decisions/`. Locked so far:
   visible focus ring, AA contrast, underlined links, and styles for reduced
   motion, forced colours, and print, and needs browsers from 2024 — see
   [`decisions/0033-the-built-in-themes-design.md`](./decisions/0033-the-built-in-themes-design.md).
+- **The built-in theme's script:** `assets/script.js`, deferred, only adds
+  to the theme, so every page works without it. A button in the header
+  chooses light or dark, kept in `localStorage` as `little-theme`, and
+  forgotten when it's what the system shows, which a few lines inline at the
+  top of `<head>` apply before the page is drawn. It closes the drawer when
+  the window widens, folds the table of contents above the page once a link
+  in it is picked, adds a button to copy each code block, where the browser
+  has a clipboard, but not to a notebook's output, and marks where the
+  reader is in the table of contents beside the page with `data-current`.
+  It uses nothing newer than Baseline 2024, so not the `popover`
+  property — see
+  [`decisions/0034-the-built-in-themes-script.md`](./decisions/0034-the-built-in-themes-script.md).

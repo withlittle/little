@@ -43,6 +43,17 @@ markdown:
   than Pygments would give it, like Rust's `let`, a type to bat.
 - There are no line numbers, or highlighted lines, yet.
 
+## Copying code
+
+The built-in theme puts a button in the corner of each code block that
+copies its code: it shows when the block is hovered, or the button has focus,
+and always on a touch screen. It needs JavaScript, and the browser's
+clipboard, which a site has only on HTTPS, or at `localhost` or `127.0.0.1`,
+where `little serve` serves it. So a phone that opens `little serve` by your
+computer's address, with
+[`--host 0.0.0.0`](../reference/commands.md#choosing-where-to-serve), has no
+copy buttons. A notebook's output isn't code, so it has none.
+
 ## Choosing how code is highlighted
 
 little puts a class on each token for the theme to colour, like `k` for a
