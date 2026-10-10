@@ -40,6 +40,27 @@ the [`theme/`](https://github.com/withlittle/little/tree/main/theme) folder in
 little's repository, and another theme can [build on
 it](#building-on-another-theme), file by file.
 
+- It's light or dark, as the reader's system is, code blocks too.
+- It fits any screen: on a phone or a tablet, the nav is a menu, opened from
+  the header, and the table of contents folds up above the page. See
+  [Navigation](../writing/navigation.md).
+- It's built to be accessible: a link to skip to the content, a visible
+  focus ring for the keyboard, text that meets WCAG's AA contrast, underlined
+  links, and no sliding or smooth scrolling for a reader who prefers reduced
+  motion. It works in forced colours, like Windows' contrast themes, and
+  prints each page without its header and nav.
+- It works without JavaScript, but for search.
+- It needs a browser from 2024 or later.
+- It's plain CSS, in cascade layers, so CSS that isn't in a layer, like a
+  stylesheet that a theme building on it links from its own `default.html`,
+  wins over it, however specific its selectors. Only a few of its
+  declarations are `!important`, which CSS outside a layer can't override:
+  those for Pagefind's search button on a narrow screen, a diagram's
+  background, which `--diagram-bg` sets, and what print hides. Its colours
+  and sizes are custom properties, like `--accent`, each colour a pair for
+  light and dark, like `light-dark(#7c3aed, #a78bfa)`, so setting one
+  changes it everywhere.
+
 ## Downloading a theme
 
 Set `theme` to the URL of a theme's `.zip` or `.tar.gz` archive, and the first

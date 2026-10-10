@@ -2742,12 +2742,15 @@ mod tests {
         build(&site).unwrap();
 
         let read = |path: &str| fs::read_to_string(site.join("dist").join(path)).unwrap();
-        let repo_link = format!(r#"<a class="repo-link" href="{repo}">Repository</a>"#);
+        // The repo link is an icon, so it's named by its label.
+        let repo_link = format!(r#"repo-link" href="{repo}" aria-label="Repository""#);
         let home = read("index.html");
         for link in [
             repo_link.clone(),
-            format!(r#"<a href="{repo}/edit/main/docs/README.md">Edit this page</a>"#),
-            format!(r#"<a href="{repo}/blob/main/docs/README.md">View source of this page</a>"#),
+            format!(r#"<a href="{repo}/edit/main/docs/README.md">"#),
+            "Edit this page".to_string(),
+            format!(r#"<a href="{repo}/blob/main/docs/README.md">"#),
+            "View source of this page".to_string(),
         ] {
             assert!(home.contains(&link), "{link} in {home}");
         }
@@ -2825,7 +2828,7 @@ mod tests {
         build(&site).unwrap();
 
         let read = |path: &str| fs::read_to_string(site.join("dist").join(path)).unwrap();
-        let toc = r#"<aside class="toc""#;
+        let toc = r#"<nav class="toc""#;
         assert!(read("index.html").contains(toc));
         assert!(!read("guide/index.html").contains(toc));
         let _ = fs::remove_dir_all(&site);
@@ -2862,8 +2865,8 @@ mod tests {
             // The headings in the content link to themselves, so look only
             // at the table of contents.
             let html = fs::read_to_string(site.join("dist/index.html")).unwrap();
-            let (_, toc) = html.split_once(r#"<aside class="toc""#).unwrap();
-            let (toc, _) = toc.split_once("</aside>").unwrap();
+            let (_, toc) = html.split_once(r#"<nav class="toc""#).unwrap();
+            let (toc, _) = toc.split_once("</nav>").unwrap();
             let links: Vec<&str> = ["#home", "#setup", "#install", "#from-source"]
                 .into_iter()
                 .filter(|url| toc.contains(&format!(r#"href="{url}""#)))

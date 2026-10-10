@@ -2,7 +2,9 @@
 
 - Status: accepted; amended by [0027](./0027-drawing-mermaid-diagrams.md),
   which draws a ```` ```mermaid ```` block as a diagram, unless
-  `markdown.mermaid` is `false`
+  `markdown.mermaid` is `false`, and by
+  [0033](./0033-the-built-in-themes-design.md), whose built-in theme shows
+  code light or dark, as the page is, and colours GitHub's classes too
 - Date: 2026-10-04
 
 ## Context

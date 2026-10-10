@@ -5,7 +5,9 @@
   help, by [0027](./0027-drawing-mermaid-diagrams.md), which draws their
   Mermaid diagrams as SVG, and by
   [0029](./0029-plugins-that-render-code-blocks.md), which gives the code
-  blocks in their Markdown, but not their code cells, to plugins
+  blocks in their Markdown, but not their code cells, to plugins, and by
+  [0033](./0033-the-built-in-themes-design.md), whose built-in theme sets
+  `output` blocks apart from code with a dashed border
 - Date: 2026-10-04
 
 ## Context

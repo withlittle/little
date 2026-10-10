@@ -1,8 +1,37 @@
+{#- Icons, drawn on a 24px grid in the text's colour, so they follow the
+    theme's colours, and the system's in forced colours. Each is decorative:
+    the control it's in names what it does. -#}
+{%- macro icon(name) -%}
+<svg class="icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+{%- if name == "menu" -%}<path d="M4 6h16M4 12h16M4 18h16"/>
+{%- elif name == "close" -%}<path d="M6 6l12 12M18 6L6 18"/>
+{%- elif name == "repo" -%}<circle cx="6" cy="5" r="2"/><circle cx="6" cy="19" r="2"/><circle cx="18" cy="7" r="2"/><path d="M6 7v10M18 9c0 4.5-6 3.5-11 8.2"/>
+{%- elif name == "edit" -%}<path d="M4 20h4L19 9a2.1 2.1 0 0 0-3-3L5 17z"/><path d="M14 8l2 2"/>
+{%- elif name == "source" -%}<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M10.5 12.5L8.5 14.5l2 2M13.5 12.5l2 2-2 2"/>
+{%- elif name == "prev" -%}<path d="M15 6l-6 6 6 6"/>
+{%- elif name == "next" -%}<path d="M9 6l6 6-6 6"/>
+{%- endif -%}
+</svg>
+{%- endmacro -%}
+
+{#- page.toc is shaped like site.nav: each ### is a child of the ## above
+    it, and each item's url is its heading's #fragment. -#}
+{%- macro toc_list(items) -%}
+<ul>
+  {%- for item in items recursive %}
+  <li><a href="{{ item.url | safe }}">{{ item.title }}</a>{% if item.children %}<ul>{{ loop(item.children) }}</ul>{% endif %}</li>
+  {%- endfor %}
+</ul>
+{%- endmacro -%}
+
+{#- A site of one page has nowhere else to go, so it has no nav. -#}
+{%- set has_nav = site.nav and (site.nav | length > 1 or site.nav[0].children) -%}
 <!doctype html>
 <html lang="{{ site.lang | default('en') }}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
   <title>{% block title %}{{ page.title }} · {{ site.name }}{% endblock %}</title>
   {% if page.description %}<meta name="description" content="{{ page.description }}">{% endif %}
   {# The theme's own URLs go through `url`, which puts the path of the site's
@@ -24,98 +53,121 @@
   </style>
 </head>
 <body>
-  <header class="site-header{% if site.search %} has-search{% endif %}">
-    <a class="brand" href="{{ '/' | url }}">{{ site.name }}</a>
-    {% if site.description %}<span class="description">{{ site.description }}</span>{% endif %}
-    {% if site.repo %}<a class="repo-link" href="{{ site.repo | safe }}">Repository</a>{% endif %}
-    {% if site.search %}
-    {# A button that opens the search box, as ⌘K or Ctrl+K does. #}
-    <pagefind-modal-trigger></pagefind-modal-trigger>
-    <pagefind-modal></pagefind-modal>
-    {% endif %}
+  <a class="skip-link" href="#_main">Skip to content</a>
+
+  <header class="site-header">
+    <div class="site-header-inner">
+      {% if has_nav %}
+      {# Opens the nav as a drawer where there's no room to show it beside the
+         page. A popover needs no script. #}
+      <button class="icon-button menu-button" type="button" popovertarget="_nav" aria-label="Menu">{{ icon("menu") }}</button>
+      {% endif %}
+      <a class="brand" href="{{ '/' | url }}">{{ site.name }}</a>
+      {% if site.description %}<span class="description">{{ site.description }}</span>{% endif %}
+      <div class="header-actions">
+        {% if site.search %}
+        {# A button that opens the search box, as ⌘K or Ctrl+K does. #}
+        <pagefind-modal-trigger></pagefind-modal-trigger>
+        <pagefind-modal></pagefind-modal>
+        {% endif %}
+        {% if site.repo %}<a class="icon-button repo-link" href="{{ site.repo | safe }}" aria-label="Repository">{{ icon("repo") }}</a>{% endif %}
+      </div>
+    </div>
   </header>
 
-  <div class="layout{% if page.toc %} has-toc{% endif %}">
-    <nav class="sidebar" aria-label="Main navigation">
-      {# site.nav is shared across pages; the active item is the one whose url
-         matches page.url. Folders without a README render as plain labels. #}
-      <ul>
+  <div class="layout">
+    {% if has_nav %}
+    <nav class="sidebar" id="_nav" aria-label="Main" popover>
+      <div class="sidebar-top">
+        <a class="brand" href="{{ '/' | url }}">{{ site.name }}</a>
+        <button class="icon-button" type="button" popovertarget="_nav" popovertargetaction="hide" aria-label="Close menu">{{ icon("close") }}</button>
+      </div>
+      {# site.nav is shared across pages; the current page is the one whose url
+         matches page.url. A folder without a README is a plain label, and
+         each top-level folder is a group. #}
+      <ul class="nav">
         {% for item in site.nav recursive %}
-        <li>
+        <li{% if item.children %} class="nav-group"{% endif %}>
           {% if item.url %}
-          <a href="{{ item.url | safe }}"{% if item.url == page.url %} class="active" aria-current="page"{% endif %}>{{ item.title }}</a>
+          <a href="{{ item.url | safe }}"{% if item.url == page.url %} aria-current="page"{% endif %}>{{ item.title }}</a>
           {% else %}
-          <span class="nav-section">{{ item.title }}</span>
+          <span class="nav-label">{{ item.title }}</span>
           {% endif %}
           {% if item.children %}<ul>{{ loop(item.children) }}</ul>{% endif %}
         </li>
         {% endfor %}
       </ul>
     </nav>
+    {% endif %}
 
-    <main class="content">
-      {# page.breadcrumbs is what's above this page in site.nav, from the top
-         down; the home page has none. Folders without a README are labels. #}
-      {% if page.breadcrumbs %}
-      <nav class="breadcrumbs" aria-label="Breadcrumbs">
-        <ol>
-          {% for crumb in page.breadcrumbs %}
-          <li>{% if crumb.url %}<a href="{{ crumb.url | safe }}">{{ crumb.title }}</a>{% else %}{{ crumb.title }}{% endif %}</li>
-          {% endfor %}
-          <li><span aria-current="page">{{ page.title }}</span></li>
-        </ol>
-      </nav>
-      {% endif %}
+    <main id="_main">
+      <div class="page">
+        {# page.breadcrumbs is what's above this page in site.nav, from the top
+           down; the home page has none. Folders without a README are labels. #}
+        {% if page.breadcrumbs %}
+        <nav class="breadcrumbs" aria-label="Breadcrumbs">
+          <ol>
+            {% for crumb in page.breadcrumbs %}
+            <li>{% if crumb.url %}<a href="{{ crumb.url | safe }}">{{ crumb.title }}</a>{% else %}{{ crumb.title }}{% endif %}</li>
+            {% endfor %}
+            <li><span aria-current="page">{{ page.title }}</span></li>
+          </ol>
+        </nav>
+        {% endif %}
 
-      {% block content %}{{ page.content | safe }}{% endblock %}
+        {# Where there's no room for the table of contents beside the page, it
+           folds up above it. #}
+        {% if page.toc %}
+        <details class="toc-inline">
+          <summary>On this page</summary>
+          <nav aria-label="On this page">{{ toc_list(page.toc) }}</nav>
+        </details>
+        {% endif %}
 
-      {# page.edit_url and page.source_url are where to edit and view the
-         page's file in site.repo, if it's on GitHub or GitLab. #}
-      {% if page.edit_url or page.source_url %}
-      <div class="page-links">
-        {% if page.edit_url %}<a href="{{ page.edit_url | safe }}">Edit this page</a>{% endif %}
-        {% if page.source_url %}<a href="{{ page.source_url | safe }}">View source of this page</a>{% endif %}
+        <article class="content">
+          {% block content %}{{ page.content | safe }}{% endblock %}
+        </article>
+
+        {# page.edit_url and page.source_url are where to edit and view the
+           page's file in site.repo, if it's on GitHub or GitLab. #}
+        {% if page.edit_url or page.source_url %}
+        <div class="page-links">
+          {% if page.edit_url %}<a href="{{ page.edit_url | safe }}">{{ icon("edit") }}<span>Edit this page</span></a>{% endif %}
+          {% if page.source_url %}<a href="{{ page.source_url | safe }}">{{ icon("source") }}<span>View source of this page</span></a>{% endif %}
+        </div>
+        {% endif %}
+
+        {# page.prev and page.next follow site.nav from top to bottom; the first
+           page has no prev, and the last no next. #}
+        {% if page.prev or page.next %}
+        <nav class="pager" aria-label="Previous and next pages">
+          {% if page.prev %}
+          <a class="pager-prev" href="{{ page.prev.url | safe }}" rel="prev">
+            <span class="pager-label">{{ icon("prev") }}Previous</span>
+            <span class="pager-title">{{ page.prev.title }}</span>
+          </a>
+          {% endif %}
+          {% if page.next %}
+          <a class="pager-next" href="{{ page.next.url | safe }}" rel="next">
+            <span class="pager-label">Next{{ icon("next") }}</span>
+            <span class="pager-title">{{ page.next.title }}</span>
+          </a>
+          {% endif %}
+        </nav>
+        {% endif %}
       </div>
-      {% endif %}
 
-      {# page.prev and page.next follow site.nav from top to bottom; the first
-         page has no prev, and the last no next. #}
-      {% if page.prev or page.next %}
-      <nav class="pager" aria-label="Previous and next pages">
-        {% if page.prev %}
-        <a class="pager-prev" href="{{ page.prev.url | safe }}" rel="prev">
-          <span class="pager-label">Previous</span>
-          {{ page.prev.title }}
-        </a>
-        {% endif %}
-        {% if page.next %}
-        <a class="pager-next" href="{{ page.next.url | safe }}" rel="next">
-          <span class="pager-label">Next</span>
-          {{ page.next.title }}
-        </a>
-        {% endif %}
+      {% if page.toc %}
+      <nav class="toc" aria-labelledby="_toc">
+        <h2 class="toc-title" id="_toc">On this page</h2>
+        {{ toc_list(page.toc) }}
       </nav>
       {% endif %}
     </main>
-
-    {% if page.toc %}
-    <aside class="toc" aria-label="On this page">
-      <p class="toc-title">On this page</p>
-      {# page.toc is shaped like site.nav: each ### is a child of the ## above it. #}
-      <ul>
-        {% for item in page.toc recursive %}
-        <li>
-          <a href="{{ item.url | safe }}">{{ item.title }}</a>
-          {% if item.children %}<ul>{{ loop(item.children) }}</ul>{% endif %}
-        </li>
-        {% endfor %}
-      </ul>
-    </aside>
-    {% endif %}
   </div>
 
   <footer class="site-footer">
-    Built with <strong>little</strong> — this theme owns 100% of the markup.
+    <p>Built with little</p>
   </footer>
 </body>
 </html>
