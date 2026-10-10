@@ -28,7 +28,8 @@ does:
 - A [notebook](../writing/notebooks.ipynb)'s output, like what its code
   printed, is a code block in `output`,
   `<pre class="highlight"><code class="language-output">`, which the built-in
-  theme shows lighter than code, with `pre:has(> code.language-output)`. A
+  theme sets apart from code with a dashed border, with
+  `pre:has(> code.language-output)`. A
   chart is an `<img>` with a `data:` URL, in a `<p>` of its own, and a table
   pandas shows is its `<div>`, `<style>`, and `<table class="dataframe">`,
   which the built-in theme shows as Jupyter does: as wide as its columns, and
@@ -44,7 +45,7 @@ does:
   [`mermaid`](../writing/diagrams.md#choosing-how-diagrams-look) in its
   `little.yml` instead. It's as wide as it's drawn, but no wider than the
   page. The built-in theme centres each with
-  `svg[id^="mermaid-"] { display: block; margin: 1.2rem auto; }`.
+  `svg[id^="mermaid-"] { display: block; margin: 1.5rem auto; }`.
 - A theme gets the site's
   [extensions](../writing/markdown.md#choosing-markdowns-extensions) as
   `site.markdown`, so it can load a script only for a site that needs it,

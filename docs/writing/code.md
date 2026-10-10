@@ -62,8 +62,8 @@ markdown:
 
 - A theme sets it in its `little.yml`, for the classes its CSS colours, and
   the site's `little.yml` has the last word. The built-in theme colours
-  Pygments' classes. A page can't choose its own highlighting in its
-  frontmatter.
+  Pygments' classes and GitHub's, light or dark, as the page is. A page
+  can't choose its own highlighting in its frontmatter.
 - Anything but `pygments`, `github`, or `false` is an error, and every
   command stops and says why.
 - [Styling Markdown](../themes/styling-markdown.md) shows the HTML a

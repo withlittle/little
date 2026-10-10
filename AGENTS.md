@@ -103,7 +103,8 @@ Content and theme live outside `src/`:
   Meta docs, like ADRs, don't go here.
 - `theme/` — little's built-in theme, compiled into the binary: `_templates/`
   (MiniJinja; `default.html` is required) + `_static/` (copied to the site's
-  root) + an optional `little.yml`. It's plain CSS: `builtin` has no `_sass/`.
+  root) + an optional `little.yml`. It's plain CSS, in cascade layers:
+  `builtin` has no `_sass/`.
   List every file in it in `builtin` in `src/theme.rs`; a test checks. Its
   search box is Pagefind's, deferred so it finds the `pagefind/` little
   writes.
@@ -342,3 +343,13 @@ Record notable choices as short ADRs in `decisions/`. Locked so far:
   to do, and ordered by `nav` in `little.yml`; each page uses what it
   documents, and the README points to it — see
   [`decisions/0032-docs-are-the-manual.md`](./decisions/0032-docs-are-the-manual.md).
+- **The built-in theme's design:** plain CSS, with no framework or Node, in
+  cascade layers, `little.tokens` to `little.print`, so CSS that isn't in a
+  layer wins over it, but for a few `!important`s, and it works without a
+  script. Its colours are
+  tokens, each a `light-dark()` pair, light or dark as the reader's system
+  is. Below 60rem, the nav is a popover drawer, and below 75rem, the table
+  of contents folds up above the page. It has a skip link, landmarks, a
+  visible focus ring, AA contrast, underlined links, and styles for reduced
+  motion, forced colours, and print, and needs browsers from 2024 — see
+  [`decisions/0033-the-built-in-themes-design.md`](./decisions/0033-the-built-in-themes-design.md).

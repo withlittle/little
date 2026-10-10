@@ -133,8 +133,9 @@ mermaid:
   font, Courier, and a generic sans-serif, as it can't see the font itself,
   so in another font, a label can fit a little loosely, or tightly.
 - A build draws each diagram in one look, so diagrams don't turn dark in
-  dark mode: a dark theme can set `theme: dark`. A page can't choose its
-  diagrams' look in its frontmatter.
+  dark mode: the built-in theme shows each on a light card, and a dark theme
+  can set `theme: dark`. A page can't choose its diagrams' look in its
+  frontmatter.
 - `mermaid` must be settings, its `theme` one of Mermaid's, and no setting
   can be empty: otherwise, every command stops and says why. little doesn't
   check the rest, so a setting Mermaid doesn't have, like `themeVariable`,

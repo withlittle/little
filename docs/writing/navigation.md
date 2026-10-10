@@ -6,8 +6,9 @@ description: The sidebar, previous and next pages, breadcrumbs, and tables of co
 # Navigation
 
 little works out a site's navigation, for its theme to show: the nav, which
-the built-in theme shows in its sidebar, each page's previous and next
-pages, its breadcrumbs, and its table of contents.
+the built-in theme shows in its sidebar, or, on a phone or a tablet, in a
+menu opened from its header, each page's previous and next pages, its
+breadcrumbs, and its table of contents.
 
 ## The nav
 
@@ -62,8 +63,9 @@ above each page's title.
 ## Tables of contents
 
 Each page's headings are its table of contents, which the built-in theme
-shows to the right of the page, as "On this page", with each `###` under the
-`##` above it. It lists headings from one level to another, 2 for `##` to 6
+shows as "On this page", with each `###` under the `##` above it: to the
+right of the page on a wide screen, and above it, folded up, on a narrower
+one. It lists headings from one level to another, 2 for `##` to 6
 for `######`:
 
 | Key | Default | Lists headings… |
