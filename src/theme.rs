@@ -54,10 +54,16 @@ pub mod builtin {
         ),
     ];
     /// Its static files, by their path from `_static/`.
-    pub const STATIC: &[(&str, &[u8])] = &[(
-        "assets/style.css",
-        include_bytes!("../theme/_static/assets/style.css"),
-    )];
+    pub const STATIC: &[(&str, &[u8])] = &[
+        (
+            "assets/script.js",
+            include_bytes!("../theme/_static/assets/script.js"),
+        ),
+        (
+            "assets/style.css",
+            include_bytes!("../theme/_static/assets/style.css"),
+        ),
+    ];
 }
 
 /// The types of page little builds. A theme can give each one its own

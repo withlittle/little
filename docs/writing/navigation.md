@@ -64,8 +64,9 @@ above each page's title.
 
 Each page's headings are its table of contents, which the built-in theme
 shows as "On this page", with each `###` under the `##` above it: to the
-right of the page on a wide screen, and above it, folded up, on a narrower
-one. It lists headings from one level to another, 2 for `##` to 6
+right of the page on a wide screen, marking the section being read, and
+above it, folded up, on a narrower one, folding up again once a heading in
+it is picked. It lists headings from one level to another, 2 for `##` to 6
 for `######`:
 
 | Key | Default | Lists headings… |

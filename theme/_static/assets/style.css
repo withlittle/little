@@ -10,8 +10,8 @@
 
 @layer little.tokens {
   :root {
-    /* Light or dark, as the reader's system is. Each colour is a pair,
-       light-dark(light, dark). */
+    /* Light, unless the system is dark; the theme toggle sets data-theme to
+       override it. Each colour is a pair, light-dark(light, dark). */
     color-scheme: light dark;
 
     --font: system-ui, sans-serif;
@@ -80,6 +80,9 @@
     --caution-bg: light-dark(rgb(209 36 47 / 0.06), rgb(248 81 73 / 0.1));
   }
 
+  :root[data-theme="light"] { color-scheme: light; }
+  :root[data-theme="dark"] { color-scheme: dark; }
+
   @media (width >= 48rem) {
     :root { --gutter: 2rem; }
   }
@@ -125,6 +128,18 @@
     height: 1.25rem;
   }
 
+  .visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
+  }
+
   .skip-link {
     position: fixed;
     top: 0.75rem;
@@ -141,7 +156,7 @@
 }
 
 @layer little.layout {
-  /* Header: the site's name, and its search and repository. */
+  /* Header: the site's name, and its search, theme toggle, and repository. */
   .site-header {
     position: sticky;
     top: 0;
@@ -328,6 +343,17 @@
     .menu-button { display: none; }
   }
 
+  /* The theme toggle needs the theme's script, and shows the colours the
+     page is in. */
+  html:not(.js) .theme-toggle { display: none; }
+  .theme-toggle .icon:last-child { display: none; }
+  :root[data-theme="dark"] .theme-toggle .icon:first-child { display: none; }
+  :root[data-theme="dark"] .theme-toggle .icon:last-child { display: block; }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) .theme-toggle .icon:first-child { display: none; }
+    :root:not([data-theme="light"]) .theme-toggle .icon:last-child { display: block; }
+  }
+
   /* Pagefind's search button, as wide as a search box where there's room,
      and an icon where there isn't. Pagefind's own selectors are as specific
      as an ID, so restyling it needs !important. */
@@ -426,7 +452,7 @@
   }
   .breadcrumbs a:hover { color: var(--accent); }
 
-  /* The table of contents beside the page. */
+  /* The table of contents beside the page, which marks where the reader is. */
   .toc {
     position: sticky;
     top: calc(var(--header-height) + 2rem);
@@ -459,6 +485,10 @@
   }
   .toc ul ul a { padding-left: 1.75rem; }
   .toc a:hover { color: var(--text); }
+  .toc a[data-current] {
+    border-left-color: var(--accent);
+    color: var(--accent);
+  }
 
   /* The table of contents folded above the page. */
   .toc-inline {
@@ -569,6 +599,27 @@
     .pager { grid-template-columns: minmax(0, 1fr); }
     .pager-next { grid-column: auto; }
   }
+
+  /* A code block's copy button, which the theme's script adds. */
+  .code-block { position: relative; }
+  .copy-button {
+    position: absolute;
+    top: 0.5rem;
+    right: 0.5rem;
+    width: 2rem;
+    height: 2rem;
+    border-color: var(--border);
+    background: var(--code-bg);
+    opacity: 0;
+    transition: opacity 0.15s;
+  }
+  .copy-button .icon { width: 1rem; height: 1rem; }
+  .code-block:hover .copy-button,
+  .copy-button:focus-visible,
+  .copy-button[data-copied] { opacity: 1; }
+  @media (hover: none) {
+    .copy-button { opacity: 1; }
+  }
 }
 
 @layer little.content {
@@ -617,9 +668,10 @@
     color: var(--text-muted);
     font-size: 1.125rem;
   }
-  .content :is(p, ul, ol, dl, blockquote, pre, table, details, figure, .markdown-alert) {
+  .content :is(p, ul, ol, dl, blockquote, pre, table, details, figure, .code-block, .markdown-alert) {
     margin-block: 1.25rem;
   }
+  .content .code-block > pre { margin: 0; }
 
   /* Each heading's link to itself, after its text: a "#", shown when the
      heading is hovered or the link has focus. Its label names it to screen
@@ -730,8 +782,9 @@
   }
   /* On a phone, a code block runs from edge to edge, to fit more code. */
   @media (width < 40rem) {
-    .content > pre {
-      margin-inline: calc(-1 * var(--gutter));
+    .content > :is(pre, .code-block) { margin-inline: calc(-1 * var(--gutter)); }
+    .content > pre,
+    .content > .code-block > pre {
       padding-inline: var(--gutter);
       border-inline: 0;
       border-radius: 0;
@@ -907,6 +960,10 @@
 @media (forced-colors: active) {
   @layer little.components {
     .nav a[aria-current="page"] { outline: 2px solid; }
+    /* A transparent border is forced to show, so the current heading's bar
+       would differ from the others only in colour. */
+    .toc a { border-left-color: Canvas; }
+    .toc a[data-current] { border-left-color: Highlight; }
   }
   @layer little.content {
     .content .markdown-alert-title::before {
@@ -927,6 +984,7 @@
     .breadcrumbs,
     .page-links,
     .pager,
+    .copy-button,
     .site-footer { display: none !important; }
     .layout,
     main { display: block; padding: 0; }
