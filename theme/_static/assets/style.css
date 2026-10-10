@@ -1,345 +1,1021 @@
-/* little default theme — every style here belongs to the THEME, not to little. */
+/* little's built-in theme. Every style here belongs to the theme, not to
+   little: little writes the Markdown's HTML, and the theme the rest.
 
-* { box-sizing: border-box; }
+   It's plain CSS, in cascade layers, so any stylesheet that isn't in a layer,
+   like one a site adds, wins over it, however specific its selectors. Its
+   colours, sizes, and fonts are custom properties, in `little.tokens`: set
+   one, like `--accent`, to change it everywhere, in light and dark. */
 
-html { -webkit-text-size-adjust: 100%; }
+@layer little.tokens, little.base, little.layout, little.components, little.content, little.print;
 
-body {
-  margin: 0;
-  font-family: var(--font, system-ui, sans-serif);
-  color: #1f2328;
-  line-height: 1.65;
-  background: #ffffff;
+@layer little.tokens {
+  :root {
+    /* Light, unless the system is dark; the theme toggle sets data-theme to
+       override it. Each colour is a pair, light-dark(light, dark). */
+    color-scheme: light dark;
+
+    --font: system-ui, sans-serif;
+    --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+
+    --bg: light-dark(#ffffff, #0f1117);
+    --bg-subtle: light-dark(#f6f7f9, #151921);
+    --bg-muted: light-dark(#eef0f3, #1d222c);
+    --header-bg: light-dark(rgb(255 255 255 / 0.85), rgb(15 17 23 / 0.8));
+    --border: light-dark(#e3e6ea, #262b35);
+    --border-strong: light-dark(#cdd2d9, #394150);
+    --text: light-dark(#1f2329, #e3e6eb);
+    --text-muted: light-dark(#5a626d, #9aa2ad);
+    --heading: light-dark(#0f1217, #f5f6f8);
+
+    --accent: light-dark(#7c3aed, #a78bfa);
+    --accent-hover: light-dark(#6d28d9, #c4b5fd);
+    --accent-soft: light-dark(rgb(124 58 237 / 0.08), rgb(167 139 250 / 0.12));
+    --accent-line: light-dark(rgb(124 58 237 / 0.35), rgb(167 139 250 / 0.45));
+
+    --code-bg: light-dark(#f6f8fa, #151b23);
+    --code-text: light-dark(#1f2328, #e6edf3);
+    --inline-code-bg: light-dark(rgb(129 139 152 / 0.15), rgb(110 118 129 / 0.3));
+    /* A diagram is drawn for a light page, so it sits on a light card in dark
+       mode. */
+    --diagram-bg: light-dark(transparent, #f6f8fa);
+
+    --shadow-sm: 0 1px 2px light-dark(rgb(15 23 42 / 0.06), rgb(0 0 0 / 0.4));
+    --shadow-lg: 0 12px 32px light-dark(rgb(15 23 42 / 0.16), rgb(0 0 0 / 0.6));
+
+    --radius-sm: 0.25rem;
+    --radius: 0.5rem;
+    --radius-lg: 0.75rem;
+
+    --header-height: 3.75rem;
+    --sidebar-width: 17rem;
+    --toc-width: 13rem;
+    --content-width: 46rem;
+    --page-width: 90rem;
+    --gutter: 1.25rem;
+
+    /* Syntax colours, after GitHub's light and dark themes: for Pygments'
+       classes, and GitHub's own, whichever `markdown.highlight` chooses. */
+    --syntax-comment: light-dark(#59636e, #9198a1);
+    --syntax-keyword: light-dark(#cf222e, #ff7b72);
+    --syntax-string: light-dark(#0a3069, #a5d6ff);
+    --syntax-constant: light-dark(#0550ae, #79c0ff);
+    --syntax-function: light-dark(#6639ba, #d2a8ff);
+    --syntax-tag: light-dark(#116329, #7ee787);
+    --syntax-variable: light-dark(#953800, #ffa657);
+    --syntax-inserted: light-dark(#116329, #aff5b4);
+    --syntax-inserted-bg: light-dark(#dafbe1, #033a16);
+    --syntax-deleted: light-dark(#82071e, #ffdcd7);
+    --syntax-deleted-bg: light-dark(#ffebe9, #67060c);
+
+    /* Alerts, in GitHub's colours. */
+    --note: light-dark(#0969da, #4493f8);
+    --note-bg: light-dark(rgb(9 105 218 / 0.06), rgb(68 147 248 / 0.1));
+    --tip: light-dark(#1a7f37, #3fb950);
+    --tip-bg: light-dark(rgb(26 127 55 / 0.06), rgb(63 185 80 / 0.1));
+    --important: light-dark(#8250df, #ab7df8);
+    --important-bg: light-dark(rgb(130 80 223 / 0.06), rgb(171 125 248 / 0.1));
+    --warning: light-dark(#8f5f00, #d29922);
+    --warning-bg: light-dark(rgb(143 95 0 / 0.07), rgb(210 153 34 / 0.1));
+    --caution: light-dark(#d1242f, #f85149);
+    --caution-bg: light-dark(rgb(209 36 47 / 0.06), rgb(248 81 73 / 0.1));
+  }
+
+  :root[data-theme="light"] { color-scheme: light; }
+  :root[data-theme="dark"] { color-scheme: dark; }
+
+  @media (width >= 48rem) {
+    :root { --gutter: 2rem; }
+  }
 }
 
-a { color: #7c3aed; text-decoration: none; }
-a:hover { text-decoration: underline; }
+@layer little.base {
+  *, *::before, *::after { box-sizing: border-box; }
 
-/* Header */
-.site-header {
-  display: flex;
-  align-items: baseline;
-  gap: 0.75rem;
-  padding: 1rem 1.5rem;
-  border-bottom: 1px solid #ebedf0;
-  position: sticky;
-  top: 0;
-  background: rgba(255, 255, 255, 0.85);
-  backdrop-filter: saturate(180%) blur(8px);
-  z-index: 10;
-}
-.brand {
-  font-weight: 700;
-  font-size: 1.15rem;
-  color: #1f2328;
-}
-.brand:hover { text-decoration: none; }
-.description { color: #6b727c; font-size: 0.9rem; }
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+    /* Keep what a link jumps to, like a heading, clear of the sticky header. */
+    scroll-padding-top: calc(var(--header-height) + 1.5rem);
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    html { scroll-behavior: smooth; }
+  }
 
-/* Search: Pagefind's search box, in this theme's font and colours, with its
-   button at the right of the header. */
+  body {
+    margin: 0;
+    font-family: var(--font);
+    font-size: 1rem;
+    line-height: 1.6;
+    color: var(--text);
+    background: var(--bg);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  a { color: var(--accent); }
+  a:hover { color: var(--accent-hover); }
+
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  ::selection { background: light-dark(rgb(124 58 237 / 0.18), rgb(167 139 250 / 0.32)); }
+
+  .icon {
+    flex: none;
+    width: 1.25rem;
+    height: 1.25rem;
+  }
+
+  .visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  .skip-link {
+    position: fixed;
+    top: 0.75rem;
+    left: 0.75rem;
+    z-index: 100;
+    padding: 0.5rem 1rem;
+    border-radius: var(--radius);
+    background: var(--bg);
+    box-shadow: var(--shadow-lg);
+    font-weight: 600;
+    translate: 0 -200%;
+  }
+  .skip-link:focus { translate: none; }
+}
+
+@layer little.layout {
+  /* Header: the site's name, and its search, theme toggle, and repository. */
+  .site-header {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    height: var(--header-height);
+    border-bottom: 1px solid var(--border);
+    background: var(--header-bg);
+    backdrop-filter: saturate(180%) blur(12px);
+  }
+  .site-header-inner {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    height: 100%;
+    max-width: var(--page-width);
+    margin-inline: auto;
+    padding-inline: var(--gutter);
+  }
+  .brand {
+    color: var(--heading);
+    font-size: 1.0625rem;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    text-decoration: none;
+    white-space: nowrap;
+  }
+  .brand:hover { color: var(--heading); }
+  .description {
+    overflow: hidden;
+    margin-left: 0.5rem;
+    padding-left: 0.75rem;
+    border-left: 1px solid var(--border);
+    color: var(--text-muted);
+    font-size: 0.875rem;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  .header-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    margin-left: auto;
+  }
+
+  /* The nav, the page, and its table of contents, side by side where
+     there's room for them. */
+  .layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    max-width: var(--page-width);
+    margin-inline: auto;
+  }
+  main {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 3rem;
+    min-width: 0;
+    padding: 2rem var(--gutter) 4rem;
+  }
+  .page {
+    width: 100%;
+    max-width: var(--content-width);
+    min-width: 0;
+    margin-inline: auto;
+  }
+
+  /* Phones and tablets: the nav is a drawer, opened from the header. */
+  @media (width < 60rem) {
+    .sidebar[popover] {
+      position: fixed;
+      inset: 0 auto 0 0;
+      width: min(20rem, 85vw);
+      height: 100dvh;
+      max-height: none;
+      margin: 0;
+      padding: 0 1rem 2rem;
+      border: 0;
+      border-right: 1px solid var(--border);
+      background: var(--bg);
+      color: var(--text);
+      box-shadow: var(--shadow-lg);
+      overflow-y: auto;
+      overscroll-behavior: contain;
+    }
+    .sidebar::backdrop { background: rgb(0 0 0 / 0.4); }
+    .sidebar-top {
+      position: sticky;
+      top: 0;
+      z-index: 1;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: var(--header-height);
+      margin: 0 -1rem 0.5rem;
+      padding-inline: 1rem;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg);
+    }
+    .sidebar-top .brand { padding-left: 0.75rem; }
+
+    @media (prefers-reduced-motion: no-preference) {
+      .sidebar[popover],
+      .sidebar::backdrop {
+        transition: translate 0.2s ease-out, opacity 0.2s ease-out,
+          display 0.2s allow-discrete, overlay 0.2s allow-discrete;
+      }
+      .sidebar[popover]:not(:popover-open) { translate: -100% 0; }
+      .sidebar:not(:popover-open)::backdrop { opacity: 0; }
+      @starting-style {
+        .sidebar:popover-open { translate: -100% 0; }
+        .sidebar:popover-open::backdrop { opacity: 0; }
+      }
+    }
+  }
+
+  /* Laptops and up: the nav is a column of its own, which scrolls by itself. */
+  @media (width >= 60rem) {
+    .layout:has(> .sidebar) { grid-template-columns: var(--sidebar-width) minmax(0, 1fr); }
+    .sidebar[popover] {
+      position: sticky;
+      inset: var(--header-height) auto auto;
+      display: block;
+      width: auto;
+      height: calc(100dvh - var(--header-height));
+      margin: 0;
+      padding: 2rem 1rem 2rem var(--gutter);
+      border: 0;
+      border-right: 1px solid var(--border);
+      background: none;
+      color: inherit;
+      overflow-y: auto;
+      overscroll-behavior: contain;
+      scrollbar-width: thin;
+      scrollbar-color: var(--border-strong) transparent;
+    }
+    .sidebar-top { display: none; }
+  }
+
+  /* Wide screens: the table of contents is a column beside the page. */
+  @media (width >= 75rem) {
+    main:has(> .toc) { grid-template-columns: minmax(0, 1fr) var(--toc-width); }
+  }
+  @media (width < 75rem) {
+    .toc { display: none; }
+  }
+  @media (width >= 75rem) {
+    .toc-inline { display: none; }
+  }
+
+  .site-footer {
+    padding: 2rem var(--gutter);
+    border-top: 1px solid var(--border);
+    color: var(--text-muted);
+    font-size: 0.875rem;
+    text-align: center;
+  }
+  .site-footer p { margin: 0; }
+
+  @media (width < 40rem) {
+    .description { display: none; }
+  }
+}
+
+@layer little.components {
+  .icon-button {
+    display: inline-grid;
+    place-items: center;
+    width: 2.5rem;
+    height: 2.5rem;
+    padding: 0;
+    /* Transparent, so it shows in forced colours. */
+    border: 1px solid transparent;
+    border-radius: var(--radius);
+    background: none;
+    color: var(--text-muted);
+    cursor: pointer;
+  }
+  .icon-button:hover {
+    background: var(--bg-muted);
+    color: var(--text);
+  }
+  .menu-button { margin-left: -0.5rem; }
+  @media (width >= 60rem) {
+    .menu-button { display: none; }
+  }
+
+  /* The theme toggle needs the theme's script, and shows the colours the
+     page is in. */
+  html:not(.js) .theme-toggle { display: none; }
+  .theme-toggle .icon:last-child { display: none; }
+  :root[data-theme="dark"] .theme-toggle .icon:first-child { display: none; }
+  :root[data-theme="dark"] .theme-toggle .icon:last-child { display: block; }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) .theme-toggle .icon:first-child { display: none; }
+    :root:not([data-theme="light"]) .theme-toggle .icon:last-child { display: block; }
+  }
+
+  /* Pagefind's search button, as wide as a search box where there's room,
+     and an icon where there isn't. Pagefind's own selectors are as specific
+     as an ID, so restyling it needs !important. */
+  .site-header pagefind-modal-trigger {
+    display: block;
+    width: 15rem;
+    margin-right: 0.25rem;
+  }
+  @media (width < 48rem) {
+    .site-header pagefind-modal-trigger { width: auto; margin-right: 0; }
+    .site-header .pf-trigger-btn {
+      justify-content: center !important;
+      width: 2.5rem !important;
+      height: 2.5rem !important;
+      padding: 0 !important;
+      border-color: transparent !important;
+      background: none !important;
+    }
+    .site-header .pf-trigger-btn:hover { background: var(--bg-muted) !important; }
+    .site-header .pf-trigger-icon {
+      width: 1.125rem !important;
+      height: 1.125rem !important;
+    }
+    .site-header :is(.pf-trigger-text, .pf-trigger-shortcut) { display: none !important; }
+  }
+  /* Pagefind's label for the button is lower case, in most languages. */
+  .site-header .pf-trigger-text::first-letter { text-transform: uppercase; }
+
+  /* The site's nav: a group for each top-level folder, and a line down the
+     side of the pages in a folder within it. */
+  .nav,
+  .nav ul {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .nav :is(a, .nav-label) {
+    display: block;
+    padding: 0.375rem 0.75rem;
+    border-radius: var(--radius);
+    color: var(--text-muted);
+    font-size: 0.9375rem;
+    line-height: 1.4;
+    text-decoration: none;
+  }
+  .nav a:hover {
+    background: var(--bg-muted);
+    color: var(--text);
+  }
+  .nav a[aria-current="page"] {
+    background: var(--accent-soft);
+    color: var(--accent);
+    font-weight: 600;
+  }
+  .nav > .nav-group { margin-top: 1.25rem; }
+  .nav > .nav-group > :is(a, .nav-label) {
+    margin-bottom: 0.125rem;
+    color: var(--heading);
+    font-size: 0.875rem;
+    font-weight: 650;
+  }
+  /* Line the text of the nav up with the site's name above it. */
+  @media (width >= 60rem) {
+    .sidebar .nav { margin-left: -0.75rem; }
+  }
+  .nav ul ul {
+    margin: 0.125rem 0 0.25rem 0.75rem;
+    padding-left: 0.5rem;
+    border-left: 1px solid var(--border);
+  }
+
+  /* The trail of folders above the page. */
+  .breadcrumbs {
+    margin-bottom: 1rem;
+    color: var(--text-muted);
+    font-size: 0.875rem;
+  }
+  .breadcrumbs ol {
+    display: flex;
+    flex-wrap: wrap;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  /* A "›" between items. Its empty alt text keeps screen readers, which announce
+     a list, from reading it too; browsers without alt text use the first line. */
+  .breadcrumbs li + li::before {
+    content: "\203A";
+    content: "\203A" / "";
+    margin: 0 0.5rem;
+    color: var(--border-strong);
+  }
+  .breadcrumbs a {
+    color: var(--text-muted);
+    text-decoration: none;
+  }
+  .breadcrumbs a:hover { color: var(--accent); }
+
+  /* The table of contents beside the page, which marks where the reader is. */
+  .toc {
+    position: sticky;
+    top: calc(var(--header-height) + 2rem);
+    align-self: start;
+    max-height: calc(100dvh - var(--header-height) - 4rem);
+    overflow-y: auto;
+    font-size: 0.875rem;
+    scrollbar-width: thin;
+  }
+  .toc-title {
+    margin: 0 0 0.75rem;
+    color: var(--heading);
+    font-size: 0.875rem;
+    font-weight: 650;
+  }
+  .toc ul {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .toc > ul { border-left: 1px solid var(--border); }
+  .toc a {
+    display: block;
+    margin-left: -1px;
+    padding: 0.3rem 0 0.3rem 0.875rem;
+    border-left: 2px solid transparent;
+    color: var(--text-muted);
+    line-height: 1.4;
+    text-decoration: none;
+  }
+  .toc ul ul a { padding-left: 1.75rem; }
+  .toc a:hover { color: var(--text); }
+  .toc a[data-current] {
+    border-left-color: var(--accent);
+    color: var(--accent);
+  }
+
+  /* The table of contents folded above the page. */
+  .toc-inline {
+    margin-bottom: 2rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    background: var(--bg-subtle);
+    font-size: 0.9375rem;
+  }
+  .toc-inline summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.625rem 1rem;
+    color: var(--heading);
+    font-weight: 600;
+    cursor: pointer;
+    list-style: none;
+  }
+  .toc-inline summary::-webkit-details-marker { display: none; }
+  .toc-inline summary::after {
+    content: "";
+    width: 0.5rem;
+    height: 0.5rem;
+    margin-right: 0.25rem;
+    border-right: 2px solid var(--text-muted);
+    border-bottom: 2px solid var(--text-muted);
+    rotate: 45deg;
+    translate: 0 -0.125rem;
+  }
+  .toc-inline[open] summary::after { rotate: 225deg; translate: 0 0.125rem; }
+  .toc-inline ul {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .toc-inline nav > ul { padding: 0 1rem 0.75rem; }
+  .toc-inline ul ul { padding-left: 1rem; }
+  .toc-inline a {
+    display: block;
+    padding: 0.3rem 0;
+    color: var(--text-muted);
+    text-decoration: none;
+  }
+  .toc-inline a:hover { color: var(--accent); }
+
+  /* Links to edit and view the page's file in the site's repository. */
+  .page-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem 1.5rem;
+    margin-top: 4rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--border);
+    font-size: 0.875rem;
+  }
+  .page-links a {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    color: var(--text-muted);
+    text-decoration: none;
+  }
+  .page-links a:hover { color: var(--accent); }
+  .page-links .icon { width: 1rem; height: 1rem; }
+
+  /* The previous and next pages. */
+  .pager {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+    margin-top: 3rem;
+  }
+  .page-links + .pager { margin-top: 1.5rem; }
+  .pager a {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    padding: 0.875rem 1.125rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    color: var(--heading);
+    font-weight: 600;
+    text-decoration: none;
+  }
+  .pager a:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+  .pager-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    color: var(--text-muted);
+    font-size: 0.8125rem;
+    font-weight: 400;
+  }
+  .pager-label .icon { width: 1rem; height: 1rem; }
+  .pager-prev .pager-label { margin-left: -0.25rem; }
+  .pager-next .pager-label { margin-right: -0.25rem; }
+  /* Keep "Next" on the right, even on the first page. */
+  .pager-next {
+    grid-column: 2;
+    align-items: flex-end;
+    text-align: right;
+  }
+  @media (width < 30rem) {
+    .pager { grid-template-columns: minmax(0, 1fr); }
+    .pager-next { grid-column: auto; }
+  }
+
+  /* A code block's copy button, which the theme's script adds. */
+  .code-block { position: relative; }
+  .copy-button {
+    position: absolute;
+    top: 0.5rem;
+    right: 0.5rem;
+    width: 2rem;
+    height: 2rem;
+    border-color: var(--border);
+    background: var(--code-bg);
+    opacity: 0;
+    transition: opacity 0.15s;
+  }
+  .copy-button .icon { width: 1rem; height: 1rem; }
+  .code-block:hover .copy-button,
+  .copy-button:focus-visible,
+  .copy-button[data-copied] { opacity: 1; }
+  @media (hover: none) {
+    .copy-button { opacity: 1; }
+  }
+}
+
+@layer little.content {
+  .content {
+    line-height: 1.7;
+    overflow-wrap: break-word;
+  }
+  .content > :first-child { margin-top: 0; }
+  .content > :last-child { margin-bottom: 0; }
+
+  .content :is(h1, h2, h3, h4, h5, h6) {
+    color: var(--heading);
+    line-height: 1.25;
+    text-wrap: balance;
+  }
+  .content h1 {
+    margin: 0 0 1rem;
+    font-size: clamp(2rem, 1.6rem + 1.2vw, 2.5rem);
+    font-weight: 750;
+    letter-spacing: -0.025em;
+  }
+  .content h2 {
+    margin: 3rem 0 1rem;
+    font-size: 1.5rem;
+    font-weight: 700;
+    letter-spacing: -0.015em;
+  }
+  .content h3 {
+    margin: 2.25rem 0 0.75rem;
+    font-size: 1.25rem;
+    font-weight: 650;
+    letter-spacing: -0.01em;
+  }
+  .content h4 {
+    margin: 2rem 0 0.5rem;
+    font-size: 1.0625rem;
+    font-weight: 650;
+  }
+  .content :is(h5, h6) {
+    margin: 1.75rem 0 0.5rem;
+    font-size: 1rem;
+    font-weight: 650;
+  }
+  /* The page's opening paragraph, a little larger. */
+  .content h1 + p {
+    color: var(--text-muted);
+    font-size: 1.125rem;
+  }
+  .content :is(p, ul, ol, dl, blockquote, pre, table, details, figure, .code-block, .markdown-alert) {
+    margin-block: 1.25rem;
+  }
+  .content .code-block > pre { margin: 0; }
+
+  /* Each heading's link to itself, after its text: a "#", shown when the
+     heading is hovered or the link has focus. Its label names it to screen
+     readers, so they don't read the "#". */
+  .content .anchor {
+    margin-left: 0.5rem;
+    color: var(--text-muted);
+    font-weight: 400;
+    text-decoration: none;
+    opacity: 0;
+  }
+  .content .anchor::before { content: "#"; }
+  .content :is(h1, h2, h3, h4, h5, h6):hover .anchor,
+  .content .anchor:focus-visible { opacity: 1; }
+  .content .anchor:hover { color: var(--accent); }
+
+  /* Links in the text are underlined, so they stand out by more than their
+     colour. */
+  .content a:not(.anchor) {
+    text-decoration-line: underline;
+    text-decoration-color: var(--accent-line);
+    text-decoration-thickness: 1px;
+    text-underline-offset: 0.2em;
+  }
+  .content a:not(.anchor):hover {
+    text-decoration-color: currentColor;
+    text-decoration-thickness: 2px;
+  }
+  .content sup a { text-decoration: none; }
+
+  .content strong { color: var(--heading); font-weight: 650; }
+
+  .content :is(ul, ol) { padding-left: 1.5rem; }
+  .content li { margin-block: 0.375rem; }
+  .content li > :is(ul, ol) { margin-block: 0.375rem; }
+  .content li::marker { color: var(--text-muted); }
+  .content li:has(> input[type="checkbox"]:first-child) { list-style: none; }
+  .content li > input[type="checkbox"]:first-child {
+    margin: 0 0.5rem 0 -1.5rem;
+    accent-color: var(--accent);
+  }
+  .content dt {
+    color: var(--heading);
+    font-weight: 600;
+  }
+  .content dd { margin: 0.25rem 0 0.75rem 1.5rem; }
+
+  .content blockquote {
+    margin-inline: 0;
+    padding-left: 1rem;
+    border-left: 3px solid var(--border-strong);
+    color: var(--text-muted);
+  }
+
+  .content hr {
+    margin-block: 2.5rem;
+    border: 0;
+    border-top: 1px solid var(--border);
+  }
+
+  .content img {
+    max-width: 100%;
+    height: auto;
+  }
+
+  .content mark {
+    padding: 0 0.125em;
+    border-radius: var(--radius-sm);
+    background: light-dark(#fff3b0, #5c4a00);
+    color: inherit;
+  }
+
+  .content kbd {
+    padding: 0.125em 0.375em;
+    border: 1px solid var(--border-strong);
+    border-bottom-width: 2px;
+    border-radius: var(--radius-sm);
+    background: var(--bg-subtle);
+    font-family: var(--font-mono);
+    font-size: 0.8125em;
+  }
+
+  /* Code: inline, and in blocks. */
+  .content code {
+    padding: 0.125em 0.375em;
+    border-radius: var(--radius-sm);
+    background: var(--inline-code-bg);
+    font-family: var(--font-mono);
+    font-size: 0.875em;
+  }
+  .content pre {
+    padding: 1rem 1.25rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    background: var(--code-bg);
+    color: var(--code-text);
+    font-family: var(--font-mono);
+    font-size: 0.875rem;
+    line-height: 1.65;
+    overflow-x: auto;
+    tab-size: 4;
+  }
+  .content pre code {
+    padding: 0;
+    border-radius: 0;
+    background: none;
+    font-size: inherit;
+  }
+  /* On a phone, a code block runs from edge to edge, to fit more code. */
+  @media (width < 40rem) {
+    .content > :is(pre, .code-block) { margin-inline: calc(-1 * var(--gutter)); }
+    .content > pre,
+    .content > .code-block > pre {
+      padding-inline: var(--gutter);
+      border-inline: 0;
+      border-radius: 0;
+    }
+  }
+
+  /* A notebook's output, like what its code printed: set apart from its
+     code. */
+  .content pre:has(> code.language-output) {
+    border-style: dashed;
+    background: var(--bg);
+  }
+
+  /* Highlighted code: Pygments' classes, as little writes them. */
+  .highlight :is(.c, .c1, .cm) { color: var(--syntax-comment); font-style: italic; }
+  .highlight :is(.k, .kn, .kd, .kt, .kc, .ow, .cp) { color: var(--syntax-keyword); }
+  .highlight :is(.s, .s1, .s2, .sa, .sb, .sc, .sr, .si) { color: var(--syntax-string); }
+  .highlight :is(.m, .no, .ni, .se, .nb, .bp, .o) { color: var(--syntax-constant); }
+  .highlight :is(.nf, .nc, .nd) { color: var(--syntax-function); }
+  .highlight .nt { color: var(--syntax-tag); }
+  .highlight :is(.na, .nl, .nn) { color: var(--syntax-variable); }
+  .highlight :is(.gh, .gu) { color: var(--syntax-constant); font-weight: 600; }
+  .highlight .gi { color: var(--syntax-inserted); background: var(--syntax-inserted-bg); }
+  .highlight .gd { color: var(--syntax-deleted); background: var(--syntax-deleted-bg); }
+  .highlight .gs { font-weight: 600; }
+  .highlight .ge { font-style: italic; }
+  /* ...and GitHub's. */
+  .highlight .pl-c { color: var(--syntax-comment); font-style: italic; }
+  .highlight .pl-k { color: var(--syntax-keyword); }
+  .highlight :is(.pl-s, .pl-sr) { color: var(--syntax-string); }
+  .highlight :is(.pl-c1, .pl-smi) { color: var(--syntax-constant); }
+  .highlight :is(.pl-e, .pl-en) { color: var(--syntax-function); }
+  .highlight .pl-ent { color: var(--syntax-tag); }
+  .highlight .pl-v { color: var(--syntax-variable); }
+  .highlight :is(.pl-mh, .pl-mdr) { color: var(--syntax-constant); font-weight: 600; }
+  .highlight .pl-mi1 { color: var(--syntax-inserted); background: var(--syntax-inserted-bg); }
+  .highlight .pl-md { color: var(--syntax-deleted); background: var(--syntax-deleted-bg); }
+  .highlight .pl-mb { font-weight: 600; }
+  .highlight .pl-mi { font-style: italic; }
+
+  /* Tables scroll within the page when they're too wide for it. */
+  .content table {
+    display: block;
+    width: max-content;
+    max-width: 100%;
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    border-collapse: collapse;
+    font-size: 0.9375rem;
+    line-height: 1.5;
+  }
+  .content :is(th, td) {
+    padding: 0.625rem 0.875rem;
+    border-bottom: 1px solid var(--border);
+    text-align: left;
+    vertical-align: top;
+  }
+  .content th {
+    background: var(--bg-subtle);
+    color: var(--heading);
+    font-weight: 600;
+  }
+  .content tbody tr:last-child > * { border-bottom: 0; }
+  /* pandas' tables, as Jupyter shows them, aligned right, as pandas' own
+     `<style>` aligns their headings. */
+  .content .dataframe :is(th, td) { text-align: right; }
+
+  /* Alerts, like GitHub's: `> [!NOTE]` and the rest, each with its icon. */
+  .content .markdown-alert {
+    --alert: var(--note);
+    --alert-bg: var(--note-bg);
+    --alert-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='12' cy='12' r='9'/%3E%3Cpath d='M12 11v5M12 8h.01'/%3E%3C/svg%3E");
+    padding: 0.875rem 1.125rem;
+    border: 1px solid var(--alert-bg);
+    border-left: 4px solid var(--alert);
+    border-radius: var(--radius);
+    background: var(--alert-bg);
+  }
+  .content .markdown-alert > :first-child { margin-top: 0; }
+  .content .markdown-alert > :last-child { margin-bottom: 0; }
+  .content .markdown-alert-title {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.25rem;
+    color: var(--alert);
+    font-weight: 650;
+  }
+  .content .markdown-alert-title + * { margin-top: 0.25rem; }
+  .content .markdown-alert-title::before {
+    content: "";
+    width: 1.125rem;
+    height: 1.125rem;
+    background: currentColor;
+    mask: var(--alert-icon) center / contain no-repeat;
+  }
+  .content .markdown-alert-tip {
+    --alert: var(--tip);
+    --alert-bg: var(--tip-bg);
+    --alert-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2.1h5c0-.9.4-1.6 1-2.1A6 6 0 0 0 12 3z'/%3E%3C/svg%3E");
+  }
+  .content .markdown-alert-important {
+    --alert: var(--important);
+    --alert-bg: var(--important-bg);
+    --alert-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 5a1 1 0 0 1 1-1h14a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H9l-5 4z'/%3E%3Cpath d='M12 8v4M12 14.5h.01'/%3E%3C/svg%3E");
+  }
+  .content .markdown-alert-warning {
+    --alert: var(--warning);
+    --alert-bg: var(--warning-bg);
+    --alert-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M10.3 4.2L2.6 18a2 2 0 0 0 1.7 3h15.4a2 2 0 0 0 1.7-3L13.7 4.2a2 2 0 0 0-3.4 0z'/%3E%3Cpath d='M12 9v4.5M12 17h.01'/%3E%3C/svg%3E");
+  }
+  .content .markdown-alert-caution {
+    --alert: var(--caution);
+    --alert-bg: var(--caution-bg);
+    --alert-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M8 3h8l5 5v8l-5 5H8l-5-5V8z'/%3E%3Cpath d='M12 8v4.5M12 16h.01'/%3E%3C/svg%3E");
+  }
+
+  .content details {
+    padding: 0.625rem 1rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+  }
+  .content summary {
+    color: var(--heading);
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .content details[open] > summary { margin-bottom: 0.5rem; }
+  .content details > :last-child { margin-bottom: 0; }
+
+  .content .footnotes {
+    margin-top: 3rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--border);
+    color: var(--text-muted);
+    font-size: 0.875rem;
+  }
+
+  /* A formula too wide for the page scrolls within it, like a wide table,
+     where the browser can scroll one (Safari can't). It doesn't scroll up and
+     down: the boxes of its glyphs can reach a few pixels past its own. */
+  .content math[display="block"] {
+    margin-block: 1.5rem;
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+
+  /* A diagram is centred. merman draws one as wide as it is, but no wider
+     than the page; this shrinks one that sets its own width, too. Its
+     background is set on the <svg> itself, so only !important overrides it. */
+  .content svg[id^="mermaid-"] {
+    display: block;
+    max-width: 100%;
+    height: auto;
+    margin: 1.5rem auto;
+    padding: 1rem;
+    border-radius: var(--radius-lg);
+    background-color: var(--diagram-bg) !important;
+  }
+
+  /* The 404 page. */
+  .content .error-code {
+    margin: 0 0 0.5rem;
+    color: var(--accent);
+    font-family: var(--font-mono);
+    font-weight: 600;
+  }
+}
+
+/* Forced colours, like Windows' contrast themes, replace the theme's: mark
+   what colour alone marked. */
+@media (forced-colors: active) {
+  @layer little.components {
+    .nav a[aria-current="page"] { outline: 2px solid; }
+    .toc a[data-current] { border-left-color: Highlight; }
+  }
+  @layer little.content {
+    .content .markdown-alert-title::before {
+      background: CanvasText;
+      forced-color-adjust: none;
+    }
+  }
+}
+
+@layer little.print {
+  @media print {
+    :root,
+    :root[data-theme] { color-scheme: light; }
+    .skip-link,
+    .site-header,
+    .sidebar,
+    .toc,
+    .toc-inline,
+    .breadcrumbs,
+    .page-links,
+    .pager,
+    .copy-button,
+    .site-footer { display: none !important; }
+    .layout,
+    main { display: block; padding: 0; }
+    .page { max-width: none; }
+    .content pre { white-space: pre-wrap; }
+    .content :is(pre, .markdown-alert, table, svg) { break-inside: avoid; }
+    .content a[href^="http"]::after {
+      content: " (" attr(href) ")";
+      color: var(--text-muted);
+      font-size: 0.875em;
+      overflow-wrap: anywhere;
+    }
+  }
+}
+
+/* Pagefind sets its colours on :root outside any layer, so the theme's must
+   be outside one too, to come after them. */
 :root {
-  --pf-font: var(--font, system-ui, sans-serif);
-  --pf-text: #1f2328;
-  --pf-text-secondary: #4a515a;
-  --pf-text-muted: #6b727c;
-  --pf-border: #ebedf0;
-  --pf-border-focus: #7c3aed;
-  --pf-hover: #f4f5f7;
-  --pf-mark: #7c3aed;
-  --pf-outline-focus: #7c3aed;
-  --pf-border-radius: 7px;
-}
-.site-header pagefind-modal-trigger {
-  margin-left: auto;
-  align-self: center;
-}
-
-/* The link to the site's repository, at the right of the header, with the
-   search button beside it. */
-.repo-link {
-  margin-left: auto;
-  color: #4a515a;
-  font-size: 0.9rem;
-}
-.repo-link:hover { color: #7c3aed; text-decoration: none; }
-.site-header .repo-link ~ pagefind-modal-trigger { margin-left: 0; }
-
-/* Layout */
-.layout {
-  display: grid;
-  grid-template-columns: 240px minmax(0, 1fr);
-  gap: 2.5rem;
-  max-width: 1100px;
-  margin: 0 auto;
-  padding: 2rem 1.5rem 4rem;
-}
-/* When a page has an in-page TOC, add a third column for it. */
-.layout.has-toc {
-  grid-template-columns: 240px minmax(0, 1fr) 180px;
-  max-width: 1240px;
-}
-
-/* Sidebar nav */
-.sidebar { position: sticky; top: 5rem; align-self: start; }
-.sidebar ul { list-style: none; margin: 0; padding: 0; }
-.sidebar li { margin: 0.15rem 0; }
-.sidebar a {
-  display: block;
-  padding: 0.4rem 0.7rem;
-  border-radius: 7px;
-  color: #4a515a;
-  font-size: 0.95rem;
-}
-.sidebar a:hover { background: #f4f5f7; text-decoration: none; }
-.sidebar a.active {
-  background: color-mix(in srgb, #7c3aed 12%, transparent);
-  color: #7c3aed;
-  font-weight: 600;
-}
-/* Nested sections (subfolders). */
-.sidebar ul ul {
-  margin-left: 0.5rem;
-  padding-left: 0.5rem;
-  border-left: 1px solid #ebedf0;
-}
-.nav-section {
-  display: block;
-  padding: 0.4rem 0.7rem;
-  font-size: 0.78rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: #8a909a;
-}
-
-/* In-page table of contents */
-.toc {
-  position: sticky;
-  top: 5rem;
-  align-self: start;
-  font-size: 0.85rem;
-}
-.toc-title {
-  margin: 0 0 0.4rem;
-  font-size: 0.72rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: #8a909a;
-}
-.toc ul { list-style: none; margin: 0; padding: 0; }
-.toc li { margin: 0.1rem 0; }
-.toc a { color: #4a515a; display: block; padding: 0.15rem 0; }
-.toc a:hover { color: #7c3aed; text-decoration: none; }
-.toc ul ul { padding-left: 0.8rem; font-size: 0.95em; }
-
-/* Content */
-.content { min-width: 0; }
-.content h1 { font-size: 2rem; line-height: 1.2; margin: 0 0 1rem; letter-spacing: -0.02em; }
-.content h2 { font-size: 1.4rem; margin: 2.2rem 0 0.8rem; letter-spacing: -0.01em; }
-.content h3 { font-size: 1.15rem; margin: 1.8rem 0 0.6rem; }
-.content p { margin: 0.9rem 0; }
-
-/* Each heading's link to itself, after its text: a "#", shown when the
-   heading is hovered or the link has focus. Its label names it to screen
-   readers, so they don't read the "#". */
-.content .anchor {
-  margin-left: 0.4rem;
-  color: #8a909a;
-  opacity: 0;
-}
-.content .anchor::before { content: "#"; }
-.content :is(h1, h2, h3, h4, h5, h6):hover .anchor,
-.content .anchor:focus-visible { opacity: 1; }
-.content .anchor:hover { color: #7c3aed; text-decoration: none; }
-/* Keep what a link jumps to, like a heading, clear of the sticky header. */
-.content [id] { scroll-margin-top: 5rem; }
-
-.content blockquote {
-  margin: 1.2rem 0;
-  padding: 0.6rem 1rem;
-  border-left: 3px solid #7c3aed;
-  background: color-mix(in srgb, #7c3aed 6%, transparent);
-  border-radius: 0 8px 8px 0;
-  color: #3a4048;
-}
-
-/* Alerts, like GitHub's: `> [!NOTE]` and the rest, in GitHub's colours. */
-.content .markdown-alert {
-  margin: 1.2rem 0;
-  padding: 0.6rem 1rem;
-  border-left: 3px solid var(--alert-color);
-  background: color-mix(in srgb, var(--alert-color) 6%, transparent);
-  border-radius: 0 8px 8px 0;
-}
-.content .markdown-alert > :first-child { margin-top: 0; }
-.content .markdown-alert > :last-child { margin-bottom: 0; }
-.content .markdown-alert-title {
-  margin-bottom: 0.3rem;
-  font-weight: 600;
-  color: var(--alert-color);
-}
-.content .markdown-alert-title + * { margin-top: 0.3rem; }
-.content .markdown-alert-note { --alert-color: #0969da; }
-.content .markdown-alert-tip { --alert-color: #1a7f37; }
-.content .markdown-alert-important { --alert-color: #8250df; }
-.content .markdown-alert-warning { --alert-color: #9a6700; }
-.content .markdown-alert-caution { --alert-color: #d1242f; }
-
-.content code {
-  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
-  font-size: 0.88em;
-  background: #f2f3f5;
-  padding: 0.15em 0.4em;
-  border-radius: 5px;
-}
-.content pre {
-  background: #0f172a;
-  color: #e2e8f0;
-  padding: 1rem 1.1rem;
-  border-radius: 10px;
-  overflow-x: auto;
-}
-.content pre code { background: none; padding: 0; color: inherit; font-size: 0.86rem; }
-
-/* A notebook's output, like what its code printed: lighter than its code. */
-.content pre:has(> code.language-output) {
-  background: #f7f8fa;
-  color: #1f2328;
-  border: 1px solid #ebedf0;
-}
-
-/* Highlighted code: Pygments' classes, as little writes them. */
-.highlight :is(.c, .c1, .cm) { color: #94a3b8; font-style: italic; }
-.highlight :is(.k, .kc, .kd, .kn, .kt, .ow, .cp) { color: #c4b5fd; }
-.highlight :is(.nb, .nc, .bp) { color: #67e8f9; }
-.highlight .nf { color: #93c5fd; }
-.highlight :is(.s, .s1, .s2, .sa, .sb, .sc, .sr) { color: #86efac; }
-.highlight :is(.m, .no, .ni, .se, .si) { color: #fdba74; }
-.highlight :is(.nt, .nd) { color: #f9a8d4; }
-.highlight :is(.na, .nl) { color: #fde68a; }
-.highlight .gd { color: #fca5a5; }
-.highlight .gi { color: #86efac; }
-.highlight :is(.gh, .gu) { color: #c4b5fd; font-weight: 600; }
-.highlight .gs { font-weight: 600; }
-.highlight .ge { font-style: italic; }
-
-.content table {
-  border-collapse: collapse;
-  width: 100%;
-  margin: 1.2rem 0;
-  font-size: 0.95rem;
-}
-.content th, .content td {
-  border: 1px solid #e7e9ec;
-  padding: 0.5rem 0.8rem;
-  text-align: left;
-}
-.content thead th { background: #f7f8fa; }
-/* A wide table in a `<div>`, as pandas shows one, scrolls within the page. */
-.content div:has(> table) { overflow-x: auto; }
-/* pandas' tables, as Jupyter shows them: as wide as their columns, and
-   aligned right, as pandas' own `<style>` aligns their headings. */
-.content table.dataframe { width: auto; }
-.content .dataframe th, .content .dataframe td { text-align: right; }
-
-/* A formula too wide for the page scrolls within it, like a wide table,
-   where the browser can scroll one (Safari can't). It doesn't scroll up and
-   down: the boxes of its glyphs can reach a few pixels past its own. */
-.content math[display="block"] { overflow-x: auto; overflow-y: hidden; }
-
-/* A diagram is centred. merman draws one as wide as it is, but no wider
-   than the page; this shrinks one that sets its own width, too. */
-.content svg[id^="mermaid-"] { display: block; max-width: 100%; height: auto; margin: 1.2rem auto; }
-
-.content img { max-width: 100%; height: auto; }
-
-.content ul { padding-left: 1.3rem; }
-.content li { margin: 0.25rem 0; }
-.content input[type="checkbox"] { margin-right: 0.4rem; }
-
-/* Breadcrumbs: links like the sidebar's, and the rest muted like its labels. */
-.breadcrumbs {
-  margin-bottom: 0.75rem;
-  font-size: 0.85rem;
-  color: #8a909a;
-}
-.breadcrumbs ol {
-  display: flex;
-  flex-wrap: wrap;
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-.breadcrumbs li { margin: 0; }
-/* A "›" between items. Its empty alt text keeps screen readers, which announce
-   a list, from reading it too; browsers without alt text use the first line. */
-.breadcrumbs li + li::before {
-  content: "\203A";
-  content: "\203A" / "";
-  margin: 0 0.45rem;
-}
-.breadcrumbs a { color: #4a515a; }
-.breadcrumbs a:hover { color: #7c3aed; text-decoration: none; }
-
-/* Links to edit and view the page's file in the site's repository, muted
-   like the breadcrumbs. */
-.page-links {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.4rem 1.25rem;
-  margin-top: 3rem;
-  font-size: 0.85rem;
-}
-.page-links a { color: #4a515a; }
-.page-links a:hover { color: #7c3aed; text-decoration: none; }
-.page-links + .pager { margin-top: 1.5rem; }
-
-/* Previous and next pages */
-.pager {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 1rem;
-  margin-top: 3rem;
-}
-.pager a {
-  display: block;
-  padding: 0.75rem 1rem;
-  border: 1px solid #ebedf0;
-  border-radius: 10px;
-  color: #1f2328;
-  font-weight: 600;
-}
-.pager a:hover { border-color: #7c3aed; color: #7c3aed; text-decoration: none; }
-.pager-label {
-  display: block;
-  font-size: 0.8rem;
-  font-weight: 400;
-  color: #6b727c;
-}
-/* Keep "Next" on the right, even on the first page. */
-.pager-next { grid-column: 2; text-align: right; }
-
-/* Footer */
-.site-footer {
-  border-top: 1px solid #ebedf0;
-  padding: 1.5rem;
-  text-align: center;
-  color: #8a909a;
-  font-size: 0.85rem;
-}
-
-@media (max-width: 720px) {
-  /* There's no room for the description beside the search button, or for
-     the link to the repository, though each page still links to its file
-     there, below its content. */
-  .site-header.has-search .description,
-  .site-header .repo-link { display: none; }
-  .layout,
-  .layout.has-toc { grid-template-columns: 1fr; gap: 1rem; }
-  .sidebar { position: static; }
-  .sidebar > ul { display: flex; flex-wrap: wrap; gap: 0.3rem; }
-  .sidebar ul ul { border-left: 0; margin-left: 0; padding-left: 0; }
-  .toc { position: static; }
+  --pf-font: var(--font);
+  --pf-text: var(--text);
+  --pf-text-secondary: var(--text-muted);
+  --pf-text-muted: var(--text-muted);
+  --pf-background: var(--bg);
+  --pf-border: var(--border);
+  --pf-border-focus: var(--accent);
+  --pf-hover: var(--bg-muted);
+  --pf-mark: var(--accent);
+  --pf-skeleton: var(--bg-muted);
+  --pf-skeleton-shine: var(--bg-subtle);
+  --pf-scroll-shadow: light-dark(rgb(15 23 42 / 0.08), rgb(0 0 0 / 0.4));
+  --pf-shadow-lg: var(--shadow-lg);
+  --pf-outline-focus: var(--accent);
+  --pf-border-radius: var(--radius);
+  --pf-input-height: 2.375rem;
+  --pf-modal-backdrop: light-dark(rgb(15 23 42 / 0.4), rgb(0 0 0 / 0.6));
 }

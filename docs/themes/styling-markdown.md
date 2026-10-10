@@ -44,7 +44,7 @@ does:
   [`mermaid`](../writing/diagrams.md#choosing-how-diagrams-look) in its
   `little.yml` instead. It's as wide as it's drawn, but no wider than the
   page. The built-in theme centres each with
-  `svg[id^="mermaid-"] { display: block; margin: 1.2rem auto; }`.
+  `svg[id^="mermaid-"] { display: block; margin: 1.5rem auto; }`.
 - A theme gets the site's
   [extensions](../writing/markdown.md#choosing-markdowns-extensions) as
   `site.markdown`, so it can load a script only for a site that needs it,
