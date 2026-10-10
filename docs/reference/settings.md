@@ -23,7 +23,7 @@ or works them out, and a theme or a site can change any of them:
 | `url` | none | where the site's [published](../getting-started/publishing.md#choosing-the-sites-url), like `https://withlittle.github.io/little` |
 | `repo` | none | the [repository](../getting-started/configuring.md#choosing-the-sites-repository) its source is in |
 | `branch` | `main` | the branch its pages' files are [linked to](../getting-started/configuring.md#choosing-the-sites-repository) on |
-| `nav` | the source's pages and folders, sorted by title | the site's [nav](../writing/navigation.md#writing-the-nav-yourself) |
+| `nav` | the source's pages and folders, [sorted by title](../writing/navigation.md#the-nav) | the site's [nav](../writing/navigation.md#writing-the-nav-yourself) |
 | `toc_min_depth` | `2`, for `##` | the level of heading a page's [table of contents](../writing/navigation.md#tables-of-contents) lists from |
 | `toc_max_depth` | `6`, for `######` | the level it lists down to |
 | `search` | `false` | whether the site's [indexed for search](../writing/search.md) |

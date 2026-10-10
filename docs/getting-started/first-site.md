@@ -53,10 +53,10 @@ description: How to install my project.
 # Installing my project
 ```
 
-The sidebar lists every page: the home page first, then the rest by title,
-with each folder's pages under it. See [Pages and
-files](../writing/pages-and-files.md) for how files become pages, and
-[Markdown](../writing/markdown.md) for what you can write in them.
+The sidebar lists every page: the home page first, then the rest [by
+title](../writing/navigation.md#the-nav), with each folder's pages under it.
+See [Pages and files](../writing/pages-and-files.md) for how files become
+pages, and [Markdown](../writing/markdown.md) for what you can write in them.
 
 ## Link them
 

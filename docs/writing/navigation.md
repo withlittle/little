@@ -16,6 +16,18 @@ The nav is built from the folder structure: the home page first, then pages
 and folders sorted by title. A folder with a `README.md` is a linked
 section, and one without is a plain label, with its pages under it.
 
+- Titles are sorted whatever their case, and the numbers in them by their
+  value, so `2. Use Postgres` comes before `10. Use Redis`, and `Step 9`
+  before `Step 10`. A title that starts with a number comes before one that
+  starts with a letter.
+- To put pages in an order of your own, number their titles, or [write the
+  nav yourself](#writing-the-nav-yourself).
+
+The built-in theme shows each top-level folder as a group, and folds up each
+folder within one, but those the current page is in. A reader opens a folder
+from its label, or, for a folder with a `README.md`, from the button beside
+its link. The sidebar scrolls to the current page, if it's out of sight.
+
 ## Writing the nav yourself
 
 To write the nav yourself, set `nav` in `little.yml` to a list of
