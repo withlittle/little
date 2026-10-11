@@ -28,6 +28,12 @@ can't scroll, and one that's `display: block` scrolls, but its cells are
 only as wide as their content, as the browser puts them in a table of their
 own, inside it.
 
+And the theme aligned the text of every cell to the left, with
+`text-align`, which overrides the `align` comrak gives each cell of a
+column aligned in Markdown, like `| :-: |` or `| --: |`, as any CSS
+overrides HTML's attributes for how it looks. So a column meant to be
+centred, or aligned right, was on the left.
+
 ## Options considered
 - **Where a page without a table of contents goes:**
   - centred in `main`, as it was: it uses the room there is, but moves from
@@ -81,6 +87,10 @@ own, inside it.
     tables as Jupyter does ([0024](./0024-jupyter-notebooks.md)).
   - Without the script, a table is as wide as its columns, and scrolls
     itself, as it did.
+  - A column aligned in Markdown keeps its alignment: the theme aligns
+    only the cells without an `align` to the left, with
+    `:is(th, td):not([align])`, and a dataframe's to the right, as it
+    did.
 
 ## Consequences
 - On the site of 157 pages, every page's text starts at 360px, at 1440px
@@ -92,6 +102,9 @@ own, inside it.
   same size before the script runs as after, so nothing shifts. This
   manual's tables are as wide as its pages, and its notebook's dataframe as
   wide as its columns.
+- This manual's table of how to align a column, on its page on Markdown,
+  is aligned left, in the centre, and right, as it's written. The site of
+  157 pages aligns none of its columns.
 - Until the script runs, a table too wide for the page runs off it, as a
   `display: table` can't scroll, and on a phone the page scrolls sideways.
   The script is deferred, so that's until the page has been read and the

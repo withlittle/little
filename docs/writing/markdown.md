@@ -20,6 +20,13 @@ autolinks, footnotes, callouts, emoji shortcodes, HTML, [math](math.md), and
 | `www.example.com` | www.example.com |
 | `\| a \| table \|`, with `\| --- \| --- \|` below | this table |
 
+A colon in the line below a table's headings aligns its column, as in this
+table:
+
+| Left | Centre | Right |
+| :--- | :----: | ----: |
+| `:---` | `:----:` | `----:` |
+
 - [x] A task list, with `- [x]` for a done task
 - [ ] and `- [ ]` for one to do
 

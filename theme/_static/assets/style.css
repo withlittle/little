@@ -926,9 +926,11 @@
   .content :is(th, td) {
     padding: 0.625rem 0.875rem;
     border-bottom: 1px solid var(--border);
-    text-align: left;
     vertical-align: top;
   }
+  /* A column aligned in Markdown, with `:-:` or `--:`, gives each of its
+     cells an `align`, which any `text-align` would override. */
+  .content :is(th, td):not([align]) { text-align: left; }
   .content th {
     background: var(--bg-subtle);
     color: var(--heading);

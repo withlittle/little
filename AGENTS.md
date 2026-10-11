@@ -391,5 +391,6 @@ Record notable choices as short ADRs in `decisions/`. Locked so far:
   is as wide as the page from the first paint, with `.js`, and the script
   puts each in a `<div class="table-scroll">`, which scrolls one too wide
   and takes its frame, so nothing moves; without the script, a table is as
-  wide as its columns, as before — see
+  wide as its columns, as before. A column aligned in Markdown keeps its
+  alignment — see
   [`decisions/0038-the-built-in-themes-page-and-tables.md`](./decisions/0038-the-built-in-themes-page-and-tables.md).

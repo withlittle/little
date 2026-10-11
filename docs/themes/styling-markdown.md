@@ -33,7 +33,10 @@ does:
   can't scroll, so once the page has loaded, the built-in theme's script
   puts each in a `<div class="table-scroll">`, which scrolls one that's too
   wide for it. Without the script, a table is as wide as its columns, and
-  scrolls itself.
+  scrolls itself. A column aligned with a colon, like `| :-: |`, has an
+  `align` on each of its cells, like `<td align="center">`, which any
+  `text-align` overrides, so the built-in theme aligns only cells without
+  one, with `:is(th, td):not([align])`.
 - A [notebook](../writing/notebooks.ipynb)'s output, like what its code
   printed, is a code block in `output`,
   `<pre class="highlight"><code class="language-output">`, which the built-in
