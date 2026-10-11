@@ -1,6 +1,6 @@
 ---
 title: Styling Markdown
-description: The HTML little writes for alerts, headings, code, notebooks, math, and diagrams, for a theme's CSS to style.
+description: The HTML little writes for alerts, headings, code, tables, notebooks, math, and diagrams, for a theme's CSS to style.
 ---
 
 # Styling Markdown
@@ -27,6 +27,16 @@ does:
   the same `<pre class="highlight">`. Once the page has loaded, the built-in
   theme's script puts each in a `<div class="code-block">`, with its [copy
   button](../writing/code.md#copying-code).
+- A [table](../writing/markdown.md#githubs-extensions) is a `<table>`, with
+  its heading row in a `<thead>`, and the rest in a `<tbody>`, which the
+  built-in theme makes as wide as the page. A table that fills the page
+  can't scroll, so once the page has loaded, the built-in theme's script
+  puts each in a `<div class="table-scroll">`, which scrolls one that's too
+  wide for it. Without the script, a table is as wide as its columns, and
+  scrolls itself. A column aligned with a colon, like `| :-: |`, has an
+  `align` on each of its cells, like `<td align="center">`, which any
+  `text-align` overrides, so the built-in theme aligns only cells without
+  one, with `:is(th, td):not([align])`.
 - A [notebook](../writing/notebooks.ipynb)'s output, like what its code
   printed, is a code block in `output`,
   `<pre class="highlight"><code class="language-output">`, which the built-in
@@ -35,7 +45,7 @@ does:
   chart is an `<img>` with a `data:` URL, in a `<p>` of its own, and a table
   pandas shows is its `<div>`, `<style>`, and `<table class="dataframe">`,
   which the built-in theme shows as Jupyter does: as wide as its columns, and
-  aligned right.
+  aligned right, scrolling itself, not in a `.table-scroll`.
 - [Math](../writing/math.md#choosing-how-math-is-written) is MathML: a
   `<math>` in a line, and a `<math display="block">` on its own, inside a
   `<p>` for `$$…$$`. The built-in theme scrolls a wide one with

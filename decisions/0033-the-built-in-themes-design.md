@@ -7,7 +7,12 @@
   [0036](./0036-folding-the-built-in-themes-nav.md), which folds each
   folder in the nav within a top-level one, and by
   [0037](./0037-wrapping-long-names-in-the-built-in-theme.md), which wraps
-  a long name in the nav after each `_` and `.`
+  a long name in the nav after each `_` and `.`, and by
+  [0038](./0038-the-built-in-themes-page-and-tables.md), which keeps a page
+  without a table of contents in place, and makes tables as wide as the
+  page, and by
+  [0039](./0039-a-long-site-name-in-the-built-in-themes-header.md), which
+  wraps a long site name in its header onto a second line
 - Date: 2026-10-10
 - Amends: [0023](./0023-highlighting-code.md),
   [0024](./0024-jupyter-notebooks.md)
