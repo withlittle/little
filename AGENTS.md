@@ -378,3 +378,10 @@ Record notable choices as short ADRs in `decisions/`. Locked so far:
   beside its link. The script scrolls only the sidebar to the current page;
   which folders are open isn't remembered — see
   [`decisions/0036-folding-the-built-in-themes-nav.md`](./decisions/0036-folding-the-built-in-themes-nav.md).
+- **Wrapping long names in the built-in theme:** a title with no spaces, a
+  name, like `enable_iterative_imputer`, gets a `<wbr>` after each `_` and
+  `.`, from the template's `breakable` macro, in the sidebar, tables of
+  contents, breadcrumbs, and pager, so it wraps at its joints; a title with
+  spaces wraps at them. Each also has `overflow-wrap: anywhere`, so nothing
+  runs out of its box; `<title>` and hidden names are as they were — see
+  [`decisions/0037-wrapping-long-names-in-the-built-in-theme.md`](./decisions/0037-wrapping-long-names-in-the-built-in-theme.md).
