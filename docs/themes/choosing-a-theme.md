@@ -45,7 +45,9 @@ it](#building-on-another-theme), file by file.
   it. Choosing what their system shows follows the system again.
 - It fits any screen: on a phone or a tablet, the nav is a menu, opened from
   the header, and the table of contents folds up above the page. See
-  [Navigation](../writing/navigation.md).
+  [Navigation](../writing/navigation.md). A site name too long for the
+  header wraps onto a second line, and ends in … if it's too long for two,
+  so the buttons beside it stay on the screen.
 - Its sidebar shows each top-level folder as a group, and folds up each
   folder within one, but those the current page is in, so a large site's
   nav stays short. See [The nav](../writing/navigation.md#the-nav).

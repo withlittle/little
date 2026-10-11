@@ -394,3 +394,10 @@ Record notable choices as short ADRs in `decisions/`. Locked so far:
   wide as its columns, as before. A column aligned in Markdown keeps its
   alignment — see
   [`decisions/0038-the-built-in-themes-page-and-tables.md`](./decisions/0038-the-built-in-themes-page-and-tables.md).
+- **A long site name in the built-in theme's header:** a name too long for
+  one line, in the header or the drawer, wraps onto a second, balanced,
+  and is cut short with an ellipsis past that, with
+  `-webkit-line-clamp: 2`, so the buttons beside it stay on the screen. The
+  description has only the room the name leaves, and an icon button
+  doesn't shrink; a name that fits on one line looks as it did — see
+  [`decisions/0039-a-long-site-name-in-the-built-in-themes-header.md`](./decisions/0039-a-long-site-name-in-the-built-in-themes-header.md).
