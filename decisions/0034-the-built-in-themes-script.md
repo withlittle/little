@@ -2,7 +2,9 @@
 
 - Status: accepted; amended by
   [0036](./0036-folding-the-built-in-themes-nav.md), whose script also
-  scrolls the nav to the current page
+  scrolls the nav to the current page, and by
+  [0038](./0038-the-built-in-themes-page-and-tables.md), whose script also
+  puts each table in a box that scrolls it
 - Date: 2026-10-10
 - Amends: [0033](./0033-the-built-in-themes-design.md)
 

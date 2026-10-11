@@ -60,9 +60,9 @@ it](#building-on-another-theme), file by file.
   prints each page without its header and nav.
 - It works without JavaScript, but for search. Its script only adds to it:
   the button to choose light or dark, scrolling the sidebar to the current
-  page, a button to [copy each code block](../writing/code.md#copying-code),
-  and, in the table of contents beside the page, a mark on the section being
-  read.
+  page, tables as wide as the page, a button to [copy each code
+  block](../writing/code.md#copying-code), and, in the table of contents
+  beside the page, a mark on the section being read.
 - It needs a browser from 2024 or later.
 - It's plain CSS, in cascade layers, so CSS that isn't in a layer, like a
   stylesheet that a theme building on it links from its own `default.html`,

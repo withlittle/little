@@ -1,7 +1,7 @@
 // The built-in theme's script. Every page works without it: it adds a toggle
-// between light and dark, scrolls the nav to the current page, adds a button
-// to copy each code block, and marks where the reader is in the table of
-// contents.
+// between light and dark, scrolls the nav to the current page, lets a table
+// as wide as the page scroll, adds a button to copy each code block, and
+// marks where the reader is in the table of contents.
 (() => {
   const root = document.documentElement;
 
@@ -55,6 +55,17 @@
   tocInline?.addEventListener("click", (event) => {
     if (event.target.closest("a")) tocInline.open = false;
   });
+
+  // Each table is as wide as the page, which CSS can't scroll when it's too
+  // wide for it, so it goes in a box that scrolls, which takes its frame.
+  // pandas' tables are as wide as their columns, as in Jupyter, and scroll
+  // themselves.
+  for (const table of document.querySelectorAll(".content table:not(.dataframe)")) {
+    const scroll = document.createElement("div");
+    scroll.className = "table-scroll";
+    table.before(scroll);
+    scroll.append(table);
+  }
 
   // A button to copy each code block, but not a notebook's output. The
   // clipboard is there only on HTTPS, and localhost.

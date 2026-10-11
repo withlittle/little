@@ -295,9 +295,12 @@
     .sidebar-top { display: none; }
   }
 
-  /* Wide screens: the table of contents is a column beside the page. */
+  /* Wide screens: the table of contents is a column beside the page. A site
+     with a nav keeps the column on a page without one, so the page doesn't
+     move from one page to the next. */
   @media (width >= 75rem) {
-    main:has(> .toc) { grid-template-columns: minmax(0, 1fr) var(--toc-width); }
+    main:has(> .toc),
+    .layout:has(> .sidebar) > main { grid-template-columns: minmax(0, 1fr) var(--toc-width); }
   }
   @media (width < 75rem) {
     .toc { display: none; }
@@ -726,10 +729,11 @@
     color: var(--text-muted);
     font-size: 1.125rem;
   }
-  .content :is(p, ul, ol, dl, blockquote, pre, table, details, figure, .code-block, .markdown-alert) {
+  .content :is(p, ul, ol, dl, blockquote, pre, table, details, figure, .code-block, .table-scroll, .markdown-alert) {
     margin-block: 1.25rem;
   }
-  .content .code-block > pre { margin: 0; }
+  .content .code-block > pre,
+  .content .table-scroll > table { margin: 0; }
 
   /* Each heading's link to itself, after its text: a "#", shown when the
      heading is hovered or the link has focus. Its label names it to screen
@@ -883,7 +887,8 @@
   .highlight .pl-mb { font-weight: 600; }
   .highlight .pl-mi { font-style: italic; }
 
-  /* Tables scroll within the page when they're too wide for it. */
+  /* Without the theme's script, a table is as wide as its columns, and
+     scrolls within the page when it's too wide for it, as on GitHub. */
   .content table {
     display: block;
     width: max-content;
@@ -894,6 +899,29 @@
     border-collapse: collapse;
     font-size: 0.9375rem;
     line-height: 1.5;
+  }
+  /* With it, a table is as wide as the page, from the first paint. A table
+     that fills a width can't scroll, so the script puts each in a
+     `.table-scroll`, which scrolls, and takes over its frame, so nothing
+     moves. pandas' tables stay as wide as their columns, as in Jupyter. */
+  .js .content table:not(.dataframe) {
+    display: table;
+    width: 100%;
+    max-width: none;
+    /* Rounds its corners, as collapsed borders can't be, and clips its
+       headings' background to them. */
+    border-collapse: separate;
+    border-spacing: 0;
+    overflow: hidden;
+  }
+  .content .table-scroll {
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+  }
+  .content .table-scroll > table {
+    border: 0;
+    border-radius: 0;
   }
   .content :is(th, td) {
     padding: 0.625rem 0.875rem;

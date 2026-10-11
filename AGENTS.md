@@ -385,3 +385,11 @@ Record notable choices as short ADRs in `decisions/`. Locked so far:
   spaces wraps at them. Each also has `overflow-wrap: anywhere`, so nothing
   runs out of its box; `<title>` and hidden names are as they were — see
   [`decisions/0037-wrapping-long-names-in-the-built-in-theme.md`](./decisions/0037-wrapping-long-names-in-the-built-in-theme.md).
+- **The built-in theme's page and tables:** from 75rem, on a site with a
+  nav, a page without a table of contents keeps its empty column, so the
+  text starts in the same place on every page. A table, but a `.dataframe`,
+  is as wide as the page from the first paint, with `.js`, and the script
+  puts each in a `<div class="table-scroll">`, which scrolls one too wide
+  and takes its frame, so nothing moves; without the script, a table is as
+  wide as its columns, as before — see
+  [`decisions/0038-the-built-in-themes-page-and-tables.md`](./decisions/0038-the-built-in-themes-page-and-tables.md).

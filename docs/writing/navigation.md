@@ -101,3 +101,7 @@ toc_max_depth: 4
   [frontmatter](frontmatter.md#frontmatter-wins).
 - Each must be a level from 1 to 6, and `toc_min_depth` can't be more than
   `toc_max_depth`: otherwise, the build stops and says why.
+- A page with no headings to list, or with `toc: false`, has no table of
+  contents. On a wide screen, the built-in theme leaves the room to the
+  right of the page empty, so its text doesn't move as a reader goes from
+  page to page.
