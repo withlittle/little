@@ -390,7 +390,11 @@
     padding: 0;
     list-style: none;
   }
-  .nav :is(a, .nav-label) {
+  /* A list, not :is(), whose specificity, a class's, would beat the room a
+     link leaves for its fold button, below. A long name breaks after each _
+     and ., where the template lets it, or else anywhere, not out of its row. */
+  .nav a,
+  .nav .nav-label {
     display: block;
     padding: 0.375rem 0.75rem;
     border-radius: var(--radius);
@@ -398,6 +402,7 @@
     font-size: 0.9375rem;
     line-height: 1.4;
     text-decoration: none;
+    overflow-wrap: anywhere;
   }
   .nav a:hover {
     background: var(--bg-muted);
@@ -479,6 +484,7 @@
     margin-bottom: 1rem;
     color: var(--text-muted);
     font-size: 0.875rem;
+    overflow-wrap: anywhere;
   }
   .breadcrumbs ol {
     display: flex;
@@ -531,6 +537,7 @@
     color: var(--text-muted);
     line-height: 1.4;
     text-decoration: none;
+    overflow-wrap: anywhere;
   }
   .toc ul ul a { padding-left: 1.75rem; }
   .toc a:hover { color: var(--text); }
@@ -581,6 +588,7 @@
     padding: 0.3rem 0;
     color: var(--text-muted);
     text-decoration: none;
+    overflow-wrap: anywhere;
   }
   .toc-inline a:hover { color: var(--accent); }
 
@@ -622,6 +630,7 @@
     color: var(--heading);
     font-weight: 600;
     text-decoration: none;
+    overflow-wrap: anywhere;
   }
   .pager a:hover {
     border-color: var(--accent);

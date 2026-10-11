@@ -16,12 +16,24 @@
 </svg>
 {%- endmacro -%}
 
+{#- A title that's a name, with no spaces, like a Python module's
+    enable_iterative_imputer, can break after each _ and ., which browsers
+    don't break at, so it wraps at its joints. A title with spaces wraps at
+    them, so "version 2.10.0" doesn't break at a dot. -#}
+{%- macro breakable(title) -%}
+{%- if " " in title | string -%}
+{{ title }}
+{%- else -%}
+{{ title | replace("_", "_<wbr>" | safe) | replace(".", ".<wbr>" | safe) }}
+{%- endif -%}
+{%- endmacro -%}
+
 {#- page.toc is shaped like site.nav: each ### is a child of the ## above
     it, and each item's url is its heading's #fragment. -#}
 {%- macro toc_list(items) -%}
 <ul>
   {%- for item in items recursive %}
-  <li><a href="{{ item.url | safe }}">{{ item.title }}</a>{% if item.children %}<ul>{{ loop(item.children) }}</ul>{% endif %}</li>
+  <li><a href="{{ item.url | safe }}">{{ breakable(item.title) }}</a>{% if item.children %}<ul>{{ loop(item.children) }}</ul>{% endif %}</li>
   {%- endfor %}
 </ul>
 {%- endmacro -%}
@@ -107,7 +119,7 @@
         {%- set children = loop(item.children) if item.children else "" %}
         <li{% if item.children %} class="nav-group"{% endif %}>
           {% if item.url %}
-          <a href="{{ item.url | safe }}"{% if item.url == page.url %} aria-current="page"{% endif %}>{{ item.title }}</a>
+          <a href="{{ item.url | safe }}"{% if item.url == page.url %} aria-current="page"{% endif %}>{{ breakable(item.title) }}</a>
           {% endif %}
           {% if item.children and loop.depth > 1 %}
           <details{% if item.url == page.url or 'aria-current="page"' in children %} open{% endif %}>
@@ -116,12 +128,12 @@
             {% if item.url %}
             <summary><span class="visually-hidden">{{ item.title }}</span></summary>
             {% else %}
-            <summary class="nav-label">{{ item.title }}</summary>
+            <summary class="nav-label">{{ breakable(item.title) }}</summary>
             {% endif %}
             <ul>{{ children }}</ul>
           </details>
           {% else %}
-          {% if not item.url %}<span class="nav-label">{{ item.title }}</span>{% endif %}
+          {% if not item.url %}<span class="nav-label">{{ breakable(item.title) }}</span>{% endif %}
           {% if item.children %}<ul>{{ children }}</ul>{% endif %}
           {% endif %}
         </li>
@@ -138,9 +150,9 @@
         <nav class="breadcrumbs" aria-label="Breadcrumbs">
           <ol>
             {% for crumb in page.breadcrumbs %}
-            <li>{% if crumb.url %}<a href="{{ crumb.url | safe }}">{{ crumb.title }}</a>{% else %}{{ crumb.title }}{% endif %}</li>
+            <li>{% if crumb.url %}<a href="{{ crumb.url | safe }}">{{ breakable(crumb.title) }}</a>{% else %}{{ breakable(crumb.title) }}{% endif %}</li>
             {% endfor %}
-            <li><span aria-current="page">{{ page.title }}</span></li>
+            <li><span aria-current="page">{{ breakable(page.title) }}</span></li>
           </ol>
         </nav>
         {% endif %}
@@ -174,13 +186,13 @@
           {% if page.prev %}
           <a class="pager-prev" href="{{ page.prev.url | safe }}" rel="prev">
             <span class="pager-label">{{ icon("prev") }}Previous</span>
-            <span class="pager-title">{{ page.prev.title }}</span>
+            <span class="pager-title">{{ breakable(page.prev.title) }}</span>
           </a>
           {% endif %}
           {% if page.next %}
           <a class="pager-next" href="{{ page.next.url | safe }}" rel="next">
             <span class="pager-label">Next{{ icon("next") }}</span>
-            <span class="pager-title">{{ page.next.title }}</span>
+            <span class="pager-title">{{ breakable(page.next.title) }}</span>
           </a>
           {% endif %}
         </nav>

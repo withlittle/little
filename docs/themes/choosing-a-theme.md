@@ -49,6 +49,10 @@ it](#building-on-another-theme), file by file.
 - Its sidebar shows each top-level folder as a group, and folds up each
   folder within one, but those the current page is in, so a large site's
   nav stays short. See [The nav](../writing/navigation.md#the-nav).
+- A title that's a long name, like a Python module's
+  `enable_iterative_imputer`, wraps after each `_` and `.` in the sidebar,
+  the tables of contents, the breadcrumbs, and the previous and next pages,
+  rather than running out of them. A title with spaces wraps at its spaces.
 - It's built to be accessible: a link to skip to the content, a visible
   focus ring for the keyboard, text that meets WCAG's AA contrast, underlined
   links, and no sliding or smooth scrolling for a reader who prefers reduced
