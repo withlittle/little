@@ -118,5 +118,6 @@ port: 3000
 theme's, and the site's, merged, as YAML, so you can check a setting without
 building. It leaves out what little works out as it builds: `site.nav`,
 `site.year`, and, on a site with [versions](../writing/versions.md),
-`site.version` and each version's `url`. It prints the config of the site's
+`site.version`, and each version's `root`, and its `url` as the theme gets
+it, with the path of the site's `url`. It prints the config of the site's
 files as they are, not of a version from a ref.

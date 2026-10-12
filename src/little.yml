@@ -94,7 +94,7 @@ markdown:
 # can read, which only the site can set. `csv: false` turns a theme's off.
 
 # `versions`, the versions of a site, has no default: a site has just the one.
-# It lists them, the latest first, each with a `name`, the folder it's built
-# into, but for the first, like "1.4", in quotes, and the git `ref` it's built
-# from, like v1.4. One, at most, has no `ref`, and is built from the site's
-# files as they are.
+# It lists them as the menu does, the latest first, each with a `title`, like
+# "1.4", in quotes, the `url` it's published at, like /1.4, from the root of
+# the site, and the git `ref` it's built from, like v1.4. One is at `/`, and
+# one, at most, has no `ref`, and is built from the site's files as they are.

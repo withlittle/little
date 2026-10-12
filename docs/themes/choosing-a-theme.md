@@ -53,8 +53,8 @@ it](#building-on-another-theme), file by file.
   nav stays short. See [The nav](../writing/navigation.md#the-nav).
 - On a site with [versions](../writing/versions.md#the-menu-of-versions), a
   menu in its header, beside the site's name, leads to the page you're on
-  in each version, and on each version but the first, a note above the page
-  leads to the first.
+  in each version, and on each version but the one at `/`, a note above the
+  page leads to that one.
 - A title that's a long name, like a Python module's
   `enable_iterative_imputer`, wraps after each `_` and `.` in the sidebar,
   the tables of contents, the breadcrumbs, and the previous and next pages,

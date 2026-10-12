@@ -18,8 +18,8 @@ work.
 | `site` | The site's config, merged: little's, the theme's, and the site's, like `site.name`, `site.url`, `site.repo`, and `site.search`, and any keys you add, like `site.announcement`. [Settings](settings.md) lists them |
 | `site.markdown` | The [extensions to Markdown](../writing/markdown.md#choosing-markdowns-extensions) the site's pages are written with, like `site.markdown.math`, so a theme can load a script only for a site that needs it |
 | `site.nav` | The [nav](../writing/navigation.md#the-nav) tree: a list of `{ title, url, children }`; a folder without a `README.md` has no `url`. A `nav` in `little.yml` replaces it |
-| `site.version` | On a site with [versions](../writing/versions.md), the name of the one being built, like `1.4`. A `version` in `little.yml` replaces it |
-| `site.versions` | On a site with [versions](../writing/versions.md), each entry in `versions`, as it's written, like `{ name, ref }`, with the `url` of its version's home page |
+| `site.version` | On a site with [versions](../writing/versions.md), the `title` of the one being built, like `1.4`. A `version` in `little.yml` replaces it |
+| `site.versions` | On a site with [versions](../writing/versions.md), each entry in `versions`, as it's written, like `{ title, url, ref }`, but with the `url` of its version's home page, with the path of the site's `url`, and `root`, true for the version at `/` and false for the others |
 | `site.year` | The year the site is built in, in UTC, like `2026`, for a [copyright notice](../themes/making-a-theme.md#a-copyright-notice). A `year` in `little.yml` replaces it |
 
 ## page
