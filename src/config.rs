@@ -44,12 +44,13 @@
 //! by setting, and `false` turns a theme's plugin off. Only the site can set
 //! `read`, the folders a plugin can read.
 //!
-//! `versions` lists the versions of the site, the latest first, each with a
-//! `name` and the git `ref` it's built from, but for one, at most, that's
-//! built from the site's files as they are (see `site`). A version from a ref
-//! has its own config, in the `little.yml` it has there, but the site's
-//! themes, and the settings that are the whole site's, like `url` (see
-//! `Config::for_version`).
+//! `versions` lists the versions of the site, in the order its menu lists
+//! them, each with the `title` readers see, the `url` it's published at, one
+//! of them at `/`, and the git `ref` it's built from, but for one, at most,
+//! that's built from the site's files as they are (see `site`). A version
+//! from a ref has its own config, in the `little.yml` it has there, but the
+//! site's themes, and the settings that are the whole site's, like `url`
+//! (see `Config::for_version`).
 
 use anyhow::{Context, Result, anyhow, bail};
 use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, utf8_percent_encode};
@@ -98,8 +99,8 @@ pub struct Config {
     /// The plugins that render code blocks, from `plugins`, in the order
     /// they're named.
     pub plugins: Vec<Plugin>,
-    /// The versions of the site, from `versions`, the latest first: none for
-    /// a site that has just the one.
+    /// The versions of the site, from `versions`, in the order its menu lists
+    /// them: none for a site that has just the one.
     pub versions: Vec<Version>,
     /// little's defaults, with the settings of each theme over them: what a
     /// version of the site from a git ref puts its own config over.
@@ -122,11 +123,23 @@ const SITE_WIDE: [&str; 7] = [
 /// A version of a site, from `versions`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Version {
-    /// Its name, like `1.4`: the folder it's built into, but for the first.
-    pub name: String,
+    /// Its title, like `1.4 (Latest)`, which readers see.
+    pub title: String,
+    /// Its path from the root of the site, from its `url`, like `/1.4`, which
+    /// is also the folder of the destination it's built into, or empty, for
+    /// the version at `/`.
+    pub path: String,
     /// The git ref it's built from, like `v1.4`, or none, for the site's
     /// files as they are.
     pub git_ref: Option<String>,
+}
+
+impl Version {
+    /// The folders, one in another, of the destination it's built into,
+    /// from its `path`: none for the version at `/`.
+    pub fn folders(&self) -> impl Iterator<Item = &str> {
+        self.path.split('/').filter(|folder| !folder.is_empty())
+    }
 }
 
 /// A plugin a site uses, from `plugins`.
@@ -866,8 +879,8 @@ fn read_error(name: &str) -> anyhow::Error {
     anyhow!("`read` of plugin `{name}` must be a folder, or a list of them, from the site's folder")
 }
 
-/// The versions of the site, from `versions`, the latest first. Each entry's
-/// other settings are for the theme.
+/// The versions of the site, from `versions`, in the order its menu lists
+/// them. Each entry's other settings are for the theme.
 fn versions(values: &Mapping) -> Result<Vec<Version>> {
     let entries = match values.get("versions") {
         None | Some(Value::Null) => return Ok(Vec::new()),
@@ -880,22 +893,60 @@ fn versions(values: &Mapping) -> Result<Vec<Version>> {
             return Err(versions_error());
         };
         // YAML reads 1.10 as a number, 1.1.
-        let Some(Value::String(name)) = entry.get("name").filter(|name| *name != "") else {
-            bail!(
-                "each version needs a `name`, in quotes if it looks like a number, like \"1.10\", \
+        let title = match entry.get("title") {
+            Some(Value::String(title)) if !title.trim().is_empty() => title,
+            _ => bail!(
+                "each version needs a `title`, in quotes if it looks like a number, like \"1.10\", \
                  which YAML would read as 1.1"
+            ),
+        };
+        if versions.iter().any(|version| version.title == *title) {
+            bail!("two versions are titled `{title}`");
+        }
+        let path = match entry.get("url") {
+            Some(Value::String(url)) if !url.trim().is_empty() => version_path(url),
+            None | Some(Value::Null | Value::String(_)) => bail!(
+                "version `{title}` needs a `url`, where it's published from the root of the \
+                 site, like `/1.4`, or `/` for the site's home"
+            ),
+            Some(_) => None,
+        };
+        let Some(path) = path else {
+            bail!(
+                "version `{title}`'s `url` must be a path from the root of the site, like `/1.4` \
+                 or `/versions/1.4`, with letters, digits, `.`, `-`, and `_` between its `/`s, \
+                 each part starting with a letter or a digit, as they name the folders the \
+                 version's built into"
             );
         };
-        let is_folder = name.starts_with(|c: char| c.is_ascii_alphanumeric())
-            && (name.chars()).all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_'));
-        if !is_folder {
+        for other in &versions {
+            if other.path == path {
+                bail!(
+                    "versions `{}` and `{title}` are both at {}/",
+                    other.title,
+                    other.path
+                );
+            }
+            // Only the version at `/` can have others in its folder, as it's
+            // the one whose files little checks aren't where they go.
+            if other.path.is_empty() || path.is_empty() {
+                continue;
+            }
+            let (inner, outer) = if path.starts_with(&format!("{}/", other.path)) {
+                ((title.as_str(), &path), (other.title.as_str(), &other.path))
+            } else if other.path.starts_with(&format!("{path}/")) {
+                ((other.title.as_str(), &other.path), (title.as_str(), &path))
+            } else {
+                continue;
+            };
             bail!(
-                "version `{name}`'s `name` must be letters, digits, `.`, `-`, and `_`, starting \
-                 with a letter or a digit, as it names the folder the version's built into"
+                "version `{}`, at {}/, is inside version `{}`, at {}/: only the version at `/` \
+                 can have others inside it",
+                inner.0,
+                inner.1,
+                outer.0,
+                outer.1
             );
-        }
-        if versions.iter().any(|version| version.name == *name) {
-            bail!("two versions are named `{name}`");
         }
         // A blank `ref:` is as good as none. One starting with `-` would be
         // read by git as an option.
@@ -905,7 +956,7 @@ fn versions(values: &Mapping) -> Result<Vec<Version>> {
                 Some(git_ref.clone())
             }
             Some(_) => bail!(
-                "version `{name}`'s `ref` must be the tag, branch, or commit it's built from, \
+                "version `{title}`'s `ref` must be the tag, branch, or commit it's built from, \
                  like v1.4, in quotes if it looks like a number"
             ),
         };
@@ -913,25 +964,46 @@ fn versions(values: &Mapping) -> Result<Vec<Version>> {
             && let Some(other) = versions.iter().find(|version| version.git_ref.is_none())
         {
             bail!(
-                "versions `{}` and `{name}` both have no `ref`, but only one can be built from \
+                "versions `{}` and `{title}` both have no `ref`, but only one can be built from \
                  the site's files as they are: give the other the tag, branch, or commit it's \
                  built from",
-                other.name
+                other.title
             );
         }
         versions.push(Version {
-            name: name.clone(),
+            title: title.clone(),
+            path,
             git_ref,
         });
     }
+    if !versions.is_empty() && !versions.iter().any(|version| version.path.is_empty()) {
+        bail!(
+            "no version is at `/`, the site's home: give the one readers should land on `url: /`"
+        );
+    }
     Ok(versions)
+}
+
+/// The path of a version at `url`, a path from the root of the site, like
+/// `/1.4/` or `/versions/1.4`, without the `/` at its end, so empty for `/`,
+/// as each part names a folder; `None` if a part can't.
+fn version_path(url: &str) -> Option<String> {
+    if url == "/" {
+        return Some(String::new());
+    }
+    let path = url.strip_suffix('/').unwrap_or(url);
+    let is_folder = |part: &str| {
+        part.starts_with(|c: char| c.is_ascii_alphanumeric())
+            && (part.chars()).all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_'))
+    };
+    (path.strip_prefix('/')?.split('/').all(is_folder)).then(|| path.to_string())
 }
 
 /// The error for `versions` that isn't a list of versions.
 fn versions_error() -> anyhow::Error {
     anyhow!(
-        "`versions` must list the site's versions, the latest first, each with its `name`, and \
-         the `ref` it's built from, like `- {{ name: \"1.4\", ref: v1.4 }}`"
+        "`versions` must list the site's versions, each with its `title`, the `url` it's at, and \
+         the `ref` it's built from, like `- {{ title: \"1.4\", url: /1.4, ref: v1.4 }}`"
     )
 }
 
@@ -2185,14 +2257,15 @@ mod tests {
     }
 
     #[test]
-    fn versions_are_named_and_built_from_refs() {
+    fn versions_have_titles_and_urls_and_are_built_from_refs() {
         let site = scratch("versions", &[]);
         let versions = |site_cfg: &str| {
             std::fs::write(site.join(CONFIG_FILE), site_cfg).unwrap();
             load(&site).unwrap().versions
         };
-        let version = |name: &str, git_ref: Option<&str>| Version {
-            name: name.into(),
+        let version = |title: &str, path: &str, git_ref: Option<&str>| Version {
+            title: title.into(),
+            path: path.into(),
             git_ref: git_ref.map(Into::into),
         };
 
@@ -2200,31 +2273,48 @@ mod tests {
         for site_cfg in ["", "versions:\n", "versions: []\n"] {
             assert_eq!(versions(site_cfg), [], "{site_cfg}");
         }
-        // The latest first, each from a tag, a branch, or a commit, but for
-        // one, at most, from the site's files as they are. Each can have
-        // settings of its own, for the theme.
-        let site_cfg = "versions:\n  - name: \"2.0\"\n    label: latest\n  \
-                        - name: \"1.10\"\n    ref: v1.10\n  - name: 1.x\n    ref: origin/1.x\n  \
-                        - { name: old_docs, ref: \"1234567\" }\n";
+        // In the menu's order, one at `/`, wherever it's listed, each from a
+        // tag, a branch, or a commit, but for one, at most, from the site's
+        // files as they are. A title is any text, and a `url` can end in `/`
+        // or not. Each can have settings of its own, for the theme.
+        let site_cfg = "versions:\n  - title: \"2.0 (Alpha)\"\n    url: /2.0-alpha\n    \
+                        label: next\n  - title: 1.10 (Latest)\n    url: /\n    ref: v1.10\n  \
+                        - title: 1.x\n    url: /versions/1.x/\n    ref: origin/1.x\n  \
+                        - { title: Old docs, url: /old_docs, ref: \"1234567\" }\n";
         assert_eq!(
             versions(site_cfg),
             [
-                version("2.0", None),
-                version("1.10", Some("v1.10")),
-                version("1.x", Some("origin/1.x")),
-                version("old_docs", Some("1234567")),
+                version("2.0 (Alpha)", "/2.0-alpha", None),
+                version("1.10 (Latest)", "", Some("v1.10")),
+                version("1.x", "/versions/1.x", Some("origin/1.x")),
+                version("Old docs", "/old_docs", Some("1234567")),
             ]
         );
         // A blank `ref` is none, and every version can be from a ref.
-        let site_cfg = "versions:\n  - name: a\n    ref:\n  - { name: b, ref: v1 }\n";
+        let site_cfg = "versions:\n  - title: a\n    url: /\n    ref:\n  \
+                        - { title: b, url: /b, ref: v1 }\n";
         assert_eq!(
             versions(site_cfg),
-            [version("a", None), version("b", Some("v1"))]
+            [version("a", "", None), version("b", "/b", Some("v1"))]
         );
-        let site_cfg = "versions:\n  - { name: a, ref: v2 }\n  - { name: b, ref: v1 }\n";
+        let site_cfg = "versions:\n  - { title: a, url: /, ref: v2 }\n  \
+                        - { title: b, url: /b, ref: v1 }\n";
         assert_eq!(
             versions(site_cfg),
-            [version("a", Some("v2")), version("b", Some("v1"))]
+            [version("a", "", Some("v2")), version("b", "/b", Some("v1"))]
+        );
+        // The version at `/` can have others in its folders, as can others
+        // with the same start to their paths.
+        let site_cfg = "versions:\n  - { title: a, url: / }\n  \
+                        - { title: b, url: /versions/1, ref: v1 }\n  \
+                        - { title: c, url: /versions/10, ref: v10 }\n";
+        assert_eq!(
+            versions(site_cfg),
+            [
+                version("a", "", None),
+                version("b", "/versions/1", Some("v1")),
+                version("c", "/versions/10", Some("v10")),
+            ]
         );
         let _ = std::fs::remove_dir_all(&site);
     }
@@ -2232,51 +2322,118 @@ mod tests {
     #[test]
     fn bad_versions_explain_themselves() {
         let site = scratch("bad-versions", &[]);
-        let list = "`versions` must list the site's versions, the latest first, each with its \
-                    `name`, and the `ref` it's built from, like `- { name: \"1.4\", ref: v1.4 }`";
-        let name = "each version needs a `name`, in quotes if it looks like a number, like \
-                    \"1.10\", which YAML would read as 1.1";
-        let folder = |name: &str| {
+        let list = "`versions` must list the site's versions, each with its `title`, the `url` \
+                    it's at, and the `ref` it's built from, like \
+                    `- { title: \"1.4\", url: /1.4, ref: v1.4 }`";
+        let title = "each version needs a `title`, in quotes if it looks like a number, like \
+                     \"1.10\", which YAML would read as 1.1";
+        let url = "version `a` needs a `url`, where it's published from the root of the site, \
+                   like `/1.4`, or `/` for the site's home";
+        let path = |title: &str| {
             format!(
-                "version `{name}`'s `name` must be letters, digits, `.`, `-`, and `_`, starting \
-                 with a letter or a digit, as it names the folder the version's built into"
+                "version `{title}`'s `url` must be a path from the root of the site, like \
+                 `/1.4` or `/versions/1.4`, with letters, digits, `.`, `-`, and `_` between \
+                 its `/`s, each part starting with a letter or a digit, as they name the \
+                 folders the version's built into"
             )
         };
         let git_ref = "version `a`'s `ref` must be the tag, branch, or commit it's built from, \
                        like v1.4, in quotes if it looks like a number";
+        let home = "no version is at `/`, the site's home: give the one readers should land on \
+                    `url: /`";
         for (site_cfg, expected) in [
             ("versions: \"2.0\"\n", list.to_string()),
-            ("versions: { name: \"2.0\" }\n", list.to_string()),
+            ("versions: { title: \"2.0\" }\n", list.to_string()),
             ("versions: [\"2.0\"]\n", list.to_string()),
-            ("versions:\n  - ref: v1.4\n", name.to_string()),
-            ("versions:\n  - name: 1.10\n", name.to_string()),
-            ("versions:\n  - name: \"\"\n", name.to_string()),
-            ("versions:\n  - name: ..\n", folder("..")),
-            ("versions:\n  - name: .hidden\n", folder(".hidden")),
-            ("versions:\n  - name: 1/4\n", folder("1/4")),
-            ("versions:\n  - name: one four\n", folder("one four")),
+            ("versions:\n  - { url: /, ref: v1.4 }\n", title.to_string()),
             (
-                "versions:\n  - name: \"1.4\"\n  - { name: \"1.4\", ref: v1.4 }\n",
-                "two versions are named `1.4`".to_string(),
+                "versions:\n  - { name: \"1.4\", url: / }\n",
+                title.to_string(),
             ),
             (
-                "versions:\n  - { name: a, ref: 1.4 }\n",
+                "versions:\n  - { title: 1.10, url: / }\n",
+                title.to_string(),
+            ),
+            (
+                "versions:\n  - { title: \"\", url: / }\n",
+                title.to_string(),
+            ),
+            (
+                "versions:\n  - { title: \" \", url: / }\n",
+                title.to_string(),
+            ),
+            ("versions:\n  - title: a\n", url.to_string()),
+            ("versions:\n  - { title: a, url: }\n", url.to_string()),
+            ("versions:\n  - { title: a, url: \"\" }\n", url.to_string()),
+            ("versions:\n  - { title: a, url: 1.4 }\n", path("a")),
+            ("versions:\n  - { title: a, url: \"1.4\" }\n", path("a")),
+            ("versions:\n  - { title: a, url: // }\n", path("a")),
+            ("versions:\n  - { title: a, url: /1.4// }\n", path("a")),
+            ("versions:\n  - { title: a, url: /a//b }\n", path("a")),
+            ("versions:\n  - { title: a, url: /.. }\n", path("a")),
+            ("versions:\n  - { title: a, url: /a/../b }\n", path("a")),
+            ("versions:\n  - { title: a, url: /.hidden }\n", path("a")),
+            ("versions:\n  - { title: a, url: /one four }\n", path("a")),
+            (
+                "versions:\n  - { title: a, url: \"/1.4#top\" }\n",
+                path("a"),
+            ),
+            (
+                "versions:\n  - { title: a, url: \"https://example.com/1.4\" }\n",
+                path("a"),
+            ),
+            ("versions:\n  - { title: a, url: [/] }\n", path("a")),
+            (
+                "versions:\n  - { title: \"1.4\", url: / }\n  \
+                 - { title: \"1.4\", url: /1.4, ref: v1.4 }\n",
+                "two versions are titled `1.4`".to_string(),
+            ),
+            (
+                "versions:\n  - { title: a, url: /a }\n  - { title: b, url: /a/, ref: v1 }\n",
+                "versions `a` and `b` are both at /a/".to_string(),
+            ),
+            (
+                "versions:\n  - { title: a, url: / }\n  - { title: b, url: /, ref: v1 }\n",
+                "versions `a` and `b` are both at /".to_string(),
+            ),
+            (
+                "versions:\n  - { title: a, url: / }\n  - { title: b, url: /2.0, ref: v2 }\n  \
+                 - { title: c, url: /2.0/beta, ref: v3 }\n",
+                "version `c`, at /2.0/beta/, is inside version `b`, at /2.0/: only the version \
+                 at `/` can have others inside it"
+                    .to_string(),
+            ),
+            (
+                "versions:\n  - { title: a, url: / }\n  - { title: c, url: /2.0/beta, ref: v3 }\n  \
+                 - { title: b, url: /2.0, ref: v2 }\n",
+                "version `c`, at /2.0/beta/, is inside version `b`, at /2.0/: only the version \
+                 at `/` can have others inside it"
+                    .to_string(),
+            ),
+            (
+                "versions:\n  - { title: a, url: /a, ref: 1.4 }\n",
                 git_ref.to_string(),
             ),
             (
-                "versions:\n  - { name: a, ref: \"\" }\n",
+                "versions:\n  - { title: a, url: /a, ref: \"\" }\n",
                 git_ref.to_string(),
             ),
             (
-                "versions:\n  - { name: a, ref: --output=x }\n",
+                "versions:\n  - { title: a, url: /a, ref: --output=x }\n",
                 git_ref.to_string(),
             ),
             (
-                "versions:\n  - name: a\n  - { name: b, ref: v1 }\n  - name: c\n",
+                "versions:\n  - { title: a, url: / }\n  - { title: b, url: /b, ref: v1 }\n  \
+                 - { title: c, url: /c }\n",
                 "versions `a` and `c` both have no `ref`, but only one can be built from the \
                  site's files as they are: give the other the tag, branch, or commit it's built \
                  from"
                     .to_string(),
+            ),
+            ("versions:\n  - { title: a, url: /a }\n", home.to_string()),
+            (
+                "versions:\n  - { title: a, url: /a }\n  - { title: b, url: /b, ref: v1 }\n",
+                home.to_string(),
             ),
         ] {
             assert_eq!(error(&site, site_cfg), expected, "{site_cfg}");
@@ -2300,7 +2457,8 @@ mod tests {
         );
         let site_cfg = "theme: ./theme\nname: New\nurl: https://example.com/docs\n\
                         repo: https://github.com/example/docs\ndestination: ./public\n\
-                        versions:\n  - name: \"2.0\"\n  - { name: \"1.4\", ref: v1.4 }\n";
+                        versions:\n  - { title: \"2.0\", url: / }\n  \
+                        - { title: \"1.4\", url: /1.4, ref: v1.4 }\n";
         std::fs::write(site.join(CONFIG_FILE), site_cfg).unwrap();
         let config = load(&site).unwrap();
         let old = site.join("old");
@@ -2339,7 +2497,7 @@ mod tests {
         // Even what the site doesn't set: without a `url`, it has none.
         std::fs::write(
             site.join(CONFIG_FILE),
-            site_cfg.replace("url:", "description:"),
+            site_cfg.replace("url: https", "description: https"),
         )
         .unwrap();
         let config = load(&site).unwrap();

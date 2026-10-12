@@ -1,19 +1,19 @@
 //! The build pipeline: the source (`docs/`) + the theme + config -> the
 //! destination (`dist/`).
 //!
-//! A site with `versions` builds each in turn, the first at the root of the
-//! destination and each other in a folder named for it, from the working
-//! tree or from a git ref, checked out on its own, with its own config,
-//! source, and plugins, but the site's theme.
+//! A site with `versions` builds each in turn, each in the folder of the
+//! destination at its `url`, one at the root, from the working tree or from
+//! a git ref, checked out on its own, with its own config, source, and
+//! plugins, but the site's theme.
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result, anyhow, bail};
 use minijinja::{Value as MjValue, context};
 use serde::{Deserialize, Serialize};
 use serde_yaml::{Mapping, Value};
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::env;
-use std::ffi::{OsStr, OsString};
+use std::ffi::OsString;
 use std::fmt;
 use std::fs;
 use std::io::ErrorKind;
@@ -288,10 +288,11 @@ impl fmt::Display for UnrenderedBlock {
 /// Where a version of a site is built: the folder of the destination it's
 /// written into, and the URL it's published at.
 struct Place {
-    /// Its name, like `1.4`, or none, for a site without `versions`.
-    name: Option<String>,
+    /// Its title, like `1.4 (Latest)`, or none, for a site without
+    /// `versions`.
+    title: Option<String>,
     /// The path before its URLs, from the root of the site: empty for the
-    /// first version, at the root, or like `/1.4` for another.
+    /// version at `/`, or like `/1.4` for another.
     prefix: String,
     /// Where it's published: the site's `url`, with its prefix.
     url: SiteUrl,
@@ -300,24 +301,28 @@ struct Place {
 }
 
 impl Place {
-    /// Where `version` of the site `config` builds goes: at the root, if
-    /// it's the `first`, or else in a folder named for it.
-    fn new(config: &Config, version: Option<&config::Version>, first: bool) -> Place {
-        let name = version.map(|version| version.name.clone());
-        let folder = name.as_deref().filter(|_| !first);
-        let prefix = folder.map(|name| format!("/{name}")).unwrap_or_default();
+    /// Where `version` of the site `config` builds goes: the folder at its
+    /// `url`, or the root, for a site without `versions`.
+    fn new(config: &Config, version: Option<&config::Version>) -> Place {
+        let prefix = (version.map(|version| version.path.clone())).unwrap_or_default();
+        // Folder by folder, as joining an empty path would end it in a `/`.
+        let mut destination = config.destination_dir.clone();
+        destination.extend(version.into_iter().flat_map(config::Version::folders));
         Place {
             url: SiteUrl {
                 origin: config.url.origin.clone(),
                 path: format!("{}{prefix}", config.url.path),
             },
-            destination: match folder {
-                Some(name) => config.destination_dir.join(name),
-                None => config.destination_dir.clone(),
-            },
+            destination,
             prefix,
-            name,
+            title: version.map(|version| version.title.clone()),
         }
+    }
+
+    /// Whether it's at the root of the site, as the version at `/` is, or a
+    /// site without `versions`.
+    fn is_root(&self) -> bool {
+        self.prefix.is_empty()
     }
 }
 
@@ -369,7 +374,8 @@ struct Versions {
 struct VersionPages {
     /// Its entry in `versions`, as the config writes it.
     entry: Mapping,
-    /// The path before its URLs, from the root of the site, like `/1.4`.
+    /// The path before its URLs, from the root of the site, like `/1.4`, or
+    /// empty, for the version at `/`.
     prefix: String,
     /// Each page's URL, from the root of the version, by the URL without
     /// the `/` at its end, so a folder's `README.md` is the same page as a
@@ -398,19 +404,17 @@ impl Versions {
 
     /// Each version's entry, with the `url` of the page at `url`, from the
     /// root of a version, in that version, or, if it's not there, or `url`
-    /// is `None`, of its home page. An entry that sets its own `url` keeps
-    /// it.
+    /// is `None`, of its home page, and `root`, whether it's the version at
+    /// `/`, over what the entry sets.
     fn at(&self, url: Option<&str>) -> Vec<Mapping> {
         let url = url.map(|url| url.trim_end_matches('/'));
         (self.each.iter())
             .map(|version| {
                 let page = (url.and_then(|url| version.pages.get(url))).map_or("/", String::as_str);
+                let page = format!("{}{page}", version.prefix);
                 let mut entry = version.entry.clone();
-                if !entry.contains_key("url") {
-                    let url = format!("{}{page}", version.prefix);
-                    entry.insert("url".into(), url.into());
-                }
-                link(entry.get_mut("url"), &self.url);
+                entry.insert("url".into(), self.url.link(&page).as_ref().into());
+                entry.insert("root".into(), version.prefix.is_empty().into());
                 entry
             })
             .collect()
@@ -457,8 +461,8 @@ pub fn build(site_dir: &Path) -> Result<Built> {
     // Every version is read, and every page rendered, before the destination
     // is touched, so a build that fails leaves the last one in place.
     let mut sources = Vec::new();
-    for (i, &version) in versions.iter().enumerate() {
-        let place = Place::new(&config, version, i == 0);
+    for &version in &versions {
+        let place = Place::new(&config, version);
         let source = match (version.and_then(|v| v.git_ref.as_deref()), &repository) {
             (Some(git_ref), Some(repository)) => {
                 read_ref(site_dir, &config, repository, git_ref, place, now)
@@ -490,21 +494,16 @@ pub fn build(site_dir: &Path) -> Result<Built> {
     };
     let mut theme_files = None;
     let mut ready = Vec::new();
-    for (i, (source, &version)) in sources.into_iter().zip(&versions).enumerate() {
-        let finished = finish(
-            source,
-            every.as_ref(),
-            &mut theme_files,
-            now,
-            i == 0,
-            &mut built,
-        );
+    for (source, &version) in sources.into_iter().zip(&versions) {
+        let finished = finish(source, every.as_ref(), &mut theme_files, now, &mut built);
         ready.push(in_version(finished, version)?);
     }
-    let others: Vec<&str> = (config.versions.iter().skip(1))
-        .map(|version| version.name.as_str())
-        .collect();
-    check_versions(&ready[0], &others, &config.destination_dir)?;
+    // The version at `/`, which config checks there's one of, has the
+    // others in its folders.
+    let root = (versions.iter())
+        .position(|version| version.is_none_or(|version| version.path.is_empty()))
+        .unwrap_or_default();
+    check_versions(&ready[root], &config.versions, &config.destination_dir)?;
 
     let pages: usize = ready.iter().map(|version| version.pages).sum();
     let destination = &config.destination_dir;
@@ -527,9 +526,10 @@ pub fn build(site_dir: &Path) -> Result<Built> {
 fn in_version<T>(result: Result<T>, version: Option<&config::Version>) -> Result<T> {
     match version {
         Some(config::Version {
-            name,
+            title,
             git_ref: Some(git_ref),
-        }) => result.with_context(|| format!("building version `{name}`, from {git_ref}")),
+            ..
+        }) => result.with_context(|| format!("building version `{title}`, from {git_ref}")),
         _ => result,
     }
 }
@@ -728,14 +728,13 @@ fn read_source(
 
 /// Put each page of a version of the site, `source`, in its theme, beside
 /// its other files and the theme's, `theme_files`, which are read once, for
-/// every version, and index it for search. The `first` version has the
-/// site's 404 page. What's warned of is noted in `built`.
+/// every version, and index it for search. The version at the root of the
+/// site has its 404 page. What's warned of is noted in `built`.
 fn finish(
     source: Source,
     versions: Option<&Versions>,
     theme_files: &mut Option<Vec<StaticFile>>,
     now: OffsetDateTime,
-    first: bool,
     built: &mut Built,
 ) -> Result<Ready> {
     let Source {
@@ -764,8 +763,8 @@ fn finish(
     let mut site = Mapping::new();
     site.insert("nav".into(), serde_yaml::to_value(build_nav(&tree))?);
     site.insert("year".into(), now.year().into());
-    if let Some(name) = &place.name {
-        site.insert("version".into(), name.as_str().into());
+    if let Some(title) = &place.title {
+        site.insert("version".into(), title.as_str().into());
     }
     config::merge(&mut site, values);
     // Each entry of `versions`, as it's written, with the URL of its home.
@@ -877,9 +876,10 @@ fn finish(
     }
 
     // A 404 page has no content, or file: all `page` has is its type and
-    // URL, and the home of each version. Only the first version has one, at
-    // the root of the destination, where static hosts look for it.
-    if first {
+    // URL, and the home of each version. Only the version at the root of
+    // the site has one, at the root of the destination, where static hosts
+    // look for it.
+    if place.is_root() {
         let not_found_url = format!("/{NOT_FOUND_FILE}");
         let homes = versions.map(|versions| versions.at(None));
         let data = PageData {
@@ -949,36 +949,42 @@ fn finish(
     })
 }
 
-/// Fail if a page or a file of the first version of a site, `first`, is
-/// where one of the `others` is built, in a folder of the destination,
-/// `root`, named for it, as `docs/1.4.md` would be for version `1.4`, or
-/// one of them is where little writes files for search.
-fn check_versions(first: &Ready, others: &[&str], root: &Path) -> Result<()> {
+/// Fail if a page or a file of the version of a site at its root, `root`, is
+/// in the folder of the destination, `destination`, another of its
+/// `versions` is built into, as `docs/1.4.md` would be for a version at
+/// `/1.4`, or one of them is where little writes files for search.
+fn check_versions(root: &Ready, versions: &[config::Version], destination: &Path) -> Result<()> {
+    let folders: Vec<(PathBuf, &config::Version)> = (versions.iter())
+        .filter(|version| !version.path.is_empty())
+        .map(|version| (version.folders().collect(), version))
+        .collect();
     let version_at = |path: &Path| {
-        let Some(Component::Normal(folder)) = path.components().next() else {
-            return None;
-        };
-        others.iter().find(|name| OsStr::new(name) == folder)
+        (folders.iter())
+            .find(|(folder, _)| path.starts_with(folder))
+            .map(|&(_, version)| version)
     };
-    for page in &first.outputs {
-        if let Some(name) = version_at(page.path.strip_prefix(root)?) {
-            bail!(
-                "{} clashes with version `{name}`, built at /{name}/: rename or move one",
-                page.name
-            );
+    let clash = |name: &str, version: &config::Version| {
+        anyhow!(
+            "{name} clashes with version `{}`, built at {}/: rename or move one",
+            version.title,
+            version.path
+        )
+    };
+    for page in &root.outputs {
+        if let Some(version) = version_at(page.path.strip_prefix(destination)?) {
+            return Err(clash(&page.name, version));
         }
     }
-    for file in &first.static_files {
-        if let Some(name) = version_at(&file.path) {
-            bail!(
-                "{} clashes with version `{name}`, built at /{name}/: rename or move one",
-                file.origin
-            );
+    for file in &root.static_files {
+        if let Some(version) = version_at(&file.path) {
+            return Err(clash(&file.origin, version));
         }
     }
-    if let Some(name) = (first.search_files.iter()).find_map(|file| version_at(&file.path)) {
+    if let Some(version) = (root.search_files.iter()).find_map(|file| version_at(&file.path)) {
         bail!(
-            "version `{name}` is built at /{name}/, where little writes files for search: rename it"
+            "version `{}` is built at {}/, where little writes files for search: change its `url`",
+            version.title,
+            version.path
         );
     }
     Ok(())
@@ -3998,8 +4004,8 @@ mod tests {
     fn each_version_is_built_from_its_git_ref() {
         use git::tests::{commit_all, git_in};
         let template = "{{ site.name }} {{ site.version }} \
-                        | {% for v in site.versions %}{{ v.name }} {{ v.url | safe }} {% endfor %}\
-                        | {% for v in page.versions %}{{ v.name }} {{ v.url | safe }} {% endfor %}\
+                        | {% for v in site.versions %}{{ v.title }}{{ '*' if v.root }} {{ v.url | safe }} {% endfor %}\
+                        | {% for v in page.versions %}{{ v.title }}{{ '*' if v.root }} {{ v.url | safe }} {% endfor %}\
                         | {{ page.source_url | safe if page.source_url }} \
                         | {{ page.edit_url | safe if page.edit_url }}\n{{ page.content | safe }}";
         let site_cfg = |versions: &str| {
@@ -4020,7 +4026,10 @@ mod tests {
             &[
                 (
                     "little.yml",
-                    &site_cfg("  - name: \"2.0\"\n  - { name: \"1.4\", ref: v1.4 }\n"),
+                    &site_cfg(
+                        "  - { title: \"2.0\", url: / }\n  \
+                         - { title: \"1.4\", url: /1.4, ref: v1.4 }\n",
+                    ),
                 ),
                 ("docs/README.md", "# Home\n"),
                 ("docs/guide.md", "# Guide\n"),
@@ -4042,14 +4051,14 @@ mod tests {
         let edit = |path: &str| format!("https://github.com/o/r/edit/main/docs/{path}");
         let v1_4 = git_in(&site, &["rev-parse", "v1.4^{commit}"]);
 
-        // The first version is at the root, from the site's files as they
-        // are, and each page links to itself in each version, or, if it's
-        // not there, to its home.
-        let all = "2.0 /proj/ 1.4 /proj/1.4/ ";
+        // The version at `/` is at the root, here from the site's files as
+        // they are, and each page links to itself in each version, or, if
+        // it's not there, to its home.
+        let all = "2.0* /proj/ 1.4 /proj/1.4/ ";
         assert_eq!(
             head("guide/index.html"),
             format!(
-                "New 2.0 | {all}| 2.0 /proj/guide 1.4 /proj/1.4/guide/ | {} | {}",
+                "New 2.0 | {all}| 2.0* /proj/guide 1.4 /proj/1.4/guide/ | {} | {}",
                 file("main", "guide.md"),
                 edit("guide.md")
             )
@@ -4057,25 +4066,25 @@ mod tests {
         assert_eq!(
             head("new/index.html"),
             format!(
-                "New 2.0 | {all}| 2.0 /proj/new 1.4 /proj/1.4/ | {} | {}",
+                "New 2.0 | {all}| 2.0* /proj/new 1.4 /proj/1.4/ | {} | {}",
                 file("main", "new.md"),
                 edit("new.md")
             )
         );
-        // Another is in a folder named for it, as it was at its ref, with its
-        // own settings, but the site's `url`. Its pages link to their files
-        // at the ref's commit, which can't be edited.
+        // Another is in the folder at its `url`, as it was at its ref, with
+        // its own settings, but the site's `url`. Its pages link to their
+        // files at the ref's commit, which can't be edited.
         assert_eq!(
             head("1.4/guide/index.html"),
             format!(
-                "Old 1.4 | {all}| 2.0 /proj/guide 1.4 /proj/1.4/guide/ | {} | ",
+                "Old 1.4 | {all}| 2.0* /proj/guide 1.4 /proj/1.4/guide/ | {} | ",
                 file(&v1_4, "guide/README.md")
             )
         );
         assert_eq!(
             head("1.4/old/index.html"),
             format!(
-                "Old 1.4 | {all}| 2.0 /proj/ 1.4 /proj/1.4/old | {} | ",
+                "Old 1.4 | {all}| 2.0* /proj/ 1.4 /proj/1.4/old | {} | ",
                 file(&v1_4, "old.md")
             )
         );
@@ -4085,8 +4094,8 @@ mod tests {
             old_home.contains(r#"<a href="/proj/1.4/old">the old page</a>"#),
             "{old_home}"
         );
-        // Each has the theme's files, but only the first a 404 page, which
-        // links to each version's home.
+        // Each has the theme's files, but only the version at `/` a 404
+        // page, which links to each version's home.
         assert!(dist.join("style.css").is_file());
         assert!(dist.join("1.4/style.css").is_file());
         assert_eq!(read(NOT_FOUND_FILE), "/proj/ /proj/1.4/ ");
@@ -4106,18 +4115,20 @@ mod tests {
         let from_refs: HashSet<_> = from_refs.into_iter().map(PathBuf::from).collect();
         assert_eq!(built.from_refs, from_refs);
 
-        // The first version can be from a ref, too, and the site's files, as
-        // they are, in a folder, like any other.
+        // The version at `/` can be from a ref, too, and listed anywhere, and
+        // the site's files, as they are, in a folder, like any other, as deep
+        // as its `url` says.
         commit_all(&site);
         git_in(&site, &["tag", "v2.0"]);
         let v2_0 = git_in(&site, &["rev-parse", "v2.0^{commit}"]);
-        let versions = "  - { name: \"2.0\", ref: v2.0 }\n  - { name: \"1.4\", ref: v1.4 }\n  \
-                        - name: dev\n";
+        let versions = "  - { title: dev, url: /dev/ }\n  \
+                        - { title: \"2.0\", url: /, ref: v2.0 }\n  \
+                        - { title: \"1.4\", url: /versions/1.4, ref: v1.4 }\n";
         fs::write(site.join("little.yml"), site_cfg(versions)).unwrap();
         fs::write(site.join("docs/new.md"), "# Newer\n").unwrap();
         let built = build(&site).unwrap();
-        let all = "2.0 /proj/ 1.4 /proj/1.4/ dev /proj/dev/ ";
-        let new = "2.0 /proj/new 1.4 /proj/1.4/ dev /proj/dev/new ";
+        let all = "dev /proj/dev/ 2.0* /proj/ 1.4 /proj/versions/1.4/ ";
+        let new = "dev /proj/dev/new 2.0* /proj/new 1.4 /proj/versions/1.4/ ";
         assert_eq!(
             head("new/index.html"),
             format!("New 2.0 | {all}| {new}| {} | ", file(&v2_0, "new.md"))
@@ -4132,10 +4143,30 @@ mod tests {
             )
         );
         assert!(read("dev/new/index.html").contains("<h1 id=\"newer\">Newer<"));
-        assert_eq!(read(NOT_FOUND_FILE), "/proj/ /proj/1.4/ /proj/dev/ ");
+        assert_eq!(
+            head("versions/1.4/old/index.html"),
+            format!(
+                "Old 1.4 | {all}| dev /proj/dev/ 2.0* /proj/ 1.4 /proj/versions/1.4/old | {} | ",
+                file(&v1_4, "old.md")
+            )
+        );
+        assert!(
+            read("versions/1.4/index.html")
+                .contains(r#"<a href="/proj/versions/1.4/old">the old page</a>"#)
+        );
+        assert_eq!(
+            built.urls[Path::new("versions/1.4/old/index.html")],
+            "/versions/1.4/old"
+        );
+        assert_eq!(
+            read(NOT_FOUND_FILE),
+            "/proj/dev/ /proj/ /proj/versions/1.4/ "
+        );
         assert!(!dist.join("dev").join(NOT_FOUND_FILE).exists());
+        assert!(!dist.join("1.4").exists());
         assert!(built.from_refs.contains(Path::new("new/index.html")));
         assert!(!built.from_refs.contains(Path::new("dev/new/index.html")));
+        assert!((built.from_refs).contains(Path::new("versions/1.4/old/index.html")));
         let _ = fs::remove_dir_all(&site);
     }
 
@@ -4144,73 +4175,98 @@ mod tests {
         let site = scratch_site(
             "versions-no-ref",
             &[
+                // little says which version is at `/`, whatever an entry
+                // says.
                 (
                     "little.yml",
-                    "theme: ./theme\nversions:\n  - name: latest\n",
+                    "theme: ./theme\nversions:\n  - { title: Latest, url: /, root: false }\n",
                 ),
                 ("docs/README.md", "# Home\n"),
                 (
                     "theme/_templates/default.html",
                     "{{ site.version }} | {{ site.versions | map(attribute='url') | join(' ') | safe }} \
-                     | {{ page.versions | map(attribute='url') | join(' ') | safe }}",
+                     | {{ page.versions | map(attribute='url') | join(' ') | safe }} \
+                     | {{ page.versions | map(attribute='root') | join(' ') }}",
                 ),
             ],
         );
         build(&site).unwrap();
         let home = fs::read_to_string(site.join("dist/index.html")).unwrap();
-        assert_eq!(home, "latest | / | /");
+        // MiniJinja writes a boolean as Jinja2 does.
+        assert_eq!(home, "Latest | / | / | True");
         let _ = fs::remove_dir_all(&site);
     }
 
     #[test]
     fn a_version_cant_be_where_a_page_or_search_is() {
+        let site_cfg = |url: &str| {
+            format!(
+                "theme: ./theme\nversions:\n  - {{ title: \"2.0\", url: / }}\n  \
+                 - {{ title: \"1.4\", url: {url}, ref: v1.4 }}\n"
+            )
+        };
         let site = versioned_site(
             "version-clash",
             &[("docs/README.md", "# Old\n")],
             &[
-                (
-                    "little.yml",
-                    "theme: ./theme\nversions:\n  - name: \"2.0\"\n  - { name: \"1.4\", ref: v1.4 }\n",
-                ),
+                ("little.yml", &site_cfg("/1.4")),
                 ("docs/README.md", "# Home\n"),
                 ("theme/_templates/default.html", "{{ page.title }}"),
             ],
         );
-        // A page of the first version, or a file, where another version goes,
-        // stops the build...
+        // A page of the version at `/`, or a file, where another version
+        // goes, stops the build...
         let docs = site.join("docs");
-        for (file, name) in [
-            ("1.4.md", "the page built from "),
-            ("1.4/README.md", "the page built from "),
-            ("1.4/notes.txt", ""),
-        ] {
-            let path = docs.join(file);
-            fs::create_dir_all(path.parent().unwrap()).unwrap();
-            fs::write(&path, "# Mine\n").unwrap();
-            let message = format!("{:#}", build(&site).unwrap_err());
-            let expected = format!(
-                "{name}{} clashes with version `1.4`, built at /1.4/: rename or move one",
-                path.display()
-            );
-            assert_eq!(message, expected);
-            fs::remove_file(&path).unwrap();
-        }
-        // ...but one deeper down, of the same name, doesn't.
+        let clashes = |url: &str, files: &[(&str, &str)]| {
+            fs::write(site.join("little.yml"), site_cfg(url)).unwrap();
+            for (file, name) in files {
+                let path = docs.join(file);
+                fs::create_dir_all(path.parent().unwrap()).unwrap();
+                fs::write(&path, "# Mine\n").unwrap();
+                let message = format!("{:#}", build(&site).unwrap_err());
+                let expected = format!(
+                    "{name}{} clashes with version `1.4`, built at {url}/: rename or move one",
+                    path.display()
+                );
+                assert_eq!(message, expected);
+                fs::remove_file(&path).unwrap();
+            }
+        };
+        clashes(
+            "/1.4",
+            &[
+                ("1.4.md", "the page built from "),
+                ("1.4/README.md", "the page built from "),
+                ("1.4/notes.txt", ""),
+            ],
+        );
+        clashes(
+            "/versions/1.4",
+            &[
+                ("versions/1.4.md", "the page built from "),
+                ("versions/1.4/notes.txt", ""),
+            ],
+        );
+        // ...but one in the folders above it, or deeper down, of the same
+        // name, doesn't.
+        fs::write(docs.join("versions/README.md"), "# Versions\n").unwrap();
+        fs::write(docs.join("versions/1.md"), "# 1\n").unwrap();
         fs::create_dir_all(docs.join("notes")).unwrap();
         fs::write(docs.join("notes/1.4.md"), "# Notes\n").unwrap();
         build(&site).unwrap();
-        assert!(site.join("dist/notes/1.4/index.html").is_file());
+        let dist = site.join("dist");
+        for page in ["versions", "versions/1", "versions/1.4", "notes/1.4"] {
+            assert!(dist.join(page).join("index.html").is_file(), "{page}");
+        }
 
         // Nor can a version be where search's files are.
         fs::write(site.join("theme/little.yml"), "search: true\n").unwrap();
-        let site_cfg =
-            "theme: ./theme\nversions:\n  - name: \"2.0\"\n  - { name: pagefind, ref: v1.4 }\n";
-        fs::write(site.join("little.yml"), site_cfg).unwrap();
+        fs::write(site.join("little.yml"), site_cfg("/pagefind")).unwrap();
         let message = format!("{:#}", build(&site).unwrap_err());
         assert_eq!(
             message,
-            "version `pagefind` is built at /pagefind/, where little writes files for search: \
-             rename it"
+            "version `1.4` is built at /pagefind/, where little writes files for search: change \
+             its `url`"
         );
         let _ = fs::remove_dir_all(&site);
     }
@@ -4220,7 +4276,8 @@ mod tests {
         use git::tests::{commit_all, git_in};
         let site_cfg = |version: &str| {
             format!(
-                "theme: ./theme\nversions:\n  - name: \"2.0\"\n  - {{ name: \"1.4\", {version} }}\n"
+                "theme: ./theme\nversions:\n  - {{ title: \"2.0\", url: / }}\n  \
+                 - {{ title: 1.4 (Old), url: /1.4, {version} }}\n"
             )
         };
         let site = versioned_site(
@@ -4249,7 +4306,8 @@ mod tests {
         assert_eq!(
             message,
             format!(
-                "building version `1.4`, from v1.5: there's no tag, branch, or commit `v1.5` in {}",
+                "building version `1.4 (Old)`, from v1.5: there's no tag, branch, or commit \
+                 `v1.5` in {}",
                 top.display()
             )
         );
@@ -4261,7 +4319,7 @@ mod tests {
         let message = format!("{:#}", build(&site).unwrap_err());
         assert_eq!(
             message,
-            "building version `1.4`, from v1.3: there's no source folder at v1.3:content"
+            "building version `1.4 (Old)`, from v1.3: there's no source folder at v1.3:content"
         );
         let _ = fs::remove_dir_all(&site);
     }
@@ -4274,7 +4332,8 @@ mod tests {
                       warnings: [\"can't read pkg/broken.py\"]\n";
         let site_cfg = |git_ref: &str| {
             format!(
-                "theme: ./theme\nversions:\n  - name: \"2.0\"\n  - {{ name: \"1.4\", ref: {git_ref} }}\n"
+                "theme: ./theme\nversions:\n  - {{ title: \"2.0\", url: / }}\n  \
+                 - {{ title: \"1.4\", url: /1.4, ref: {git_ref} }}\n"
             )
         };
         let site = scratch_site(
@@ -4338,7 +4397,8 @@ mod tests {
         ];
         let mut new = vec![(
             "little.yml",
-            "versions:\n  - name: \"2.0\"\n  - { name: \"1.4\", ref: v1.4 }\n",
+            "versions:\n  - title: \"2.0 (Alpha)\"\n    url: /2.0-alpha\n  \
+             - title: \"1.4 (Latest)\"\n    url: /\n    ref: v1.4\n",
         )];
         new.extend(pages);
         let site = versioned_site("versions-builtin", &pages, &new);
@@ -4348,36 +4408,49 @@ mod tests {
         let read = |path: &str| fs::read_to_string(site.join("dist").join(path)).unwrap();
         let latest = read("guide/index.html");
         assert!(
-            latest
-                .contains("<summary><span class=\"visually-hidden\">Version </span>2.0</summary>"),
-            "{latest}"
-        );
-        assert!(
-            latest.contains("<a href=\"/guide\" aria-current=\"true\">2.0</a>"),
-            "{latest}"
-        );
-        assert!(
-            latest.contains("<a href=\"/1.4/guide\">1.4</a>"),
-            "{latest}"
-        );
-        assert!(!latest.contains("version-note"), "{latest}");
-        // Each version but the first notes which it is, and links to the
-        // first.
-        let old = read("1.4/guide/index.html");
-        assert!(
-            old.contains("<a href=\"/1.4/guide\" aria-current=\"true\">1.4</a>"),
-            "{old}"
-        );
-        assert!(
-            old.contains(
-                "These docs are for version <strong>1.4</strong>. \
-                 <a href=\"/guide\">Go to version 2.0</a>"
+            latest.contains(
+                "<summary><span class=\"visually-hidden\">Version </span>1.4 (Latest)</summary>"
             ),
-            "{old}"
+            "{latest}"
         );
+        // In the order they're listed.
+        let alpha_item = latest.find("<a href=\"/2.0-alpha/guide\">2.0 (Alpha)</a>");
+        let latest_item = latest.find("<a href=\"/guide\" aria-current=\"true\">1.4 (Latest)</a>");
+        assert!(alpha_item.is_some() && alpha_item < latest_item, "{latest}");
+        assert!(!latest.contains("version-note"), "{latest}");
+        // Each version but the one at `/` notes which it is, and links to the
+        // one at `/`.
+        let alpha = read("2.0-alpha/guide/index.html");
+        assert!(
+            alpha.contains("<a href=\"/2.0-alpha/guide\" aria-current=\"true\">2.0 (Alpha)</a>"),
+            "{alpha}"
+        );
+        assert!(
+            alpha.contains(
+                "These docs are for version <strong>2.0 (Alpha)</strong>. \
+                 <a href=\"/guide\">Go to version 1.4 (Latest)</a>"
+            ),
+            "{alpha}"
+        );
+        // The 404 page is the version at `/`'s, and links to each's home.
+        let not_found = read(NOT_FOUND_FILE);
+        assert!(
+            not_found.contains("<a href=\"/\" aria-current=\"true\">1.4 (Latest)</a>"),
+            "{not_found}"
+        );
+        assert!(
+            not_found.contains("<a href=\"/2.0-alpha/\">2.0 (Alpha)</a>"),
+            "{not_found}"
+        );
+        assert!(!not_found.contains("version-note"), "{not_found}");
+        assert!(!site.join("dist/2.0-alpha").join(NOT_FOUND_FILE).exists());
 
         // A site with one version has no menu.
-        fs::write(site.join("little.yml"), "versions:\n  - name: latest\n").unwrap();
+        fs::write(
+            site.join("little.yml"),
+            "versions:\n  - { title: Latest, url: / }\n",
+        )
+        .unwrap();
         build(&site).unwrap();
         let only = read("guide/index.html");
         assert!(!only.contains("version-menu"), "{only}");

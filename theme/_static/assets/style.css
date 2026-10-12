@@ -497,7 +497,8 @@
     .version-menu summary::after { transition: rotate 0.15s ease-out, translate 0.15s ease-out; }
   }
 
-  /* On each version but the first, a note above the page names it. */
+  /* On each version but the one at the root of the site, a note above the
+     page names it. */
   .version-note {
     margin: 0 0 1.5rem;
     padding: 0.625rem 1rem;

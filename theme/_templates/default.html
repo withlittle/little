@@ -100,7 +100,7 @@
           <summary><span class="visually-hidden">Version </span>{{ site.version }}</summary>
           <ul>
             {% for version in versions %}
-            <li><a href="{{ version.url | safe }}"{% if version.name == site.version %} aria-current="true"{% endif %}>{{ version.name }}</a></li>
+            <li><a href="{{ version.url | safe }}"{% if version.title == site.version %} aria-current="true"{% endif %}>{{ version.title }}</a></li>
             {% endfor %}
           </ul>
         </details>
@@ -165,10 +165,11 @@
 
     <main id="_main">
       <div class="page">
-        {# On each version but the first, a note names the version, and links
-           to the first. #}
-        {% if versions and site.version != versions[0].name %}
-        <p class="version-note" role="note">These docs are for version <strong>{{ site.version }}</strong>. <a href="{{ versions[0].url | safe }}">Go to version {{ versions[0].name }}</a></p>
+        {# On each version but the one at the root of the site, a note names
+           the version, and links to the one at the root. #}
+        {% set root_version = versions | selectattr("root") | first %}
+        {% if root_version and site.version != root_version.title %}
+        <p class="version-note" role="note">These docs are for version <strong>{{ site.version }}</strong>. <a href="{{ root_version.url | safe }}">Go to version {{ root_version.title }}</a></p>
         {% endif %}
 
         {# page.breadcrumbs is what's above this page in site.nav, from the top

@@ -33,7 +33,7 @@ or works them out, and a theme or a site can change any of them:
 | `markdown.mermaid` | `svg` | how [diagrams are drawn](../writing/diagrams.md#choosing-how-diagrams-are-drawn) |
 | `mermaid` | none | how [diagrams look](../writing/diagrams.md#choosing-how-diagrams-look), in Mermaid's own config |
 | `plugins` | none | the [plugins](../plugins/using-plugins.md) a site uses, their files, and their settings |
-| `versions` | none | the site's [versions](../writing/versions.md), each built from a git tag, branch, or commit |
+| `versions` | none | the site's [versions](../writing/versions.md), each with its `title`, the `url` it's published at, and the git tag, branch, or commit it's built from |
 | `host` | `127.0.0.1` | the host `little serve` [serves at](commands.md#choosing-where-to-serve) |
 | `port` | `8080` | the port it serves on |
 | `year` | the year the build starts in | the year a theme's [copyright notice](../themes/making-a-theme.md#a-copyright-notice) shows |
@@ -44,7 +44,7 @@ or works them out, and a theme or a site can change any of them:
 - In `plugins`, only the site can set a plugin's `read`, the folders it can
   read.
 - little works out `nav` and `year` as it builds, and, on a site with
-  [versions](../writing/versions.md), `version`, the name of the one it's
+  [versions](../writing/versions.md), `version`, the title of the one it's
   building, so `little config` doesn't print them, unless a `little.yml`
   sets them, which replaces what little works out.
 

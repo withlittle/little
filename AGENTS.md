@@ -34,8 +34,9 @@ cargo clippy --manifest-path plugins/docstrings/Cargo.toml --all-targets --targe
   their diagrams are drawn, and look, with Mermaid's own config, the
   classes their code is highlighted with, and the plugins that render their
   code blocks, or add pages, each with its `.wasm` file, the folders it
-  reads, and its settings; and the versions it's built in, each from a git
-  ref but one, with the config a version's own `little.yml` can't set.
+  reads, and its settings; and the versions it's built in, each with its
+  title and URL, one at `/`, and each from a git ref but one, with the
+  config a version's own `little.yml` can't set.
 - `src/little.yml` — little's own defaults (level 1), compiled into the binary.
 - `src/render.rs` — Markdown (comrak, with the extensions the site turns on) +
   YAML frontmatter → HTML fragment, with each relative link led from the
@@ -74,10 +75,10 @@ cargo clippy --manifest-path plugins/docstrings/Cargo.toml --all-targets --targe
   writes. Finds where the source is in its repository, so each page can
   link to its file there, and works out when it's built, for `site.year`,
   its diagrams' today, and its plugins' clocks. Builds each of the site's
-  versions this way, in the site's theme: the first at the root, the rest
-  in folders named for them, those from git refs from their files there,
-  checked out with `src/git.rs`; stops on a page where a version's folder
-  goes; and gives the theme `site.versions`, `site.version`, and
+  versions this way, in the site's theme, each in the folder of its URL,
+  one at the root, those from git refs from their files there, checked out
+  with `src/git.rs`; stops on a page of the one at the root where another
+  version goes; and gives the theme `site.versions`, `site.version`, and
   `page.versions`.
 - `src/git.rs` — the git repository a site's in, found with the `git`
   command, and the files a build of a version reads from a git ref: its
@@ -416,15 +417,24 @@ Record notable choices as short ADRs in `decisions/`. Locked so far:
   doesn't shrink; a name that fits on one line looks as it did — see
   [`decisions/0039-a-long-site-name-in-the-built-in-themes-header.md`](./decisions/0039-a-long-site-name-in-the-built-in-themes-header.md).
 - **Versions:** `versions` lists a site's versions, the latest first, each
-  a `name` and the git `ref`, a tag, branch, or commit, it's read from, but
-  for at most one, the site's files as they are. `little build` builds them
-  all, the first at the root and each other in a folder named for it, like
-  `/1.4/`, with its own theme files and search index, in the site's theme,
-  by today's little, each from its ref's own `little.yml`, source, and
-  plugins, read with `git`, but with the site's `theme`, `url`,
+  with the git `ref`, a tag, branch, or commit, it's read from, but for at
+  most one, the site's files as they are. `little build` builds them all,
+  each in its folder, with its own theme files and search index, in the
+  site's theme, by today's little, each from its ref's own `little.yml`,
+  source, and plugins, read with `git`, but with the site's `theme`, `url`,
   `destination`, `repo`, `host`, `port`, and `versions`. The theme gets
   `site.versions`, `site.version`, and `page.versions`, the same page in
   each version, else its home, and the built-in theme has a menu of them in
   its header. A shallow clone stops the build; a version from a ref's links
   to other sites aren't checked — see
   [`decisions/0040-versions-from-git-refs.md`](./decisions/0040-versions-from-git-refs.md).
+- **A version's title and URL:** each version has a `title`, what the menu
+  shows, like `2.0 (Alpha)`, and a `url`, where it's published from the
+  root of the site, like `/1.4` or `/versions/1.4`, as the nav's items do,
+  in place of a `name`. Exactly one is at `/`, whatever its place in the
+  list, which is the menu's order; others can be in its folders, but not in
+  each other's. The one at `/` has the 404 page, and its pages are checked
+  against the others' folders. `site.version` is the title, and each entry
+  in `site.versions` and `page.versions` has `root`, true for the one at
+  `/` — see
+  [`decisions/0041-version-titles-and-urls.md`](./decisions/0041-version-titles-and-urls.md).

@@ -777,7 +777,8 @@ mod tests {
         commit_all(&site);
         git_in(&site, &["tag", "v1.4"]);
         let site_cfg = "theme: ./theme\nurl: https://example.com/proj\nversions:\n  \
-                        - name: \"2.0\"\n  - { name: \"1.4\", ref: v1.4 }\n";
+                        - { title: \"2.0\", url: / }\n  \
+                        - { title: \"1.4\", url: /1.4, ref: v1.4 }\n";
         fs::write(site.join("little.yml"), site_cfg).unwrap();
         fs::write(site.join("docs/README.md"), "# Home\n").unwrap();
 

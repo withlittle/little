@@ -13,23 +13,26 @@ menu of them to its header.
 
 ## Listing versions
 
-List the site's versions in `versions`, the latest first, each with its
-`name`, and the `ref` its files are read from:
+List the site's versions in `versions`, as the menu lists them, the latest
+first, each with the `title` readers see, the `url` it's published at, and
+the `ref` its files are read from:
 
 ```yaml
 # little.yml
 versions:
-  - name: "2.0"   # no ref: the site's files, as they are
-  - name: "1.4"
+  - title: "2.0"   # no ref: the site's files, as they are
+    url: /
+  - title: "1.4"
+    url: /1.4
     ref: v1.4
-  - name: "1.3"
+  - title: "1.3"
+    url: /1.3
     ref: v1.3
 ```
 
-- `little build` builds every version, each time. The first is at the root
-  of the site, as it would be without `versions`, and each other in a folder
-  named for it, so 1.4's `docs/guide/install.md` is at
-  `/1.4/guide/install`, or, under the path of the site's
+- `little build` builds every version, each time, each at its `url`, so
+  1.4's `docs/guide/install.md` is at `/1.4/guide/install`, or, under the
+  path of the site's
   [`url`](../getting-started/publishing.md#choosing-the-sites-url), like
   `/little`, at `/little/1.4/guide/install`.
 - `little serve` serves every version, and builds them all again whenever
@@ -39,12 +42,21 @@ versions:
   as git names it. A version from a branch can be fixed after it's
   released, by committing to the branch; one from a tag can't.
 - One version, at most, has no `ref`, and is built from the site's files as
-  they are, so `little serve` shows your edits to it. It needn't be the
-  first: see [Releasing a version](#releasing-a-version).
-- A `name` is letters, digits, `.`, `-`, and `_`, starting with a letter or
-  a digit, as it names the version's folder. Put it in quotes if it looks
-  like a number, as YAML reads `1.10` as `1.1`. Two versions can't have the
-  same name.
+  they are, so `little serve` shows your edits to it. It needn't be the one
+  at `/`: see [Releasing a version](#releasing-a-version).
+- A `title` is what the menu shows, like `1.4` or `2.0 (Alpha)`. Put it in
+  quotes if it looks like a number, as YAML reads `1.10` as `1.1`. Two
+  versions can't have the same title. Keep it short, as the built-in
+  theme's menu shows it on one line.
+- A `url` is from the root of the site, without the path of the site's
+  `url`, as in the [nav](navigation.md#writing-the-nav-yourself): little
+  adds it. Each part between its `/`s names a folder, so it's letters,
+  digits, `.`, `-`, and `_`, starting with a letter or a digit. Two
+  versions can't be at the same `url`.
+- One version must be at `/`, the site's home, so readers land on it. It
+  needn't be the first, or the latest. Others go in folders of it, like
+  `/1.4` or `/versions/1.4`, but not in each other's, like `/2.0/beta` in
+  `/2.0`.
 - A site with a version from a `ref` must be in a git repository, with git
   installed, or `little build` and `little serve` stop, and say why. A site
   without `versions` has just the one, its files as they are.
@@ -74,11 +86,12 @@ looks alike, has the menu, and gets little's fixes:
 - Each version has its own copy of the theme's files, like
   `/1.4/assets/style.css`, and its own [search](search.md) index, so a
   search finds the pages of the version it's made in. The [404
-  page](../getting-started/publishing.md#a-404-page) is the first version's.
-- A page or file of the first version in another's folder, like
-  `docs/1.4.md` or `docs/1.4/setup.png`, stops the build, naming both, as
-  [pages that clash](pages-and-files.md#pages-that-clash) do. So does a
-  version named `pagefind`, where search's files go.
+  page](../getting-started/publishing.md#a-404-page) is the one at `/`'s.
+- A page or file of the version at `/` where another version goes, like
+  `docs/1.4.md` or `docs/1.4/setup.png` for a version at `/1.4`, stops the
+  build, naming both, as [pages that
+  clash](pages-and-files.md#pages-that-clash) do. So does a version at
+  `/pagefind`, where search's files go.
 
 ## The menu of versions
 
@@ -89,8 +102,9 @@ reading:
 - Each version in it leads to the page you're on, in that version, if it
   has a page at the same URL, or else to its home page. So from
   `/1.4/guide/install`, 2.0 leads to `/guide/install`.
-- On each version but the first, a note above the page says which version
-  it's for, and links to the first, at the same page if it has one.
+- On each version but the one at `/`, a note above the page says which
+  version it's for, and links to the one at `/`, at the same page if it has
+  one.
 - It's a `<details>`, so it works without a script. With the theme's, a
   click elsewhere, or Escape, closes it.
 
@@ -115,31 +129,37 @@ them.
 Tag each release, as you would anyway, so its docs can be built from the
 tag, then list it in `little.yml`:
 
-- If the site's files are the latest release's docs, as above, rename the
-  first version for the new release, and list the one before it below,
-  from its tag:
+- If the site's files are the latest release's docs, as above, retitle the
+  version at `/` for the new release, and list the one before it below,
+  from its tag, in a folder of its own:
 
   ```yaml
   # little.yml
   versions:
-    - name: "2.1"
-    - name: "2.0"
+    - title: "2.1"
+      url: /
+    - title: "2.0"
+      url: /2.0
       ref: v2.0
-    - name: "1.4"
+    - title: "1.4"
+      url: /1.4
       ref: v1.4
   ```
 
 - To keep readers on the latest release while you write the next one's
-  docs, give the first version the release's tag, and list the site's files
-  below it, as a version like `dev`, at `/dev/`:
+  docs, give the version at `/` the release's tag, and publish the site's
+  files in a folder, like `/dev`:
 
   ```yaml
   # little.yml
   versions:
-    - name: "2.1"
+    - title: dev   # no ref: the site's files, as they are
+      url: /dev
+    - title: "2.1 (Latest)"
+      url: /
       ref: v2.1
-    - name: dev   # no ref: the site's files, as they are
-    - name: "2.0"
+    - title: "2.0"
+      url: /2.0
       ref: v2.0
   ```
 
@@ -171,8 +191,9 @@ steps:
 
 - Each build builds every version, so a build, and each save in
   `little serve`, takes longer for each.
-- A version is only at its folder: there's no alias for one, like
-  `/latest/`, or redirect to one.
+- A version is only at its `url`: there's no alias for one, like
+  `/latest/`, or redirect to one, so a release that moves a version, as
+  from `/` to `/2.0`, moves its pages.
 - Every version is built from the site's repository, so the menu can't list
   docs published somewhere else, like those from before the site used
   little.
