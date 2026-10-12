@@ -38,6 +38,8 @@ my-theme/
   build. `@warn` and `@debug` messages name theirs too.
 - little compiles Sass with [grass](https://github.com/connorskees/grass),
   which follows Dart Sass 1.54, so newer Sass, like `color.channel()`, won't
-  compile, and there are no `pkg:` URLs.
+  compile, and there are no `pkg:` URLs. Bootstrap 6's calls to the newer
+  `if()`, like `if(sass($a > $b): $a; else: $b)`, stop the build with
+  `expected ")"`: write each the older way, `if($a > $b, $a, $b)`.
 - Sass in the site's source is copied as it is, like any other
   [file](../writing/pages-and-files.md#images-and-other-files).
