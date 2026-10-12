@@ -41,6 +41,8 @@ built 12 page(s) -> ./dist
   it [couldn't draw](../writing/diagrams.md#choosing-how-diagrams-are-drawn),
   of each code block a [plugin](../plugins/using-plugins.md) couldn't
   render, and of each warning from a plugin.
+- On a site with [versions](../writing/versions.md), it builds and checks
+  every one, and says how many: `built 36 page(s), in 3 version(s) -> ./dist`.
 
 `little build --strict` warns of each as well, then fails, counting each
 kind, as CI needs, so a broken site isn't published:
@@ -72,6 +74,9 @@ save.
   [`url`](../getting-started/publishing.md#choosing-the-sites-url), if it
   has one, as it'll be published, like <http://127.0.0.1:8080/little/> for
   this manual.
+- On a site with [versions](../writing/versions.md), it serves every one,
+  and builds them all again on each save. It doesn't watch their refs, so a
+  commit to a version's branch shows on your next save.
 
 ### Choosing where to serve
 
@@ -111,5 +116,7 @@ port: 3000
 
 `little config` prints the config a theme gets as `site`, little's, the
 theme's, and the site's, merged, as YAML, so you can check a setting without
-building. It leaves out what little works out as it builds, `site.nav` and
-`site.year`.
+building. It leaves out what little works out as it builds: `site.nav`,
+`site.year`, and, on a site with [versions](../writing/versions.md),
+`site.version` and each version's `url`. It prints the config of the site's
+files as they are, not of a version from a ref.

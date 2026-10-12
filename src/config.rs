@@ -43,6 +43,13 @@
 //! plugin's own settings beside it. They cascade plugin by plugin and setting
 //! by setting, and `false` turns a theme's plugin off. Only the site can set
 //! `read`, the folders a plugin can read.
+//!
+//! `versions` lists the versions of the site, the latest first, each with a
+//! `name` and the git `ref` it's built from, but for one, at most, that's
+//! built from the site's files as they are (see `site`). A version from a ref
+//! has its own config, in the `little.yml` it has there, but the site's
+//! themes, and the settings that are the whole site's, like `url` (see
+//! `Config::for_version`).
 
 use anyhow::{Context, Result, anyhow, bail};
 use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, utf8_percent_encode};
@@ -91,6 +98,35 @@ pub struct Config {
     /// The plugins that render code blocks, from `plugins`, in the order
     /// they're named.
     pub plugins: Vec<Plugin>,
+    /// The versions of the site, from `versions`, the latest first: none for
+    /// a site that has just the one.
+    pub versions: Vec<Version>,
+    /// little's defaults, with the settings of each theme over them: what a
+    /// version of the site from a git ref puts its own config over.
+    beneath: Mapping,
+}
+
+/// The settings a version of a site from a git ref takes from the site, not
+/// from its own little.yml: where the whole site is built into, published,
+/// and served, which theme it's in, and which versions it has.
+const SITE_WIDE: [&str; 7] = [
+    "theme",
+    "url",
+    "destination",
+    "repo",
+    "host",
+    "port",
+    "versions",
+];
+
+/// A version of a site, from `versions`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Version {
+    /// Its name, like `1.4`: the folder it's built into, but for the first.
+    pub name: String,
+    /// The git ref it's built from, like `v1.4`, or none, for the site's
+    /// files as they are.
+    pub git_ref: Option<String>,
 }
 
 /// A plugin a site uses, from `plugins`.
@@ -354,8 +390,44 @@ pub fn load(site_dir: &Path) -> Result<Config> {
     for cfg in theme_cfgs.into_iter().rev() {
         merge(&mut values, cfg);
     }
+    let beneath = values.clone();
     merge(&mut values, site_cfg);
+    settle(site_dir, values, beneath, themes)
+}
 
+impl Config {
+    /// The config of a version of the site from a git ref, whose folder is
+    /// at `site_dir`, as it was at the ref, and whose little.yml errors call
+    /// `file`, like `v1.4:docs/little.yml`. Its little.yml goes over little's
+    /// defaults and the site's themes, whichever theme it chose then, but
+    /// the settings that are the whole site's, like `url`, are the site's.
+    pub fn for_version(&self, site_dir: &Path, file: &str) -> Result<Config> {
+        let mut own = read_config(&site_dir.join(CONFIG_FILE), file)?;
+        long_form_plugins(&mut own, file, site_dir, true)?;
+        let mut values = self.beneath.clone();
+        merge(&mut values, own);
+        for key in SITE_WIDE {
+            match self.values.get(key) {
+                Some(value) => values.insert(key.into(), value.clone()),
+                None => values.shift_remove(key),
+            };
+        }
+        let mut config = settle(site_dir, values, self.beneath.clone(), self.themes.clone())?;
+        // The one setting of the site's that's a path, so it leads from the
+        // site's folder.
+        config.destination_dir = self.destination_dir.clone();
+        Ok(config)
+    }
+}
+
+/// Check the merged config, `values`, of the site at `site_dir`, which is in
+/// `themes`, over `beneath`, and work out what it chooses.
+fn settle(
+    site_dir: &Path,
+    values: Mapping,
+    beneath: Mapping,
+    themes: Vec<Location>,
+) -> Result<Config> {
     let source_dir = folder(site_dir, &values, "source")?;
     let destination_dir = folder(site_dir, &values, "destination")?;
     let toc_depths = toc_depths(&values)?;
@@ -366,6 +438,7 @@ pub fn load(site_dir: &Path) -> Result<Config> {
     let search = search(&values)?;
     let markdown = markdown(&values)?;
     let plugins = plugins(&values, site_dir)?;
+    let versions = versions(&values)?;
     Ok(Config {
         values,
         themes,
@@ -379,6 +452,8 @@ pub fn load(site_dir: &Path) -> Result<Config> {
         search,
         markdown,
         plugins,
+        versions,
+        beneath,
     })
 }
 
@@ -789,6 +864,75 @@ fn plugins(values: &Mapping, site_dir: &Path) -> Result<Vec<Plugin>> {
 /// The error for a plugin's `read` that isn't a folder or a list of them.
 fn read_error(name: &str) -> anyhow::Error {
     anyhow!("`read` of plugin `{name}` must be a folder, or a list of them, from the site's folder")
+}
+
+/// The versions of the site, from `versions`, the latest first. Each entry's
+/// other settings are for the theme.
+fn versions(values: &Mapping) -> Result<Vec<Version>> {
+    let entries = match values.get("versions") {
+        None | Some(Value::Null) => return Ok(Vec::new()),
+        Some(Value::Sequence(entries)) => entries,
+        Some(_) => return Err(versions_error()),
+    };
+    let mut versions: Vec<Version> = Vec::new();
+    for entry in entries {
+        let Value::Mapping(entry) = entry else {
+            return Err(versions_error());
+        };
+        // YAML reads 1.10 as a number, 1.1.
+        let Some(Value::String(name)) = entry.get("name").filter(|name| *name != "") else {
+            bail!(
+                "each version needs a `name`, in quotes if it looks like a number, like \"1.10\", \
+                 which YAML would read as 1.1"
+            );
+        };
+        let is_folder = name.starts_with(|c: char| c.is_ascii_alphanumeric())
+            && (name.chars()).all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_'));
+        if !is_folder {
+            bail!(
+                "version `{name}`'s `name` must be letters, digits, `.`, `-`, and `_`, starting \
+                 with a letter or a digit, as it names the folder the version's built into"
+            );
+        }
+        if versions.iter().any(|version| version.name == *name) {
+            bail!("two versions are named `{name}`");
+        }
+        // A blank `ref:` is as good as none. One starting with `-` would be
+        // read by git as an option.
+        let git_ref = match entry.get("ref") {
+            None | Some(Value::Null) => None,
+            Some(Value::String(git_ref)) if !git_ref.is_empty() && !git_ref.starts_with('-') => {
+                Some(git_ref.clone())
+            }
+            Some(_) => bail!(
+                "version `{name}`'s `ref` must be the tag, branch, or commit it's built from, \
+                 like v1.4, in quotes if it looks like a number"
+            ),
+        };
+        if git_ref.is_none()
+            && let Some(other) = versions.iter().find(|version| version.git_ref.is_none())
+        {
+            bail!(
+                "versions `{}` and `{name}` both have no `ref`, but only one can be built from \
+                 the site's files as they are: give the other the tag, branch, or commit it's \
+                 built from",
+                other.name
+            );
+        }
+        versions.push(Version {
+            name: name.clone(),
+            git_ref,
+        });
+    }
+    Ok(versions)
+}
+
+/// The error for `versions` that isn't a list of versions.
+fn versions_error() -> anyhow::Error {
+    anyhow!(
+        "`versions` must list the site's versions, the latest first, each with its `name`, and \
+         the `ref` it's built from, like `- {{ name: \"1.4\", ref: v1.4 }}`"
+    )
 }
 
 /// Resolve a path a config names against `dir`: an absolute path is just that
@@ -2035,6 +2179,191 @@ mod tests {
                 "plugin `bob` in {theme_file} sets `read`, but only the site's little.yml can \
                  choose what a plugin reads"
             )),
+            "{message}"
+        );
+        let _ = std::fs::remove_dir_all(&site);
+    }
+
+    #[test]
+    fn versions_are_named_and_built_from_refs() {
+        let site = scratch("versions", &[]);
+        let versions = |site_cfg: &str| {
+            std::fs::write(site.join(CONFIG_FILE), site_cfg).unwrap();
+            load(&site).unwrap().versions
+        };
+        let version = |name: &str, git_ref: Option<&str>| Version {
+            name: name.into(),
+            git_ref: git_ref.map(Into::into),
+        };
+
+        // A site without versions has just the one.
+        for site_cfg in ["", "versions:\n", "versions: []\n"] {
+            assert_eq!(versions(site_cfg), [], "{site_cfg}");
+        }
+        // The latest first, each from a tag, a branch, or a commit, but for
+        // one, at most, from the site's files as they are. Each can have
+        // settings of its own, for the theme.
+        let site_cfg = "versions:\n  - name: \"2.0\"\n    label: latest\n  \
+                        - name: \"1.10\"\n    ref: v1.10\n  - name: 1.x\n    ref: origin/1.x\n  \
+                        - { name: old_docs, ref: \"1234567\" }\n";
+        assert_eq!(
+            versions(site_cfg),
+            [
+                version("2.0", None),
+                version("1.10", Some("v1.10")),
+                version("1.x", Some("origin/1.x")),
+                version("old_docs", Some("1234567")),
+            ]
+        );
+        // A blank `ref` is none, and every version can be from a ref.
+        let site_cfg = "versions:\n  - name: a\n    ref:\n  - { name: b, ref: v1 }\n";
+        assert_eq!(
+            versions(site_cfg),
+            [version("a", None), version("b", Some("v1"))]
+        );
+        let site_cfg = "versions:\n  - { name: a, ref: v2 }\n  - { name: b, ref: v1 }\n";
+        assert_eq!(
+            versions(site_cfg),
+            [version("a", Some("v2")), version("b", Some("v1"))]
+        );
+        let _ = std::fs::remove_dir_all(&site);
+    }
+
+    #[test]
+    fn bad_versions_explain_themselves() {
+        let site = scratch("bad-versions", &[]);
+        let list = "`versions` must list the site's versions, the latest first, each with its \
+                    `name`, and the `ref` it's built from, like `- { name: \"1.4\", ref: v1.4 }`";
+        let name = "each version needs a `name`, in quotes if it looks like a number, like \
+                    \"1.10\", which YAML would read as 1.1";
+        let folder = |name: &str| {
+            format!(
+                "version `{name}`'s `name` must be letters, digits, `.`, `-`, and `_`, starting \
+                 with a letter or a digit, as it names the folder the version's built into"
+            )
+        };
+        let git_ref = "version `a`'s `ref` must be the tag, branch, or commit it's built from, \
+                       like v1.4, in quotes if it looks like a number";
+        for (site_cfg, expected) in [
+            ("versions: \"2.0\"\n", list.to_string()),
+            ("versions: { name: \"2.0\" }\n", list.to_string()),
+            ("versions: [\"2.0\"]\n", list.to_string()),
+            ("versions:\n  - ref: v1.4\n", name.to_string()),
+            ("versions:\n  - name: 1.10\n", name.to_string()),
+            ("versions:\n  - name: \"\"\n", name.to_string()),
+            ("versions:\n  - name: ..\n", folder("..")),
+            ("versions:\n  - name: .hidden\n", folder(".hidden")),
+            ("versions:\n  - name: 1/4\n", folder("1/4")),
+            ("versions:\n  - name: one four\n", folder("one four")),
+            (
+                "versions:\n  - name: \"1.4\"\n  - { name: \"1.4\", ref: v1.4 }\n",
+                "two versions are named `1.4`".to_string(),
+            ),
+            (
+                "versions:\n  - { name: a, ref: 1.4 }\n",
+                git_ref.to_string(),
+            ),
+            (
+                "versions:\n  - { name: a, ref: \"\" }\n",
+                git_ref.to_string(),
+            ),
+            (
+                "versions:\n  - { name: a, ref: --output=x }\n",
+                git_ref.to_string(),
+            ),
+            (
+                "versions:\n  - name: a\n  - { name: b, ref: v1 }\n  - name: c\n",
+                "versions `a` and `c` both have no `ref`, but only one can be built from the \
+                 site's files as they are: give the other the tag, branch, or commit it's built \
+                 from"
+                    .to_string(),
+            ),
+        ] {
+            assert_eq!(error(&site, site_cfg), expected, "{site_cfg}");
+        }
+        let _ = std::fs::remove_dir_all(&site);
+    }
+
+    #[test]
+    fn a_version_from_a_ref_has_its_own_config_in_the_sites_theme() {
+        let theme_cfg = "name: Theme\nfont: serif\nplugins:\n  bob: ./bob.wasm\n";
+        let old_cfg = "theme: ./elsewhere\nname: Old\nurl: https://old.example.com\n\
+                       source: ./src\nversions: []\nnav: [{ title: Old, url: / }]\n\
+                       plugins:\n  cal:\n    wasm: ./cal.wasm\n    read: ./lib\n";
+        let site = scratch(
+            "for-version",
+            &[
+                ("theme/little.yml", theme_cfg),
+                ("theme/_templates/default.html", ""),
+                ("old/little.yml", old_cfg),
+            ],
+        );
+        let site_cfg = "theme: ./theme\nname: New\nurl: https://example.com/docs\n\
+                        repo: https://github.com/example/docs\ndestination: ./public\n\
+                        versions:\n  - name: \"2.0\"\n  - { name: \"1.4\", ref: v1.4 }\n";
+        std::fs::write(site.join(CONFIG_FILE), site_cfg).unwrap();
+        let config = load(&site).unwrap();
+        let old = site.join("old");
+        let file = "v1.4:old/little.yml";
+        let version = config.for_version(&old, file).unwrap();
+
+        // Its own config goes over the site's theme's, and its paths lead
+        // from its own folder.
+        assert_eq!(get(&version.values, "name"), Some("Old"));
+        assert_eq!(get(&version.values, "font"), Some("serif"));
+        let nav: Value = serde_yaml::from_str("[{ title: Old, url: / }]").unwrap();
+        assert_eq!(version.values.get("nav"), Some(&nav));
+        assert_eq!(version.source_dir, old.join("src"));
+        assert_eq!(
+            version.plugins,
+            [
+                plugin("bob", Wasm::File(site.join("theme/bob.wasm")), &[], "{}"),
+                plugin(
+                    "cal",
+                    Wasm::File(old.join("cal.wasm")),
+                    &[(old.join("lib"), "lib")],
+                    r#"{"read":["lib"]}"#
+                ),
+            ]
+        );
+        // But what's the whole site's is the site's.
+        assert_eq!(version.themes, config.themes);
+        for key in SITE_WIDE {
+            assert_eq!(version.values.get(key), config.values.get(key), "{key}");
+        }
+        assert_eq!(version.url, config.url);
+        assert_eq!(version.repo, config.repo);
+        assert_eq!(version.destination_dir, site.join("public"));
+        assert_eq!(version.versions, config.versions);
+
+        // Even what the site doesn't set: without a `url`, it has none.
+        std::fs::write(
+            site.join(CONFIG_FILE),
+            site_cfg.replace("url:", "description:"),
+        )
+        .unwrap();
+        let config = load(&site).unwrap();
+        let version = config.for_version(&old, file).unwrap();
+        assert_eq!(version.values.get("url"), None);
+        assert_eq!(version.url, SiteUrl::default());
+
+        // Without a little.yml, it has the theme's config.
+        std::fs::remove_file(old.join(CONFIG_FILE)).unwrap();
+        let version = config.for_version(&old, file).unwrap();
+        assert_eq!(get(&version.values, "name"), Some("Theme"));
+        assert_eq!(version.source_dir, old.join("docs"));
+
+        // Its own little.yml is named in its errors as git names it.
+        std::fs::write(old.join(CONFIG_FILE), "plugins: [./cal.wasm]\n").unwrap();
+        let message = format!("{:#}", config.for_version(&old, file).unwrap_err());
+        assert!(
+            message.starts_with("`plugins` in v1.4:old/little.yml must name each plugin"),
+            "{message}"
+        );
+        std::fs::write(old.join(CONFIG_FILE), "name: [Old\n").unwrap();
+        let message = format!("{:#}", config.for_version(&old, file).unwrap_err());
+        assert!(
+            message.starts_with("parsing v1.4:old/little.yml: "),
             "{message}"
         );
         let _ = std::fs::remove_dir_all(&site);

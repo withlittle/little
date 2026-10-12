@@ -26,7 +26,7 @@ description: "Docs that just work"
   are written in. A site's name, language, and look are up to the theme and
   the site.
 - Every key reaches the theme as `site.<key>`, so you can add your own, like
-  `version: "2.1"`, for a theme that shows it.
+  `announcement: "2.1 is out!"`, for a theme that shows it.
 - `little config` prints the config the theme gets, merged, so you can check
   a setting without building.
 - [Settings](../reference/settings.md) lists every setting little has, and

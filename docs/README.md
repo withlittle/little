@@ -49,7 +49,7 @@ itself. [Your first site](getting-started/first-site.md) goes on from there.
 | Section | Read it to… |
 | ------- | ----------- |
 | [Getting started](getting-started/install.md) | install little, start a site, configure it, and publish it |
-| [Writing](writing/pages-and-files.md) | write pages, with links, code, math, diagrams, notebooks, and navigation |
+| [Writing](writing/pages-and-files.md) | write pages, with links, code, math, diagrams, notebooks, and navigation, and keep a version for each release |
 | [Themes](themes/choosing-a-theme.md) | choose a theme for a site, or make one |
 | [Plugins](plugins/using-plugins.md) | use plugins, add an API reference, or write a plugin |
 | [Reference](reference/commands.md) | look up a command, a setting, or what a theme's templates get |

@@ -120,3 +120,6 @@ workflow that installs little and builds it:
   minutes, as little has no prebuilt binaries yet.
 - For a site in a folder of its own, like `website/`, run
   `little -C website build --strict`, and upload `website/dist`.
+- A site with [versions](../writing/versions.md#publishing-versions) needs
+  `fetch-depth: 0` in `actions/checkout`'s `with:`, so it fetches each
+  version's tag or branch, not just the last commit.

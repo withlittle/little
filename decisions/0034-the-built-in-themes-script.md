@@ -4,7 +4,9 @@
   [0036](./0036-folding-the-built-in-themes-nav.md), whose script also
   scrolls the nav to the current page, and by
   [0038](./0038-the-built-in-themes-page-and-tables.md), whose script also
-  puts each table in a box that scrolls it
+  puts each table in a box that scrolls it, and by
+  [0040](./0040-versions-from-git-refs.md), whose script also closes the
+  menu of versions on a click elsewhere, or Escape
 - Date: 2026-10-10
 - Amends: [0033](./0033-the-built-in-themes-design.md)
 

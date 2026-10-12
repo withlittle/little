@@ -51,6 +51,10 @@ it](#building-on-another-theme), file by file.
 - Its sidebar shows each top-level folder as a group, and folds up each
   folder within one, but those the current page is in, so a large site's
   nav stays short. See [The nav](../writing/navigation.md#the-nav).
+- On a site with [versions](../writing/versions.md#the-menu-of-versions), a
+  menu in its header, beside the site's name, leads to the page you're on
+  in each version, and on each version but the first, a note above the page
+  leads to the first.
 - A title that's a long name, like a Python module's
   `enable_iterative_imputer`, wraps after each `_` and `.` in the sidebar,
   the tables of contents, the breadcrumbs, and the previous and next pages,
@@ -61,8 +65,9 @@ it](#building-on-another-theme), file by file.
   motion. It works in forced colours, like Windows' contrast themes, and
   prints each page without its header and nav.
 - It works without JavaScript, but for search. Its script only adds to it:
-  the button to choose light or dark, scrolling the sidebar to the current
-  page, tables as wide as the page, a button to [copy each code
+  the button to choose light or dark, closing the menu of versions on a
+  click elsewhere, scrolling the sidebar to the current page, tables as
+  wide as the page, a button to [copy each code
   block](../writing/code.md#copying-code), and, in the table of contents
   beside the page, a mark on the section being read.
 - It needs a browser from 2024 or later.

@@ -15,9 +15,11 @@ work.
 
 | Variable | Contents |
 | -------- | -------- |
-| `site` | The site's config, merged: little's, the theme's, and the site's, like `site.name`, `site.url`, `site.repo`, and `site.search`, and any keys you add, like `site.version`. [Settings](settings.md) lists them |
+| `site` | The site's config, merged: little's, the theme's, and the site's, like `site.name`, `site.url`, `site.repo`, and `site.search`, and any keys you add, like `site.announcement`. [Settings](settings.md) lists them |
 | `site.markdown` | The [extensions to Markdown](../writing/markdown.md#choosing-markdowns-extensions) the site's pages are written with, like `site.markdown.math`, so a theme can load a script only for a site that needs it |
 | `site.nav` | The [nav](../writing/navigation.md#the-nav) tree: a list of `{ title, url, children }`; a folder without a `README.md` has no `url`. A `nav` in `little.yml` replaces it |
+| `site.version` | On a site with [versions](../writing/versions.md), the name of the one being built, like `1.4`. A `version` in `little.yml` replaces it |
+| `site.versions` | On a site with [versions](../writing/versions.md), each entry in `versions`, as it's written, like `{ name, ref }`, with the `url` of its version's home page |
 | `site.year` | The year the site is built in, in UTC, like `2026`, for a [copyright notice](../themes/making-a-theme.md#a-copyright-notice). A `year` in `little.yml` replaces it |
 
 ## page
@@ -33,11 +35,13 @@ work.
 | `page.breadcrumbs` | What's above this page in `site.nav`, from the top down: a list of `{ title, url }`, where a folder without a `README.md` has no `url`. It starts with the home page, if `site.nav` lists it at its top, and leaves out this page. The home page, and a page that isn't in `site.nav`, have an empty list. See [Breadcrumbs](../writing/navigation.md#breadcrumbs) |
 | `page.prev` | The page before this one in `site.nav`, read from top to bottom: `{ title, url }`. The first page has none. See [Previous and next pages](../writing/navigation.md#previous-and-next-pages) |
 | `page.next` | The page after this one in `site.nav`: `{ title, url }`. The last page has none |
-| `page.source_url` | Where to view the page's file in the site's [repository](../getting-started/configuring.md#choosing-the-sites-repository), if it's on GitHub or GitLab, like `https://github.com/withlittle/little/blob/main/docs/getting-started/install.md` |
-| `page.edit_url` | Where to edit the page's file there, like `https://github.com/withlittle/little/edit/main/docs/getting-started/install.md` |
+| `page.source_url` | Where to view the page's file in the site's [repository](../getting-started/configuring.md#choosing-the-sites-repository), if it's on GitHub or GitLab, like `https://github.com/withlittle/little/blob/main/docs/getting-started/install.md`. On a page from a [version's](../writing/versions.md#whats-in-a-version) `ref`, it's at the ref's commit |
+| `page.edit_url` | Where to edit the page's file there, like `https://github.com/withlittle/little/edit/main/docs/getting-started/install.md`. A page from a version's `ref` has none, as a tag can't be edited |
+| `page.versions` | On a site with [versions](../writing/versions.md), each entry in `versions`, like `site.versions`, but with the `url` of this page in that version, if it has a page at the same URL from its root, or else of its home page, for a [menu of versions](../themes/making-a-theme.md#a-menu-of-versions) |
 | `page.<key>` | Every other key in the page's frontmatter, as written, like `page.description` |
 
-A 404 page has just `page.type` and `page.url` (`/404.html`).
+A 404 page has just `page.type` and `page.url` (`/404.html`), and, on a site
+with versions, `page.versions`, with each version's home page.
 
 A page's frontmatter has the last word on `page`, even over what little
 works out, so `next: false` removes the link to the next page, and

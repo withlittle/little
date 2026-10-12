@@ -2,7 +2,10 @@
 
 - Status: accepted; amended by [0015](./0015-files-and-relative-links.md),
   which leads a relative link, like `install`, from the folder of the file
-  it's written in, and gives it the path too
+  it's written in, and gives it the path too, and by
+  [0040](./0040-versions-from-git-refs.md), which builds each version of a
+  site but the first under the path, with its folder after it, like
+  `/1.4`
 - Date: 2026-10-01
 
 ## Context

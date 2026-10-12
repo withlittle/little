@@ -21,6 +21,8 @@ headings within them, as a reader types. Try it on this manual.
 - Words are matched by their stem in the site's
   [`lang`](../getting-started/configuring.md#the-built-in-themes-settings),
   so "installing" finds "install".
+- On a site with [versions](versions.md), each has its own index, in its
+  folder, so a search finds the pages of the version the reader's in.
 - To go without, set `search: false`, and the built-in theme leaves out the
   box too:
 

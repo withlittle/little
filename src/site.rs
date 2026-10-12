@@ -1,14 +1,19 @@
 //! The build pipeline: the source (`docs/`) + the theme + config -> the
 //! destination (`dist/`).
+//!
+//! A site with `versions` builds each in turn, the first at the root of the
+//! destination and each other in a folder named for it, from the working
+//! tree or from a git ref, checked out on its own, with its own config,
+//! source, and plugins, but the site's theme.
 
 use anyhow::{Context, Result, bail};
 use minijinja::{Value as MjValue, context};
 use serde::{Deserialize, Serialize};
 use serde_yaml::{Mapping, Value};
 use std::borrow::Cow;
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::env;
-use std::ffi::OsString;
+use std::ffi::{OsStr, OsString};
 use std::fmt;
 use std::fs;
 use std::io::ErrorKind;
@@ -18,9 +23,9 @@ use std::slice;
 use time::OffsetDateTime;
 use walkdir::WalkDir;
 
-use crate::config::{Repo, SiteUrl};
+use crate::config::{Config, Repo, SiteUrl};
 use crate::theme::{PageType, StaticFile, Theme};
-use crate::{config, math, mermaid, notebook, plugin, render, search};
+use crate::{config, git, math, mermaid, notebook, plugin, render, search};
 
 /// Where a site's 404 page is written: the root of the destination, which is
 /// where static hosts look for it.
@@ -103,6 +108,10 @@ struct PageData<'a> {
     /// Where to edit the page's file in the site's repository.
     #[serde(skip_serializing_if = "Option::is_none")]
     edit_url: Option<&'a str>,
+    /// Each of the site's versions, with the `url` of this page in it, or,
+    /// if it's not there, of its home page.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    versions: Option<&'a [Mapping]>,
 }
 
 /// A link to another page: what a template sees as `page.prev` or
@@ -191,8 +200,31 @@ pub struct Built {
     /// left as it was, in the order of the pages, to warn of.
     pub unrendered_blocks: Vec<UnrenderedBlock>,
     /// What each plugin warned of as it added its pages, in the order of the
-    /// plugins.
-    pub plugin_warnings: Vec<plugin::Warning>,
+    /// versions, then of the plugins.
+    pub plugin_warnings: Vec<PluginWarning>,
+    /// The path in the destination of each file written for a version of
+    /// the site from a git ref, whose links to other sites aren't checked,
+    /// as a tag can't be fixed.
+    pub from_refs: HashSet<PathBuf>,
+}
+
+/// Something a plugin warned of as it added its pages, and the git ref of
+/// the version of the site it was adding them to, if it's from one.
+#[derive(Clone, Debug)]
+pub struct PluginWarning {
+    /// The ref, like `v1.4`.
+    pub git_ref: Option<String>,
+    pub warning: plugin::Warning,
+}
+
+impl fmt::Display for PluginWarning {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let plugin::Warning { plugin, message } = &self.warning;
+        match &self.git_ref {
+            Some(git_ref) => write!(f, "plugin `{plugin}` at {git_ref}: {message}"),
+            None => self.warning.fmt(f),
+        }
+    }
 }
 
 /// A formula in a page that couldn't be rendered, and the file it's in.
@@ -253,43 +285,353 @@ impl fmt::Display for UnrenderedBlock {
     }
 }
 
-/// Build the site rooted at `site_dir`.
+/// Where a version of a site is built: the folder of the destination it's
+/// written into, and the URL it's published at.
+struct Place {
+    /// Its name, like `1.4`, or none, for a site without `versions`.
+    name: Option<String>,
+    /// The path before its URLs, from the root of the site: empty for the
+    /// first version, at the root, or like `/1.4` for another.
+    prefix: String,
+    /// Where it's published: the site's `url`, with its prefix.
+    url: SiteUrl,
+    /// The folder it's written into.
+    destination: PathBuf,
+}
+
+impl Place {
+    /// Where `version` of the site `config` builds goes: at the root, if
+    /// it's the `first`, or else in a folder named for it.
+    fn new(config: &Config, version: Option<&config::Version>, first: bool) -> Place {
+        let name = version.map(|version| version.name.clone());
+        let folder = name.as_deref().filter(|_| !first);
+        let prefix = folder.map(|name| format!("/{name}")).unwrap_or_default();
+        Place {
+            url: SiteUrl {
+                origin: config.url.origin.clone(),
+                path: format!("{}{prefix}", config.url.path),
+            },
+            destination: match folder {
+                Some(name) => config.destination_dir.join(name),
+                None => config.destination_dir.clone(),
+            },
+            prefix,
+            name,
+        }
+    }
+}
+
+/// A version of a site, read: its pages rendered, and its other files read,
+/// ready to put in its theme.
+struct Source {
+    place: Place,
+    /// The git ref it's read from, like `v1.4`, if it's from one.
+    git_ref: Option<String>,
+    /// Its config, merged, which the theme gets as `site`.
+    values: Mapping,
+    /// Whether it's indexed for search.
+    searchable: bool,
+    /// Its theme, which writes URLs under the version's.
+    theme: Theme,
+    pages: Vec<Page>,
+    /// The source's files that aren't pages.
+    files: Vec<StaticFile>,
+    /// What its plugins warned of as they added their pages.
+    warnings: Vec<plugin::Warning>,
+    /// Where its source folder is in the site's repository, if the site
+    /// says which that is.
+    in_repo: Option<InRepo>,
+}
+
+/// Where a version's source folder is in the site's repository, so each of
+/// its pages can link to its file there.
+struct InRepo {
+    /// The repository, with the branch its pages link to their files on, or,
+    /// for a version from a git ref, the ref's commit, which a branch can
+    /// move on from.
+    repo: Repo,
+    /// The folder, from the top of the repository, like `docs`.
+    folder: PathBuf,
+    /// Whether its pages' files can be edited there, as they can't at a
+    /// commit.
+    editable: bool,
+}
+
+/// A site's versions, as the theme gets them, and the pages each has, so
+/// each page can link to itself in each version.
+struct Versions {
+    /// Where the site's published.
+    url: SiteUrl,
+    each: Vec<VersionPages>,
+}
+
+/// A version of a site, and the pages it has.
+struct VersionPages {
+    /// Its entry in `versions`, as the config writes it.
+    entry: Mapping,
+    /// The path before its URLs, from the root of the site, like `/1.4`.
+    prefix: String,
+    /// Each page's URL, from the root of the version, by the URL without
+    /// the `/` at its end, so a folder's `README.md` is the same page as a
+    /// file named for the folder, like `guide.md`.
+    pages: HashMap<String, String>,
+}
+
+impl Versions {
+    /// The versions in `entries`, the site's `versions`, published under
+    /// `url`, and their pages, from `sources`, in the same order.
+    fn new(url: &SiteUrl, entries: &[Value], sources: &[Source]) -> Versions {
+        let each = (entries.iter().zip(sources))
+            .map(|(entry, source)| VersionPages {
+                entry: entry.as_mapping().cloned().unwrap_or_default(),
+                prefix: source.place.prefix.clone(),
+                pages: (source.pages.iter())
+                    .map(|page| (page.url.trim_end_matches('/').to_string(), page.url.clone()))
+                    .collect(),
+            })
+            .collect();
+        Versions {
+            url: url.clone(),
+            each,
+        }
+    }
+
+    /// Each version's entry, with the `url` of the page at `url`, from the
+    /// root of a version, in that version, or, if it's not there, or `url`
+    /// is `None`, of its home page. An entry that sets its own `url` keeps
+    /// it.
+    fn at(&self, url: Option<&str>) -> Vec<Mapping> {
+        let url = url.map(|url| url.trim_end_matches('/'));
+        (self.each.iter())
+            .map(|version| {
+                let page = (url.and_then(|url| version.pages.get(url))).map_or("/", String::as_str);
+                let mut entry = version.entry.clone();
+                if !entry.contains_key("url") {
+                    let url = format!("{}{page}", version.prefix);
+                    entry.insert("url".into(), url.into());
+                }
+                link(entry.get_mut("url"), &self.url);
+                entry
+            })
+            .collect()
+    }
+}
+
+/// A version of a site, ready to write.
+struct Ready {
+    /// The folder it's written into.
+    destination: PathBuf,
+    /// Whether it's from a git ref.
+    from_ref: bool,
+    /// How many pages it has.
+    pages: usize,
+    outputs: Vec<Output>,
+    /// The theme's static files, and the source's other files.
+    static_files: Vec<StaticFile>,
+    search_files: Vec<search::File>,
+}
+
+/// Build the site rooted at `site_dir`: each of its `versions`, or, if it
+/// has none, its files as they are.
 ///
 /// Pages, and the nav and links between them, are worked out at their URLs
-/// from the root of the site, like `/guide/`. Only what the theme gets has
-/// the path of the site's `url` before them, like `/my-project/guide/`.
+/// from the root of their version, like `/guide/`. Only what the theme gets
+/// has the path of the version's URL before them, like `/my-project/guide/`,
+/// or `/my-project/1.4/guide/`.
 pub fn build(site_dir: &Path) -> Result<Built> {
-    let config::Config {
-        values: site_cfg,
-        themes,
-        source_dir,
-        destination_dir,
-        toc_depths,
-        url: site_url,
-        repo,
-        search: searchable,
-        markdown,
-        plugins,
-        ..
-    } = config::load(site_dir)?;
+    let config = config::load(site_dir)?;
     // Once, so every page of a build has the same year, and every diagram
     // the same today, even at midnight.
     let now = time_of_build(env::var_os("SOURCE_DATE_EPOCH"))?;
-    if !source_dir.is_dir() {
-        bail!("there's no source folder at {}", source_dir.display());
-    }
-    let theme = Theme::load(&themes, &site_url)?;
-    let source_in_repo = match repo {
-        Some(_) => folder_in_repo(&source_dir, site_dir)?,
-        None => None,
+    // A site without `versions` is one version, of its files as they are.
+    let versions: Vec<Option<&config::Version>> = if config.versions.is_empty() {
+        vec![None]
+    } else {
+        config.versions.iter().map(Some).collect()
     };
-    let mut plugins = plugin::Plugins::start(&plugins, site_dir, now)?;
+    let repository = (versions.iter().flatten())
+        .any(|version| version.git_ref.is_some())
+        .then(|| git::Repository::find(site_dir))
+        .transpose()?;
+
+    // Every version is read, and every page rendered, before the destination
+    // is touched, so a build that fails leaves the last one in place.
+    let mut sources = Vec::new();
+    for (i, &version) in versions.iter().enumerate() {
+        let place = Place::new(&config, version, i == 0);
+        let source = match (version.and_then(|v| v.git_ref.as_deref()), &repository) {
+            (Some(git_ref), Some(repository)) => {
+                read_ref(site_dir, &config, repository, git_ref, place, now)
+            }
+            _ => read_source(site_dir, &config, None, place, now),
+        };
+        sources.push(in_version(source, version)?);
+    }
+    let every = (!config.versions.is_empty()).then(|| {
+        let entries = match config.values.get("versions") {
+            Some(Value::Sequence(entries)) => entries.as_slice(),
+            _ => &[],
+        };
+        Versions::new(&config.url, entries, &sources)
+    });
+
+    let mut built = Built {
+        destination: config.destination_dir.clone(),
+        url: config.url.clone(),
+        origins: HashMap::new(),
+        urls: HashMap::new(),
+        links: HashMap::new(),
+        repo: config.repo.clone(),
+        unrendered_math: Vec::new(),
+        unrendered_diagrams: Vec::new(),
+        unrendered_blocks: Vec::new(),
+        plugin_warnings: Vec::new(),
+        from_refs: HashSet::new(),
+    };
+    let mut theme_files = None;
+    let mut ready = Vec::new();
+    for (i, (source, &version)) in sources.into_iter().zip(&versions).enumerate() {
+        let finished = finish(
+            source,
+            every.as_ref(),
+            &mut theme_files,
+            now,
+            i == 0,
+            &mut built,
+        );
+        ready.push(in_version(finished, version)?);
+    }
+    let others: Vec<&str> = (config.versions.iter().skip(1))
+        .map(|version| version.name.as_str())
+        .collect();
+    check_versions(&ready[0], &others, &config.destination_dir)?;
+
+    let pages: usize = ready.iter().map(|version| version.pages).sum();
+    let destination = &config.destination_dir;
+    clear_destination(destination)?;
+    for version in ready {
+        write_version(version, destination, &mut built)?;
+    }
+    match config.versions.len() {
+        0 => println!("built {pages} page(s) -> {}", destination.display()),
+        count => println!(
+            "built {pages} page(s), in {count} version(s) -> {}",
+            destination.display()
+        ),
+    }
+    Ok(built)
+}
+
+/// `result`, saying which version of the site it's from before any error,
+/// if it's one from a git ref.
+fn in_version<T>(result: Result<T>, version: Option<&config::Version>) -> Result<T> {
+    match version {
+        Some(config::Version {
+            name,
+            git_ref: Some(git_ref),
+        }) => result.with_context(|| format!("building version `{name}`, from {git_ref}")),
+        _ => result,
+    }
+}
+
+/// Read the version of the site at `place` as it was at `git_ref`, in
+/// `repository`: its own little.yml, over the site's themes, but with the
+/// site's settings for the whole site, and the files it reads, which are
+/// checked out of the repository apart from the site's own, and deleted
+/// once they're read.
+fn read_ref(
+    site_dir: &Path,
+    config: &Config,
+    repository: &git::Repository,
+    git_ref: &str,
+    place: Place,
+    now: OffsetDateTime,
+) -> Result<Source> {
+    let checkout = repository.checkout(git_ref)?;
+    let file = checkout.site_dir().join(config::CONFIG_FILE);
+    checkout.extract(&[&file])?;
+    let config = config.for_version(checkout.site_dir(), &checkout.describe(&file))?;
+    // Only the files a build reads: its source, and its plugins' files and
+    // the folders they read.
+    let mut paths = vec![config.source_dir.as_path()];
+    for plugin in &config.plugins {
+        if let config::Wasm::File(file) = &plugin.wasm {
+            paths.push(file);
+        }
+        paths.extend(plugin.read.iter().map(|read| read.folder.as_path()));
+    }
+    checkout.extract(&paths)?;
+    // A plugin's file is often built, and not committed, so isn't there at
+    // the ref. Each is named as git names it, not by where it's checked out.
+    let missing =
+        |path: &Path, there: fn(&Path) -> bool| checkout.in_repo(path).is_some() && !there(path);
+    for plugin in &config.plugins {
+        let name = &plugin.name;
+        if let config::Wasm::File(file) = &plugin.wasm
+            && missing(file, Path::is_file)
+        {
+            bail!(
+                "plugin `{name}`'s `wasm` is {}, but there's no file there",
+                checkout.describe(file)
+            );
+        }
+        if let Some(read) = (plugin.read.iter()).find(|read| missing(&read.folder, Path::is_dir)) {
+            bail!(
+                "plugin `{name}` reads {}, but there's no folder there",
+                checkout.describe(&read.folder)
+            );
+        }
+    }
+    read_source(site_dir, &config, Some(&checkout), place, now)
+}
+
+/// Read the version of the site at `site_dir` that `config` configures, to
+/// build at `place`: its files from `checkout`, if it's from a git ref, or
+/// else as they are. Its pages are rendered, but not yet put in its theme.
+fn read_source(
+    site_dir: &Path,
+    config: &Config,
+    checkout: Option<&git::Checkout>,
+    place: Place,
+    now: OffsetDateTime,
+) -> Result<Source> {
+    // A file from a git ref is named as git names it, like
+    // `v1.4:docs/guide.md`.
+    let describe = |path: &Path| match checkout {
+        Some(checkout) => checkout.describe(path),
+        None => path.display().to_string(),
+    };
+    let source_dir = &config.source_dir;
+    if !source_dir.is_dir() {
+        bail!("there's no source folder at {}", describe(source_dir));
+    }
+    let theme = Theme::load(&config.themes, &place.url)?;
+    let in_repo = match (&config.repo, checkout) {
+        (None, _) => None,
+        (Some(repo), None) => folder_in_repo(source_dir, site_dir)?.map(|folder| InRepo {
+            repo: repo.clone(),
+            folder,
+            editable: true,
+        }),
+        (Some(repo), Some(checkout)) => checkout.in_repo(source_dir).map(|folder| InRepo {
+            repo: Repo {
+                url: repo.url.clone(),
+                branch: checkout.commit.clone(),
+            },
+            folder: PathBuf::from(folder),
+            editable: false,
+        }),
+    };
+    // A plugin downloaded from a URL is kept in the site's own folder, for
+    // every version.
+    let mut plugins = plugin::Plugins::start(&config.plugins, site_dir, now)?;
     // Before any page is built, so a plugin can't change the pages it adds
     // as it renders blocks.
     let added = plugins.pages()?;
     // A plugin's page is its file from the site's folder, like
     // `docs/guide.md`, wherever little is run from, even if a plugin adds it.
-    let source_in_site = source_dir.strip_prefix(site_dir).unwrap_or(&source_dir);
+    let version_dir = checkout.map_or(site_dir, git::Checkout::site_dir);
+    let source_in_site = source_dir.strip_prefix(version_dir).unwrap_or(source_dir);
     let page_file = |rel: &Path| {
         (source_in_site.join(rel))
             .to_string_lossy()
@@ -297,14 +639,18 @@ pub fn build(site_dir: &Path) -> Result<Built> {
     };
 
     // Walk every file in the source folder but hidden ones, without walking
-    // hidden folders, or the destination, which can be inside it. The source
-    // folder itself (depth 0) can be hidden. Each Markdown file and notebook
-    // is rendered into a page, and every other file, like an image, is copied
-    // as it is.
-    let destination = destination_in(&source_dir, &destination_dir);
+    // hidden folders, or the destination, which can be inside it, as it
+    // would be at a git ref, had it been committed. The source folder itself
+    // (depth 0) can be hidden. Each Markdown file and notebook is rendered
+    // into a page, and every other file, like an image, is copied as it is.
+    let destination = match checkout {
+        None => destination_in(source_dir, &config.destination_dir),
+        Some(checkout) => (config.destination_dir.strip_prefix(site_dir).ok())
+            .and_then(|rel| destination_in(source_dir, &checkout.site_dir().join(rel))),
+    };
     let mut pages = Vec::new();
-    let mut source_files = Vec::new();
-    let entries = WalkDir::new(&source_dir).into_iter().filter_entry(|entry| {
+    let mut files = Vec::new();
+    let entries = WalkDir::new(source_dir).into_iter().filter_entry(|entry| {
         entry.depth() == 0
             || !(is_hidden(Path::new(entry.file_name()))
                 || destination.as_deref() == Some(entry.path()))
@@ -315,85 +661,128 @@ pub fn build(site_dir: &Path) -> Result<Built> {
         if !path.is_file() {
             continue;
         }
-        let rel = path.strip_prefix(&source_dir)?.to_path_buf();
+        let rel = path.strip_prefix(source_dir)?.to_path_buf();
+        let origin = describe(path);
         let parse = match path.extension().and_then(|s| s.to_str()) {
             Some("md") => render::parse_document,
             Some("ipynb") => notebook::parse_notebook,
             _ => {
-                source_files.push(StaticFile {
-                    contents: fs::read(path)
-                        .with_context(|| format!("reading {}", path.display()))?,
-                    origin: path.display().to_string(),
+                files.push(StaticFile {
+                    contents: fs::read(path).with_context(|| format!("reading {origin}"))?,
+                    origin,
                     path: rel,
                 });
                 continue;
             }
         };
-        let raw =
-            fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
+        let raw = fs::read_to_string(path).with_context(|| format!("reading {origin}"))?;
         let rendered = parse(
             &raw,
             &folder_url(&rel),
-            &toc_depths,
-            &site_url,
-            &markdown,
+            &config.toc_depths,
+            &place.url,
+            &config.markdown,
             now,
             &mut plugins.on(&page_file(&rel)),
         )
-        .with_context(|| format!("rendering {}", path.display()))?;
-        let origin = path.display().to_string();
-        pages.push(page_from(rel, origin, false, rendered, &destination_dir));
+        .with_context(|| format!("rendering {origin}"))?;
+        pages.push(page_from(rel, origin, false, rendered, &place.destination));
     }
 
     // A plugin's page is built as a Markdown file at its path would be.
     for page in &added.pages {
         let rel = PathBuf::from(&page.path);
+        let origin = match checkout {
+            Some(checkout) => format!("{page} at {}", checkout.git_ref),
+            None => page.to_string(),
+        };
         let rendered = render::parse_document(
             &page.markdown,
             &folder_url(&rel),
-            &toc_depths,
-            &site_url,
-            &markdown,
+            &config.toc_depths,
+            &place.url,
+            &config.markdown,
             now,
             &mut plugins.on(&page_file(&rel)),
         )
-        .with_context(|| format!("rendering {page}"))?;
-        pages.push(page_from(
-            rel,
-            page.to_string(),
-            true,
-            rendered,
-            &destination_dir,
-        ));
+        .with_context(|| format!("rendering {origin}"))?;
+        pages.push(page_from(rel, origin, true, rendered, &place.destination));
     }
 
     // Deterministic output order (nav has its own ordering), and so a
     // deterministic error for files that would be the same page.
     pages.sort_by(|a, b| (&a.url, &a.rel).cmp(&(&b.url, &b.rel)));
     check_clashes(&pages)?;
+    Ok(Source {
+        place,
+        git_ref: checkout.map(|checkout| checkout.git_ref.clone()),
+        values: config.values.clone(),
+        searchable: config.search,
+        theme,
+        pages,
+        files,
+        warnings: added.warnings,
+        in_repo,
+    })
+}
+
+/// Put each page of a version of the site, `source`, in its theme, beside
+/// its other files and the theme's, `theme_files`, which are read once, for
+/// every version, and index it for search. The `first` version has the
+/// site's 404 page. What's warned of is noted in `built`.
+fn finish(
+    source: Source,
+    versions: Option<&Versions>,
+    theme_files: &mut Option<Vec<StaticFile>>,
+    now: OffsetDateTime,
+    first: bool,
+    built: &mut Built,
+) -> Result<Ready> {
+    let Source {
+        place,
+        git_ref,
+        values,
+        searchable,
+        theme,
+        pages,
+        files,
+        warnings,
+        in_repo,
+    } = source;
+    let warnings = warnings.into_iter().map(|warning| PluginWarning {
+        git_ref: git_ref.clone(),
+        warning,
+    });
+    built.plugin_warnings.extend(warnings);
 
     // What little works out is the bottom of the cascade: the nav it builds
-    // from the folders, and the year, go beneath the config, so a theme or
-    // site that sets `nav` or `year` replaces it. `page.breadcrumbs`,
-    // `page.prev`, and `page.next` follow the nav the theme gets, so they
-    // agree with its sidebar.
+    // from the folders, the year, and the version go beneath the config, so
+    // a theme or site that sets `nav`, `year`, or `version` replaces it.
+    // `page.breadcrumbs`, `page.prev`, and `page.next` follow the nav the
+    // theme gets, so they agree with its sidebar.
     let tree = build_tree(&pages);
     let mut site = Mapping::new();
     site.insert("nav".into(), serde_yaml::to_value(build_nav(&tree))?);
     site.insert("year".into(), now.year().into());
-    config::merge(&mut site, site_cfg);
+    if let Some(name) = &place.name {
+        site.insert("version".into(), name.as_str().into());
+    }
+    config::merge(&mut site, values);
+    // Each entry of `versions`, as it's written, with the URL of its home.
+    if let Some(versions) = versions {
+        let entries = versions.at(None).into_iter().map(Value::Mapping);
+        site.insert("versions".into(), Value::Sequence(entries.collect()));
+    }
     let nav: Vec<NavItem> = serde_yaml::from_value(site["nav"].clone())
         .context("`nav` in little.yml must be a list of links, each `{ title, url, children }`")?;
-    link_items(&mut site["nav"], &site_url);
+    link_items(&mut site["nav"], &place.url);
     let site_value = MjValue::from_serialize(&site);
     let neighbours = neighbours_in(&nav);
     let trails = breadcrumbs_in(&nav);
 
     // The theme owns 100% of the markup; little only hands it structured data.
-    // Every page is rendered before the destination is touched, so a build
-    // that fails leaves the last one in place.
     let render = |page_type: PageType, data: &PageData, frontmatter: &Mapping| {
-        let page = page_value(data, frontmatter, &site_url)?;
+        let page = page_value(data, frontmatter, &place.url)?;
         theme.render(
             page_type,
             context! {
@@ -402,11 +791,11 @@ pub fn build(site_dir: &Path) -> Result<Built> {
             },
         )
     };
+    // A page from a git ref links to its file at the ref's commit, which
+    // can't be edited.
+    let editable = in_repo.as_ref().is_some_and(|in_repo| in_repo.editable);
     let mut outputs = Vec::new();
     let mut searched = Vec::new();
-    let mut unrendered_math = Vec::new();
-    let mut unrendered_diagrams = Vec::new();
-    let mut unrendered_blocks = Vec::new();
     for page in &pages {
         let children = page.is_index().then(|| children_of(&tree, &page.rel));
         let (prev, next) = neighbours
@@ -419,9 +808,10 @@ pub fn build(site_dir: &Path) -> Result<Built> {
             .map(Vec::as_slice)
             .unwrap_or_default();
         // A page a plugin adds has no file in the site's repository.
-        let file_urls = (repo.as_ref().zip(source_in_repo.as_ref()))
+        let file_urls = (in_repo.as_ref())
             .filter(|_| !page.added)
-            .and_then(|(repo, folder)| repo.file_urls(&folder.join(&page.rel)));
+            .and_then(|in_repo| in_repo.repo.file_urls(&in_repo.folder.join(&page.rel)));
+        let in_versions = versions.map(|versions| versions.at(Some(&page.url)));
         let data = PageData {
             page_type: page.page_type.name(),
             url: &page.url,
@@ -433,13 +823,17 @@ pub fn build(site_dir: &Path) -> Result<Built> {
             prev,
             next,
             source_url: file_urls.as_ref().map(|urls| urls.source.as_str()),
-            edit_url: file_urls.as_ref().map(|urls| urls.edit.as_str()),
+            edit_url: (file_urls.as_ref())
+                .filter(|_| editable)
+                .map(|urls| urls.edit.as_str()),
+            versions: in_versions.as_deref(),
         };
         if let Some(html) = render(page.page_type, &data, &page.frontmatter)
             .with_context(|| format!("rendering {}", page.origin))?
         {
             // Search indexes the page's own content, not the theme's markup
-            // around it, but in the language the theme gives it.
+            // around it, but in the language the theme gives it, at its URL
+            // from the root of its version, beside its index.
             if searchable {
                 searched.push(search::Page {
                     url: &page.url,
@@ -448,127 +842,185 @@ pub fn build(site_dir: &Path) -> Result<Built> {
                     lang: search::lang(&html),
                 });
             }
-            let path = page.out_path.clone();
-            let url = page.url.clone();
             let origin = page.origin.clone();
-            unrendered_math.extend(page.unrendered_math.iter().map(|formula| UnrenderedMath {
-                origin: origin.clone(),
-                formula: formula.clone(),
-            }));
-            unrendered_diagrams.extend(page.unrendered_diagrams.iter().map(|diagram| {
-                UnrenderedDiagram {
+            built
+                .unrendered_math
+                .extend(page.unrendered_math.iter().map(|formula| UnrenderedMath {
                     origin: origin.clone(),
-                    diagram: diagram.clone(),
-                }
-            }));
-            unrendered_blocks.extend(page.unrendered_blocks.iter().map(|block| UnrenderedBlock {
-                origin: origin.clone(),
-                block: block.clone(),
-            }));
-            let name = format!("the page built from {origin}");
+                    formula: formula.clone(),
+                }));
+            built
+                .unrendered_diagrams
+                .extend(
+                    page.unrendered_diagrams
+                        .iter()
+                        .map(|diagram| UnrenderedDiagram {
+                            origin: origin.clone(),
+                            diagram: diagram.clone(),
+                        }),
+                );
+            built
+                .unrendered_blocks
+                .extend(page.unrendered_blocks.iter().map(|block| UnrenderedBlock {
+                    origin: origin.clone(),
+                    block: block.clone(),
+                }));
             outputs.push(Output {
-                path,
-                url,
+                path: page.out_path.clone(),
+                url: format!("{}{}", place.prefix, page.url),
                 html,
-                name,
+                name: format!("the page built from {origin}"),
                 origin,
                 links: page.links.clone(),
             });
         }
     }
 
-    // A 404 page has no content, or file: all `page` has is its type and URL.
-    let not_found_url = format!("/{NOT_FOUND_FILE}");
-    let data = PageData {
-        page_type: PageType::NotFound.name(),
-        url: &not_found_url,
-        title: None,
-        content: None,
-        toc: None,
-        children: None,
-        breadcrumbs: None,
-        prev: None,
-        next: None,
-        source_url: None,
-        edit_url: None,
-    };
-    if let Some(html) =
-        render(PageType::NotFound, &data, &Mapping::new()).context("rendering the 404 page")?
-    {
-        let path = destination_dir.join(NOT_FOUND_FILE);
-        let url = not_found_url.clone();
-        let name = "the 404 page".to_string();
-        let origin = name.clone();
-        outputs.push(Output {
-            path,
-            url,
-            html,
-            name,
-            origin,
-            links: Vec::new(),
-        });
+    // A 404 page has no content, or file: all `page` has is its type and
+    // URL, and the home of each version. Only the first version has one, at
+    // the root of the destination, where static hosts look for it.
+    if first {
+        let not_found_url = format!("/{NOT_FOUND_FILE}");
+        let homes = versions.map(|versions| versions.at(None));
+        let data = PageData {
+            page_type: PageType::NotFound.name(),
+            url: &not_found_url,
+            title: None,
+            content: None,
+            toc: None,
+            children: None,
+            breadcrumbs: None,
+            prev: None,
+            next: None,
+            source_url: None,
+            edit_url: None,
+            versions: homes.as_deref(),
+        };
+        if let Some(html) =
+            render(PageType::NotFound, &data, &Mapping::new()).context("rendering the 404 page")?
+        {
+            let name = "the 404 page".to_string();
+            outputs.push(Output {
+                path: place.destination.join(NOT_FOUND_FILE),
+                url: not_found_url.clone(),
+                html,
+                origin: name.clone(),
+                name,
+                links: Vec::new(),
+            });
+        }
     }
 
-    // The theme's static files (css/js/images) go verbatim to the site's root,
-    // and the source's other files beside the pages built from it. Where both
-    // have a file at the same path, the site's wins, as a theme's own file
-    // wins over that of the theme it builds on.
+    // The theme's static files (css/js/images) go verbatim to the version's
+    // root, and the source's other files beside the pages built from it.
+    // Where both have a file at the same path, the site's wins, as a theme's
+    // own file wins over that of the theme it builds on. Every version is in
+    // the same theme, so they're read once, once the first version's pages
+    // are rendered.
+    if theme_files.is_none() {
+        *theme_files = Some(theme.static_files()?);
+    }
     let mut static_files = BTreeMap::new();
-    for file in source_files.into_iter().chain(theme.static_files()?) {
+    for file in files
+        .into_iter()
+        .chain(theme_files.iter().flatten().cloned())
+    {
         static_files.entry(file.path.clone()).or_insert(file);
     }
     let static_files: Vec<_> = static_files.into_values().collect();
-    check_static_files(&static_files, &destination_dir, &outputs)?;
+    check_static_files(&static_files, &place.destination, &outputs)?;
 
     // Every page the theme rendered is searchable, but the 404 page, which
     // isn't one to find.
     let search_files = if searchable {
         let files = search::index(&searched)?;
-        check_search_files(&files, &static_files, &destination_dir, &outputs)?;
+        check_search_files(&files, &static_files, &place.destination, &outputs)?;
         files
     } else {
         Vec::new()
     };
+    Ok(Ready {
+        destination: place.destination,
+        from_ref: git_ref.is_some(),
+        pages: pages.len(),
+        outputs,
+        static_files,
+        search_files,
+    })
+}
 
-    clear_destination(&destination_dir)?;
-    let mut origins = HashMap::new();
-    let mut urls = HashMap::new();
-    let mut links = HashMap::new();
+/// Fail if a page or a file of the first version of a site, `first`, is
+/// where one of the `others` is built, in a folder of the destination,
+/// `root`, named for it, as `docs/1.4.md` would be for version `1.4`, or
+/// one of them is where little writes files for search.
+fn check_versions(first: &Ready, others: &[&str], root: &Path) -> Result<()> {
+    let version_at = |path: &Path| {
+        let Some(Component::Normal(folder)) = path.components().next() else {
+            return None;
+        };
+        others.iter().find(|name| OsStr::new(name) == folder)
+    };
+    for page in &first.outputs {
+        if let Some(name) = version_at(page.path.strip_prefix(root)?) {
+            bail!(
+                "{} clashes with version `{name}`, built at /{name}/: rename or move one",
+                page.name
+            );
+        }
+    }
+    for file in &first.static_files {
+        if let Some(name) = version_at(&file.path) {
+            bail!(
+                "{} clashes with version `{name}`, built at /{name}/: rename or move one",
+                file.origin
+            );
+        }
+    }
+    if let Some(name) = (first.search_files.iter()).find_map(|file| version_at(&file.path)) {
+        bail!(
+            "version `{name}` is built at /{name}/, where little writes files for search: rename it"
+        );
+    }
+    Ok(())
+}
+
+/// Write `version` of a site into the destination, `root`, noting what each
+/// file is built from, and, for a page, its URL and links, in `built`.
+fn write_version(version: Ready, root: &Path, built: &mut Built) -> Result<()> {
+    let Ready {
+        destination,
+        from_ref,
+        outputs,
+        static_files,
+        search_files,
+        ..
+    } = version;
+    let mut written = Vec::new();
     for output in outputs {
         write_file(&output.path, output.html.as_bytes())?;
-        let path = output.path.strip_prefix(&destination_dir)?.to_path_buf();
-        origins.insert(path.clone(), output.origin);
-        urls.insert(path.clone(), output.url);
-        links.insert(path, output.links);
+        let path = output.path.strip_prefix(root)?.to_path_buf();
+        built.origins.insert(path.clone(), output.origin);
+        built.urls.insert(path.clone(), output.url);
+        built.links.insert(path.clone(), output.links);
+        written.push(path);
     }
     // Written from what was read, not with `fs::copy`: on macOS that clones
     // the file, and FSEvents then reports the *source* as changed, so `little
     // serve` would rebuild forever. A build must only ever read its sources.
     for file in static_files {
-        write_file(&destination_dir.join(&file.path), &file.contents)?;
-        origins.insert(file.path, file.origin);
+        let path = destination.join(&file.path);
+        write_file(&path, &file.contents)?;
+        let path = path.strip_prefix(root)?.to_path_buf();
+        built.origins.insert(path.clone(), file.origin);
+        written.push(path);
     }
     for file in search_files {
-        write_file(&destination_dir.join(&file.path), &file.contents)?;
+        write_file(&destination.join(&file.path), &file.contents)?;
     }
-
-    println!(
-        "built {} page(s) -> {}",
-        pages.len(),
-        destination_dir.display()
-    );
-    Ok(Built {
-        destination: destination_dir,
-        url: site_url,
-        origins,
-        urls,
-        links,
-        repo,
-        unrendered_math,
-        unrendered_diagrams,
-        unrendered_blocks,
-        plugin_warnings: added.warnings,
-    })
+    if from_ref {
+        built.from_refs.extend(written);
+    }
+    Ok(())
 }
 
 /// The page built from what `rendered` was rendered from, at `rel` in the
@@ -1701,6 +2153,8 @@ mod tests {
         // And it's searchable, from the search box in its header.
         assert!(dist.join("pagefind/pagefind-component-ui.js").is_file());
         assert!(home.contains("<pagefind-modal-trigger>"), "{home}");
+        // A site without versions has no menu of them.
+        assert!(!home.contains("version-menu"), "{home}");
         let _ = fs::remove_dir_all(&site);
     }
 
@@ -3518,6 +3972,416 @@ mod tests {
 
         // The last build is left in place.
         assert!(dist.join("pagefind/pagefind.js").is_file());
+        let _ = fs::remove_dir_all(&site);
+    }
+
+    /// A site in a git repository whose files were `old`, at the tag `v1.4`,
+    /// and are now `new`, uncommitted. Its destination is ignored.
+    fn versioned_site(label: &str, old: &[(&str, &str)], new: &[(&str, &str)]) -> PathBuf {
+        let site = scratch_site(label, old);
+        fs::write(site.join(".gitignore"), "dist/\n").unwrap();
+        git::tests::git_in(&site, &["init", "--quiet"]);
+        git::tests::commit_all(&site);
+        git::tests::git_in(&site, &["tag", "v1.4"]);
+        for (file, _) in old {
+            fs::remove_file(site.join(file)).unwrap();
+        }
+        for (file, contents) in new {
+            let path = site.join(file);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(&path, contents).unwrap();
+        }
+        site
+    }
+
+    #[test]
+    fn each_version_is_built_from_its_git_ref() {
+        use git::tests::{commit_all, git_in};
+        let template = "{{ site.name }} {{ site.version }} \
+                        | {% for v in site.versions %}{{ v.name }} {{ v.url | safe }} {% endfor %}\
+                        | {% for v in page.versions %}{{ v.name }} {{ v.url | safe }} {% endfor %}\
+                        | {{ page.source_url | safe if page.source_url }} \
+                        | {{ page.edit_url | safe if page.edit_url }}\n{{ page.content | safe }}";
+        let site_cfg = |versions: &str| {
+            format!(
+                "theme: ./theme\nname: New\nurl: https://example.com/proj\n\
+                 repo: https://github.com/o/r\nversions:\n{versions}"
+            )
+        };
+        let site = versioned_site(
+            "versions",
+            &[
+                // The settings that are the whole site's are the site's.
+                ("little.yml", "name: Old\nurl: https://example.com/old\n"),
+                ("docs/README.md", "# Home\n\nSee [the old page](old.md).\n"),
+                ("docs/guide/README.md", "# Guide\n"),
+                ("docs/old.md", "# Old\n"),
+            ],
+            &[
+                (
+                    "little.yml",
+                    &site_cfg("  - name: \"2.0\"\n  - { name: \"1.4\", ref: v1.4 }\n"),
+                ),
+                ("docs/README.md", "# Home\n"),
+                ("docs/guide.md", "# Guide\n"),
+                ("docs/new.md", "# New\n"),
+                ("theme/_templates/default.html", template),
+                (
+                    "theme/_templates/404.html",
+                    "{% for v in page.versions %}{{ v.url | safe }} {% endfor %}",
+                ),
+                ("theme/_static/style.css", "body {}\n"),
+            ],
+        );
+        let built = build(&site).unwrap();
+        let dist = site.join("dist");
+        let read = |path: &str| fs::read_to_string(dist.join(path)).unwrap();
+        let head = |path: &str| read(path).lines().next().unwrap().to_string();
+        let file =
+            |commit: &str, path: &str| format!("https://github.com/o/r/blob/{commit}/docs/{path}");
+        let edit = |path: &str| format!("https://github.com/o/r/edit/main/docs/{path}");
+        let v1_4 = git_in(&site, &["rev-parse", "v1.4^{commit}"]);
+
+        // The first version is at the root, from the site's files as they
+        // are, and each page links to itself in each version, or, if it's
+        // not there, to its home.
+        let all = "2.0 /proj/ 1.4 /proj/1.4/ ";
+        assert_eq!(
+            head("guide/index.html"),
+            format!(
+                "New 2.0 | {all}| 2.0 /proj/guide 1.4 /proj/1.4/guide/ | {} | {}",
+                file("main", "guide.md"),
+                edit("guide.md")
+            )
+        );
+        assert_eq!(
+            head("new/index.html"),
+            format!(
+                "New 2.0 | {all}| 2.0 /proj/new 1.4 /proj/1.4/ | {} | {}",
+                file("main", "new.md"),
+                edit("new.md")
+            )
+        );
+        // Another is in a folder named for it, as it was at its ref, with its
+        // own settings, but the site's `url`. Its pages link to their files
+        // at the ref's commit, which can't be edited.
+        assert_eq!(
+            head("1.4/guide/index.html"),
+            format!(
+                "Old 1.4 | {all}| 2.0 /proj/guide 1.4 /proj/1.4/guide/ | {} | ",
+                file(&v1_4, "guide/README.md")
+            )
+        );
+        assert_eq!(
+            head("1.4/old/index.html"),
+            format!(
+                "Old 1.4 | {all}| 2.0 /proj/ 1.4 /proj/1.4/old | {} | ",
+                file(&v1_4, "old.md")
+            )
+        );
+        // Its links stay in it.
+        let old_home = read("1.4/index.html");
+        assert!(
+            old_home.contains(r#"<a href="/proj/1.4/old">the old page</a>"#),
+            "{old_home}"
+        );
+        // Each has the theme's files, but only the first a 404 page, which
+        // links to each version's home.
+        assert!(dist.join("style.css").is_file());
+        assert!(dist.join("1.4/style.css").is_file());
+        assert_eq!(read(NOT_FOUND_FILE), "/proj/ /proj/1.4/ ");
+        assert!(!dist.join("1.4").join(NOT_FOUND_FILE).exists());
+
+        // A file from a ref is named as git names it, and a page's URL is
+        // from the root of the site.
+        let old = Path::new("1.4/old/index.html");
+        assert_eq!(built.origins[old], "v1.4:docs/old.md");
+        assert_eq!(built.urls[old], "/1.4/old");
+        let from_refs = [
+            "1.4/index.html",
+            "1.4/guide/index.html",
+            "1.4/old/index.html",
+            "1.4/style.css",
+        ];
+        let from_refs: HashSet<_> = from_refs.into_iter().map(PathBuf::from).collect();
+        assert_eq!(built.from_refs, from_refs);
+
+        // The first version can be from a ref, too, and the site's files, as
+        // they are, in a folder, like any other.
+        commit_all(&site);
+        git_in(&site, &["tag", "v2.0"]);
+        let v2_0 = git_in(&site, &["rev-parse", "v2.0^{commit}"]);
+        let versions = "  - { name: \"2.0\", ref: v2.0 }\n  - { name: \"1.4\", ref: v1.4 }\n  \
+                        - name: dev\n";
+        fs::write(site.join("little.yml"), site_cfg(versions)).unwrap();
+        fs::write(site.join("docs/new.md"), "# Newer\n").unwrap();
+        let built = build(&site).unwrap();
+        let all = "2.0 /proj/ 1.4 /proj/1.4/ dev /proj/dev/ ";
+        let new = "2.0 /proj/new 1.4 /proj/1.4/ dev /proj/dev/new ";
+        assert_eq!(
+            head("new/index.html"),
+            format!("New 2.0 | {all}| {new}| {} | ", file(&v2_0, "new.md"))
+        );
+        assert!(read("new/index.html").contains("<h1 id=\"new\">New<"));
+        assert_eq!(
+            head("dev/new/index.html"),
+            format!(
+                "New dev | {all}| {new}| {} | {}",
+                file("main", "new.md"),
+                edit("new.md")
+            )
+        );
+        assert!(read("dev/new/index.html").contains("<h1 id=\"newer\">Newer<"));
+        assert_eq!(read(NOT_FOUND_FILE), "/proj/ /proj/1.4/ /proj/dev/ ");
+        assert!(!dist.join("dev").join(NOT_FOUND_FILE).exists());
+        assert!(built.from_refs.contains(Path::new("new/index.html")));
+        assert!(!built.from_refs.contains(Path::new("dev/new/index.html")));
+        let _ = fs::remove_dir_all(&site);
+    }
+
+    #[test]
+    fn a_site_whose_versions_have_no_ref_needs_no_repository() {
+        let site = scratch_site(
+            "versions-no-ref",
+            &[
+                (
+                    "little.yml",
+                    "theme: ./theme\nversions:\n  - name: latest\n",
+                ),
+                ("docs/README.md", "# Home\n"),
+                (
+                    "theme/_templates/default.html",
+                    "{{ site.version }} | {{ site.versions | map(attribute='url') | join(' ') | safe }} \
+                     | {{ page.versions | map(attribute='url') | join(' ') | safe }}",
+                ),
+            ],
+        );
+        build(&site).unwrap();
+        let home = fs::read_to_string(site.join("dist/index.html")).unwrap();
+        assert_eq!(home, "latest | / | /");
+        let _ = fs::remove_dir_all(&site);
+    }
+
+    #[test]
+    fn a_version_cant_be_where_a_page_or_search_is() {
+        let site = versioned_site(
+            "version-clash",
+            &[("docs/README.md", "# Old\n")],
+            &[
+                (
+                    "little.yml",
+                    "theme: ./theme\nversions:\n  - name: \"2.0\"\n  - { name: \"1.4\", ref: v1.4 }\n",
+                ),
+                ("docs/README.md", "# Home\n"),
+                ("theme/_templates/default.html", "{{ page.title }}"),
+            ],
+        );
+        // A page of the first version, or a file, where another version goes,
+        // stops the build...
+        let docs = site.join("docs");
+        for (file, name) in [
+            ("1.4.md", "the page built from "),
+            ("1.4/README.md", "the page built from "),
+            ("1.4/notes.txt", ""),
+        ] {
+            let path = docs.join(file);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(&path, "# Mine\n").unwrap();
+            let message = format!("{:#}", build(&site).unwrap_err());
+            let expected = format!(
+                "{name}{} clashes with version `1.4`, built at /1.4/: rename or move one",
+                path.display()
+            );
+            assert_eq!(message, expected);
+            fs::remove_file(&path).unwrap();
+        }
+        // ...but one deeper down, of the same name, doesn't.
+        fs::create_dir_all(docs.join("notes")).unwrap();
+        fs::write(docs.join("notes/1.4.md"), "# Notes\n").unwrap();
+        build(&site).unwrap();
+        assert!(site.join("dist/notes/1.4/index.html").is_file());
+
+        // Nor can a version be where search's files are.
+        fs::write(site.join("theme/little.yml"), "search: true\n").unwrap();
+        let site_cfg =
+            "theme: ./theme\nversions:\n  - name: \"2.0\"\n  - { name: pagefind, ref: v1.4 }\n";
+        fs::write(site.join("little.yml"), site_cfg).unwrap();
+        let message = format!("{:#}", build(&site).unwrap_err());
+        assert_eq!(
+            message,
+            "version `pagefind` is built at /pagefind/, where little writes files for search: \
+             rename it"
+        );
+        let _ = fs::remove_dir_all(&site);
+    }
+
+    #[test]
+    fn a_version_from_a_ref_is_named_in_what_goes_wrong() {
+        use git::tests::{commit_all, git_in};
+        let site_cfg = |version: &str| {
+            format!(
+                "theme: ./theme\nversions:\n  - name: \"2.0\"\n  - {{ name: \"1.4\", {version} }}\n"
+            )
+        };
+        let site = versioned_site(
+            "version-errors",
+            &[("docs/README.md", "# Old\n\n$\\qty{1}{m}$\n")],
+            &[
+                ("little.yml", &site_cfg("ref: v1.4")),
+                ("docs/README.md", "# Home\n"),
+                ("theme/_templates/default.html", "{{ page.content | safe }}"),
+            ],
+        );
+        // What's warned of in its files names each as git does.
+        let built = build(&site).unwrap();
+        let warnings: Vec<_> = (built.unrendered_math.iter())
+            .map(|f| f.to_string())
+            .collect();
+        assert_eq!(
+            warnings,
+            ["can't render $\\qty{1}{m}$ in v1.4:docs/README.md: Unknown command \"\\qty\"."]
+        );
+
+        // A ref that isn't there stops the build, naming the version.
+        fs::write(site.join("little.yml"), site_cfg("ref: v1.5")).unwrap();
+        let message = format!("{:#}", build(&site).unwrap_err());
+        let top = site.canonicalize().unwrap();
+        assert_eq!(
+            message,
+            format!(
+                "building version `1.4`, from v1.5: there's no tag, branch, or commit `v1.5` in {}",
+                top.display()
+            )
+        );
+        // As does a version that can't be built, as it was.
+        fs::write(site.join("little.yml"), "source: content\n").unwrap();
+        commit_all(&site);
+        git_in(&site, &["tag", "v1.3"]);
+        fs::write(site.join("little.yml"), site_cfg("ref: v1.3")).unwrap();
+        let message = format!("{:#}", build(&site).unwrap_err());
+        assert_eq!(
+            message,
+            "building version `1.4`, from v1.3: there's no source folder at v1.3:content"
+        );
+        let _ = fs::remove_dir_all(&site);
+    }
+
+    #[test]
+    fn a_versions_plugins_are_as_they_were_at_its_ref() {
+        use git::tests::{commit_all, git_in};
+        let plugin = "plugins:\n  api:\n    wasm: api.wasm\n    read: pkg\n    \
+                      pages: [{ path: reference/hello.md, read: pkg/hello.md }]\n    \
+                      warnings: [\"can't read pkg/broken.py\"]\n";
+        let site_cfg = |git_ref: &str| {
+            format!(
+                "theme: ./theme\nversions:\n  - name: \"2.0\"\n  - {{ name: \"1.4\", ref: {git_ref} }}\n"
+            )
+        };
+        let site = scratch_site(
+            "version-plugins",
+            &[
+                (".gitignore", "dist/\n"),
+                ("little.yml", plugin),
+                ("docs/README.md", "# Home\n"),
+                ("pkg/hello.md", "# Hello\n"),
+                ("theme/_templates/default.html", "{{ page.content | safe }}"),
+            ],
+        );
+        let wasm = fs::read(crate::plugin::tests::test_plugin_with_pages()).unwrap();
+        fs::write(site.join("api.wasm"), wasm).unwrap();
+        git_in(&site, &["init", "--quiet"]);
+        commit_all(&site);
+        git_in(&site, &["tag", "v1.4"]);
+        // Since, the plugin's gone, and the file it read has changed.
+        fs::remove_file(site.join("api.wasm")).unwrap();
+        fs::write(site.join("pkg/hello.md"), "# Hi\n").unwrap();
+        fs::write(site.join("little.yml"), site_cfg("v1.4")).unwrap();
+
+        let built = build(&site).unwrap();
+        let hello = fs::read_to_string(site.join("dist/1.4/reference/hello/index.html")).unwrap();
+        assert!(hello.starts_with("<h1 id=\"hello\">Hello<"), "{hello}");
+        assert!(!site.join("dist/reference").exists());
+        // What it warns of, and the pages it adds, say which version they're
+        // in.
+        let warnings: Vec<_> = (built.plugin_warnings.iter())
+            .map(|w| w.to_string())
+            .collect();
+        assert_eq!(warnings, ["plugin `api` at v1.4: can't read pkg/broken.py"]);
+        assert_eq!(
+            built.origins[Path::new("1.4/reference/hello/index.html")],
+            "plugin `api`'s reference/hello.md at v1.4"
+        );
+
+        // A plugin's file that wasn't committed stops the build.
+        fs::write(
+            site.join("little.yml"),
+            plugin.replace("api.wasm", "out/api.wasm"),
+        )
+        .unwrap();
+        commit_all(&site);
+        git_in(&site, &["tag", "v1.3"]);
+        fs::write(site.join("little.yml"), site_cfg("v1.3")).unwrap();
+        let message = format!("{:#}", build(&site).unwrap_err());
+        assert_eq!(
+            message,
+            "building version `1.4`, from v1.3: plugin `api`'s `wasm` is v1.3:out/api.wasm, but \
+             there's no file there"
+        );
+        let _ = fs::remove_dir_all(&site);
+    }
+
+    #[test]
+    fn the_builtin_theme_has_a_menu_of_versions() {
+        let pages = [
+            ("docs/README.md", "# Home\n"),
+            ("docs/guide.md", "# Guide\n"),
+        ];
+        let mut new = vec![(
+            "little.yml",
+            "versions:\n  - name: \"2.0\"\n  - { name: \"1.4\", ref: v1.4 }\n",
+        )];
+        new.extend(pages);
+        let site = versioned_site("versions-builtin", &pages, &new);
+
+        build(&site).unwrap();
+
+        let read = |path: &str| fs::read_to_string(site.join("dist").join(path)).unwrap();
+        let latest = read("guide/index.html");
+        assert!(
+            latest
+                .contains("<summary><span class=\"visually-hidden\">Version </span>2.0</summary>"),
+            "{latest}"
+        );
+        assert!(
+            latest.contains("<a href=\"/guide\" aria-current=\"true\">2.0</a>"),
+            "{latest}"
+        );
+        assert!(
+            latest.contains("<a href=\"/1.4/guide\">1.4</a>"),
+            "{latest}"
+        );
+        assert!(!latest.contains("version-note"), "{latest}");
+        // Each version but the first notes which it is, and links to the
+        // first.
+        let old = read("1.4/guide/index.html");
+        assert!(
+            old.contains("<a href=\"/1.4/guide\" aria-current=\"true\">1.4</a>"),
+            "{old}"
+        );
+        assert!(
+            old.contains(
+                "These docs are for version <strong>1.4</strong>. \
+                 <a href=\"/guide\">Go to version 2.0</a>"
+            ),
+            "{old}"
+        );
+
+        // A site with one version has no menu.
+        fs::write(site.join("little.yml"), "versions:\n  - name: latest\n").unwrap();
+        build(&site).unwrap();
+        let only = read("guide/index.html");
+        assert!(!only.contains("version-menu"), "{only}");
+        assert!(!only.contains("version-note"), "{only}");
         let _ = fs::remove_dir_all(&site);
     }
 }

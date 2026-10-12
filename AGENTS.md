@@ -34,7 +34,8 @@ cargo clippy --manifest-path plugins/docstrings/Cargo.toml --all-targets --targe
   their diagrams are drawn, and look, with Mermaid's own config, the
   classes their code is highlighted with, and the plugins that render their
   code blocks, or add pages, each with its `.wasm` file, the folders it
-  reads, and its settings.
+  reads, and its settings; and the versions it's built in, each from a git
+  ref but one, with the config a version's own `little.yml` can't set.
 - `src/little.yml` — little's own defaults (level 1), compiled into the binary.
 - `src/render.rs` — Markdown (comrak, with the extensions the site turns on) +
   YAML frontmatter → HTML fragment, with each relative link led from the
@@ -48,7 +49,9 @@ cargo clippy --manifest-path plugins/docstrings/Cargo.toml --all-targets --targe
   code block in its languages, before diagrams are drawn, putting the
   Markdown or HTML it gives back in the block's place; one it can't render
   stays code, and is noted, with its line, to warn of. Asks each that adds
-  pages for them, and what it warns of, checking each page's path.
+  pages for them, and what it warns of, checking each page's path. Compiles
+  each plugin once, and again only once its file's content changes, so a
+  version from a git ref's, written again each build, isn't.
 - `src/math.rs` — writes each formula as MathML as comrak writes the page,
   with math-core, each read on its own; one it can't read is written as its
   TeX, and noted, as it's written, to warn of.
@@ -70,15 +73,24 @@ cargo clippy --manifest-path plugins/docstrings/Cargo.toml --all-targets --targe
   the destination (`dist/`), noting the source file and URL of each file it
   writes. Finds where the source is in its repository, so each page can
   link to its file there, and works out when it's built, for `site.year`,
-  its diagrams' today, and its plugins' clocks.
+  its diagrams' today, and its plugins' clocks. Builds each of the site's
+  versions this way, in the site's theme: the first at the root, the rest
+  in folders named for them, those from git refs from their files there,
+  checked out with `src/git.rs`; stops on a page where a version's folder
+  goes; and gives the theme `site.versions`, `site.version`, and
+  `page.versions`.
+- `src/git.rs` — the git repository a site's in, found with the `git`
+  command, and the files a build of a version reads from a git ref: its
+  `little.yml`, source, and plugins' files and folders, checked out as
+  `git checkout` would, into a temporary folder, deleted after the build.
 - `src/search.rs` — indexes each page's own content, under its title and URL,
   with Pagefind, in the language the theme gives the page, into the files of
   the destination's `pagefind/`.
 - `src/links.rs` — checks the links in the built site with lychee-lib: those
   within the site in the destination, as the site is published under its
   `url`, and, for `little build`, those to other sites over the network, but
-  not those into the site's repository. Shows a broken link in Markdown as
-  it's written.
+  not those into the site's repository, nor those of a version from a git
+  ref. Shows a broken link in Markdown as it's written.
 - `src/theme.rs` — a theme's templates, static files, and Sass, layered over
   those of the themes it builds on, and the built-in theme; picks each page's
   template by its type (`home`, `section`, `page`, `404`), and gives templates
@@ -92,7 +104,8 @@ cargo clippy --manifest-path plugins/docstrings/Cargo.toml --all-targets --targe
   it's downloaded only once; and a plugin's `.wasm` file, kept in
   `.little/plugins/`.
 - `src/server.rs` — dev server + file watcher + live reload, watching the
-  config, source, themes, plugins, and the folders they read; checks the
+  config, source, themes, plugins, and the folders they read; builds every
+  version again on each change, but doesn't watch git refs; checks the
   links within the site after each build.
 
 Content and theme live outside `src/`:
@@ -107,7 +120,8 @@ Content and theme live outside `src/`:
   a script that only adds to it: `builtin` has no `_sass/`.
   List every file in it in `builtin` in `src/theme.rs`; a test checks. Its
   search box is Pagefind's, deferred so it finds the `pagefind/` little
-  writes.
+  writes. Its header has a menu of a site's versions, when it has two or
+  more.
 - `little.yml` — the manual's config: its `url`, `repo`, and `nav`, which
   orders its pages by hand. It sets `theme: ./theme`, so edits to the
   built-in theme live-reload.
@@ -401,3 +415,16 @@ Record notable choices as short ADRs in `decisions/`. Locked so far:
   description has only the room the name leaves, and an icon button
   doesn't shrink; a name that fits on one line looks as it did — see
   [`decisions/0039-a-long-site-name-in-the-built-in-themes-header.md`](./decisions/0039-a-long-site-name-in-the-built-in-themes-header.md).
+- **Versions:** `versions` lists a site's versions, the latest first, each
+  a `name` and the git `ref`, a tag, branch, or commit, it's read from, but
+  for at most one, the site's files as they are. `little build` builds them
+  all, the first at the root and each other in a folder named for it, like
+  `/1.4/`, with its own theme files and search index, in the site's theme,
+  by today's little, each from its ref's own `little.yml`, source, and
+  plugins, read with `git`, but with the site's `theme`, `url`,
+  `destination`, `repo`, `host`, `port`, and `versions`. The theme gets
+  `site.versions`, `site.version`, and `page.versions`, the same page in
+  each version, else its home, and the built-in theme has a menu of them in
+  its header. A shallow clone stops the build; a version from a ref's links
+  to other sites aren't checked — see
+  [`decisions/0040-versions-from-git-refs.md`](./decisions/0040-versions-from-git-refs.md).

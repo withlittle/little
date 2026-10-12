@@ -80,6 +80,9 @@ warning: broken link https://github.com/withlittle/litle in ./docs/about.md: Rej
   like the theme's links to edit each page, aren't checked either: a new
   page's file isn't there until you push it, and a link checker can't see
   the files in a private repository.
+- On a site with [versions](versions.md), every version's links within the
+  site are checked, but not the links to other sites of a version from a
+  ref: they break as the web changes, and a tag can't be fixed.
 - Only pages and other HTML files are checked, not CSS. A warning names the
   file, not the line.
 - Links are checked with [lychee](https://lychee.cli.rs), which is built into

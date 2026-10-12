@@ -1,5 +1,6 @@
 mod config;
 mod download;
+mod git;
 mod highlight;
 mod links;
 mod math;

@@ -32,6 +32,7 @@ nav:
       - { title: Frontmatter, url: /writing/frontmatter }
       - { title: Navigation, url: /writing/navigation }
       - { title: Search, url: /writing/search }
+      - { title: Versions, url: /writing/versions }
   - title: Themes
     children:
       - { title: Choosing a theme, url: /themes/choosing-a-theme }
