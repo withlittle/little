@@ -15,7 +15,9 @@
 //!
 //! It rebuilds when anything a build reads changes: the site's config, its
 //! source, its themes, and its plugins, with the folders they read, but
-//! those that are built in or downloaded, which don't change.
+//! those that are built in or downloaded, which don't change. Each rebuild
+//! builds every version of the site, but a version's git ref isn't watched:
+//! a new commit on its branch is built at the next save, or the next start.
 
 use anyhow::{Result, anyhow};
 use notify::{Event, RecommendedWatcher, RecursiveMode, Watcher};

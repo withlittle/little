@@ -40,7 +40,8 @@ repository, and open <http://127.0.0.1:8080/little/>.
 - [Getting started](./docs/getting-started/install.md): install little,
   start a site, configure it, and publish it.
 - [Writing](./docs/writing/pages-and-files.md): pages, Markdown, links,
-  code, math, diagrams, notebooks, frontmatter, navigation, and search.
+  code, math, diagrams, notebooks, frontmatter, navigation, search, and
+  versions.
 - [Themes](./docs/themes/choosing-a-theme.md): choose a theme, or make one.
 - [Plugins](./docs/plugins/using-plugins.md): use plugins, add an API
   reference for Python, or write a plugin.

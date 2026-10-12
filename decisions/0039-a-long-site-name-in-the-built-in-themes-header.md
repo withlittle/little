@@ -1,6 +1,8 @@
 # 0039 — A long site name in the built-in theme's header
 
-- Status: accepted
+- Status: accepted; amended by [0040](./0040-versions-from-git-refs.md),
+  which keeps the name to one line, cut short with an ellipsis, on a
+  phone, where the menu of versions goes below it
 - Date: 2026-10-11
 - Amends: [0033](./0033-the-built-in-themes-design.md)
 

@@ -16,6 +16,10 @@
 //! theme can link to each page's file there, from every page, and a new
 //! page's file isn't there until it's pushed, nor any in a private
 //! repository to a checker that hasn't signed in.
+//!
+//! Nor is a link to another site from a version of the site built from a
+//! git ref: the web changes, and a tag can't be fixed. Its links within the
+//! site are checked.
 
 use anyhow::{Context, Result, anyhow};
 use futures::StreamExt;
@@ -105,6 +109,9 @@ async fn check_site(site: &Site<'_>, scope: Scope) -> Result<Vec<Broken>> {
     while let Some(request) = requests.next().await {
         match request {
             Ok(request) => {
+                if site.elsewhere_from_ref(&request) {
+                    continue;
+                }
                 let key = request.uri.as_str().to_string();
                 let found = site.found(&request.source, &key);
                 let (_, files) = links
@@ -183,6 +190,9 @@ struct Site<'a> {
     /// never there, so only a link remapped out of it into the destination
     /// can be found.
     root: PathBuf,
+    /// What matches a link to the site's own `url`, or to anything under
+    /// it, if it has one.
+    own: Option<Regex>,
     /// How each page's Markdown writes its links, by the page's path in the
     /// destination, then by the URL lychee makes of each, or, for one that
     /// isn't a URL, by its text.
@@ -195,6 +205,11 @@ impl<'a> Site<'a> {
             .with_context(|| format!("finding {}", built.destination.display()))?;
         let root = destination.join(".little-root");
         let root_url = dir_url(&root)?;
+        // Made as lychee makes URLs, so they're encoded alike.
+        let own = match built.url.origin.as_str() {
+            "" => None,
+            origin => Some(under(&Url::parse(&format!("{origin}{}", built.url.path))?)?),
+        };
         let written = built
             .links
             .iter()
@@ -207,6 +222,7 @@ impl<'a> Site<'a> {
             built,
             destination,
             root,
+            own,
             written,
         })
     }
@@ -239,23 +255,27 @@ impl<'a> Site<'a> {
     fn remaps(&self) -> Result<Remaps> {
         let site = &self.built.url;
         // Made URLs as lychee makes them, so they're encoded alike.
-        let mut under = vec![dir_url(&self.root)?.join(site.path.trim_start_matches('/'))?];
-        if !site.origin.is_empty() {
-            under.push(Url::parse(&format!("{}{}", site.origin, site.path))?);
-        }
+        let root = dir_url(&self.root)?.join(site.path.trim_start_matches('/'))?;
+        let mut patterns = vec![under(&root)?];
+        patterns.extend(self.own.clone());
         // `$` would start a capture group in a replacement.
         let into = format!(
             "{}${{1}}",
             trimmed(&dir_url(&self.destination)?).replace('$', "$$")
         );
-        let remaps = under
-            .iter()
-            .map(|url| {
-                let pattern = format!("^{}([/?#]|$)", regex::escape(trimmed(url)));
-                Ok((Regex::new(&pattern)?, into.clone()))
-            })
-            .collect::<Result<_>>()?;
+        let remaps = (patterns.into_iter())
+            .map(|pattern| (pattern, into.clone()))
+            .collect();
         Ok(Remaps::new(remaps))
+    }
+
+    /// Whether `request` is a link to another site from a file of a version
+    /// of the site from a git ref, which isn't checked.
+    fn elsewhere_from_ref(&self, request: &Request) -> bool {
+        let from_ref = (self.in_destination(&request.source))
+            .is_some_and(|path| self.built.from_refs.contains(path));
+        let own = |own: &Regex| own.is_match(request.uri.as_str());
+        from_ref && !request.uri.is_file() && !self.own.as_ref().is_some_and(own)
     }
 
     /// `link`, which lychee checked as `checked`, as a reader follows it: a
@@ -379,6 +399,14 @@ fn dir_url(dir: &Path) -> Result<Url> {
 /// `url` with no `/` at the end, so a path can follow it.
 fn trimmed(url: &Url) -> &str {
     url.as_str().trim_end_matches('/')
+}
+
+/// What matches a link to `url`, or to anything under it.
+fn under(url: &Url) -> Result<Regex> {
+    Ok(Regex::new(&format!(
+        "^{}([/?#]|$)",
+        regex::escape(trimmed(url))
+    ))?)
 }
 
 /// What matches a link to `repo`, or to anything in it, as lychee writes the
@@ -725,6 +753,48 @@ mod tests {
         ] {
             assert!(!matches(url), "{url}");
         }
+    }
+
+    #[test]
+    fn checks_only_links_within_the_site_from_a_git_ref() {
+        use crate::git::tests::{commit_all, git_in};
+        // A link to another site from a version from a ref isn't checked, as
+        // the ref can't be fixed, but one within the site is, even to the
+        // site's own `url`.
+        let site = scratch_site(
+            "versions",
+            &[
+                BARE_THEME[1],
+                (".gitignore", "dist/\n"),
+                (
+                    "docs/README.md",
+                    "[Elsewhere](https://example.invalid/) [Gone](gone.md) \
+                     [Missing](https://example.com/proj/1.4/missing)\n",
+                ),
+            ],
+        );
+        git_in(&site, &["init", "--quiet"]);
+        commit_all(&site);
+        git_in(&site, &["tag", "v1.4"]);
+        let site_cfg = "theme: ./theme\nurl: https://example.com/proj\nversions:\n  \
+                        - name: \"2.0\"\n  - { name: \"1.4\", ref: v1.4 }\n";
+        fs::write(site.join("little.yml"), site_cfg).unwrap();
+        fs::write(site.join("docs/README.md"), "# Home\n").unwrap();
+
+        let built = site::build(&site).unwrap();
+        let broken = check(&built, Scope::All).unwrap();
+        fs::remove_dir_all(&site).unwrap();
+        let broken: Vec<_> = broken.iter().map(ToString::to_string).collect();
+        assert_eq!(
+            broken,
+            [
+                format!("broken link gone.md in v1.4:docs/README.md: {NOT_FOUND}"),
+                format!(
+                    "broken link https://example.com/proj/1.4/missing in v1.4:docs/README.md: \
+                     {NOT_FOUND}"
+                ),
+            ]
+        );
     }
 
     #[test]

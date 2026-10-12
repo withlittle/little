@@ -40,6 +40,10 @@
 
 {#- A site of one page has nowhere else to go, so it has no nav. -#}
 {%- set has_nav = site.nav and (site.nav | length > 1 or site.nav[0].children) -%}
+{#- A site with two or more versions has a menu of them. Each in
+    page.versions links to this page in that version, or to its home if the
+    page isn't there. -#}
+{%- set versions = page.versions if site.versions and site.versions | length > 1 else [] -%}
 <!doctype html>
 <html lang="{{ site.lang | default('en') }}">
 <head>
@@ -86,7 +90,24 @@
          page. A popover needs no script. #}
       <button class="icon-button menu-button" type="button" popovertarget="_nav" aria-label="Menu">{{ icon("menu") }}</button>
       {% endif %}
+      {% if versions %}
+      {# The site's name, and the version this is, which opens a list of
+         them all. A <details> needs no script; the theme's script closes it
+         on a click elsewhere, or Escape. #}
+      <div class="brand-group">
+        <a class="brand" href="{{ '/' | url }}">{{ site.name }}</a>
+        <details class="version-menu">
+          <summary><span class="visually-hidden">Version </span>{{ site.version }}</summary>
+          <ul>
+            {% for version in versions %}
+            <li><a href="{{ version.url | safe }}"{% if version.name == site.version %} aria-current="true"{% endif %}>{{ version.name }}</a></li>
+            {% endfor %}
+          </ul>
+        </details>
+      </div>
+      {% else %}
       <a class="brand" href="{{ '/' | url }}">{{ site.name }}</a>
+      {% endif %}
       {% if site.description %}<span class="description">{{ site.description }}</span>{% endif %}
       <div class="header-actions">
         {% if site.search %}
@@ -144,6 +165,12 @@
 
     <main id="_main">
       <div class="page">
+        {# On each version but the first, a note names the version, and links
+           to the first. #}
+        {% if versions and site.version != versions[0].name %}
+        <p class="version-note" role="note">These docs are for version <strong>{{ site.version }}</strong>. <a href="{{ versions[0].url | safe }}">Go to version {{ versions[0].name }}</a></p>
+        {% endif %}
+
         {# page.breadcrumbs is what's above this page in site.nav, from the top
            down; the home page has none. Folders without a README are labels. #}
         {% if page.breadcrumbs %}

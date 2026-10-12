@@ -33,6 +33,7 @@ or works them out, and a theme or a site can change any of them:
 | `markdown.mermaid` | `svg` | how [diagrams are drawn](../writing/diagrams.md#choosing-how-diagrams-are-drawn) |
 | `mermaid` | none | how [diagrams look](../writing/diagrams.md#choosing-how-diagrams-look), in Mermaid's own config |
 | `plugins` | none | the [plugins](../plugins/using-plugins.md) a site uses, their files, and their settings |
+| `versions` | none | the site's [versions](../writing/versions.md), each built from a git tag, branch, or commit |
 | `host` | `127.0.0.1` | the host `little serve` [serves at](commands.md#choosing-where-to-serve) |
 | `port` | `8080` | the port it serves on |
 | `year` | the year the build starts in | the year a theme's [copyright notice](../themes/making-a-theme.md#a-copyright-notice) shows |
@@ -42,9 +43,10 @@ or works them out, and a theme or a site can change any of them:
   relative to the site's folder.
 - In `plugins`, only the site can set a plugin's `read`, the folders it can
   read.
-- little works out `nav` and `year` as it builds, so `little config`
-  doesn't print them, unless a `little.yml` sets them, which replaces what
-  little works out.
+- little works out `nav` and `year` as it builds, and, on a site with
+  [versions](../writing/versions.md), `version`, the name of the one it's
+  building, so `little config` doesn't print them, unless a `little.yml`
+  sets them, which replaces what little works out.
 
 ## The built-in theme's settings
 
@@ -67,7 +69,8 @@ says more.
 
 ## Your own settings
 
-Any other key reaches the theme as `site.<key>`, like `site.version` for
-`version: "2.1"`, for a theme that shows it. A key in a page's frontmatter
+Any other key reaches the theme as `site.<key>`, like `site.announcement`
+for `announcement: "2.1 is out!"`, for a theme that shows it. A key in a
+page's frontmatter
 reaches the theme as `page.<key>` instead, and changes only that page: see
 [Frontmatter](../writing/frontmatter.md#frontmatter-wins).

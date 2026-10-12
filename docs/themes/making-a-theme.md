@@ -82,7 +82,8 @@ can be as small as this:
 
 A 404 page has no content for `default.html` to show, so a theme without a
 `404.html` gets no 404 page, and the host shows its own. A 404 page has just
-`page.type` and `page.url` (`/404.html`).
+`page.type` and `page.url` (`/404.html`), and, on a site with
+[versions](#a-menu-of-versions), `page.versions`.
 
 ## Static files
 
@@ -171,6 +172,41 @@ built-in theme uses:
   [JavaScript API](https://pagefind.app/docs/api/), from
   `{{ '/pagefind/pagefind.js' | url }}`.
 - Each page is indexed in the language of its `<html lang>`.
+
+## A menu of versions
+
+On a site with [versions](../writing/versions.md), `site.version` names the
+one being built, and `page.versions` lists them all, the latest first, each
+with the `url` of this page in it, if it has one at the same URL, or else of
+its home page, so a menu can keep the reader on the page they're reading:
+
+```html
+{% if site.versions and site.versions | length > 1 %}
+<nav aria-label="Versions">
+  <ul>
+    {% for version in page.versions %}
+    <li><a href="{{ version.url | safe }}"{% if version.name == site.version %} aria-current="true"{% endif %}>{{ version.name }}</a></li>
+    {% endfor %}
+  </ul>
+</nav>
+{% endif %}
+```
+
+- A site without `versions` has no `site.versions`, `site.version`, or
+  `page.versions`, and a site with one version needs no menu.
+- Each `url` already has the path of the site's `url`, so write it with
+  `safe`, not through the `url` filter.
+- Each version is built as if it were published at its folder, so the `url`
+  filter puts the folder before the theme's own URLs too:
+  `{{ '/' | url }}` is the version's home page, and
+  `{{ '/assets/style.css' | url }}` its own copy of the theme's stylesheet.
+- Each entry has the keys it's written with in `versions`, like `ref`, and
+  any you add, like `label`, for the theme to show.
+- `site.version != site.versions[0].name` on every version but the first,
+  for a note that links to the first, at `page.versions[0].url`, as the
+  built-in theme's
+  [`default.html`](https://github.com/withlittle/little/blob/main/theme/_templates/default.html)
+  does.
 
 ## A copyright notice
 

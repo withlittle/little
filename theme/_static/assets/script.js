@@ -1,7 +1,8 @@
 // The built-in theme's script. Every page works without it: it adds a toggle
-// between light and dark, scrolls the nav to the current page, lets a table
-// as wide as the page scroll, adds a button to copy each code block, and
-// marks where the reader is in the table of contents.
+// between light and dark, closes the menu of versions on a click elsewhere,
+// or Escape, scrolls the nav to the current page, lets a table as wide as
+// the page scroll, adds a button to copy each code block, and marks where
+// the reader is in the table of contents.
 (() => {
   const root = document.documentElement;
 
@@ -25,6 +26,21 @@
   });
   systemDark.addEventListener("change", sync);
   sync();
+
+  // The menu of versions closes on a click elsewhere, or Escape, which
+  // gives the focus back to its button if it was in the menu.
+  const versionMenu = document.querySelector(".version-menu");
+  if (versionMenu) {
+    document.addEventListener("click", (event) => {
+      if (versionMenu.open && !versionMenu.contains(event.target)) versionMenu.open = false;
+    });
+    document.addEventListener("keydown", (event) => {
+      if (event.key !== "Escape" || !versionMenu.open) return;
+      const within = versionMenu.contains(document.activeElement);
+      versionMenu.open = false;
+      if (within) versionMenu.querySelector("summary").focus();
+    });
+  }
 
   // The nav is a drawer only where there's no room for it beside the page.
   const nav = document.getElementById("_nav");

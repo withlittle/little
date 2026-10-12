@@ -1,10 +1,12 @@
 # 0040 — Versions of a site, built from git refs
 
-- Status: proposed
+- Status: accepted
 - Date: 2026-10-12
 - Amends: [0013](./0013-pages-that-clash.md),
   [0014](./0014-site-url-and-its-path.md),
-  [0016](./0016-checking-links.md)
+  [0016](./0016-checking-links.md),
+  [0034](./0034-the-built-in-themes-script.md),
+  [0039](./0039-a-long-site-name-in-the-built-in-themes-header.md)
 
 ## Context
 A product that's released keeps more than one release in use, so its docs
@@ -87,10 +89,12 @@ release, and a branch for each line it fixes.
     in that version, at the same URL from its root, or, if it's not
     there, of that version's home page.
 - The built-in theme has a menu of versions in its header, when a site
-  has two or more: a `<details>`, which works without a script, and with
-  one, closes on a click elsewhere, or Escape. On each version but the
-  first, a note above the page names its version, and links to the page
-  in the first.
+  has two or more: a `<details>`, beside the site's name, or below it on a
+  phone, where the name keeps to one line, cut short with an ellipsis
+  ([0039](./0039-a-long-site-name-in-the-built-in-themes-header.md)). It
+  works without a script, and with one, closes on a click elsewhere, or
+  Escape. On each version but the first, a note above the page names its
+  version, and links to the page in the first.
 - A page from a ref links to its file at the ref's commit, as
   `page.source_url`, but has no `page.edit_url`, as a tag or a commit
   can't be edited.

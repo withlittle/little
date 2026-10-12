@@ -7,7 +7,10 @@
   [0027](./0027-drawing-mermaid-diagrams.md), which does the same for a
   diagram that can't be drawn, and by
   [0029](./0029-plugins-that-render-code-blocks.md), which does the same
-  for a code block a plugin can't render
+  for a code block a plugin can't render, and by
+  [0040](./0040-versions-from-git-refs.md), which checks every version's
+  links within the site, but not a version from a git ref's links to other
+  sites
 - Date: 2026-10-01
 
 ## Context

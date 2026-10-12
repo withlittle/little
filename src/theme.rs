@@ -209,7 +209,7 @@ impl fmt::Display for Location {
 
 /// One of a theme's files, read: a static file, ready to copy to the site's
 /// root, or one in `_sass/`, for stylesheets to load.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct StaticFile {
     /// Its path from `_static/`, and so from the site's root, or `_sass/`.
     pub path: PathBuf,

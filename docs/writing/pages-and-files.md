@@ -50,6 +50,10 @@ with an error that names both:
 Error: docs/guide.md and docs/guide/README.md would both be the page at /guide/: rename or move one
 ```
 
+On a site with [versions](versions.md), so does a page or file where
+another version's folder goes, like `docs/1.4.md`, for a version named
+`1.4`.
+
 Pages whose URLs differ only in case, like `API.md` and `api/README.md`,
 aren't caught, but on macOS and Windows, which ignore case by default, one
 replaces the other.
