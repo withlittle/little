@@ -47,15 +47,16 @@
 //! `versions` lists the versions of the site, in the order its menu lists
 //! them, each with the `title` readers see, the `url` it's published at, one
 //! of them at `/`, and the git `ref` it's built from, but for one, at most,
-//! that's built from the site's files as they are (see `site`). A version
-//! from a ref has its own config, in the `little.yml` it has there, but the
-//! site's themes, and the settings that are the whole site's, like `url`
-//! (see `Config::for_version`).
+//! that's built from the site's files as they are (see `site`). Every
+//! version is built with the site's config, but one from a ref has its own
+//! pages, from its `source` there, and its own `nav` (see
+//! `Config::for_version`).
 
 use anyhow::{Context, Result, anyhow, bail};
-use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, utf8_percent_encode};
+use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, percent_decode_str, utf8_percent_encode};
 use serde_yaml::{Mapping, Value};
 use std::borrow::Cow;
+use std::collections::BTreeSet;
 use std::io::ErrorKind;
 use std::ops::RangeInclusive;
 use std::path::{Path, PathBuf};
@@ -67,7 +68,7 @@ use crate::theme::{self, Location};
 pub const CONFIG_FILE: &str = "little.yml";
 
 /// A site's merged config, and what it chose.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Config {
     /// The merged cascade: what `little config` prints, and what the theme
     /// sees as `site`.
@@ -103,22 +104,10 @@ pub struct Config {
     /// them: none for a site that has just the one.
     pub versions: Vec<Version>,
     /// little's defaults, with the settings of each theme over them: what a
-    /// version of the site from a git ref puts its own config over.
+    /// version of the site from a git ref puts the `source` and `nav` of its
+    /// own little.yml over.
     beneath: Mapping,
 }
-
-/// The settings a version of a site from a git ref takes from the site, not
-/// from its own little.yml: where the whole site is built into, published,
-/// and served, which theme it's in, and which versions it has.
-const SITE_WIDE: [&str; 7] = [
-    "theme",
-    "url",
-    "destination",
-    "repo",
-    "host",
-    "port",
-    "versions",
-];
 
 /// A version of a site, from `versions`.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -132,6 +121,9 @@ pub struct Version {
     /// The git ref it's built from, like `v1.4`, or none, for the site's
     /// files as they are.
     pub git_ref: Option<String>,
+    /// The folder its pages are in at its ref, from the site's folder there,
+    /// like `./documentation`, if its `source` names one.
+    pub source: Option<String>,
 }
 
 impl Version {
@@ -184,18 +176,51 @@ pub struct SiteUrl {
     /// The path the site is under, like `/my-project`, with no `/` at the
     /// end; empty for a site at the root of its domain.
     pub path: String,
+    /// For a version of the site that isn't at its root, the theme's files,
+    /// which only the version at the root has.
+    pub shared: Option<Shared>,
+}
+
+/// The theme's files, which a site with versions writes once, for the
+/// version at its root, for every version to share.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Shared {
+    /// The path of the site's root, like `/my-project`, as `SiteUrl::path`.
+    pub path: String,
+    /// The URL of each file from the root of the site, like
+    /// `/assets/style.css`.
+    pub files: BTreeSet<String>,
+}
+
+impl Shared {
+    /// Whether `url`, from the root of the site, is one of the files, after
+    /// any `?query` or `#fragment`, with the characters encoded in it as
+    /// they are in the file's name.
+    fn has(&self, url: &str) -> bool {
+        let path = url.split(['?', '#']).next().unwrap_or_default();
+        self.files
+            .contains(percent_decode_str(path).decode_utf8_lossy().as_ref())
+    }
 }
 
 impl SiteUrl {
     /// `url` as the browser should follow it: a URL from the root of the
-    /// site, like `/guide/`, gets the site's path, as `/my-project/guide/`.
-    /// Any other URL, like `https://…`, `//…`, `#…`, or `guide/`, is left as
-    /// it is.
+    /// site, like `/guide/`, gets the site's path, as `/my-project/guide/`,
+    /// or, for one of the theme's files a version shares, the path of the
+    /// site's root. Any other URL, like `https://…`, `//…`, `#…`, or
+    /// `guide/`, is left as it is.
     pub fn link<'a>(&self, url: &'a str) -> Cow<'a, str> {
-        if self.path.is_empty() || !from_the_root(url) {
+        if !from_the_root(url) {
             return Cow::Borrowed(url);
         }
-        Cow::Owned(format!("{}{url}", self.path))
+        let path = match &self.shared {
+            Some(shared) if shared.has(url) => &shared.path,
+            _ => &self.path,
+        };
+        if path.is_empty() {
+            return Cow::Borrowed(url);
+        }
+        Cow::Owned(format!("{path}{url}"))
     }
 
     /// `url`, which already has the site's path, with the site's scheme and
@@ -409,27 +434,40 @@ pub fn load(site_dir: &Path) -> Result<Config> {
 }
 
 impl Config {
-    /// The config of a version of the site from a git ref, whose folder is
-    /// at `site_dir`, as it was at the ref, and whose little.yml errors call
-    /// `file`, like `v1.4:docs/little.yml`. Its little.yml goes over little's
-    /// defaults and the site's themes, whichever theme it chose then, but
-    /// the settings that are the whole site's, like `url`, are the site's.
-    pub fn for_version(&self, site_dir: &Path, file: &str) -> Result<Config> {
-        let mut own = read_config(&site_dir.join(CONFIG_FILE), file)?;
-        long_form_plugins(&mut own, file, site_dir, true)?;
-        let mut values = self.beneath.clone();
-        merge(&mut values, own);
-        for key in SITE_WIDE {
-            match self.values.get(key) {
-                Some(value) => values.insert(key.into(), value.clone()),
+    /// The config of `version`, from a git ref, whose site's folder is at
+    /// `site_dir`, as it was at the ref, and whose little.yml errors call
+    /// `file`, like `v1.4:docs/little.yml`. It's the site's, with plugins
+    /// that read their folders there, but for the version's own `source` and
+    /// `nav`: as its little.yml there sets them, over little's defaults and
+    /// the site's themes, as the site's own would. Without one, it's from
+    /// before the site was built with little, so its pages are in the site's
+    /// `source`. Its entry's `source` wins over both.
+    pub fn for_version(&self, version: &Version, site_dir: &Path, file: &str) -> Result<Config> {
+        let own = site_dir.join(CONFIG_FILE);
+        let mut theirs = self.beneath.clone();
+        let source = if own.is_file() {
+            merge(&mut theirs, read_config(&own, file)?);
+            theirs.get("source")
+        } else {
+            self.values.get("source")
+        };
+        let source = match &version.source {
+            Some(source) => Some(Value::from(source.as_str())),
+            None => source.cloned(),
+        };
+        let mut values = self.values.clone();
+        for (key, value) in [("source", source), ("nav", theirs.get("nav").cloned())] {
+            match value {
+                Some(value) => values.insert(key.into(), value),
                 None => values.shift_remove(key),
             };
         }
-        let mut config = settle(site_dir, values, self.beneath.clone(), self.themes.clone())?;
-        // The one setting of the site's that's a path, so it leads from the
-        // site's folder.
-        config.destination_dir = self.destination_dir.clone();
-        Ok(config)
+        Ok(Config {
+            source_dir: folder(site_dir, &values, "source")?,
+            plugins: plugins(&values, site_dir)?,
+            values,
+            ..self.clone()
+        })
     }
 }
 
@@ -584,6 +622,7 @@ fn site_url(values: &Mapping) -> Result<SiteUrl> {
     Ok(SiteUrl {
         origin: url[..url.len() - path.len()].to_string(),
         path: path.trim_end_matches('/').to_string(),
+        shared: None,
     })
 }
 
@@ -970,10 +1009,27 @@ fn versions(values: &Mapping) -> Result<Vec<Version>> {
                 other.title
             );
         }
+        // A blank `source:` is as good as none. The one without a `ref` is
+        // built from the site's `source`, the folder `little serve` watches.
+        let source = match entry.get("source") {
+            None | Some(Value::Null) => None,
+            Some(Value::String(source)) => Some(source.clone()),
+            Some(_) => bail!(
+                "version `{title}`'s `source` must be the path to the folder its pages are in \
+                 at its `ref`, like `./docs`"
+            ),
+        };
+        if source.is_some() && git_ref.is_none() {
+            bail!(
+                "version `{title}` has a `source` but no `ref`, so it's built from the site's \
+                 files as they are: set the site's `source` instead"
+            );
+        }
         versions.push(Version {
             title: title.clone(),
             path,
             git_ref,
+            source,
         });
     }
     if !versions.is_empty() && !versions.iter().any(|version| version.path.is_empty()) {
@@ -1788,6 +1844,7 @@ mod tests {
         let site_url = |origin: &str, path: &str| SiteUrl {
             origin: origin.into(),
             path: path.into(),
+            shared: None,
         };
 
         // Without a url, a site is at the root of whichever domain serves it.
@@ -1842,6 +1899,7 @@ mod tests {
         let url = SiteUrl {
             origin: "https://withlittle.github.io".into(),
             path: "/little".into(),
+            shared: None,
         };
         assert_eq!(url.link("/"), "/little/");
         assert_eq!(url.link("/guide/install"), "/little/guide/install");
@@ -1870,6 +1928,7 @@ mod tests {
         let domain = SiteUrl {
             origin: "https://docs.example.com".into(),
             path: String::new(),
+            shared: None,
         };
         assert_eq!(domain.link("/guide/"), "/guide/");
         assert_eq!(
@@ -1880,6 +1939,61 @@ mod tests {
         // And without a url, there's nothing to add.
         assert_eq!(SiteUrl::default().link("/guide/"), "/guide/");
         assert_eq!(SiteUrl::default().absolute("/guide/"), "/guide/");
+    }
+
+    #[test]
+    fn a_version_links_to_the_theme_files_at_the_root() {
+        let shared = |path: &str| Shared {
+            path: path.into(),
+            files: ["/assets/style.css", "/assets/my font.woff2"]
+                .map(String::from)
+                .into(),
+        };
+        let version = SiteUrl {
+            origin: "https://withlittle.github.io".into(),
+            path: "/little/1.4".into(),
+            shared: Some(shared("/little")),
+        };
+        // The theme's files are the root's, whatever follows their path, and
+        // however it's encoded.
+        for (link, expected) in [
+            ("/assets/style.css", "/little/assets/style.css"),
+            ("/assets/style.css?v=2", "/little/assets/style.css?v=2"),
+            ("/assets/style.css#top", "/little/assets/style.css#top"),
+            ("/assets/my%20font.woff2", "/little/assets/my%20font.woff2"),
+            ("/assets/my font.woff2", "/little/assets/my font.woff2"),
+            // The version's own pages and files are its own.
+            ("/", "/little/1.4/"),
+            ("/guide/", "/little/1.4/guide/"),
+            ("/assets/", "/little/1.4/assets/"),
+            ("/assets/style.css/", "/little/1.4/assets/style.css/"),
+            ("/assets/STYLE.css", "/little/1.4/assets/STYLE.css"),
+            (
+                "/pagefind/pagefind-ui.js",
+                "/little/1.4/pagefind/pagefind-ui.js",
+            ),
+            // And links elsewhere are left alone.
+            (
+                "https://example.com/assets/style.css",
+                "https://example.com/assets/style.css",
+            ),
+            ("assets/style.css", "assets/style.css"),
+        ] {
+            assert_eq!(version.link(link), expected, "{link}");
+        }
+        assert_eq!(
+            version.absolute("/little/assets/style.css"),
+            "https://withlittle.github.io/little/assets/style.css"
+        );
+
+        // On a site at the root of its domain, they're at its root.
+        let version = SiteUrl {
+            origin: String::new(),
+            path: "/1.4".into(),
+            shared: Some(shared("")),
+        };
+        assert_eq!(version.link("/assets/style.css"), "/assets/style.css");
+        assert_eq!(version.link("/guide/"), "/1.4/guide/");
     }
 
     #[test]
@@ -2267,6 +2381,7 @@ mod tests {
             title: title.into(),
             path: path.into(),
             git_ref: git_ref.map(Into::into),
+            source: None,
         };
 
         // A site without versions has just the one.
@@ -2315,6 +2430,17 @@ mod tests {
                 version("b", "/versions/1", Some("v1")),
                 version("c", "/versions/10", Some("v10")),
             ]
+        );
+        // A version from a ref can name the folder its pages are in there,
+        // and a blank `source` is none.
+        let site_cfg = "versions:\n  - { title: a, url: / }\n  \
+                        - { title: b, url: /b, ref: v1, source: ./documentation }\n  \
+                        - { title: c, url: /c, ref: v0, source: }\n";
+        let mut b = version("b", "/b", Some("v1"));
+        b.source = Some("./documentation".into());
+        assert_eq!(
+            versions(site_cfg),
+            [version("a", "", None), b, version("c", "/c", Some("v0"))]
         );
         let _ = std::fs::remove_dir_all(&site);
     }
@@ -2435,6 +2561,18 @@ mod tests {
                 "versions:\n  - { title: a, url: /a }\n  - { title: b, url: /b, ref: v1 }\n",
                 home.to_string(),
             ),
+            (
+                "versions:\n  - { title: a, url: /, ref: v1, source: [./docs] }\n",
+                "version `a`'s `source` must be the path to the folder its pages are in at its \
+                 `ref`, like `./docs`"
+                    .to_string(),
+            ),
+            (
+                "versions:\n  - { title: a, url: /, source: ./documentation }\n",
+                "version `a` has a `source` but no `ref`, so it's built from the site's files as \
+                 they are: set the site's `source` instead"
+                    .to_string(),
+            ),
         ] {
             assert_eq!(error(&site, site_cfg), expected, "{site_cfg}");
         }
@@ -2442,11 +2580,13 @@ mod tests {
     }
 
     #[test]
-    fn a_version_from_a_ref_has_its_own_config_in_the_sites_theme() {
+    fn a_version_from_a_ref_has_the_sites_config_but_its_own_pages_and_nav() {
         let theme_cfg = "name: Theme\nfont: serif\nplugins:\n  bob: ./bob.wasm\n";
+        // Settings that would stop the build, were they the site's, aren't
+        // read.
         let old_cfg = "theme: ./elsewhere\nname: Old\nurl: https://old.example.com\n\
                        source: ./src\nversions: []\nnav: [{ title: Old, url: / }]\n\
-                       plugins:\n  cal:\n    wasm: ./cal.wasm\n    read: ./lib\n";
+                       toc_min_depth: 9\nplugins: [./cal.wasm]\n";
         let site = scratch(
             "for-version",
             &[
@@ -2457,69 +2597,85 @@ mod tests {
         );
         let site_cfg = "theme: ./theme\nname: New\nurl: https://example.com/docs\n\
                         repo: https://github.com/example/docs\ndestination: ./public\n\
+                        source: ./content\nnav: [{ title: New, url: / }]\n\
+                        plugins:\n  ann:\n    wasm: ./ann.wasm\n    read: ./lib\n\
                         versions:\n  - { title: \"2.0\", url: / }\n  \
                         - { title: \"1.4\", url: /1.4, ref: v1.4 }\n";
         std::fs::write(site.join(CONFIG_FILE), site_cfg).unwrap();
         let config = load(&site).unwrap();
         let old = site.join("old");
         let file = "v1.4:old/little.yml";
-        let version = config.for_version(&old, file).unwrap();
+        let mut v14 = config.versions[1].clone();
+        let version = config.for_version(&v14, &old, file).unwrap();
 
-        // Its own config goes over the site's theme's, and its paths lead
-        // from its own folder.
-        assert_eq!(get(&version.values, "name"), Some("Old"));
-        assert_eq!(get(&version.values, "font"), Some("serif"));
+        // Its little.yml chooses its pages and its nav, as the site's would.
+        assert_eq!(version.source_dir, old.join("src"));
+        assert_eq!(get(&version.values, "source"), Some("./src"));
         let nav: Value = serde_yaml::from_str("[{ title: Old, url: / }]").unwrap();
         assert_eq!(version.values.get("nav"), Some(&nav));
-        assert_eq!(version.source_dir, old.join("src"));
+        // But the rest is the site's, with plugins that read their folders
+        // at the ref.
+        for key in [
+            "theme",
+            "name",
+            "font",
+            "url",
+            "repo",
+            "versions",
+            "plugins",
+            "toc_min_depth",
+        ] {
+            assert_eq!(version.values.get(key), config.values.get(key), "{key}");
+        }
+        assert_eq!(version.themes, config.themes);
+        assert_eq!(version.url, config.url);
+        assert_eq!(version.repo, config.repo);
+        assert_eq!(version.toc_depths, config.toc_depths);
+        assert_eq!(version.destination_dir, site.join("public"));
+        assert_eq!(version.versions, config.versions);
         assert_eq!(
             version.plugins,
             [
                 plugin("bob", Wasm::File(site.join("theme/bob.wasm")), &[], "{}"),
                 plugin(
-                    "cal",
-                    Wasm::File(old.join("cal.wasm")),
+                    "ann",
+                    Wasm::File(site.join("ann.wasm")),
                     &[(old.join("lib"), "lib")],
                     r#"{"read":["lib"]}"#
                 ),
             ]
         );
-        // But what's the whole site's is the site's.
-        assert_eq!(version.themes, config.themes);
-        for key in SITE_WIDE {
-            assert_eq!(version.values.get(key), config.values.get(key), "{key}");
-        }
-        assert_eq!(version.url, config.url);
-        assert_eq!(version.repo, config.repo);
-        assert_eq!(version.destination_dir, site.join("public"));
-        assert_eq!(version.versions, config.versions);
 
-        // Even what the site doesn't set: without a `url`, it has none.
-        std::fs::write(
-            site.join(CONFIG_FILE),
-            site_cfg.replace("url: https", "description: https"),
-        )
-        .unwrap();
-        let config = load(&site).unwrap();
-        let version = config.for_version(&old, file).unwrap();
-        assert_eq!(version.values.get("url"), None);
-        assert_eq!(version.url, SiteUrl::default());
-
-        // Without a little.yml, it has the theme's config.
-        std::fs::remove_file(old.join(CONFIG_FILE)).unwrap();
-        let version = config.for_version(&old, file).unwrap();
-        assert_eq!(get(&version.values, "name"), Some("Theme"));
+        // A little.yml that sets neither has little's `source`, and a nav
+        // worked out from its folders, not the site's.
+        std::fs::write(old.join(CONFIG_FILE), "name: Old\n").unwrap();
+        let version = config.for_version(&v14, &old, file).unwrap();
         assert_eq!(version.source_dir, old.join("docs"));
+        assert_eq!(get(&version.values, "source"), Some("./docs"));
+        assert_eq!(version.values.get("nav"), None);
+        assert_eq!(get(&version.values, "name"), Some("New"));
 
-        // Its own little.yml is named in its errors as git names it.
-        std::fs::write(old.join(CONFIG_FILE), "plugins: [./cal.wasm]\n").unwrap();
-        let message = format!("{:#}", config.for_version(&old, file).unwrap_err());
-        assert!(
-            message.starts_with("`plugins` in v1.4:old/little.yml must name each plugin"),
-            "{message}"
-        );
+        // Without one, it's from before the site was built with little, so
+        // its pages are in the site's `source`.
+        std::fs::remove_file(old.join(CONFIG_FILE)).unwrap();
+        let version = config.for_version(&v14, &old, file).unwrap();
+        assert_eq!(version.source_dir, old.join("content"));
+        assert_eq!(get(&version.values, "source"), Some("./content"));
+        assert_eq!(version.values.get("nav"), None);
+
+        // Its entry's `source` wins, with or without one.
+        v14.source = Some("./documentation".into());
+        let version = config.for_version(&v14, &old, file).unwrap();
+        assert_eq!(version.source_dir, old.join("documentation"));
+        assert_eq!(get(&version.values, "source"), Some("./documentation"));
+        std::fs::write(old.join(CONFIG_FILE), old_cfg).unwrap();
+        let version = config.for_version(&v14, &old, file).unwrap();
+        assert_eq!(version.source_dir, old.join("documentation"));
+        assert_eq!(version.values.get("nav"), Some(&nav));
+
+        // Its little.yml is named in its errors as git names it.
         std::fs::write(old.join(CONFIG_FILE), "name: [Old\n").unwrap();
-        let message = format!("{:#}", config.for_version(&old, file).unwrap_err());
+        let message = format!("{:#}", config.for_version(&v14, &old, file).unwrap_err());
         assert!(
             message.starts_with("parsing v1.4:old/little.yml: "),
             "{message}"

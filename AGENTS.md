@@ -36,7 +36,9 @@ cargo clippy --manifest-path plugins/docstrings/Cargo.toml --all-targets --targe
   code blocks, or add pages, each with its `.wasm` file, the folders it
   reads, and its settings; and the versions it's built in, each with its
   title and URL, one at `/`, and each from a git ref but one, with the
-  config a version's own `little.yml` can't set.
+  folder its pages are in there, and the config of each: the site's, but
+  for its own `source` and `nav`, with its links to the theme's files led
+  to the root.
 - `src/little.yml` — little's own defaults (level 1), compiled into the binary.
 - `src/render.rs` — Markdown (comrak, with the extensions the site turns on) +
   YAML frontmatter → HTML fragment, with each relative link led from the
@@ -50,9 +52,7 @@ cargo clippy --manifest-path plugins/docstrings/Cargo.toml --all-targets --targe
   code block in its languages, before diagrams are drawn, putting the
   Markdown or HTML it gives back in the block's place; one it can't render
   stays code, and is noted, with its line, to warn of. Asks each that adds
-  pages for them, and what it warns of, checking each page's path. Compiles
-  each plugin once, and again only once its file's content changes, so a
-  version from a git ref's, written again each build, isn't.
+  pages for them, and what it warns of, checking each page's path.
 - `src/math.rs` — writes each formula as MathML as comrak writes the page,
   with math-core, each read on its own; one it can't read is written as its
   TeX, and noted, as it's written, to warn of.
@@ -75,14 +75,15 @@ cargo clippy --manifest-path plugins/docstrings/Cargo.toml --all-targets --targe
   writes. Finds where the source is in its repository, so each page can
   link to its file there, and works out when it's built, for `site.year`,
   its diagrams' today, and its plugins' clocks. Builds each of the site's
-  versions this way, in the site's theme, each in the folder of its URL,
-  one at the root, those from git refs from their files there, checked out
-  with `src/git.rs`; stops on a page of the one at the root where another
-  version goes; and gives the theme `site.versions`, `site.version`, and
-  `page.versions`.
+  versions this way, with the site's config and theme, each in the folder
+  of its URL, one at the root, which alone has the theme's files, and those
+  from git refs from their pages, and the folders their plugins read,
+  there, checked out with `src/git.rs`; stops on a page of the one at the
+  root where another version goes; and gives the theme `site.versions`,
+  `site.version`, and `page.versions`.
 - `src/git.rs` — the git repository a site's in, found with the `git`
   command, and the files a build of a version reads from a git ref: its
-  `little.yml`, source, and plugins' files and folders, checked out as
+  `little.yml`, source, and the folders its plugins read, checked out as
   `git checkout` would, into a temporary folder, deleted after the build.
 - `src/search.rs` — indexes each page's own content, under its title and URL,
   with Pagefind, in the language the theme gives the page, into the files of
@@ -419,10 +420,8 @@ Record notable choices as short ADRs in `decisions/`. Locked so far:
 - **Versions:** `versions` lists a site's versions, the latest first, each
   with the git `ref`, a tag, branch, or commit, it's read from, but for at
   most one, the site's files as they are. `little build` builds them all,
-  each in its folder, with its own theme files and search index, in the
-  site's theme, by today's little, each from its ref's own `little.yml`,
-  source, and plugins, read with `git`, but with the site's `theme`, `url`,
-  `destination`, `repo`, `host`, `port`, and `versions`. The theme gets
+  each in its folder, with its own search index, in the site's theme, by
+  today's little, each from its ref, read with `git`. The theme gets
   `site.versions`, `site.version`, and `page.versions`, the same page in
   each version, else its home, and the built-in theme has a menu of them in
   its header. A shallow clone stops the build; a version from a ref's links
@@ -438,3 +437,12 @@ Record notable choices as short ADRs in `decisions/`. Locked so far:
   in `site.versions` and `page.versions` has `root`, true for the one at
   `/` — see
   [`decisions/0041-version-titles-and-urls.md`](./decisions/0041-version-titles-and-urls.md).
+- **What versions share:** every version is built with the site's config,
+  theme, and plugins, as the site's `little.yml` sets them; one from a ref
+  has its own pages and files, nav, and the folders its plugins read, from
+  there. Of its ref's `little.yml`, if it has one, only `source` and `nav`
+  count, and its entry's `source` wins over both, for docs that have
+  moved. The theme's files are written once, with the version at `/`, and
+  every version links to them there, but to a file of its own at the same
+  path — see
+  [`decisions/0042-versions-share-the-sites-config-and-theme-files.md`](./decisions/0042-versions-share-the-sites-config-and-theme-files.md).

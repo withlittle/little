@@ -18,7 +18,6 @@ use rand::SeedableRng;
 use rand::rngs::StdRng;
 use std::collections::HashMap;
 use std::fmt;
-use std::hash::{DefaultHasher, Hash, Hasher};
 use std::path::{Path, PathBuf};
 use std::sync::{LazyLock, Mutex, PoisonError};
 use std::time::{Duration, SystemTime};
@@ -46,13 +45,8 @@ static ENGINE: LazyLock<Engine> = LazyLock::new(Engine::default);
 static COMPILED: LazyLock<Mutex<HashMap<PathBuf, Compiled>>> = LazyLock::new(Mutex::default);
 
 /// A plugin compiled from its file, with when the file was changed, and its
-/// size, then, and a hash of what was in it, for a file written again as it
-/// was, as a version of a site from a git ref's are in each build.
-struct Compiled {
-    stamp: Stamp,
-    hash: u64,
-    pre: Pre,
-}
+/// size, then.
+type Compiled = (Stamp, Pre);
 
 /// When a file was changed, and its size.
 type Stamp = (Option<SystemTime>, u64);
@@ -500,21 +494,12 @@ fn compile(file: &Path) -> Result<Pre> {
     // Held while compiling, so a plugin is compiled once even if two builds
     // need it at once.
     let mut compiled = COMPILED.lock().unwrap_or_else(PoisonError::into_inner);
-    if let Some(entry) = compiled.get(file)
-        && entry.stamp == stamp
+    if let Some((when, pre)) = compiled.get(file)
+        && *when == stamp
     {
-        return Ok(entry.pre.clone());
+        return Ok(pre.clone());
     }
     let wasm = std::fs::read(file)?;
-    let mut hasher = DefaultHasher::new();
-    wasm.hash(&mut hasher);
-    let hash = hasher.finish();
-    if let Some(entry) = compiled.get_mut(file)
-        && entry.hash == hash
-    {
-        entry.stamp = stamp;
-        return Ok(entry.pre.clone());
-    }
     if wasm.starts_with(b"\0asm\x01\0\0\0") {
         bail!(
             "it's a WebAssembly module, but a plugin is a component, as Rust's `wasm32-wasip2` \
@@ -534,12 +519,7 @@ fn compile(file: &Path) -> Result<Pre> {
         pages: pages::GuestIndices::new(&instance).ok(),
         instance,
     };
-    let compiled_now = Compiled {
-        stamp,
-        hash,
-        pre: pre.clone(),
-    };
-    compiled.insert(file.to_path_buf(), compiled_now);
+    compiled.insert(file.to_path_buf(), (stamp, pre.clone()));
     Ok(pre)
 }
 

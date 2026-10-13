@@ -5,7 +5,9 @@
   it's written in, and gives it the path too, and by
   [0040](./0040-versions-from-git-refs.md), which builds each version of a
   site but the first under the path, with its folder after it, like
-  `/1.4`
+  `/1.4`, and by
+  [0042](./0042-versions-share-the-sites-config-and-theme-files.md), which
+  leads each version's links to the theme's files to the root of the site
 - Date: 2026-10-01
 
 ## Context

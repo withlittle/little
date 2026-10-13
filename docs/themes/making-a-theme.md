@@ -91,7 +91,9 @@ Everything in `_static/` is copied to the site's root as it is, but for
 [Sass](sass.md), so `_static/assets/style.css` becomes `/assets/style.css`,
 unless a site has a file at the same path in its source, which replaces it.
 If a static file would take the place of a page, or of a file little writes
-for [search](../writing/search.md), the build stops and names both.
+for [search](../writing/search.md), the build stops and names both. A site
+with [versions](#a-menu-of-versions) has them once, at its root, for every
+version.
 
 ## A theme's config
 
@@ -199,8 +201,10 @@ the page they're reading:
   `safe`, not through the `url` filter.
 - Each version is built as if it were published at its `url`, so the `url`
   filter puts that before the theme's own URLs too: `{{ '/' | url }}` is the
-  version's home page, and `{{ '/assets/style.css' | url }}` its own copy of
-  the theme's stylesheet.
+  version's home page, and `{{ '/pagefind/pagefind.js' | url }}` its search.
+  But the theme's static files are at the root of the site, for every
+  version, so `{{ '/assets/style.css' | url }}` is the one stylesheet, unless
+  the version has a file of its own at that path.
 - Each entry has the keys it's written with in `versions`, like `ref`, and
   any you add, for the theme to show, but `url`, and `root`, which little
   sets.
