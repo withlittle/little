@@ -58,8 +58,10 @@ versions:
   `/1.4` or `/versions/1.4`, but not in each other's, like `/2.0/beta` in
   `/2.0`.
 - A site with a version from a `ref` must be in a git repository, with git
-  installed, or `little build` and `little serve` stop, and say why. A site
-  without `versions` has just the one, its files as they are.
+  installed, or `little build` and `little serve` stop, and say why. Its
+  folder, where its `little.yml` is, must be in the repository, not just
+  its `source`, as each version's `little.yml` is read from its `ref`. A
+  site without `versions` has just the one, its files as they are.
 
 ## What's in a version
 
