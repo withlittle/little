@@ -224,8 +224,6 @@ pub struct Theme {
     /// The template each type of page is rendered with. A type that isn't
     /// here isn't rendered at all.
     templates: HashMap<PageType, &'static str>,
-    /// The theme the site chose, then each theme it builds on in turn.
-    themes: Vec<Location>,
 }
 
 impl Theme {
@@ -289,11 +287,7 @@ impl Theme {
             }
         }
 
-        Ok(Self {
-            env,
-            templates,
-            themes: themes.to_vec(),
-        })
+        Ok(Self { env, templates })
     }
 
     /// Render a page of type `page_type` from `ctx`, or `None` if the theme
@@ -304,61 +298,62 @@ impl Theme {
         };
         Ok(Some(self.env.get_template(name)?.render(ctx)?))
     }
+}
 
-    /// The static files of every theme, merged, with each Sass stylesheet
-    /// compiled to the CSS file at its path. Where two themes have a file at
-    /// the same path, the one nearer the site wins, so a stylesheet replaces a
-    /// CSS file, and a CSS file a stylesheet. The stylesheets load from the
-    /// `_sass/` of every theme, merged the same way.
-    pub fn static_files(&self) -> Result<Vec<StaticFile>> {
-        let mut files = BTreeMap::new();
-        let mut sass = BTreeMap::new();
-        for theme in &self.themes {
-            let mut own: BTreeMap<PathBuf, StaticFile> = BTreeMap::new();
-            for file in theme.static_files()? {
-                let path = if sass::is_partial(&file.path) {
-                    bail!(
-                        "{} is a Sass partial, for stylesheets to load: move it to {SASS_DIR}/, \
-                         where they load from",
-                        file.origin
-                    );
-                } else if sass::is_sass(&file.path) {
-                    file.path.with_extension("css")
-                } else {
-                    file.path.clone()
-                };
-                if let Some(other) = own.insert(path.clone(), file) {
-                    let mut both = [&other.origin, &own[&path].origin];
-                    both.sort();
-                    let url = path.to_string_lossy().replace('\\', "/");
-                    bail!(
-                        "{} and {} would both be /{url}: remove or rename one",
-                        both[0],
-                        both[1]
-                    );
-                }
-            }
-            for (path, file) in own {
-                files.entry(path).or_insert(file);
-            }
-            for file in theme.sass_files()? {
-                sass.entry(file.path.clone()).or_insert(file);
+/// The static files of every one of `themes`, the theme a site chose, then
+/// each it builds on in turn, merged, with each Sass stylesheet compiled to
+/// the CSS file at its path. Where two themes have a file at the same path,
+/// the one nearer the site wins, so a stylesheet replaces a CSS file, and a
+/// CSS file a stylesheet. The stylesheets load from the `_sass/` of every
+/// theme, merged the same way.
+pub fn static_files(themes: &[Location]) -> Result<Vec<StaticFile>> {
+    let mut files = BTreeMap::new();
+    let mut sass = BTreeMap::new();
+    for theme in themes {
+        let mut own: BTreeMap<PathBuf, StaticFile> = BTreeMap::new();
+        for file in theme.static_files()? {
+            let path = if sass::is_partial(&file.path) {
+                bail!(
+                    "{} is a Sass partial, for stylesheets to load: move it to {SASS_DIR}/, \
+                     where they load from",
+                    file.origin
+                );
+            } else if sass::is_sass(&file.path) {
+                file.path.with_extension("css")
+            } else {
+                file.path.clone()
+            };
+            if let Some(other) = own.insert(path.clone(), file) {
+                let mut both = [&other.origin, &own[&path].origin];
+                both.sort();
+                let url = path.to_string_lossy().replace('\\', "/");
+                bail!(
+                    "{} and {} would both be /{url}: remove or rename one",
+                    both[0],
+                    both[1]
+                );
             }
         }
-        files
-            .into_iter()
-            .map(|(path, file)| {
-                if !sass::is_sass(&file.path) {
-                    return Ok(file);
-                }
-                Ok(StaticFile {
-                    contents: sass::compile(&file, &sass)?,
-                    path,
-                    origin: file.origin,
-                })
-            })
-            .collect()
+        for (path, file) in own {
+            files.entry(path).or_insert(file);
+        }
+        for file in theme.sass_files()? {
+            sass.entry(file.path.clone()).or_insert(file);
+        }
     }
+    files
+        .into_iter()
+        .map(|(path, file)| {
+            if !sass::is_sass(&file.path) {
+                return Ok(file);
+            }
+            Ok(StaticFile {
+                contents: sass::compile(&file, &sass)?,
+                path,
+                origin: file.origin,
+            })
+        })
+        .collect()
 }
 
 /// Apply `change` to `value`, if it's text. In an HTML template the result is
@@ -402,6 +397,11 @@ mod tests {
     /// root of its domain.
     fn load(dir: &Path) -> Result<Theme> {
         Theme::load(&[Location::Folder(dir.to_path_buf())], &SiteUrl::default())
+    }
+
+    /// The static files of the theme in `dir`, which builds on nothing.
+    fn static_files_in(dir: &Path) -> Result<Vec<StaticFile>> {
+        static_files(&[Location::Folder(dir.to_path_buf())])
     }
 
     /// What `theme` renders for each type of page, `None` for types it skips.
@@ -509,6 +509,7 @@ mod tests {
         let project = SiteUrl {
             origin: "https://withlittle.github.io".into(),
             path: "/little".into(),
+            shared: None,
         };
         assert_eq!(
             render(&project),
@@ -554,7 +555,7 @@ mod tests {
         let ctx = context! { page => context! { type => "page" } };
         let html = theme.render(PageType::Page, ctx).unwrap();
         assert_eq!(html.as_deref(), Some("<company>page"));
-        let files = theme.static_files().unwrap();
+        let files = static_files(&chain).unwrap();
         assert_eq!(
             contents(&files),
             [
@@ -607,12 +608,12 @@ mod tests {
     #[test]
     fn static_files_are_optional() {
         let dir = scratch("static", &[("_templates/default.html", "")]);
-        assert!(load(&dir).unwrap().static_files().unwrap().is_empty());
+        assert!(static_files_in(&dir).unwrap().is_empty());
 
         let png: &[u8] = &[0x89, b'P', b'N', b'G', 0x00, 0xff];
         std::fs::create_dir_all(dir.join("_static/img")).unwrap();
         std::fs::write(dir.join("_static/img/logo.png"), png).unwrap();
-        let files = load(&dir).unwrap().static_files().unwrap();
+        let files = static_files_in(&dir).unwrap();
         assert_eq!(files.len(), 1);
         assert_eq!(files[0].path, Path::new("img").join("logo.png"));
         assert_eq!(files[0].contents, png); // byte for byte
@@ -638,7 +639,7 @@ mod tests {
                 ("_sass/README.md", "Not published"),
             ],
         );
-        let files = load(&dir).unwrap().static_files().unwrap();
+        let files = static_files_in(&dir).unwrap();
         assert_eq!(
             contents(&files),
             [
@@ -678,9 +679,8 @@ mod tests {
             Location::Folder(root.join("company")),
             Location::Folder(root.join("base")),
         ];
-        let theme = Theme::load(&chain, &SiteUrl::default()).unwrap();
         assert_eq!(
-            contents(&theme.static_files().unwrap()),
+            contents(&static_files(&chain).unwrap()),
             [
                 ("extra.css".into(), "company extra".into()),
                 ("print.css".into(), "body {\n  color: black;\n}\n".into()),
@@ -694,7 +694,7 @@ mod tests {
     fn sass_in_the_wrong_place_stops_the_build() {
         let error = |files: &[(&str, &str)]| {
             let dir = scratch("sass-misplaced", files);
-            let message = format!("{:#}", load(&dir).unwrap().static_files().unwrap_err());
+            let message = format!("{:#}", static_files_in(&dir).unwrap_err());
             (dir, message)
         };
 

@@ -57,5 +57,5 @@ theme](../themes/making-a-theme.md#urls-in-a-theme) explains:
 
 | Filter | Gives back | Like |
 | ------ | ---------- | ---- |
-| `url` | a URL from the root of the site, with the path of the site's `url` before it | `{{ '/assets/style.css' \| url }}` is `/little/assets/style.css` |
+| `url` | a URL from the root of the site, with the path of the site's `url` before it, and, on a site with [versions](../writing/versions.md#whats-in-a-version), the version's, but for the theme's static files, which every version shares | `{{ '/assets/style.css' \| url }}` is `/little/assets/style.css` |
 | `absolute_url` | a URL with the path, with the site's scheme and host before it | `{{ page.url \| absolute_url }}` is `https://withlittle.github.io/little/getting-started/install` |

@@ -5,9 +5,9 @@
 //! Each file is checked out as `git checkout` would check it out, with the
 //! `.gitattributes` of its commit, and their filters, like Git LFS's, not as
 //! `git archive` would, which leaves out the files marked `export-ignore`,
-//! as many projects mark their docs. Only the files a build reads are
-//! checked out: the site's `little.yml`, its source, and its plugins' files
-//! and the folders they read.
+//! as many projects mark their docs. Only the files a build of a version
+//! reads are checked out: the site's `little.yml`, its source, and the
+//! folders its plugins read.
 
 use anyhow::{Context, Result, anyhow, bail};
 use std::ffi::OsString;
@@ -53,8 +53,6 @@ impl Repository {
     /// out, as `Checkout::extract` asks for them.
     pub fn checkout(&self, git_ref: &str) -> Result<Checkout> {
         let commit = self.commit(git_ref)?;
-        // The same folder for the same ref in each build `little serve`
-        // makes, so a plugin it reads needn't be compiled again.
         let mut hasher = DefaultHasher::new();
         (&self.top, git_ref).hash(&mut hasher);
         let name = format!(

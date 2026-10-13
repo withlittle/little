@@ -784,6 +784,7 @@ mod tests {
         let url = SiteUrl {
             origin: "https://withlittle.github.io".into(),
             path: "/little".into(),
+            shared: None,
         };
         let md = "[Install](/guide/install) ![Logo](/logo.png) [Guide][guide]\n\n\
                   [Usage](usage) [Top](#top) [little](https://example.com/)\n\n\
@@ -924,6 +925,7 @@ mod tests {
         let url = SiteUrl {
             origin: "https://withlittle.github.io".into(),
             path: "/little".into(),
+            shared: None,
         };
         let md = "[Install](install.md#from-source) [Home](../README.md) \
                   [Guide](./README.md) [Usage][usage] ![Diagram](diagram.md)\n\n\
@@ -955,6 +957,7 @@ mod tests {
         let url = SiteUrl {
             origin: "https://withlittle.github.io".into(),
             path: "/little".into(),
+            shared: None,
         };
         let md = "[Install](install.md#from-source) ![Logo](<images/the logo.png>) \
                   [Top](#top) [Search](https://example.com/?q=a&b='c') [Usage][usage]\n\n\

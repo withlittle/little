@@ -3,7 +3,10 @@
 - Status: accepted; amended by [0041](./0041-version-titles-and-urls.md),
   which gives each version a `title`, for readers, and a `url`, where it's
   published, in place of its `name`, with one at `/`, whatever its place
-  in the list
+  in the list, and by
+  [0042](./0042-versions-share-the-sites-config-and-theme-files.md), which
+  builds every version with the site's config, but for its own `source`
+  and `nav`, and writes the theme's files once, at the root
 - Date: 2026-10-12
 - Amends: [0013](./0013-pages-that-clash.md),
   [0014](./0014-site-url-and-its-path.md),
