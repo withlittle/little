@@ -28,9 +28,17 @@ impl Repository {
     /// The repository the site at `site_dir` is in.
     pub fn find(site_dir: &Path) -> Result<Repository> {
         let output = run(git(site_dir).args(["rev-parse", "--show-toplevel", "--show-prefix"]))
-            .context(
-                "the site's `versions` are built from git refs, so it must be in a git repository",
-            )?;
+            .with_context(|| {
+                // In full, as the site's folder is `.` by default, and its
+                // `source` can be in a repository when it isn't.
+                let folder = std::path::absolute(site_dir)
+                    .map_or_else(|_| site_dir.to_path_buf(), |dir| normalize(&dir));
+                format!(
+                    "the site's `versions` are built from git refs, so its folder, {}, must be in \
+                     a git repository",
+                    folder.display()
+                )
+            })?;
         let output = String::from_utf8_lossy(&output);
         let mut lines = output.lines();
         let top = lines.next().unwrap_or_default();
@@ -340,16 +348,18 @@ pub(crate) mod tests {
         let repo = Repository::find(&root).unwrap();
         assert_eq!((repo.top.as_path(), repo.prefix.as_str()), (&*root, ""));
 
-        // A site that isn't in one can't have versions from git refs.
-        let lone = scratch("find-none", &[("little.yml", "")]);
-        let message = format!("{:#}", Repository::find(&lone).unwrap_err());
-        assert!(
-            message.starts_with(
-                "the site's `versions` are built from git refs, so it must be in a git \
-                 repository: git rev-parse failed: fatal: not a git repository"
-            ),
-            "{message}"
+        // A site that isn't in one can't have versions from git refs, and
+        // its folder is named, tidied.
+        let lone = scratch("find-none", &[("little.yml", ""), ("sub/little.yml", "")]);
+        let not_in_one = format!(
+            "the site's `versions` are built from git refs, so its folder, {}, must be in a git \
+             repository: git rev-parse failed: fatal: not a git repository",
+            lone.display()
         );
+        for site_dir in [lone.clone(), lone.join("sub").join("..")] {
+            let message = format!("{:#}", Repository::find(&site_dir).unwrap_err());
+            assert!(message.starts_with(&not_in_one), "{message}");
+        }
         let _ = std::fs::remove_dir_all(&root);
         let _ = std::fs::remove_dir_all(&lone);
     }
