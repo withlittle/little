@@ -44,7 +44,7 @@ repository, and open <http://127.0.0.1:8080/little/>.
   versions.
 - [Themes](./docs/themes/choosing-a-theme.md): choose a theme, or make one.
 - [Plugins](./docs/plugins/using-plugins.md): use plugins, add an API
-  reference for Python, or write a plugin.
+  reference for Python or Rust, or write a plugin.
 - [Reference](./docs/reference/commands.md): commands, settings, and the
   data a theme's templates get.
 
@@ -60,9 +60,13 @@ cargo run -- build --strict    # build the manual, and check its links
 The tests build a [plugin](./docs/plugins/writing-a-plugin.md),
 [`tests/plugin/`](./tests/plugin/), with Rust's `wasm32-wasip2` target, which
 [`rust-toolchain.toml`](./rust-toolchain.toml) has rustup install.
-The [`docstrings`](./plugins/docstrings/) plugin is a crate of its own, with
-its own tests, which its [README](./plugins/docstrings/README.md#developing-it)
-says how to run.
+The [`docstrings`](./plugins/docstrings/) and
+[`doc_comments`](./plugins/doc_comments/) plugins are crates of their own,
+with their own tests, which their READMEs say how to run, as is the
+[library](./plugins/api_reference/) they share. The manual documents
+little's own code with `doc_comments`, so
+[build it](./plugins/doc_comments/README.md#building-it) before you build
+the manual.
 
 See [`AGENTS.md`](./AGENTS.md) for architecture and conventions,
 [`VISION.md`](./VISION.md) for where little is headed, and

@@ -123,7 +123,8 @@ adds about a second to `little build`, rather than 10 ms.
 ## Adding pages
 
 A plugin can [add pages](using-plugins.md#pages), too, as
-[`docstrings`](python-api-reference.md) does, when it's built for
+[`docstrings`](python-api-reference.md) and
+[`doc_comments`](rust-api-reference.md) do, when it's built for
 `world plugin-with-pages`, which exports `pages` beside `setup` and
 `render`. For the plugin above to add a page that shows the site's
 `data/sizes.csv`, in a ```` ```csv ```` block its own `render` renders,

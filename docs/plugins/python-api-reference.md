@@ -145,7 +145,7 @@ warning: plugin `docstrings`: can't parse `mypackage/broken.py`: Expected a para
 
 ## Limits, for now
 
-- It reads only Python.
+- It reads only Python; [`doc_comments`](rust-api-reference.md) reads Rust.
 - A type isn't linked to its class's heading, nor to another module's page.
 - An object a package imports from a module whose name starts with `_`
   isn't documented, as the plugin documents an object where it's defined.

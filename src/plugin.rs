@@ -29,6 +29,8 @@ use wasmtime_wasi::{FsPerms, HostWallClock, WasiCtx, WasiCtxBuilder, WasiCtxView
 use crate::config::{self, Wasm};
 use crate::download;
 
+/// little's side of the interfaces in `wit/plugin.wit`, which wasmtime
+/// generates as little is compiled.
 mod bindings {
     // `plugin-with-pages` includes `plugin`, so these bindings run either.
     wasmtime::component::bindgen!({ path: "wit/plugin.wit", world: "plugin-with-pages" });

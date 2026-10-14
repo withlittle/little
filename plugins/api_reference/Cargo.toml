@@ -1,0 +1,10 @@
+[package]
+name = "little-api-reference"
+version = "0.1.0"
+edition = "2024"
+description = "What a page of an API reference documents, and its Markdown, for little's plugins that build one"
+license = "MIT"
+publish = false
+
+# Its own workspace, apart from little's and the plugins'.
+[workspace]

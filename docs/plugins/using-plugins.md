@@ -7,9 +7,10 @@ description: Render code blocks in languages of their own, or add pages, with pl
 
 A plugin renders code blocks in a language of its own, as little builds each
 page, like a table from a ```` ```csv ```` block, or a diagram from one in a
-language little doesn't draw, or adds pages to the site, like an [API
-reference](python-api-reference.md). It's one `.wasm` file, which runs
-wherever little does, in a sandbox.
+language little doesn't draw, or adds pages to the site, like an API
+reference, from [Python's docstrings](python-api-reference.md), or
+[Rust's doc comments](rust-api-reference.md). It's one `.wasm` file, which
+runs wherever little does, in a sandbox.
 
 ## Naming a plugin
 

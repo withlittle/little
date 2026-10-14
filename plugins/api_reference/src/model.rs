@@ -1,7 +1,9 @@
 //! What a page documents, read from the code, in no language in particular:
-//! the Python module reads it from Python, and the Markdown module writes it.
+//! a plugin reads it from its language's code, and the Markdown module
+//! writes it.
 
-/// What an object is, which a page labels it with, and groups it by.
+/// What an object is, which a page labels it with, and groups it by: a
+/// kind of Python's, of Rust's, or of both.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Kind {
     Package,
@@ -11,6 +13,17 @@ pub enum Kind {
     Method,
     Attribute,
     Property,
+    Crate,
+    Struct,
+    Enum,
+    Union,
+    Trait,
+    TypeAlias,
+    AssociatedType,
+    Constant,
+    AssociatedConstant,
+    Static,
+    Macro,
 }
 
 impl Kind {
@@ -24,11 +37,23 @@ impl Kind {
             Kind::Method => "method",
             Kind::Attribute => "attribute",
             Kind::Property => "property",
+            Kind::Crate => "crate",
+            Kind::Struct => "struct",
+            Kind::Enum => "enum",
+            Kind::Union => "union",
+            Kind::Trait => "trait",
+            Kind::TypeAlias => "type alias",
+            Kind::AssociatedType => "associated type",
+            Kind::Constant => "constant",
+            Kind::AssociatedConstant => "associated constant",
+            Kind::Static => "static",
+            Kind::Macro => "macro",
         }
     }
 }
 
-/// A package, module, class, function, or attribute.
+/// A package, module, class, function, or attribute, or a crate, struct,
+/// trait, and so on.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Object {
     /// Its name, like `Solver`.
@@ -49,6 +74,8 @@ pub struct Object {
     /// The code it's defined by, for a class its constructor's, from the
     /// start of its first line.
     pub source: Option<String>,
+    /// The file that code is in, if it isn't its page's.
+    pub file: Option<String>,
     /// The types of the attributes it defines, documented or not, by name,
     /// for its docstring's.
     pub types: Vec<(String, String)>,
@@ -68,6 +95,7 @@ impl Object {
             returns: None,
             docs: Vec::new(),
             source: None,
+            file: None,
             types: Vec::new(),
             members: Vec::new(),
         }
@@ -111,6 +139,8 @@ pub enum Items {
     Receives,
     Raises,
     Warns,
+    Fields,
+    Variants,
 }
 
 impl Items {
@@ -125,6 +155,8 @@ impl Items {
             Items::Receives => "Receives",
             Items::Raises => "Raises",
             Items::Warns => "Warns",
+            Items::Fields => "Fields",
+            Items::Variants => "Variants",
         }
     }
 }
