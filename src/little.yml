@@ -98,3 +98,5 @@ markdown:
 # "1.4", in quotes, the `url` it's published at, like /1.4, from the root of
 # the site, and the git `ref` it's built from, like v1.4. One is at `/`, and
 # one, at most, has no `ref`, and is built from the site's files as they are.
+# One with a `ref` can set its own `source`, `nav`, and `plugins`' settings;
+# every other setting is the site's.

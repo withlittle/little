@@ -5,8 +5,9 @@
 //! destination at its `url`, one at the root, from the working tree or from
 //! a git ref, checked out on its own. Each is built with the site's config,
 //! but has its own pages, files, nav, and search; one from a ref has its
-//! own `source`, too. The theme's files are written once, for the version at
-//! the root, and the others link to them there.
+//! own `source`, too, and its own settings for the site's plugins. The
+//! theme's files are written once, for the version at the root, and the
+//! others link to them there.
 
 use anyhow::{Context, Result, anyhow, bail};
 use minijinja::{Value as MjValue, context};
@@ -558,10 +559,10 @@ fn in_version<T>(result: Result<T>, version: Option<&config::Version>) -> Result
 }
 
 /// Read `version` of the site, to build at `place`, as it was at its ref,
-/// `git_ref`, in `repository`, with the site's config, but its own pages
-/// and nav, from its own little.yml there, if it has one: the files it
-/// reads are checked out of the repository apart from the site's own, and
-/// deleted once they're read.
+/// `git_ref`, in `repository`, with the site's config, but its own pages,
+/// nav, and plugins' settings, from its entry in `versions`, or its own
+/// little.yml there, if it has one: the files it reads are checked out of the
+/// repository apart from the site's own, and deleted once they're read.
 fn read_ref(
     site_dir: &Path,
     config: &Config,
@@ -595,9 +596,11 @@ fn read_ref(
     for plugin in &config.plugins {
         if let Some(read) = plugin.read.iter().find(missing) {
             bail!(
-                "plugin `{}` reads {}, but there's no folder there",
-                plugin.name,
-                checkout.describe(&read.folder)
+                "plugin `{name}` reads {}, but there's no folder there: set its `read`, in the \
+                 version's `plugins`, in `versions`, to the folders it reads at {git_ref}, or \
+                 turn it off there, with `{name}: false`",
+                checkout.describe(&read.folder),
+                name = plugin.name,
             );
         }
     }
@@ -4285,6 +4288,14 @@ mod tests {
             head("1.4/index.html"),
             "New /proj/style.css | Docs /proj/1.4/; "
         );
+        // But its entry's `nav` wins, with each URL from its home.
+        let own = "ref: v1.5, nav: [{ title: Start, url: / }]";
+        fs::write(site.join("little.yml"), site_cfg(own)).unwrap();
+        build(&site).unwrap();
+        assert_eq!(
+            head("1.4/index.html"),
+            "New /proj/style.css | Start /proj/1.4/; "
+        );
         let _ = fs::remove_dir_all(&site);
     }
 
@@ -4451,13 +4462,13 @@ mod tests {
     #[test]
     fn a_versions_plugins_are_the_sites_reading_its_files_at_its_ref() {
         use git::tests::{commit_all, git_in};
-        let site_cfg = |git_ref: &str| {
+        let site_cfg = |version: &str| {
             format!(
                 "theme: ./theme\nplugins:\n  api:\n    wasm: api.wasm\n    read: pkg\n    \
                  pages: [{{ path: reference/hello.md, read: pkg/hello.md }}]\n    \
                  warnings: [\"can't read pkg/broken.py\"]\n\
                  versions:\n  - {{ title: \"2.0\", url: / }}\n  \
-                 - {{ title: \"1.4\", url: /1.4, ref: {git_ref} }}\n"
+                 - {{ title: \"1.4\", url: /1.4, {version} }}\n"
             )
         };
         // At the ref, the site had no plugins, and the plugin's file, which
@@ -4469,7 +4480,7 @@ mod tests {
                 ("pkg/hello.md", "# Hello\n"),
             ],
             &[
-                ("little.yml", &site_cfg("v1.4")),
+                ("little.yml", &site_cfg("ref: v1.4")),
                 ("docs/README.md", "# Home\n"),
                 ("pkg/hello.md", "# Hi\n"),
                 ("theme/_templates/default.html", "{{ page.content | safe }}"),
@@ -4501,18 +4512,39 @@ mod tests {
             "plugin `api`'s reference/hello.md at v1.4"
         );
 
-        // A folder it reads that wasn't there at the ref stops the build.
+        // A folder it reads that wasn't there at the ref stops the build...
         fs::rename(site.join("pkg"), site.join("lib")).unwrap();
         commit_all(&site);
         git_in(&site, &["tag", "v1.3"]);
         fs::rename(site.join("lib"), site.join("pkg")).unwrap();
-        fs::write(site.join("little.yml"), site_cfg("v1.3")).unwrap();
+        fs::write(site.join("little.yml"), site_cfg("ref: v1.3")).unwrap();
         let message = format!("{:#}", build(&site).unwrap_err());
         assert_eq!(
             message,
             "building version `1.4`, from v1.3: plugin `api` reads v1.3:pkg, but there's no \
-             folder there"
+             folder there: set its `read`, in the version's `plugins`, in `versions`, to the \
+             folders it reads at v1.3, or turn it off there, with `api: false`"
         );
+        // ...unless the version's `plugins` say where it reads there, over the
+        // site's settings...
+        let moved = "ref: v1.3, plugins: { api: { read: lib, \
+                     pages: [{ path: reference/hello.md, read: lib/hello.md }] } }";
+        fs::write(site.join("little.yml"), site_cfg(moved)).unwrap();
+        let built = build(&site).unwrap();
+        let hi = read("1.4/reference/hello/index.html");
+        assert!(hi.starts_with("<h1 id=\"hi\">Hi<"), "{hi}");
+        assert_eq!(built.plugin_warnings.len(), 2);
+        // ...or turn it off, for that version alone.
+        let off = "ref: v1.3, plugins: { api: false }";
+        fs::write(site.join("little.yml"), site_cfg(off)).unwrap();
+        let built = build(&site).unwrap();
+        assert!(!site.join("dist/1.4/reference").exists());
+        assert!(site.join("dist/1.4/index.html").is_file());
+        assert!(site.join("dist/reference/hello/index.html").is_file());
+        let warnings: Vec<_> = (built.plugin_warnings.iter())
+            .map(|w| w.to_string())
+            .collect();
+        assert_eq!(warnings, ["plugin `api`: can't read pkg/broken.py"]);
         let _ = fs::remove_dir_all(&site);
     }
 

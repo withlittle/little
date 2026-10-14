@@ -80,23 +80,27 @@ alike, has the menu, and gets little's fixes. What's in its folder, at its
   at its `ref`: its `source` in `versions`, if it has one, or else the
   `source` of the `little.yml` at its `ref`, if there's one there, or else
   the site's `source`.
-- Its [nav](navigation.md#the-nav), from its pages and folders, unless the
-  `little.yml` at its `ref` sets a `nav`.
+- Its [nav](navigation.md#the-nav): its [own](#a-versions-own-nav-and-plugins),
+  if its entry in `versions` sets one, or else that of the `little.yml` at
+  its `ref`, if it sets one, or else one from its pages and folders.
 - The folders its plugins read, as they were at its `ref`, so an older
   version's [API reference](../plugins/python-api-reference.md) is of its
-  own code.
+  own code, with any [settings](#a-versions-own-nav-and-plugins) its entry
+  gives them.
 - Its [search](search.md) index, so a search finds the pages of the
   version it's made in.
 
 little reads its files with git, into a folder of its own, which it deletes
 once it's built them, so your files, and your repository, don't change.
 
-- Of the `little.yml` at its `ref`, only `source` and `nav` count. Every
-  other setting, like `name`, `markdown`, or `plugins`, is the site's, so a
-  tag's needn't list the versions after it, and one from before the site
-  used little, with no `little.yml`, is built too.
+- Of the `little.yml` at its `ref`, only `source` and `nav` count, and its
+  entry's win over them. Every other setting there, like `name`,
+  `markdown`, or `plugins`, is the site's, so a tag's needn't list the
+  versions after it, and one from before the site used little, with no
+  `little.yml`, is built too.
 - It must build with today's little: a `ref` without its pages' folder, or a
-  folder a plugin reads, stops the build, naming the version.
+  folder a plugin reads, stops the build, naming the version, unless its
+  entry gives the folder they were in there, or turns the plugin off.
 - Its pages link to their files at the ref's commit, so **View source of
   this page** shows the file as it was, but they have no **Edit this
   page**, as a tag can't be edited.
@@ -112,6 +116,57 @@ once it's built them, so your files, and your repository, don't change.
   build, naming both, as [pages that
   clash](pages-and-files.md#pages-that-clash) do. So does a version at
   `/pagefind`, where search's files go.
+
+## A version's own nav and plugins
+
+An old release's docs may not fit today's settings: its nav may not be the
+one you'd give it now, or a plugin may read a folder that's moved since. So
+a version from a `ref` can set its own `nav` and `plugins`, beside its
+`source`, in its entry in `versions`:
+
+```yaml
+# little.yml
+plugins:
+  docstrings:
+    wasm: ./little_docstrings.wasm
+    read: ./src
+versions:
+  - title: "2.0"
+    url: /
+  - title: "1.4"
+    url: /1.4
+    ref: v1.4
+    nav:
+      - { title: Home, url: / }
+      - { title: Install, url: /guide/install }
+    plugins:
+      docstrings:
+        read: ./lib   # where its code was, at v1.4
+  - title: "1.3"
+    url: /1.3
+    ref: v1.3
+    plugins:
+      docstrings: false   # 1.3 had no API reference
+```
+
+- Its `nav` is written as the [site's](navigation.md#writing-the-nav-yourself)
+  is, and replaces the one the `little.yml` at its `ref` sets, or that from
+  its pages and folders. Write each URL from the version's home, as if it
+  were the site's: little adds the version's `url`, so 1.4's
+  `/guide/install` is at `/1.4/guide/install`.
+- Its `plugins` go over the site's, setting by setting, as the site's go
+  over a theme's, so 1.4's `docstrings` has the site's `wasm`, but its own
+  `read`. A `read` there is from the site's folder at the version's `ref`,
+  as its `source` is. `false` turns a plugin off for that version alone.
+- It can set only plugins the site uses, and can't give one a `.wasm` file,
+  as every version is built with the site's.
+- A version without a `ref` can't set either, as it's built from the
+  site's files as they are: set the site's.
+- Every other setting of little's, like `theme`, `search`, or `markdown`,
+  is the site's, for every version, so one in a version's entry stops the
+  build. Any other key, like `released: 2025-06-01`, is for a theme to show,
+  in [`site.versions`](../themes/making-a-theme.md#a-menu-of-versions), so a
+  `name` there is the version's, not the site's.
 
 ## The menu of versions
 
@@ -217,12 +272,13 @@ steps:
 - Every version is built from the site's repository, so the menu can't list
   docs published somewhere else, like an old release's, published with
   another tool.
-- Every version has the site's plugins, with the same settings, so a
-  plugin the site uses now must have the folders it reads at each version's
-  `ref`.
+- Every version has the site's settings, but for its own `source`, `nav`,
+  and plugins' settings, so an old version is rendered as today's `theme`,
+  `markdown`, and the rest render it, not as it was.
 - A file of the version at `/` that replaces one of the theme's, like
   `docs/assets/style.css`, replaces it for every version, as they all link
   to the one at `/`.
 - little looks for a version's `little.yml` only in the same folder of the
   repository as the site's. If the site's folder has moved since, set the
-  version's `source`, and its nav is built from its pages and folders.
+  version's `source`, and its nav is built from its pages and folders,
+  unless you set its `nav` too.

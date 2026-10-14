@@ -37,8 +37,8 @@ cargo clippy --manifest-path plugins/docstrings/Cargo.toml --all-targets --targe
   reads, and its settings; and the versions it's built in, each with its
   title and URL, one at `/`, and each from a git ref but one, with the
   folder its pages are in there, and the config of each: the site's, but
-  for its own `source` and `nav`, with its links to the theme's files led
-  to the root.
+  for its own `source`, `nav`, and plugins' settings, with its links to the
+  theme's files led to the root.
 - `src/little.yml` — little's own defaults (level 1), compiled into the binary.
 - `src/render.rs` — Markdown (comrak, with the extensions the site turns on) +
   YAML frontmatter → HTML fragment, with each relative link led from the
@@ -446,3 +446,11 @@ Record notable choices as short ADRs in `decisions/`. Locked so far:
   every version links to them there, but to a file of its own at the same
   path — see
   [`decisions/0042-versions-share-the-sites-config-and-theme-files.md`](./decisions/0042-versions-share-the-sites-config-and-theme-files.md).
+- **A version's own nav and plugins:** an entry in `versions` with a `ref`
+  can set its own `nav`, with each URL from its home, and `plugins`, over
+  the site's, setting by setting, with a `read` from the site's folder at
+  the ref, or `false`, for none, beside its `source`. It can name only the
+  site's plugins, and give none a `.wasm` file. Any other setting of
+  little's there, like `theme` or `search`, stops the build; any other key
+  is for the theme — see
+  [`decisions/0043-a-versions-own-nav-and-plugins.md`](./decisions/0043-a-versions-own-nav-and-plugins.md).

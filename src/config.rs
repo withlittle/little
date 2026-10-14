@@ -49,8 +49,10 @@
 //! of them at `/`, and the git `ref` it's built from, but for one, at most,
 //! that's built from the site's files as they are (see `site`). Every
 //! version is built with the site's config, but one from a ref has its own
-//! pages, from its `source` there, and its own `nav` (see
-//! `Config::for_version`).
+//! pages, from its `source` there, its own `nav`, and its own settings for
+//! the site's plugins, which its entry can set (see `Config::for_version`).
+//! Its entry can't set little's other settings, which are the site's, but any
+//! other key in it is for the theme.
 
 use anyhow::{Context, Result, anyhow, bail};
 use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, percent_decode_str, utf8_percent_encode};
@@ -124,6 +126,12 @@ pub struct Version {
     /// The folder its pages are in at its ref, from the site's folder there,
     /// like `./documentation`, if its `source` names one.
     pub source: Option<String>,
+    /// Its nav, if its entry sets one, with each URL from its home, like the
+    /// site's.
+    pub nav: Option<Value>,
+    /// Its settings for the site's plugins, from its entry's `plugins`, like
+    /// `api: { read: ./lib }`, or `api: false`: empty if it sets none.
+    pub plugins: Mapping,
 }
 
 impl Version {
@@ -441,7 +449,8 @@ impl Config {
     /// `nav`: as its little.yml there sets them, over little's defaults and
     /// the site's themes, as the site's own would. Without one, it's from
     /// before the site was built with little, so its pages are in the site's
-    /// `source`. Its entry's `source` wins over both.
+    /// `source`. Its entry's `source` and `nav` win over both, and its
+    /// `plugins` go over the site's.
     pub fn for_version(&self, version: &Version, site_dir: &Path, file: &str) -> Result<Config> {
         let own = site_dir.join(CONFIG_FILE);
         let mut theirs = self.beneath.clone();
@@ -455,12 +464,22 @@ impl Config {
             Some(source) => Some(Value::from(source.as_str())),
             None => source.cloned(),
         };
+        let nav = version.nav.as_ref().or_else(|| theirs.get("nav")).cloned();
         let mut values = self.values.clone();
-        for (key, value) in [("source", source), ("nav", theirs.get("nav").cloned())] {
+        for (key, value) in [("source", source), ("nav", nav)] {
             match value {
                 Some(value) => values.insert(key.into(), value),
                 None => values.shift_remove(key),
             };
+        }
+        // Each plugin its entry names is one the site uses, so its settings
+        // go over the site's, as the site's go over its theme's.
+        if !version.plugins.is_empty() {
+            let plugins = Value::Mapping(version.plugins.clone());
+            merge(
+                &mut values,
+                Mapping::from_iter([("plugins".into(), plugins)]),
+            );
         }
         Ok(Config {
             source_dir: folder(site_dir, &values, "source")?,
@@ -489,7 +508,7 @@ fn settle(
     let search = search(&values)?;
     let markdown = markdown(&values)?;
     let plugins = plugins(&values, site_dir)?;
-    let versions = versions(&values)?;
+    let versions = versions(&values, &plugins)?;
     Ok(Config {
         values,
         themes,
@@ -918,9 +937,29 @@ fn read_error(name: &str) -> anyhow::Error {
     anyhow!("`read` of plugin `{name}` must be a folder, or a list of them, from the site's folder")
 }
 
+/// little's settings that are the site's, for every version, so an entry in
+/// `versions` can't set them, though one from a ref can set its own
+/// `source`, `nav`, and `plugins`.
+const SITES_SETTINGS: [&str; 13] = [
+    "destination",
+    "theme",
+    "repo",
+    "branch",
+    "toc_min_depth",
+    "toc_max_depth",
+    "search",
+    "markdown",
+    "mermaid",
+    "versions",
+    "year",
+    "host",
+    "port",
+];
+
 /// The versions of the site, from `versions`, in the order its menu lists
-/// them. Each entry's other settings are for the theme.
-fn versions(values: &Mapping) -> Result<Vec<Version>> {
+/// them, whose `plugins` can name only the site's, `sites_plugins`. Each
+/// entry's other keys, but little's settings, are for the theme.
+fn versions(values: &Mapping, sites_plugins: &[Plugin]) -> Result<Vec<Version>> {
     let entries = match values.get("versions") {
         None | Some(Value::Null) => return Ok(Vec::new()),
         Some(Value::Sequence(entries)) => entries,
@@ -1009,8 +1048,7 @@ fn versions(values: &Mapping) -> Result<Vec<Version>> {
                 other.title
             );
         }
-        // A blank `source:` is as good as none. The one without a `ref` is
-        // built from the site's `source`, the folder `little serve` watches.
+        // A blank `source:`, `nav:`, or `plugins:` is as good as none.
         let source = match entry.get("source") {
             None | Some(Value::Null) => None,
             Some(Value::String(source)) => Some(source.clone()),
@@ -1019,10 +1057,33 @@ fn versions(values: &Mapping) -> Result<Vec<Version>> {
                  at its `ref`, like `./docs`"
             ),
         };
-        if source.is_some() && git_ref.is_none() {
+        // A nav that isn't one stops the build of the version, as the site's
+        // does.
+        let nav = match entry.get("nav") {
+            None | Some(Value::Null) => None,
+            Some(nav) => Some(nav.clone()),
+        };
+        let plugins = version_plugins(title, entry.get("plugins"), sites_plugins)?;
+        // The one without a `ref` is built from the site's files as they
+        // are, with the site's settings, so `little serve` shows them.
+        let own = [
+            ("source", source.is_some()),
+            ("nav", nav.is_some()),
+            ("plugins", !plugins.is_empty()),
+        ];
+        if git_ref.is_none()
+            && let Some((key, _)) = own.iter().find(|(_, set)| *set)
+        {
             bail!(
-                "version `{title}` has a `source` but no `ref`, so it's built from the site's \
-                 files as they are: set the site's `source` instead"
+                "version `{title}` sets `{key}` but has no `ref`, so it's built from the site's \
+                 files as they are: set the site's `{key}` instead"
+            );
+        }
+        if let Some(key) = SITES_SETTINGS.iter().find(|key| entry.contains_key(**key)) {
+            bail!(
+                "version `{title}` sets `{key}`, but every version is built with the site's \
+                 `{key}`: a version from a `ref` can set only its own `source`, `nav`, and \
+                 `plugins`"
             );
         }
         versions.push(Version {
@@ -1030,6 +1091,8 @@ fn versions(values: &Mapping) -> Result<Vec<Version>> {
             path,
             git_ref,
             source,
+            nav,
+            plugins,
         });
     }
     if !versions.is_empty() && !versions.iter().any(|version| version.path.is_empty()) {
@@ -1038,6 +1101,50 @@ fn versions(values: &Mapping) -> Result<Vec<Version>> {
         );
     }
     Ok(versions)
+}
+
+/// The settings version `title` gives the site's plugins, `sites_plugins`,
+/// in its entry's `plugins`, if it has any: each the plugin's settings, which
+/// go over the site's, or `false`, which turns it off. A version can't give
+/// one a `.wasm` file, as every version is built with the site's, the ones
+/// `little serve` watches.
+fn version_plugins(
+    title: &str,
+    plugins: Option<&Value>,
+    sites_plugins: &[Plugin],
+) -> Result<Mapping> {
+    let not_settings = || {
+        anyhow!(
+            "version `{title}`'s `plugins` must name the site's plugins it changes, each with \
+             its settings, or `false`, to turn it off, like `api: false`"
+        )
+    };
+    let plugins = match plugins {
+        None | Some(Value::Null) => return Ok(Mapping::new()),
+        Some(Value::Mapping(plugins)) => plugins,
+        Some(_) => return Err(not_settings()),
+    };
+    for (name, plugin) in plugins {
+        let name = name.as_str().ok_or_else(not_settings)?;
+        if !sites_plugins.iter().any(|plugin| plugin.name == name) {
+            bail!(
+                "version `{title}` sets plugin `{name}`, but the site doesn't use it: a version \
+                 can change only the settings of the site's plugins"
+            );
+        }
+        match plugin {
+            Value::Bool(false) => {}
+            Value::Mapping(settings) if !settings.contains_key("wasm") => {}
+            // Its `.wasm` file, in the short form or the long.
+            Value::String(_) | Value::Mapping(_) => bail!(
+                "version `{title}` gives plugin `{name}` a `.wasm` file, but every version is \
+                 built with the site's: a version can change only a plugin's settings, or turn \
+                 it off, with `false`"
+            ),
+            _ => bail!("plugin `{name}` in version `{title}` must be its settings, or `false`"),
+        }
+    }
+    Ok(plugins.clone())
 }
 
 /// The path of a version at `url`, a path from the root of the site, like
@@ -2382,6 +2489,8 @@ mod tests {
             path: path.into(),
             git_ref: git_ref.map(Into::into),
             source: None,
+            nav: None,
+            plugins: Mapping::new(),
         };
 
         // A site without versions has just the one.
@@ -2438,6 +2547,23 @@ mod tests {
                         - { title: c, url: /c, ref: v0, source: }\n";
         let mut b = version("b", "/b", Some("v1"));
         b.source = Some("./documentation".into());
+        assert_eq!(
+            versions(site_cfg),
+            [version("a", "", None), b, version("c", "/c", Some("v0"))]
+        );
+        // And its own nav, and settings for the site's plugins, each over
+        // the site's, or `false`; a blank `nav` or `plugins` is none. Any
+        // other key, like `name`, is for the theme.
+        let site_cfg = "plugins:\n  api: ./api.wasm\n  bob: ./bob.wasm\n\
+                        versions:\n  - { title: a, url: /, plugins: {} }\n  \
+                        - title: b\n    url: /b\n    ref: v1\n    name: Old\n    \
+                        nav: [{ title: Home, url: / }]\n    \
+                        plugins:\n      api: { read: ./lib, style: plain }\n      bob: false\n  \
+                        - title: c\n    url: /c\n    ref: v0\n    nav:\n    plugins:\n";
+        let mut b = version("b", "/b", Some("v1"));
+        b.nav = Some(serde_yaml::from_str("[{ title: Home, url: / }]").unwrap());
+        b.plugins =
+            serde_yaml::from_str("{ api: { read: ./lib, style: plain }, bob: false }").unwrap();
         assert_eq!(
             versions(site_cfg),
             [version("a", "", None), b, version("c", "/c", Some("v0"))]
@@ -2569,12 +2695,85 @@ mod tests {
             ),
             (
                 "versions:\n  - { title: a, url: /, source: ./documentation }\n",
-                "version `a` has a `source` but no `ref`, so it's built from the site's files as \
-                 they are: set the site's `source` instead"
+                "version `a` sets `source` but has no `ref`, so it's built from the site's files \
+                 as they are: set the site's `source` instead"
+                    .to_string(),
+            ),
+            (
+                "versions:\n  - { title: a, url: /, nav: [{ title: Home, url: / }] }\n",
+                "version `a` sets `nav` but has no `ref`, so it's built from the site's files as \
+                 they are: set the site's `nav` instead"
+                    .to_string(),
+            ),
+            (
+                "plugins:\n  api: ./api.wasm\n\
+                 versions:\n  - { title: a, url: /, plugins: { api: false } }\n",
+                "version `a` sets `plugins` but has no `ref`, so it's built from the site's files \
+                 as they are: set the site's `plugins` instead"
                     .to_string(),
             ),
         ] {
             assert_eq!(error(&site, site_cfg), expected, "{site_cfg}");
+        }
+
+        // A version's `plugins` can change only the settings of those the
+        // site uses.
+        let site_cfg = |plugins: &str| {
+            format!(
+                "plugins:\n  api: ./api.wasm\n  bob: false\n\
+                 versions:\n  - {{ title: a, url: /, ref: v2, plugins: {plugins} }}\n"
+            )
+        };
+        let not_settings = "version `a`'s `plugins` must name the site's plugins it changes, \
+                            each with its settings, or `false`, to turn it off, like `api: false`";
+        let not_the_sites = |name: &str| {
+            format!(
+                "version `a` sets plugin `{name}`, but the site doesn't use it: a version can \
+                 change only the settings of the site's plugins"
+            )
+        };
+        let wasm = "version `a` gives plugin `api` a `.wasm` file, but every version is built \
+                    with the site's: a version can change only a plugin's settings, or turn it \
+                    off, with `false`";
+        let neither = "plugin `api` in version `a` must be its settings, or `false`";
+        for (plugins, expected) in [
+            ("[api]", not_settings.to_string()),
+            ("api", not_settings.to_string()),
+            ("{ 1: false }", not_settings.to_string()),
+            ("{ apy: false }", not_the_sites("apy")),
+            ("{ bob: { style: plain } }", not_the_sites("bob")),
+            ("{ api: ./old/api.wasm }", wasm.to_string()),
+            ("{ api: { wasm: ./old/api.wasm } }", wasm.to_string()),
+            ("{ api: true }", neither.to_string()),
+            ("{ api: [./lib] }", neither.to_string()),
+            ("{ api: }", neither.to_string()),
+        ] {
+            assert_eq!(error(&site, &site_cfg(plugins)), expected, "{plugins}");
+        }
+
+        // Nor can it set little's other settings, which are the site's.
+        for (key, value) in [
+            ("destination", "./old"),
+            ("theme", "./old-theme"),
+            ("repo", "\"https://github.com/o/old\""),
+            ("branch", "old"),
+            ("toc_min_depth", "1"),
+            ("toc_max_depth", "3"),
+            ("search", "false"),
+            ("markdown", "{ math: false }"),
+            ("mermaid", "{ theme: forest }"),
+            ("versions", "[]"),
+            ("year", "2020"),
+            ("host", "0.0.0.0"),
+            ("port", "3000"),
+        ] {
+            let site_cfg =
+                format!("versions:\n  - {{ title: a, url: /, ref: v2, {key}: {value} }}\n");
+            let expected = format!(
+                "version `a` sets `{key}`, but every version is built with the site's `{key}`: \
+                 a version from a `ref` can set only its own `source`, `nav`, and `plugins`"
+            );
+            assert_eq!(error(&site, &site_cfg), expected, "{key}");
         }
         let _ = std::fs::remove_dir_all(&site);
     }
@@ -2672,6 +2871,31 @@ mod tests {
         let version = config.for_version(&v14, &old, file).unwrap();
         assert_eq!(version.source_dir, old.join("documentation"));
         assert_eq!(version.values.get("nav"), Some(&nav));
+
+        // As does its `nav`, and its `plugins` go over the site's, setting by
+        // setting, reading their folders at the ref, or turn one off.
+        let own_nav: Value = serde_yaml::from_str("[{ title: Mine, url: / }]").unwrap();
+        v14.nav = Some(own_nav.clone());
+        v14.plugins = serde_yaml::from_str("{ ann: { read: [./src, lib] }, bob: false }").unwrap();
+        let ann = plugin(
+            "ann",
+            Wasm::File(site.join("ann.wasm")),
+            &[(old.join("src"), "src"), (old.join("lib"), "lib")],
+            r#"{"read":["src","lib"]}"#,
+        );
+        let version = config.for_version(&v14, &old, file).unwrap();
+        assert_eq!(version.values.get("nav"), Some(&own_nav));
+        assert_eq!(version.plugins, std::slice::from_ref(&ann));
+        let plugins: Value = serde_yaml::from_str(&format!(
+            "{{ bob: false, ann: {{ wasm: '{}', read: [./src, lib] }} }}",
+            site.join("ann.wasm").display()
+        ))
+        .unwrap();
+        assert_eq!(version.values.get("plugins"), Some(&plugins));
+        std::fs::remove_file(old.join(CONFIG_FILE)).unwrap();
+        let version = config.for_version(&v14, &old, file).unwrap();
+        assert_eq!(version.values.get("nav"), Some(&own_nav));
+        assert_eq!(version.plugins, [ann]);
 
         // Its little.yml is named in its errors as git names it.
         std::fs::write(old.join(CONFIG_FILE), "name: [Old\n").unwrap();
