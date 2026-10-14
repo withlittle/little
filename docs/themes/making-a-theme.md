@@ -205,9 +205,11 @@ the page they're reading:
   But the theme's static files are at the root of the site, for every
   version, so `{{ '/assets/style.css' | url }}` is the one stylesheet, unless
   the version has a file of its own at that path.
-- Each entry has the keys it's written with in `versions`, like `ref`, and
-  any you add, for the theme to show, but `url`, and `root`, which little
-  sets.
+- Each entry has the keys it's written with in `versions`, like `ref`, but
+  `url`, and `root`, which little sets. A key of your own, like `released`,
+  is for the theme to show; one of little's
+  [settings](../reference/settings.md), like `search`, stops the build, but
+  for a version's [own](../writing/versions.md#a-versions-own-nav-and-plugins).
 - `root` is true for the version at `/`, and false for the others, so
   `page.versions | selectattr("root") | first` is the version at `/`, for a
   note on each of the others that links to it, at the same page if it has
