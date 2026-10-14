@@ -20,6 +20,7 @@
 //! a new commit on its branch is built at the next save, or the next start.
 
 use anyhow::{Result, anyhow};
+use mime_guess::{Mime, mime};
 use notify::{Event, RecommendedWatcher, RecursiveMode, Watcher};
 use percent_encoding::percent_decode_str;
 use std::ffi::OsStr;
@@ -391,9 +392,10 @@ fn serve_file(built: &Built, request: tiny_http::Request) {
 
     match std::fs::read(&full) {
         Ok(bytes) => {
-            let content_type = content_type(&full);
+            let mime = mime_guess::from_path(&full).first_or_octet_stream();
+            let content_type = content_type(&mime);
             let header = Header::from_bytes(&b"Content-Type"[..], content_type.as_bytes()).unwrap();
-            if content_type == "text/html" {
+            if mime == mime::TEXT_HTML {
                 let html = inject_livereload(String::from_utf8_lossy(&bytes).into_owned());
                 let response = Response::from_string(html).with_header(header);
                 let _ = request.respond(response.with_status_code(status));
@@ -466,16 +468,18 @@ fn resolve_route(destination: &Path, url: &str) -> Option<PathBuf> {
     candidates.into_iter().find(|candidate| candidate.is_file())
 }
 
-fn content_type(path: &Path) -> &'static str {
-    match path.extension().and_then(|s| s.to_str()) {
-        Some("html") => "text/html",
-        Some("css") => "text/css",
-        Some("js") => "application/javascript",
-        Some("svg") => "image/svg+xml",
-        Some("png") => "image/png",
-        Some("jpg") | Some("jpeg") => "image/jpeg",
-        Some("json") => "application/json",
-        _ => "application/octet-stream",
+/// The `Content-Type` a file of type `mime` is sent with, as GitHub Pages
+/// sends it, so a page works here as it will there: text, JavaScript, and
+/// JSON are marked UTF-8, rather than left for the browser to guess.
+fn content_type(mime: &Mime) -> String {
+    let text = mime.type_() == mime::TEXT
+        || mime.subtype() == mime::JAVASCRIPT
+        || mime.subtype() == mime::JSON
+        || mime.suffix() == Some(mime::JSON);
+    if text {
+        format!("{mime}; charset=utf-8")
+    } else {
+        mime.to_string()
     }
 }
 
@@ -548,6 +552,30 @@ mod tests {
         assert_eq!(at("/../secret"), None);
 
         let _ = std::fs::remove_dir_all(&dist);
+    }
+
+    #[test]
+    fn files_are_sent_with_their_types() {
+        let sent_as =
+            |path: &str| content_type(&mime_guess::from_path(path).first_or_octet_stream());
+        // Text, JavaScript, and JSON in UTF-8.
+        assert_eq!(sent_as("index.html"), "text/html; charset=utf-8");
+        assert_eq!(sent_as("notes.txt"), "text/plain; charset=utf-8");
+        assert_eq!(sent_as("script.js"), "text/javascript; charset=utf-8");
+        // A browser runs a module only if it's sent as JavaScript.
+        let module = sent_as("module.mjs");
+        assert_eq!(module, "application/javascript; charset=utf-8");
+        let json = sent_as("pagefind/pagefind-entry.json");
+        assert_eq!(json, "application/json; charset=utf-8");
+        let manifest = sent_as("site.webmanifest");
+        assert_eq!(manifest, "application/manifest+json; charset=utf-8");
+        // And the rest as they are, as a browser streams WebAssembly only if
+        // it's sent as WebAssembly.
+        assert_eq!(sent_as("plugin.wasm"), "application/wasm");
+        assert_eq!(sent_as("fonts/inter.woff2"), "font/woff2");
+        assert_eq!(sent_as("logo.svg"), "image/svg+xml");
+        let unknown = sent_as("pagefind/index/en_3f9c.pf_index");
+        assert_eq!(unknown, "application/octet-stream");
     }
 
     #[test]

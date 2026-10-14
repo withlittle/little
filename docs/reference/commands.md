@@ -74,6 +74,9 @@ save.
   [`url`](../getting-started/publishing.md#choosing-the-sites-url), if it
   has one, as it'll be published, like <http://127.0.0.1:8080/little/> for
   this manual.
+- It sends each file with the type its extension gives it, as a host like
+  GitHub Pages does, with text in UTF-8, so a script module, a font, or a
+  `.wasm` file works as it will once it's published.
 - On a site with [versions](../writing/versions.md), it serves every one,
   and builds them all again on each save. It doesn't watch their refs, so a
   commit to a version's branch shows on your next save.

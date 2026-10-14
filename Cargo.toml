@@ -26,6 +26,7 @@ grass = { version = "0.13.4", default-features = false, features = ["random"] }
 lychee-lib = { version = "0.24.2", default-features = false }
 math-core = "0.8.2"
 merman = { version = "0.7.0", features = ["render"] }
+mime_guess = { version = "2.0.5", default-features = false }
 minijinja = { version = "2.24.0", features = ["loader"] }
 notify = "8.2.0"
 notify-debouncer-mini = "0.7.0"
