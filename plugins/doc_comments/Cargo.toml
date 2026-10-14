@@ -1,0 +1,28 @@
+[package]
+name = "little-doc-comments"
+version = "0.1.0"
+edition = "2024"
+description = "A plugin for little that builds an API reference from Rust's doc comments"
+license = "MIT"
+publish = false
+
+# A WebAssembly component, built for wasm32-wasip2.
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+little-api-reference = { path = "../api_reference" }
+prettyplease = "0.3.0"
+proc-macro2 = { version = "1.0.107", default-features = false, features = ["span-locations"] }
+pulldown-cmark = { version = "0.13.4", default-features = false }
+serde_json = "1.0.151"
+syn = { version = "3.0.9", default-features = false, features = ["full", "parsing", "printing", "clone-impls"] }
+wit-bindgen = "0.62"
+
+[profile.release]
+opt-level = "s"
+lto = true
+strip = true
+
+# Its own workspace, apart from little's.
+[workspace]

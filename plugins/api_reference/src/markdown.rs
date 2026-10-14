@@ -5,38 +5,52 @@ use std::collections::{HashMap, HashSet};
 
 use crate::model::{Item, Items, Kind, Object, Section};
 
-/// A module or package a package's page lists.
+/// The language a reference documents, as its pages write it.
+#[derive(Clone, Copy, Debug)]
+pub struct Language {
+    /// The language of its code blocks, like `python`.
+    pub name: &'static str,
+    /// What goes between a name and the name of what it defines, like `.`
+    /// in `Solver.solve`.
+    pub separator: &'static str,
+}
+
+/// A module, or something a module re-exports, that a page lists.
 pub struct Listed {
     pub name: String,
-    /// The relative link to its page, like `module.md`.
-    pub link: String,
-    /// The first paragraph of its docstring.
+    /// The relative link to it, like `module.md`, if it has one.
+    pub link: Option<String>,
+    /// The first paragraph of its docs.
     pub summary: String,
 }
 
-/// The page of `module`, which is written in `file`, in `language`, and
-/// lists `modules`, if it's a package.
-pub fn page(module: &Object, file: &str, language: &str, modules: &[Listed]) -> String {
-    let mut anchors = Anchors::default();
-    anchors.anchor(&module.name);
-    let mut ids = HashMap::new();
-    assign(&module.members, "", &mut anchors, &mut ids);
+/// The page of `module`, which is written in `file`, in `language`, with
+/// each of `lists` that isn't empty under its title, like `Modules`.
+pub fn page(
+    module: &Object,
+    file: &str,
+    language: &Language,
+    lists: &[(&str, &[Listed])],
+) -> String {
     let page = Page {
-        ids,
+        ids: ids(module, language),
         file,
         language,
     };
     let mut out = format!("# {}\n\n", escape(&module.name));
     out += &labels(module);
     page.sections(&mut out, module);
-    if !modules.is_empty() {
-        let rows: Vec<Vec<String>> = (modules.iter())
+    for (title, listed) in lists.iter().filter(|(_, listed)| !listed.is_empty()) {
+        let rows: Vec<Vec<String>> = (listed.iter())
             .map(|listed| {
-                let name = format!("[{}]({})", code(&listed.name), listed.link);
+                let name = match &listed.link {
+                    Some(link) => format!("[{}]({link})", code(&listed.name)),
+                    None => code(&listed.name),
+                };
                 vec![name, listed.summary.clone()]
             })
             .collect();
-        out += "**Modules:**\n\n";
+        out += &format!("**{}:**\n\n", escape(title));
         table(&mut out, &["Name", "Description"], &rows);
     }
     page.summaries(&mut out, module, "");
@@ -48,12 +62,22 @@ pub fn page(module: &Object, file: &str, language: &str, modules: &[Listed]) -> 
     out
 }
 
+/// The id comrak gives the heading of each object on the page of `module`,
+/// in `language`, by the name the heading shows, like `Solver.solve`.
+pub fn ids(module: &Object, language: &Language) -> HashMap<String, String> {
+    let mut anchors = Anchors::default();
+    anchors.anchor(&module.name);
+    let mut ids = HashMap::new();
+    assign(&module.members, "", language, &mut anchors, &mut ids);
+    ids
+}
+
 /// What a page needs as it's written.
 struct Page<'a> {
     /// The id of each object's heading, by its name, like `Solver.solve`.
     ids: HashMap<String, String>,
     file: &'a str,
-    language: &'a str,
+    language: &'a Language,
 }
 
 impl Page<'_> {
@@ -67,10 +91,10 @@ impl Page<'_> {
             self.code_block(out, signature);
         }
         self.sections(out, object);
-        let prefix = format!("{name}.");
+        let prefix = format!("{name}{}", self.language.separator);
         self.summaries(out, object, &prefix);
         if let Some(source) = &object.source {
-            let file = html(self.file);
+            let file = html(object.file.as_deref().unwrap_or(self.file));
             *out +=
                 &format!("<details>\n<summary>Source code in <code>{file}</code></summary>\n\n");
             self.code_block(out, source);
@@ -84,7 +108,7 @@ impl Page<'_> {
     /// Write a block of `code` in the page's language.
     fn code_block(&self, out: &mut String, code: &str) {
         let fence = fence_for(code);
-        *out += &format!("{fence}{}\n{code}\n{fence}\n\n", self.language);
+        *out += &format!("{fence}{}\n{code}\n{fence}\n\n", self.language.name);
     }
 
     /// Write the sections of `object`'s docstring.
@@ -106,8 +130,8 @@ impl Page<'_> {
     }
 
     /// Write tables of what `object` defines, whose names follow `prefix`,
-    /// each linked to its heading: its attributes, but where its docstring
-    /// lists them, its classes, and its functions or methods.
+    /// each linked to its heading, a table for each group of what it
+    /// defines, but for its attributes, where its docstring lists them.
     fn summaries(&self, out: &mut String, object: &Object, prefix: &str) {
         let listed = (object.docs.iter()).any(|section| {
             matches!(
@@ -118,31 +142,21 @@ impl Page<'_> {
                 }
             )
         });
-        let functions = match object.kind {
-            Kind::Class => "Methods",
-            _ => "Functions",
-        };
-        let groups = [
-            ("Attributes", Group::Attributes),
-            ("Classes", Group::Classes),
-            (functions, Group::Functions),
-        ];
-        for (title, group) in groups {
-            if listed && group == Group::Attributes {
+        let members = ordered(&object.members);
+        for members in members.chunk_by(|a, b| Group::of(a) == Group::of(b)) {
+            let group = Group::of(members[0]);
+            if group == Group::Modules || (listed && group == Group::Attributes) {
                 continue;
             }
-            let rows: Vec<Vec<String>> = (ordered(&object.members).into_iter())
-                .filter(|member| Group::of(member) == group)
+            let rows: Vec<Vec<String>> = (members.iter())
                 .map(|member| {
                     let id = &self.ids[&format!("{prefix}{}", member.name)];
                     let name = format!("[{}](#{id})", code(&member.name));
                     vec![name, summary(&member.docs)]
                 })
                 .collect();
-            if !rows.is_empty() {
-                *out += &format!("**{title}:**\n\n");
-                table(out, &["Name", "Description"], &rows);
-            }
+            *out += &format!("**{}:**\n\n", group.title(object.kind));
+            table(out, &["Name", "Description"], &rows);
         }
     }
 }
@@ -174,7 +188,7 @@ fn listing(object: &Object, kind: Items, items: &[Item]) -> (Vec<&'static str>, 
                 .collect();
             (vec!["Name", "Type", "Description", "Default"], rows)
         }
-        Items::OtherParameters | Items::Attributes => {
+        Items::OtherParameters | Items::Attributes | Items::Fields => {
             let rows = (items.iter())
                 .map(|item| {
                     let typed = (object.types.iter())
@@ -215,15 +229,31 @@ fn listing(object: &Object, kind: Items, items: &[Item]) -> (Vec<&'static str>, 
                 .collect();
             (vec!["Type", "Description"], rows)
         }
+        Items::Variants => {
+            let rows = (items.iter())
+                .map(|item| vec![name(item), item.description.clone()])
+                .collect();
+            (vec!["Name", "Description"], rows)
+        }
     }
 }
 
-/// Where a page lists an object.
+/// Where a page lists an object, in the order it lists them.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 enum Group {
     Attributes,
     Classes,
+    Macros,
+    Structs,
+    Enums,
+    Constants,
+    Statics,
+    Traits,
+    AssociatedTypes,
+    AssociatedConstants,
     Functions,
+    TypeAliases,
+    Unions,
     Modules,
 }
 
@@ -233,13 +263,46 @@ impl Group {
             Kind::Attribute | Kind::Property => Group::Attributes,
             Kind::Class => Group::Classes,
             Kind::Function | Kind::Method => Group::Functions,
-            Kind::Package | Kind::Module => Group::Modules,
+            Kind::Package | Kind::Module | Kind::Crate => Group::Modules,
+            Kind::Struct => Group::Structs,
+            Kind::Enum => Group::Enums,
+            Kind::Union => Group::Unions,
+            Kind::Trait => Group::Traits,
+            Kind::TypeAlias => Group::TypeAliases,
+            Kind::AssociatedType => Group::AssociatedTypes,
+            Kind::Constant => Group::Constants,
+            Kind::AssociatedConstant => Group::AssociatedConstants,
+            Kind::Static => Group::Statics,
+            Kind::Macro => Group::Macros,
+        }
+    }
+
+    /// Its title, in a table of what an object of `kind` defines: its
+    /// functions are methods if it's a type.
+    fn title(self, kind: Kind) -> &'static str {
+        match self {
+            Group::Attributes => "Attributes",
+            Group::Classes => "Classes",
+            Group::Macros => "Macros",
+            Group::Structs => "Structs",
+            Group::Enums => "Enums",
+            Group::Constants => "Constants",
+            Group::Statics => "Statics",
+            Group::Traits => "Traits",
+            Group::AssociatedTypes => "Associated Types",
+            Group::AssociatedConstants => "Associated Constants",
+            Group::Functions => match kind {
+                Kind::Class | Kind::Struct | Kind::Enum | Kind::Union | Kind::Trait => "Methods",
+                _ => "Functions",
+            },
+            Group::TypeAliases => "Type Aliases",
+            Group::Unions => "Unions",
+            Group::Modules => "Modules",
         }
     }
 }
 
-/// `members` in the order a page shows them: attributes, classes, then
-/// functions, each in order of name.
+/// `members` in the order a page shows them, by group, then by name.
 fn ordered(members: &[Object]) -> Vec<&Object> {
     let mut ordered: Vec<&Object> = members.iter().collect();
     ordered.sort_by(|a, b| (Group::of(a), &a.name).cmp(&(Group::of(b), &b.name)));
@@ -252,13 +315,15 @@ fn ordered(members: &[Object]) -> Vec<&Object> {
 fn assign(
     members: &[Object],
     prefix: &str,
+    language: &Language,
     anchors: &mut Anchors,
     ids: &mut HashMap<String, String>,
 ) {
     for member in ordered(members) {
         let name = format!("{prefix}{}", member.name);
         ids.insert(name.clone(), anchors.anchor(&name));
-        assign(&member.members, &format!("{name}."), anchors, ids);
+        let prefix = format!("{name}{}", language.separator);
+        assign(&member.members, &prefix, language, anchors, ids);
     }
 }
 
@@ -369,6 +434,15 @@ mod tests {
     use super::*;
     use crate::model::Parameter;
 
+    const PYTHON: Language = Language {
+        name: "python",
+        separator: ".",
+    };
+    const RUST: Language = Language {
+        name: "rust",
+        separator: "::",
+    };
+
     fn object(name: &str, kind: Kind, docs: &str) -> Object {
         let mut object = Object::new(name, kind);
         if !docs.is_empty() {
@@ -428,10 +502,10 @@ mod tests {
         module.members.push(solver);
         let listed = [Listed {
             name: "sub".to_string(),
-            link: "sub/README.md".to_string(),
+            link: Some("sub/README.md".to_string()),
             summary: "A package.".to_string(),
         }];
-        let page = page(&module, "pkg/solving.py", "python", &listed);
+        let page = page(&module, "pkg/solving.py", &PYTHON, &[("Modules", &listed)]);
         assert_eq!(
             page,
             "# solving
@@ -515,6 +589,148 @@ Solve it.
 `function`
 
 Solve anything.
+"
+        );
+    }
+
+    #[test]
+    fn a_rust_page_lists_its_types_their_methods_and_what_it_re_exports() {
+        let mut module = object("config", Kind::Module, "The config.");
+        let mut config = object("Config", Kind::Struct, "A site's config.");
+        config.signature = Some(
+            "pub struct Config {\n    pub source: PathBuf,\n    /* private fields */\n}".into(),
+        );
+        config.docs.push(Section::Items {
+            kind: Items::Fields,
+            items: vec![Item {
+                name: Some("source".to_string()),
+                ty: Some("PathBuf".to_string()),
+                description: "Its source.".to_string(),
+                ..Item::default()
+            }],
+        });
+        config.docs.push(Section::Text {
+            title: Some("Implements".to_string()),
+            text: "`Clone`, `Debug`".to_string(),
+        });
+        config.source = Some("pub struct Config {}".to_string());
+        let mut load = object("load", Kind::Function, "Load it.");
+        load.signature = Some("pub fn load() -> Config".to_string());
+        load.source = Some("pub fn load() -> Config {}".to_string());
+        load.file = Some("src/load.rs".to_string());
+        config.members.push(load);
+        let mut kind = object("Kind", Kind::Enum, "What it is.");
+        kind.docs.push(Section::Items {
+            kind: Items::Variants,
+            items: vec![Item {
+                name: Some("Site".to_string()),
+                description: "A site.".to_string(),
+                ..Item::default()
+            }],
+        });
+        module.members.push(kind);
+        module.members.push(config);
+        let re_exports = [Listed {
+            name: "Extern".to_string(),
+            link: None,
+            summary: String::new(),
+        }];
+        let lists: [(&str, &[Listed]); 2] = [("Modules", &[]), ("Re-exports", &re_exports)];
+        assert_eq!(ids(&module, &RUST)["Config::load"], "configload");
+        assert_eq!(
+            page(&module, "src/config.rs", &RUST, &lists),
+            "# config
+
+`module`
+
+The config.
+
+**Re-exports:**
+
+| Name | Description |
+| --- | --- |
+| `Extern` |  |
+
+**Structs:**
+
+| Name | Description |
+| --- | --- |
+| [`Config`](#config-1) | A site's config. |
+
+**Enums:**
+
+| Name | Description |
+| --- | --- |
+| [`Kind`](#kind) | What it is. |
+
+## `Config`
+
+`struct`
+
+```rust
+pub struct Config {
+    pub source: PathBuf,
+    /* private fields */
+}
+```
+
+A site's config.
+
+**Fields:**
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `source` | `PathBuf` | Its source. |
+
+**Implements:**
+
+`Clone`, `Debug`
+
+**Methods:**
+
+| Name | Description |
+| --- | --- |
+| [`load`](#configload) | Load it. |
+
+<details>
+<summary>Source code in <code>src/config.rs</code></summary>
+
+```rust
+pub struct Config {}
+```
+
+</details>
+
+### `Config::load`
+
+`function`
+
+```rust
+pub fn load() -> Config
+```
+
+Load it.
+
+<details>
+<summary>Source code in <code>src/load.rs</code></summary>
+
+```rust
+pub fn load() -> Config {}
+```
+
+</details>
+
+## `Kind`
+
+`enum`
+
+What it is.
+
+**Variants:**
+
+| Name | Description |
+| --- | --- |
+| `Site` | A site. |
 "
         );
     }

@@ -12,8 +12,13 @@ use std::path::Path;
 use little_api_reference::{markdown, model};
 use serde_json::Value;
 
-use crate::markdown::Listed;
+use crate::markdown::{Language, Listed};
 use crate::model::{Kind, Object};
+
+const PYTHON: Language = Language {
+    name: "python",
+    separator: ".",
+};
 
 /// What a site sets for the plugin, in its `little.yml`.
 #[derive(Debug, PartialEq)]
@@ -121,7 +126,7 @@ impl Added {
             .unwrap_or_else(|| Object::new(name, Kind::Package));
         let entries = self.entries(folder);
         let listed = self.add(folder, &entries, dir);
-        let markdown = markdown::page(&package, &init, "python", &listed);
+        let markdown = markdown::page(&package, &init, &PYTHON, &[("Modules", &listed)]);
         self.pages.push((join(dir, "README.md"), markdown));
         markdown::summary(&package.docs)
     }
@@ -141,7 +146,7 @@ impl Added {
                     let Some(module) = self.read(&file, name, Kind::Module) else {
                         continue;
                     };
-                    let markdown = markdown::page(&module, &file, "python", &[]);
+                    let markdown = markdown::page(&module, &file, &PYTHON, &[]);
                     self.pages
                         .push((join(dir, &format!("{name}.md")), markdown));
                     (name, format!("{name}.md"), markdown::summary(&module.docs))
@@ -149,7 +154,7 @@ impl Added {
             };
             listed.push(Listed {
                 name: name.clone(),
-                link,
+                link: Some(link),
                 summary,
             });
         }

@@ -15,12 +15,17 @@ cargo test                  # run tests (they build tests/plugin for wasm32-wasi
 cargo clippy --all-targets  # lint — keep it clean
 cargo fmt                   # format — run before committing
 
+# the doc_comments plugin, which the manual uses: build it before the manual
+cargo build --release --target wasm32-wasip2 --manifest-path plugins/doc_comments/Cargo.toml
+cargo test --manifest-path plugins/doc_comments/Cargo.toml
+cargo clippy --manifest-path plugins/doc_comments/Cargo.toml --all-targets --target wasm32-wasip2
+
 # the docstrings plugin, in its own workspace
 cargo build --release --target wasm32-wasip2 --manifest-path plugins/docstrings/Cargo.toml
 cargo test --manifest-path plugins/docstrings/Cargo.toml
 cargo clippy --manifest-path plugins/docstrings/Cargo.toml --all-targets --target wasm32-wasip2
 
-# the library it shares, in its own workspace
+# the library they share, in its own workspace
 cargo test --manifest-path plugins/api_reference/Cargo.toml
 cargo clippy --manifest-path plugins/api_reference/Cargo.toml --all-targets
 ```
@@ -119,7 +124,9 @@ Content and theme live outside `src/`:
   <https://withlittle.github.io/little>. It's a little site, so each page
   uses what it documents, where it can, and the README links to it. Pages
   link to each other by their files, and to little's own files on GitHub.
-  Meta docs, like ADRs, don't go here.
+  Meta docs, like ADRs, don't go here. little's own API, which the
+  `doc_comments` plugin adds from `src/`'s doc comments, is at `/api/`, with
+  no file in `docs/`.
 - `theme/` — little's built-in theme, compiled into the binary: `_templates/`
   (MiniJinja; `default.html` is required) + `_static/` (copied to the site's
   root) + an optional `little.yml`. It's plain CSS, in cascade layers, with
@@ -129,8 +136,9 @@ Content and theme live outside `src/`:
   writes. Its header has a menu of a site's versions, when it has two or
   more.
 - `little.yml` — the manual's config: its `url`, `repo`, and `nav`, which
-  orders its pages by hand. It sets `theme: ./theme`, so edits to the
-  built-in theme live-reload.
+  orders its pages by hand, and the `doc_comments` plugin, which documents
+  `src/` at `/api/`, from where Cargo builds its `.wasm` file. It sets
+  `theme: ./theme`, so edits to the built-in theme live-reload.
 - `wit/plugin.wit` — the interfaces a plugin exports, which little's bindings
   are generated from; plugin authors copy it. `world plugin` renders code
   blocks; `world plugin-with-pages` adds pages, too.
@@ -144,6 +152,11 @@ Content and theme live outside `src/`:
   for each Python module in the folders it reads, from its docstrings, in
   NumPy's, Google's, or Sphinx's style, parsed with Ruff's parser. Its tests
   run natively; only its glue to `wit/plugin.wit` needs WebAssembly.
+- `plugins/doc_comments/` — the `doc_comments` plugin, a crate in its own
+  workspace, built for `wasm32-wasip2`, that adds an API reference: a page
+  for a Rust crate and each of its modules, from their doc comments, parsed
+  with syn, and with intra-doc links led to their items. The manual uses it
+  on `src/`. Its tests run natively, as docstrings' do.
 - `plugins/api_reference/` — a library, in its own workspace, not a plugin,
   that the plugins that add an API reference share: what a page documents,
   in no language in particular, and the Markdown of the page.
@@ -181,6 +194,9 @@ Content and theme live outside `src/`:
 - Reach for a well-maintained crate before writing our own code; justify a
   heavy dependency in an ADR.
 - Comment the *why*, not the *what*; don't over-comment.
+- Doc comments in `src/` are published, as little's API at `/api/` in the
+  manual: give each module a `//!`, and each `pub` item a `///`, in the
+  manual's plain style, and link to items by path, like ``[`Config`]``.
 - Add unit tests for parsing/merging logic (frontmatter, config cascade).
 - A change people using little can see updates its page in the manual
   (`docs/`), and the reference pages, in the same PR; a new page goes in
@@ -461,3 +477,13 @@ Record notable choices as short ADRs in `decisions/`. Locked so far:
   little's there, like `theme` or `search`, stops the build; any other key
   is for the theme — see
   [`decisions/0043-a-versions-own-nav-and-plugins.md`](./decisions/0043-a-versions-own-nav-and-plugins.md).
+- **A plugin for Rust's doc comments:** `plugins/doc_comments/`, in its own
+  workspace, adds a page for a crate and each of its modules, `pub` or not,
+  under `url`, `/reference/<crate>` by default, like rustdoc's, parsing Rust
+  with syn, without compiling it, from the one folder it reads, with
+  `lib.rs` or `main.rs`, and `crate`, its name. It documents each `pub`
+  item with docs where it's defined, leads intra-doc links to their items,
+  and shares its model and Markdown with docstrings, in
+  `plugins/api_reference/`. The manual documents little with it, at
+  `/api/` — see
+  [`decisions/0044-a-plugin-for-rusts-doc-comments.md`](./decisions/0044-a-plugin-for-rusts-doc-comments.md).

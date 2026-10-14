@@ -29,7 +29,8 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
-          # For the plugins: tests/plugin, which the tests build, and plugins/docstrings.
+          # For the plugins: tests/plugin, which the tests build, plugins/docstrings,
+          # and plugins/doc_comments.
           targets: wasm32-wasip2
 
       - name: Cache cargo build artifacts
@@ -41,6 +42,7 @@ jobs:
           cargo fmt --check --manifest-path tests/plugin/Cargo.toml
           cargo fmt --check --manifest-path plugins/api_reference/Cargo.toml
           cargo fmt --check --manifest-path plugins/docstrings/Cargo.toml
+          cargo fmt --check --manifest-path plugins/doc_comments/Cargo.toml
 
       - name: Lint (clippy, warnings are errors)
         run: |
@@ -49,14 +51,17 @@ jobs:
           cargo clippy --manifest-path tests/plugin/Cargo.toml --target wasm32-wasip2 --target-dir target/test-plugin-pages --features pages -- -D warnings
           cargo clippy --manifest-path plugins/api_reference/Cargo.toml --all-targets --target-dir target/api_reference -- -D warnings
           cargo clippy --manifest-path plugins/docstrings/Cargo.toml --all-targets --target wasm32-wasip2 --target-dir target/docstrings -- -D warnings
+          cargo clippy --manifest-path plugins/doc_comments/Cargo.toml --all-targets --target wasm32-wasip2 --target-dir target/doc_comments -- -D warnings
 
       - name: Test
         run: |
           cargo test
           cargo test --manifest-path plugins/api_reference/Cargo.toml --target-dir target/api_reference
           cargo test --manifest-path plugins/docstrings/Cargo.toml --target-dir target/docstrings
+          cargo test --manifest-path plugins/doc_comments/Cargo.toml --target-dir target/doc_comments
 
       - name: Build release
         run: |
           cargo build --release
           cargo build --release --target wasm32-wasip2 --manifest-path plugins/docstrings/Cargo.toml --target-dir target/docstrings
+          cargo build --release --target wasm32-wasip2 --manifest-path plugins/doc_comments/Cargo.toml --target-dir target/doc_comments
