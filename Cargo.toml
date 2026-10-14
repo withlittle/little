@@ -2,6 +2,15 @@
 name = "little"
 version = "0.1.0"
 edition = "2024"
+# The oldest Rust its dependencies build with, wasmtime's. Clippy warns of an
+# API from a later one.
+rust-version = "1.96"
+description = "A little static site generator for documentation"
+license = "MIT"
+repository = "https://github.com/withlittle/little"
+homepage = "https://withlittle.github.io/little"
+keywords = ["documentation", "static-site", "site-generator", "markdown", "jupyter"]
+categories = ["command-line-utilities", "text-processing", "web-programming"]
 
 [dependencies]
 alphanumeric-sort = "1.5.8"
