@@ -11,7 +11,6 @@
 
 use anyhow::{Context, Result, anyhow, bail};
 use std::ffi::OsString;
-use std::hash::{DefaultHasher, Hash, Hasher};
 use std::path::{Component, Path, PathBuf};
 use std::process::Command;
 
@@ -53,21 +52,14 @@ impl Repository {
     /// out, as `Checkout::extract` asks for them.
     pub fn checkout(&self, git_ref: &str) -> Result<Checkout> {
         let commit = self.commit(git_ref)?;
-        let mut hasher = DefaultHasher::new();
-        (&self.top, git_ref).hash(&mut hasher);
-        let name = format!(
-            "little-version-{}-{:x}",
-            std::process::id(),
-            hasher.finish()
-        );
-        // git checks the files out from the top of the repository, so the
-        // folder they go into can't be relative.
-        let dir = std::path::absolute(std::env::temp_dir().join(name))
-            .context("finding the temporary folder")?;
-        // One a build that stopped before it was done left, or the last
-        // build, from the same ref, which may have moved since.
-        let _ = std::fs::remove_dir_all(&dir);
-        let tree = dir.join("tree");
+        // Named at random, and made only if it's new, so no other program can
+        // make it first and read or change the files. Its path is absolute,
+        // as git, which checks them out from the top of the repository, needs.
+        let dir = tempfile::Builder::new()
+            .prefix("little-version-")
+            .tempdir()
+            .context("creating a temporary folder")?;
+        let tree = dir.path().join("tree");
         let site_dir = (self.prefix.split('/'))
             .filter(|name| !name.is_empty())
             .fold(tree.clone(), |dir, name| dir.join(name));
@@ -121,8 +113,8 @@ pub struct Checkout {
     /// The top folder of the repository.
     top: PathBuf,
     /// The folder of the checkout: git's `index` of the commit's files, and
-    /// the `tree` they're checked out into.
-    dir: PathBuf,
+    /// the `tree` they're checked out into. Dropping it removes it.
+    dir: tempfile::TempDir,
     tree: PathBuf,
     /// The site's folder, in the tree.
     site_dir: PathBuf,
@@ -175,7 +167,7 @@ impl Checkout {
         if files.is_empty() {
             return Ok(());
         }
-        let list = self.dir.join("files");
+        let list = self.dir.path().join("files");
         std::fs::write(&list, files).with_context(|| format!("writing {}", list.display()))?;
         let list =
             std::fs::File::open(&list).with_context(|| format!("reading {}", list.display()))?;
@@ -194,14 +186,8 @@ impl Checkout {
     /// index, not the repository's.
     fn git(&self) -> Command {
         let mut command = git(&self.top);
-        command.env("GIT_INDEX_FILE", self.dir.join("index"));
+        command.env("GIT_INDEX_FILE", self.dir.path().join("index"));
         command
-    }
-}
-
-impl Drop for Checkout {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.dir);
     }
 }
 
@@ -408,7 +394,7 @@ pub(crate) mod tests {
 
             // A path can lead out of the site's folder, but not out of the
             // repository, and one to nothing checks out nothing.
-            let outside = checkout.dir.parent().unwrap().join("src");
+            let outside = checkout.dir.path().parent().unwrap().join("src");
             let lib = site.join("../src");
             checkout
                 .extract(&[&lib, &site.join("missing"), &outside])
@@ -432,7 +418,7 @@ pub(crate) mod tests {
             );
 
             // None of it's left once it's done with.
-            let dir = checkout.dir.clone();
+            let dir = checkout.dir.path().to_path_buf();
             drop(checkout);
             assert!(!dir.exists());
         }
