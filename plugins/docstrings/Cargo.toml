@@ -11,6 +11,7 @@ publish = false
 crate-type = ["cdylib"]
 
 [dependencies]
+little-api-reference = { path = "../api_reference" }
 ruff_python_ast = "0.0.16"
 ruff_python_codegen = "0.0.16"
 ruff_python_parser = "0.0.16"

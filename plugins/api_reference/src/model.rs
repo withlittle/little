@@ -1,5 +1,6 @@
 //! What a page documents, read from the code, in no language in particular:
-//! the Python module reads it from Python, and the Markdown module writes it.
+//! a plugin reads it from its language's code, and the Markdown module
+//! writes it.
 
 /// What an object is, which a page labels it with, and groups it by.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

@@ -45,5 +45,7 @@ cargo clippy --manifest-path plugins/docstrings/Cargo.toml --all-targets --targe
   documents.
 - `src/docstring.rs` — reads a docstring's sections, in NumPy's, Google's,
   or Sphinx's style.
-- `src/model.rs` — what a page documents, in no language in particular.
-- `src/markdown.rs` — writes a page's Markdown from what it documents.
+
+What a page documents, in no language in particular, and the Markdown it
+writes from it, are in [`plugins/api_reference/`](../api_reference/), a
+library it shares, with its own tests.

@@ -19,6 +19,10 @@ cargo fmt                   # format — run before committing
 cargo build --release --target wasm32-wasip2 --manifest-path plugins/docstrings/Cargo.toml
 cargo test --manifest-path plugins/docstrings/Cargo.toml
 cargo clippy --manifest-path plugins/docstrings/Cargo.toml --all-targets --target wasm32-wasip2
+
+# the library it shares, in its own workspace
+cargo test --manifest-path plugins/api_reference/Cargo.toml
+cargo clippy --manifest-path plugins/api_reference/Cargo.toml --all-targets
 ```
 
 ## Architecture (keep the core small)
@@ -140,6 +144,9 @@ Content and theme live outside `src/`:
   for each Python module in the folders it reads, from its docstrings, in
   NumPy's, Google's, or Sphinx's style, parsed with Ruff's parser. Its tests
   run natively; only its glue to `wit/plugin.wit` needs WebAssembly.
+- `plugins/api_reference/` — a library, in its own workspace, not a plugin,
+  that the plugins that add an API reference share: what a page documents,
+  in no language in particular, and the Markdown of the page.
 - Project meta (`VISION.md`, `AGENTS.md`, `decisions/`) lives at the repo root.
 
 ## Core principles (do not violate)

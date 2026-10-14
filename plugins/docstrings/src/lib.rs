@@ -5,12 +5,11 @@
 #![cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
 
 mod docstring;
-mod markdown;
-mod model;
 mod python;
 
 use std::path::Path;
 
+use little_api_reference::{markdown, model};
 use serde_json::Value;
 
 use crate::markdown::Listed;
@@ -124,7 +123,7 @@ impl Added {
         let listed = self.add(folder, &entries, dir);
         let markdown = markdown::page(&package, &init, "python", &listed);
         self.pages.push((join(dir, "README.md"), markdown));
-        docstring::summary(&package.docs)
+        markdown::summary(&package.docs)
     }
 
     /// Add the pages of `entries`, which are in `folder`, in `dir`, and give
@@ -145,7 +144,7 @@ impl Added {
                     let markdown = markdown::page(&module, &file, "python", &[]);
                     self.pages
                         .push((join(dir, &format!("{name}.md")), markdown));
-                    (name, format!("{name}.md"), docstring::summary(&module.docs))
+                    (name, format!("{name}.md"), markdown::summary(&module.docs))
                 }
             };
             listed.push(Listed {

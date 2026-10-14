@@ -3,6 +3,7 @@
 
 use ruff_python_parser::parse_expression;
 
+use crate::markdown::fence_for;
 use crate::model::{Item, Items, Section};
 
 /// The sections of `docstring`, as Python writes it in its code.
@@ -26,17 +27,6 @@ pub fn parse(docstring: &str) -> Vec<Section> {
         }
     }
     sections
-}
-
-/// The first paragraph of the text a docstring starts with, on one line.
-pub fn summary(sections: &[Section]) -> String {
-    match sections.first() {
-        Some(Section::Text { title: None, text }) => {
-            let paragraph = text.split("\n\n").next().unwrap_or_default();
-            paragraph.split_whitespace().collect::<Vec<_>>().join(" ")
-        }
-        _ => String::new(),
-    }
 }
 
 /// A docstring as Python's `inspect.cleandoc` tidies it: its tabs expanded,
@@ -237,13 +227,6 @@ fn adorned_title<'a>(lines: &[&'a str], i: usize) -> Option<(&'a str, usize)> {
     }
     let titled = !first.is_empty() && !first.starts_with(' ') && adornment(second);
     (titled && covers(second, first)).then_some((first, 2))
-}
-
-/// The fence for a code block of `code`: three backticks, or more than it
-/// has in a row.
-pub fn fence_for(code: &str) -> String {
-    let longest = (code.split(|c| c != '`')).map(str::len).max().unwrap_or(0);
-    "`".repeat(longest.max(2) + 1)
 }
 
 /// `text` split at each `separator` outside brackets and quotes.
@@ -759,6 +742,7 @@ fn typed(list: &mut Vec<Item>, name: &str, ty: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::markdown::summary;
 
     fn text(text: &str) -> Section {
         Section::Text {
@@ -1258,11 +1242,5 @@ mod tests {
             (Some("defaultdict".into()), None)
         );
         assert_eq!(type_and_default(""), (None, None));
-    }
-
-    #[test]
-    fn a_fence_is_longer_than_the_backticks_in_its_code() {
-        assert_eq!(fence_for("x = 1"), "```");
-        assert_eq!(fence_for("s = '```'"), "````");
     }
 }

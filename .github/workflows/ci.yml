@@ -39,6 +39,7 @@ jobs:
         run: |
           cargo fmt --check
           cargo fmt --check --manifest-path tests/plugin/Cargo.toml
+          cargo fmt --check --manifest-path plugins/api_reference/Cargo.toml
           cargo fmt --check --manifest-path plugins/docstrings/Cargo.toml
 
       - name: Lint (clippy, warnings are errors)
@@ -46,11 +47,13 @@ jobs:
           cargo clippy --all-targets -- -D warnings
           cargo clippy --manifest-path tests/plugin/Cargo.toml --target wasm32-wasip2 --target-dir target/test-plugin -- -D warnings
           cargo clippy --manifest-path tests/plugin/Cargo.toml --target wasm32-wasip2 --target-dir target/test-plugin-pages --features pages -- -D warnings
+          cargo clippy --manifest-path plugins/api_reference/Cargo.toml --all-targets --target-dir target/api_reference -- -D warnings
           cargo clippy --manifest-path plugins/docstrings/Cargo.toml --all-targets --target wasm32-wasip2 --target-dir target/docstrings -- -D warnings
 
       - name: Test
         run: |
           cargo test
+          cargo test --manifest-path plugins/api_reference/Cargo.toml --target-dir target/api_reference
           cargo test --manifest-path plugins/docstrings/Cargo.toml --target-dir target/docstrings
 
       - name: Build release

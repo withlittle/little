@@ -3,7 +3,6 @@
 
 use std::collections::{HashMap, HashSet};
 
-use crate::docstring::{fence_for, summary};
 use crate::model::{Item, Items, Kind, Object, Section};
 
 /// A module or package a package's page lists.
@@ -346,6 +345,25 @@ fn html(text: &str) -> String {
         .replace('"', "&quot;")
 }
 
+/// The first paragraph of the text an object's docs start with, on one
+/// line.
+pub fn summary(sections: &[Section]) -> String {
+    match sections.first() {
+        Some(Section::Text { title: None, text }) => {
+            let paragraph = text.split("\n\n").next().unwrap_or_default();
+            paragraph.split_whitespace().collect::<Vec<_>>().join(" ")
+        }
+        _ => String::new(),
+    }
+}
+
+/// The fence for a code block of `code`: three backticks, or more than it
+/// has in a row.
+pub fn fence_for(code: &str) -> String {
+    let longest = (code.split(|c| c != '`')).map(str::len).max().unwrap_or(0);
+    "`".repeat(longest.max(2) + 1)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -557,5 +575,26 @@ Solve anything.
     fn markup_is_escaped() {
         assert_eq!(escape("linear_systems"), "linear\\_systems");
         assert_eq!(html("a<b>&\"c\""), "a&lt;b&gt;&amp;&quot;c&quot;");
+    }
+
+    #[test]
+    fn a_summary_is_the_first_paragraph_on_one_line() {
+        let docs = [Section::Text {
+            title: None,
+            text: "A summary\nover two lines.\n\nMore.".to_string(),
+        }];
+        assert_eq!(summary(&docs), "A summary over two lines.");
+        let titled = [Section::Text {
+            title: Some("Notes".to_string()),
+            text: "Not a summary.".to_string(),
+        }];
+        assert_eq!(summary(&titled), "");
+        assert_eq!(summary(&[]), "");
+    }
+
+    #[test]
+    fn a_fence_is_longer_than_the_backticks_in_its_code() {
+        assert_eq!(fence_for("x = 1"), "```");
+        assert_eq!(fence_for("s = '```'"), "````");
     }
 }

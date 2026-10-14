@@ -62,7 +62,7 @@ The tests build a [plugin](./docs/plugins/writing-a-plugin.md),
 [`rust-toolchain.toml`](./rust-toolchain.toml) has rustup install.
 The [`docstrings`](./plugins/docstrings/) plugin is a crate of its own, with
 its own tests, which its [README](./plugins/docstrings/README.md#developing-it)
-says how to run.
+says how to run, as is the [library](./plugins/api_reference/) it shares.
 
 See [`AGENTS.md`](./AGENTS.md) for architecture and conventions,
 [`VISION.md`](./VISION.md) for where little is headed, and
