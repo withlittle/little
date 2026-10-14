@@ -3,7 +3,9 @@
 - Status: accepted; amended by [0012](./0012-hidden-files.md), which leaves
   hidden folders in the source, `.little/` included, out of the site, and by
   [0029](./0029-plugins-that-render-code-blocks.md), which downloads a
-  plugin's `.wasm` file the same way, into `.little/plugins/`
+  plugin's `.wasm` file the same way, into `.little/plugins/`, and by
+  [0045](./0045-limits-on-downloads.md), which stops a download that takes
+  too long or is too big, and an archive that unpacks to too much
 - Date: 2026-09-28
 - Amends: [0003](./0003-choosing-and-layering-themes.md)
 

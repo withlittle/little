@@ -111,9 +111,9 @@ cargo clippy --manifest-path plugins/api_reference/Cargo.toml --all-targets
   grass, loading only from the theme's `_sass/`, and names the real file of
   each error and warning.
 - `src/download.rs` — a theme downloaded from a URL: fetched over HTTPS,
-  unpacked from its `.zip` or `.tar.gz`, and kept in the site's `.little/`, so
-  it's downloaded only once; and a plugin's `.wasm` file, kept in
-  `.little/plugins/`.
+  within limits of time and size, unpacked from its `.zip` or `.tar.gz`, up
+  to 1 GB, and kept in the site's `.little/`, so it's downloaded only once;
+  and a plugin's `.wasm` file, kept in `.little/plugins/`.
 - `src/server.rs` — dev server + file watcher + live reload, watching the
   config, source, themes, plugins, and the folders they read; builds every
   version again on each change, but doesn't watch git refs; checks the
@@ -487,3 +487,10 @@ Record notable choices as short ADRs in `decisions/`. Locked so far:
   `plugins/api_reference/`. The manual documents little with it, at
   `/api/` — see
   [`decisions/0044-a-plugin-for-rusts-doc-comments.md`](./decisions/0044-a-plugin-for-rusts-doc-comments.md).
+- **Limits on downloads:** a download of a theme or a plugin stops if the
+  server takes over 30 seconds to connect, or 30 more to answer, or if it
+  takes over 5 minutes in all, or is over 200 MB, with ureq's own limits,
+  and a theme's archive stops unpacking once the bytes it writes come to
+  over 1 GB. Nothing is kept, and the error says which limit it hit; the
+  limits are fixed, in `src/download.rs`, not settings — see
+  [`decisions/0045-limits-on-downloads.md`](./decisions/0045-limits-on-downloads.md).

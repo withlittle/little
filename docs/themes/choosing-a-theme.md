@@ -101,6 +101,11 @@ theme: https://github.com/withlittle/theme-bootstrap/archive/refs/tags/0.0.1.tar
 - Downloads are over HTTPS only, and little can't sign in, so a private
   repository's archive answers 404. For safety, an archive holding symlinks,
   hard links, or paths that lead out of it is an error.
+- A download stops if the server takes over 30 seconds to connect, or 30
+  more to answer, or if it takes over 5 minutes in all, or is over 200 MB;
+  and an archive whose files come to over 1 GB is an error. On a slow
+  connection, download and unpack the archive yourself, and set `theme` to
+  the theme's folder.
 - `little serve` doesn't watch a downloaded theme, as it never changes.
 
 ## Building on another theme
