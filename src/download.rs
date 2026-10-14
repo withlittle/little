@@ -16,16 +16,35 @@
 //! archives of a tag or a branch do, and a plugin is a `.wasm` file. little
 //! never downloads a URL again: to pick up changes to a branch's archive,
 //! delete `.little/`.
+//!
+//! A download stops if the server takes over 30 seconds to connect, or 30
+//! more to answer, or if it takes over 5 minutes in all, or is over 200 MB.
+//! A theme's archive stops unpacking at 1 GB, as a small one can unpack to
+//! fill the disk.
 
 use anyhow::{Context, Result, anyhow, bail};
 use std::fs;
 use std::io::{Cursor, Read};
 use std::path::{Component, Path, PathBuf};
+use std::time::Duration;
 
 /// The folder in a site that little keeps its downloads in.
 const CACHE_DIR: &str = ".little";
 /// What `.little/.gitignore` holds: it ignores everything, itself included.
 const GITIGNORE: &str = "# little's downloads. Delete this folder to download them again.\n*\n";
+
+/// How long a server has to connect, and then to answer.
+const ANSWER_TIME: Duration = Duration::from_secs(30);
+/// How long a download has, from start to finish, redirects included.
+const DOWNLOAD_TIME: Duration = Duration::from_secs(5 * 60);
+/// The most little downloads, which it holds in memory: far more than a theme
+/// or a plugin needs.
+const MAX_DOWNLOAD: u64 = 200 * MB;
+/// The most a theme's archive unpacks to, across all its files.
+const MAX_UNPACKED: u64 = GB;
+// Sizes as people write them, in powers of ten.
+const MB: u64 = 1_000_000;
+const GB: u64 = 1_000 * MB;
 
 /// The folder `url`'s theme is kept in, in the site at `site_dir`.
 pub fn folder(site_dir: &Path, url: &str) -> PathBuf {
@@ -125,9 +144,9 @@ fn save(archive: &[u8], site_dir: &Path, unpacking: &Path, dir: &Path) -> Result
     let _ = fs::remove_dir_all(unpacking); // left by a build that was stopped
     create_dir(unpacking)?;
     if is_zip {
-        unpack_zip(archive, unpacking)?;
+        unpack_zip(archive, unpacking, MAX_UNPACKED)?;
     } else {
-        unpack_tar_gz(archive, unpacking)?;
+        unpack_tar_gz(archive, unpacking, MAX_UNPACKED)?;
     }
     let top = single_folder(unpacking)?;
     match fs::rename(&top, dir) {
@@ -155,9 +174,11 @@ fn make_cache(site_dir: &Path, kind: &str) -> Result<()> {
 // is unpacked into. A link could point anywhere, like `~/.ssh`, and a build
 // would copy what it points at into the site.
 
-/// Unpack the .zip `archive` into `dest`.
-fn unpack_zip(archive: &[u8], dest: &Path) -> Result<()> {
+/// Unpack the .zip `archive` into `dest`, unless it unpacks to over `limit`
+/// bytes.
+fn unpack_zip(archive: &[u8], dest: &Path, limit: u64) -> Result<()> {
     let mut zip = zip::ZipArchive::new(Cursor::new(archive))?;
+    let mut unpacked = 0;
     for i in 0..zip.len() {
         let mut entry = zip.by_index(i)?;
         let name = entry.name().to_string();
@@ -171,15 +192,17 @@ fn unpack_zip(archive: &[u8], dest: &Path) -> Result<()> {
         if entry.is_dir() {
             create_dir(&dest.join(path))?;
         } else {
-            write_file(&dest.join(path), &mut entry)?;
+            write_file(&dest.join(path), &mut entry, &mut unpacked, limit)?;
         }
     }
     Ok(())
 }
 
-/// Unpack the .tar.gz `archive` into `dest`.
-fn unpack_tar_gz(archive: &[u8], dest: &Path) -> Result<()> {
+/// Unpack the .tar.gz `archive` into `dest`, unless it unpacks to over
+/// `limit` bytes.
+fn unpack_tar_gz(archive: &[u8], dest: &Path, limit: u64) -> Result<()> {
     let mut tar = tar::Archive::new(flate2::read::GzDecoder::new(archive));
+    let mut unpacked = 0;
     for entry in tar.entries()? {
         let mut entry = entry?;
         let kind = entry.header().entry_type();
@@ -200,7 +223,7 @@ fn unpack_tar_gz(archive: &[u8], dest: &Path) -> Result<()> {
         } else if kind.is_dir() {
             create_dir(&dest.join(&path))?;
         } else if kind.is_file() {
-            write_file(&dest.join(&path), &mut entry)?;
+            write_file(&dest.join(&path), &mut entry, &mut unpacked, limit)?;
         } else {
             bail!("`{name}` isn't a file or a folder");
         }
@@ -237,38 +260,86 @@ fn create_dir(path: &Path) -> Result<()> {
     fs::create_dir_all(path).with_context(|| format!("creating {}", path.display()))
 }
 
-/// Write everything `contents` reads to a new file at `path`.
-fn write_file(path: &Path, contents: &mut impl Read) -> Result<()> {
+/// Write what `contents` reads to a new file at `path`, adding its size to
+/// `unpacked`, the bytes its archive has unpacked to so far, which can't go
+/// over `limit`.
+fn write_file(path: &Path, contents: &mut impl Read, unpacked: &mut u64, limit: u64) -> Result<()> {
     if let Some(parent) = path.parent() {
         create_dir(parent)?;
     }
     let mut file =
         fs::File::create(path).with_context(|| format!("creating {}", path.display()))?;
-    std::io::copy(contents, &mut file).with_context(|| format!("writing {}", path.display()))?;
+    // A byte more than is left, to tell if there's more.
+    let mut contents = contents.take(limit - *unpacked + 1);
+    *unpacked += std::io::copy(&mut contents, &mut file)
+        .with_context(|| format!("writing {}", path.display()))?;
+    if *unpacked > limit {
+        bail!(
+            "it unpacks to over {}, the most little unpacks",
+            size(limit)
+        );
+    }
     Ok(())
 }
 
 /// Download `url`, following redirects (GitHub serves archives from another
-/// host), but only over HTTPS. As with other tools, a proxy named by
-/// `HTTPS_PROXY`, `ALL_PROXY`, or `HTTP_PROXY` is used, except for the hosts
-/// in `NO_PROXY`.
+/// host), but only over HTTPS, and within `ANSWER_TIME`, `DOWNLOAD_TIME`, and
+/// `MAX_DOWNLOAD`. As with other tools, a proxy named by `HTTPS_PROXY`,
+/// `ALL_PROXY`, or `HTTP_PROXY` is used, except for the hosts in `NO_PROXY`.
 fn fetch(url: &str) -> Result<Vec<u8>> {
     let agent: ureq::Agent = ureq::Agent::config_builder()
         .https_only(true)
+        .timeout_connect(Some(ANSWER_TIME))
+        .timeout_recv_response(Some(ANSWER_TIME))
+        .timeout_global(Some(DOWNLOAD_TIME))
         .build()
         .into();
-    let mut response = agent.get(url).call().map_err(|e| match e {
+    let mut response = agent.get(url).call().map_err(explain)?;
+    response
+        .body_mut()
+        .with_config()
+        .limit(MAX_DOWNLOAD)
+        .read_to_vec()
+        .map_err(explain)
+}
+
+/// What went wrong with a download, to finish the sentence "little couldn't
+/// download it: …".
+fn explain(error: ureq::Error) -> anyhow::Error {
+    match error {
         ureq::Error::StatusCode(code) => {
             let status = ureq::http::StatusCode::from_u16(code)
                 .map_or_else(|_| code.to_string(), |status| status.to_string());
             anyhow!("the server answered {status}")
         }
+        // The one deadline that runs from start to finish.
+        ureq::Error::Timeout(ureq::Timeout::Global) => {
+            anyhow!("it took over {} minutes", DOWNLOAD_TIME.as_secs() / 60)
+        }
+        ureq::Error::Timeout(_) => {
+            anyhow!(
+                "the server didn't answer in {} seconds",
+                ANSWER_TIME.as_secs()
+            )
+        }
+        ureq::Error::BodyExceedsLimit(_) => {
+            anyhow!(
+                "it's over {}, the most little downloads",
+                size(MAX_DOWNLOAD)
+            )
+        }
         ureq::Error::Io(e) => e.into(),
         e => e.into(),
-    })?;
-    let mut archive = Vec::new();
-    response.body_mut().as_reader().read_to_end(&mut archive)?;
-    Ok(archive)
+    }
+}
+
+/// `bytes` as a person would write it, like `200 MB`, or `1 GB`.
+fn size(bytes: u64) -> String {
+    if bytes >= GB {
+        format!("{} GB", bytes / GB)
+    } else {
+        format!("{} MB", bytes / MB)
+    }
 }
 
 /// The name of the folder `url`'s theme, or the file its plugin, is kept in:
@@ -558,6 +629,50 @@ mod tests {
     }
 
     #[test]
+    fn an_archive_unpacks_to_no_more_than_its_limit() {
+        let site = scratch("limit");
+        let dest = site.join("unpacked");
+        // Zeros, which pack small, as a zip bomb's do.
+        let half = vec![0; (MB / 2) as usize];
+        let double = vec![0; (2 * MB) as usize];
+        let unpack = |files: &[(&str, &[u8])]| {
+            let mut tar = vec![(EntryType::Directory, "theme/", &[][..])];
+            tar.extend(
+                files
+                    .iter()
+                    .map(|&(path, data)| (EntryType::Regular, path, data)),
+            );
+            let mut entries = vec![("theme/", &[][..])];
+            entries.extend_from_slice(files);
+            [
+                unpack_tar_gz(&tar_gz(&tar), &dest, MB),
+                unpack_zip(&zip(&entries), &dest, MB),
+            ]
+            .map(|unpacked| unpacked.map_err(|e| e.to_string()))
+        };
+
+        // 1 MB, across its files, is the most it unpacks to...
+        let fits = [("theme/a", &half[..]), ("theme/b", &half[..])];
+        assert_eq!(unpack(&fits), [Ok(()), Ok(())]);
+        // ...and a byte more is too much.
+        let over: Result<(), _> =
+            Err("it unpacks to over 1 MB, the most little unpacks".to_string());
+        let more = [
+            ("theme/a", &half[..]),
+            ("theme/b", &half[..]),
+            ("theme/c", &[0]),
+        ];
+        assert_eq!(unpack(&more), [over.clone(), over.clone()]);
+        // A file that's too big is written only to that byte.
+        assert_eq!(unpack(&[("theme/big", &double[..])]), [over.clone(), over]);
+        let written = fs::metadata(dest.join("theme/big")).unwrap().len();
+        assert_eq!(written, MB + 1);
+
+        assert_eq!(size(MAX_UNPACKED), "1 GB");
+        let _ = fs::remove_dir_all(&site);
+    }
+
+    #[test]
     fn a_plugin_is_downloaded_once_into_its_own_file() {
         let site = scratch("plugin");
         let url = "https://example.invalid/bob-1.0.wasm";
@@ -597,6 +712,25 @@ mod tests {
 
         assert!(!site.join(CACHE_DIR).exists());
         let _ = fs::remove_dir_all(&site);
+    }
+
+    #[test]
+    fn a_download_that_fails_says_why() {
+        let why = |error| explain(error).to_string();
+        let status = why(ureq::Error::StatusCode(404));
+        assert_eq!(status, "the server answered 404 Not Found");
+        // Too slow to connect, or to answer once it has.
+        let silent = "the server didn't answer in 30 seconds";
+        assert_eq!(why(ureq::Error::Timeout(ureq::Timeout::Connect)), silent);
+        assert_eq!(
+            why(ureq::Error::Timeout(ureq::Timeout::RecvResponse)),
+            silent
+        );
+        // Too slow, or too much, in all.
+        let slow = why(ureq::Error::Timeout(ureq::Timeout::Global));
+        assert_eq!(slow, "it took over 5 minutes");
+        let big = why(ureq::Error::BodyExceedsLimit(MAX_DOWNLOAD));
+        assert_eq!(big, "it's over 200 MB, the most little downloads");
     }
 
     #[test]

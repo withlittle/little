@@ -2,6 +2,15 @@
 name = "little"
 version = "0.1.0"
 edition = "2024"
+# The oldest Rust its dependencies build with, wasmtime's. Clippy warns of an
+# API from a later one.
+rust-version = "1.96"
+description = "A little static site generator for documentation"
+license = "MIT"
+repository = "https://github.com/withlittle/little"
+homepage = "https://withlittle.github.io/little"
+keywords = ["documentation", "static-site", "site-generator", "markdown", "jupyter"]
+categories = ["command-line-utilities", "text-processing", "web-programming"]
 
 [dependencies]
 alphanumeric-sort = "1.5.8"
@@ -17,6 +26,7 @@ grass = { version = "0.13.4", default-features = false, features = ["random"] }
 lychee-lib = { version = "0.24.2", default-features = false }
 math-core = "0.8.2"
 merman = { version = "0.7.0", features = ["render"] }
+mime_guess = { version = "2.0.5", default-features = false }
 minijinja = { version = "2.24.0", features = ["loader"] }
 notify = "8.2.0"
 notify-debouncer-mini = "0.7.0"
@@ -28,6 +38,7 @@ serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 serde_yaml = "0.9.34"
 tar = { version = "0.4.46", default-features = false }
+tempfile = "3.27.0"
 time = "0.3.55"
 tiny_http = "0.12.0"
 tokio = { version = "1.53.1", features = ["rt-multi-thread"] }
@@ -38,3 +49,9 @@ walkdir = "2.5.0"
 wasmtime = { version = "49.0.2", default-features = false, features = ["anyhow", "runtime", "std", "cranelift", "component-model", "parallel-compilation"] }
 wasmtime-wasi = { version = "49.0.2", default-features = false, features = ["p2"] }
 zip = { version = "8.6.0", default-features = false, features = ["deflate-flate2"] }
+
+# Without its symbols, which only name the frames of a panic's backtrace,
+# little is a fifth smaller. LTO isn't worth its build time: thin LTO made it
+# no smaller, and fat LTO a further 30% smaller, but many times as slow.
+[profile.release]
+strip = true

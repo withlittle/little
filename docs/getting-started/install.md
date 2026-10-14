@@ -7,7 +7,7 @@ description: Build little from source with Rust, and check it works.
 
 little is a single binary, with no runtime, no `node_modules`, and no version
 managers. There are no prebuilt binaries yet, so build it from source, with
-a recent stable [Rust toolchain](https://rustup.rs).
+[Rust](https://rustup.rs) 1.96 or later.
 
 ## Build it from source
 

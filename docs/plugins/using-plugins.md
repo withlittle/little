@@ -38,7 +38,9 @@ plugins:
   a [theme](../themes/choosing-a-theme.md). A URL must start with
   `https://`: the first build downloads it into the site's
   `.little/plugins/`, and little never downloads that URL again, so later
-  builds work offline. To use another version, change the URL.
+  builds work offline. To use another version, change the URL. A download
+  stops, as a [theme's](../themes/choosing-a-theme.md#downloading-a-theme)
+  does, if it takes over 5 minutes, or is over 200 MB.
 - A theme can name plugins in its `little.yml`, for its sites to use, and
   the site's `little.yml` has the last word, plugin by plugin and setting by
   setting, so a site can change a setting of its theme's plugin, or turn one
