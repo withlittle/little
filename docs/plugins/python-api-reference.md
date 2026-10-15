@@ -1,20 +1,24 @@
 ---
 title: Python API reference
-description: Add a page for each module of a Python package, from its docstrings, with the docstrings plugin.
+description: Add a page for each module of a Python package, from its docstrings, with the pydoc plugin.
 ---
 
 # Python API reference
 
 little's repository has a plugin,
-[`docstrings`](https://github.com/withlittle/little/tree/main/plugins/docstrings),
+[`pydoc`](https://github.com/withlittle/little/tree/main/plugins/pydoc),
 that adds an API reference to a site: a page for each module and package of
 a Python package, built from its docstrings, in NumPy's, Google's, or
 Sphinx's style, as [mkdocstrings](https://mkdocstrings.github.io/) builds
-them. It reads the package's code with
-[Ruff](https://github.com/astral-sh/ruff)'s parser, without running it, so it
-needs neither Python nor the package's dependencies, and a site builds the
-same each time, offline. Why it works as it does is in
-[ADR 0031](https://github.com/withlittle/little/blob/main/decisions/0031-a-plugin-for-pythons-docstrings.md).
+them. It's named for Python's own
+[pydoc](https://docs.python.org/3/library/pydoc.html), but doesn't run it: it
+reads the package's code with [Ruff](https://github.com/astral-sh/ruff)'s
+parser, without running it, so it needs neither Python nor the package's
+dependencies, and a site builds the same each time, offline. Why it works as
+it does is in
+[ADR 0031](https://github.com/withlittle/little/blob/main/decisions/0031-a-plugin-for-pythons-docstrings.md),
+and why it's named so, in
+[ADR 0047](https://github.com/withlittle/little/blob/main/decisions/0047-naming-api-reference-plugins.md).
 
 ## Building it
 
@@ -23,11 +27,11 @@ repository:
 
 ```sh
 rustup target add wasm32-wasip2
-cargo build --release --target wasm32-wasip2 --manifest-path plugins/docstrings/Cargo.toml
+cargo build --release --target wasm32-wasip2 --manifest-path plugins/pydoc/Cargo.toml
 ```
 
 That builds
-`plugins/docstrings/target/wasm32-wasip2/release/little_docstrings.wasm`,
+`plugins/pydoc/target/wasm32-wasip2/release/little_pydoc.wasm`,
 about 1.6 MB, which a site can name where it is, or copy into its folder.
 
 ## Using it
@@ -37,8 +41,8 @@ Name it in your site's `little.yml`, with the folder your package is in:
 ```yaml
 # little.yml
 plugins:
-  docstrings:
-    wasm: ./little_docstrings.wasm
+  pydoc:
+    wasm: ./little_pydoc.wasm
     read: ./mypackage
 ```
 
@@ -140,12 +144,12 @@ in `read` with no package or module in it, and `little build --strict`
 fails on each:
 
 ```text
-warning: plugin `docstrings`: can't parse `mypackage/broken.py`: Expected a parameter or the end of the parameter list on line 3
+warning: plugin `pydoc`: can't parse `mypackage/broken.py`: Expected a parameter or the end of the parameter list on line 3
 ```
 
 ## Limits, for now
 
-- It reads only Python; [`doc_comments`](rust-api-reference.md) reads Rust.
+- It reads only Python; [`rustdoc`](rust-api-reference.md) reads Rust.
 - A type isn't linked to its class's heading, nor to another module's page.
 - An object a package imports from a module whose name starts with `_`
   isn't documented, as the plugin documents an object where it's defined.

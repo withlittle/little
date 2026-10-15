@@ -148,7 +148,7 @@ files: func(paths: list<string>) -> result<changes, string>;
   files do.
 - A page a plugin adds has no file in the site's repository, so no
   `page.source_url` or `page.edit_url`, and a warning about it, like a
-  broken link in it, names it as ``plugin `docstrings`'s reference/README.md``.
+  broken link in it, names it as ``plugin `pydoc`'s reference/README.md``.
 
 ## source
 
@@ -286,7 +286,7 @@ with the site's config and theme. Its `destination` hook sees only the
 files in its own folder, and a warning from its plugins names its ref:
 
 ```text
-warning: plugin `docstrings` at v1.4: can't parse `mypackage/broken.py`: …
+warning: plugin `pydoc` at v1.4: can't parse `mypackage/broken.py`: …
 ```
 
 ## Limits, for now

@@ -60,13 +60,12 @@ cargo run -- build --strict    # build the manual, and check its links
 The tests build a [plugin](./docs/plugins/writing-a-plugin.md),
 [`tests/plugin/`](./tests/plugin/), with Rust's `wasm32-wasip2` target, which
 [`rust-toolchain.toml`](./rust-toolchain.toml) has rustup install.
-The [`docstrings`](./plugins/docstrings/) and
-[`doc_comments`](./plugins/doc_comments/) plugins are crates of their own,
-with their own tests, which their READMEs say how to run, as is the
-[library](./plugins/api_reference/) they share. The manual documents
-little's own code with `doc_comments`, so
-[build it](./plugins/doc_comments/README.md#building-it) before you build
-the manual.
+The [`pydoc`](./plugins/pydoc/) and [`rustdoc`](./plugins/rustdoc/) plugins
+are crates of their own, with their own tests, which their READMEs say how
+to run, as is the [library](./plugins/api_reference/) they share. The manual
+documents little's own code with `rustdoc`, so
+[build it](./plugins/rustdoc/README.md#building-it) before you build the
+manual.
 
 See [`AGENTS.md`](./AGENTS.md) for architecture and conventions,
 [`VISION.md`](./VISION.md) for where little is headed, and

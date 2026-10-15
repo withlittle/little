@@ -127,8 +127,8 @@ a version from a `ref` can set its own `nav` and `plugins`, beside its
 ```yaml
 # little.yml
 plugins:
-  docstrings:
-    wasm: ./little_docstrings.wasm
+  pydoc:
+    wasm: ./little_pydoc.wasm
     read: ./src
 versions:
   - title: "2.0"
@@ -140,13 +140,13 @@ versions:
       - { title: Home, url: / }
       - { title: Install, url: /guide/install }
     plugins:
-      docstrings:
+      pydoc:
         read: ./lib   # where its code was, at v1.4
   - title: "1.3"
     url: /1.3
     ref: v1.3
     plugins:
-      docstrings: false   # 1.3 had no API reference
+      pydoc: false   # 1.3 had no API reference
 ```
 
 - Its `nav` is written as the [site's](navigation.md#writing-the-nav-yourself)
@@ -155,7 +155,7 @@ versions:
   were the site's: little adds the version's `url`, so 1.4's
   `/guide/install` is at `/1.4/guide/install`.
 - Its `plugins` go over the site's, setting by setting, as the site's go
-  over a theme's, so 1.4's `docstrings` has the site's `wasm`, but its own
+  over a theme's, so 1.4's `pydoc` has the site's `wasm`, but its own
   `read`. A `read` there is from the site's folder at the version's `ref`,
   as its `source` is. `false` turns a plugin off for that version alone.
 - It can set only plugins the site uses, and can't give one a `.wasm` file,

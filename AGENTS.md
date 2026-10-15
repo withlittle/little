@@ -15,15 +15,15 @@ cargo test                  # run tests (they build tests/plugin for wasm32-wasi
 cargo clippy --all-targets  # lint — keep it clean
 cargo fmt                   # format — run before committing
 
-# the doc_comments plugin, which the manual uses: build it before the manual
-cargo build --release --target wasm32-wasip2 --manifest-path plugins/doc_comments/Cargo.toml
-cargo test --manifest-path plugins/doc_comments/Cargo.toml
-cargo clippy --manifest-path plugins/doc_comments/Cargo.toml --all-targets --target wasm32-wasip2
+# the rustdoc plugin, which the manual uses: build it before the manual
+cargo build --release --target wasm32-wasip2 --manifest-path plugins/rustdoc/Cargo.toml
+cargo test --manifest-path plugins/rustdoc/Cargo.toml
+cargo clippy --manifest-path plugins/rustdoc/Cargo.toml --all-targets --target wasm32-wasip2
 
-# the docstrings plugin, in its own workspace
-cargo build --release --target wasm32-wasip2 --manifest-path plugins/docstrings/Cargo.toml
-cargo test --manifest-path plugins/docstrings/Cargo.toml
-cargo clippy --manifest-path plugins/docstrings/Cargo.toml --all-targets --target wasm32-wasip2
+# the pydoc plugin, in its own workspace
+cargo build --release --target wasm32-wasip2 --manifest-path plugins/pydoc/Cargo.toml
+cargo test --manifest-path plugins/pydoc/Cargo.toml
+cargo clippy --manifest-path plugins/pydoc/Cargo.toml --all-targets --target wasm32-wasip2
 
 # the library they share, in its own workspace
 cargo test --manifest-path plugins/api_reference/Cargo.toml
@@ -132,7 +132,7 @@ Content and theme live outside `src/`:
   uses what it documents, where it can, and the README links to it. Pages
   link to each other by their files, and to little's own files on GitHub.
   Meta docs, like ADRs, don't go here. little's own API, which the
-  `doc_comments` plugin adds from `src/`'s doc comments, is at `/api/`, with
+  `rustdoc` plugin adds from `src/`'s doc comments, is at `/api/`, with
   no file in `docs/`.
 - `theme/` — little's built-in theme, compiled into the binary: `_templates/`
   (MiniJinja; `default.html` is required) + `_static/` (copied to the site's
@@ -143,7 +143,7 @@ Content and theme live outside `src/`:
   writes. Its header has a menu of a site's versions, when it has two or
   more.
 - `little.yml` — the manual's config: its `url`, `repo`, and `nav`, which
-  orders its pages by hand, and the `doc_comments` plugin, which documents
+  orders its pages by hand, and the `rustdoc` plugin, which documents
   `src/` at `/api/`, from where Cargo builds its `.wasm` file. It sets
   `theme: ./theme`, so edits to the built-in theme live-reload.
 - `wit/plugin.wit` — `little:plugin@0.2.0`: an interface for each hook a
@@ -154,18 +154,18 @@ Content and theme live outside `src/`:
   build for `wasm32-wasip2` (which `rust-toolchain.toml` asks rustup for) and
   drive, hook by hook, to check what plugins can and can't do: it exports
   every hook, and each does what its settings say.
-- `plugins/docstrings/` — the `docstrings` plugin, a crate in its own
+- `plugins/pydoc/` — the `pydoc` plugin, a crate in its own
   workspace, built for `wasm32-wasip2`, that adds an API reference, with the
   `files` hook: a page
   for each Python module in the folders it reads, from its docstrings, in
   NumPy's, Google's, or Sphinx's style, parsed with Ruff's parser. Its tests
   run natively; only its glue to `wit/plugin.wit` needs WebAssembly.
-- `plugins/doc_comments/` — the `doc_comments` plugin, a crate in its own
+- `plugins/rustdoc/` — the `rustdoc` plugin, a crate in its own
   workspace, built for `wasm32-wasip2`, that adds an API reference, with the
   `files` hook: a page
   for a Rust crate and each of its modules, from their doc comments, parsed
   with syn, and with intra-doc links led to their items. The manual uses it
-  on `src/`. Its tests run natively, as docstrings' do.
+  on `src/`. Its tests run natively, as pydoc's do.
 - `plugins/api_reference/` — a library, in its own workspace, not a plugin,
   that the plugins that add an API reference share: what a page documents,
   in no language in particular, and the Markdown of the page.
@@ -379,7 +379,7 @@ Record notable choices as short ADRs in `decisions/`. Locked so far:
   plugin's page stops the build, as does an error from `files`, or a crash.
   What a plugin warns of is warned of, and `--strict` fails on it — see
   [`decisions/0030-plugins-that-add-pages.md`](./decisions/0030-plugins-that-add-pages.md).
-- **A plugin for Python's docstrings:** `plugins/docstrings/`, in little's
+- **A plugin for Python's docstrings:** `plugins/pydoc/`, in little's
   repository, in its own workspace, adds a page for each module and package
   in the folders it reads, under `url`, `/reference` by default, like
   mkdocstrings', parsing Python with Ruff's parser, without running it, and
@@ -486,13 +486,13 @@ Record notable choices as short ADRs in `decisions/`. Locked so far:
   little's there, like `theme` or `search`, stops the build; any other key
   is for the theme — see
   [`decisions/0043-a-versions-own-nav-and-plugins.md`](./decisions/0043-a-versions-own-nav-and-plugins.md).
-- **A plugin for Rust's doc comments:** `plugins/doc_comments/`, in its own
+- **A plugin for Rust's doc comments:** `plugins/rustdoc/`, in its own
   workspace, adds a page for a crate and each of its modules, `pub` or not,
-  under `url`, `/reference/<crate>` by default, like rustdoc's, parsing Rust
-  with syn, without compiling it, from the one folder it reads, with
-  `lib.rs` or `main.rs`, and `crate`, its name. It documents each `pub`
-  item with docs where it's defined, leads intra-doc links to their items,
-  and shares its model and Markdown with docstrings, in
+  under `url`, `/reference/<crate>` by default, like Rust's own rustdoc's,
+  parsing Rust with syn, without compiling it, from the one folder it
+  reads, with `lib.rs` or `main.rs`, and `crate`, its name. It documents
+  each `pub` item with docs where it's defined, leads intra-doc links to
+  their items, and shares its model and Markdown with `pydoc`, in
   `plugins/api_reference/`. The manual documents little with it, at
   `/api/` — see
   [`decisions/0044-a-plugin-for-rusts-doc-comments.md`](./decisions/0044-a-plugin-for-rusts-doc-comments.md).
@@ -516,3 +516,13 @@ Record notable choices as short ADRs in `decisions/`. Locked so far:
   links are checked in what `html` gives back. A plugin built for 0.1.0
   doesn't load — see
   [`decisions/0046-plugin-hooks.md`](./decisions/0046-plugin-hooks.md).
+- **Naming API reference plugins:** a plugin that adds an API reference
+  from a language's code is named `<language>doc`, as the language's own
+  tool is: `rustdoc`, for Rust's doc comments, and `pydoc`, for Python's
+  docstrings, in place of `doc_comments` and `docstrings`, which other
+  languages write too; `jsdoc` and `godoc` would follow. The name is its
+  folder in `plugins/`, its crate, `little-rustdoc`, its `.wasm` file,
+  `little_rustdoc.wasm`, and its entry in the manual's `plugins`. Neither
+  runs its language's tool, and its page says so first; the manual's pages
+  keep their names, like "Rust API reference" — see
+  [`decisions/0047-naming-api-reference-plugins.md`](./decisions/0047-naming-api-reference-plugins.md).

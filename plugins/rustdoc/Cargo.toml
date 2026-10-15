@@ -1,5 +1,5 @@
 [package]
-name = "little-doc-comments"
+name = "little-rustdoc"
 version = "0.1.0"
 edition = "2024"
 description = "A plugin for little that builds an API reference from Rust's doc comments"

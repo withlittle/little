@@ -383,7 +383,7 @@ name = "little-api-reference"
 version = "0.1.0"
 
 [[package]]
-name = "little-docstrings"
+name = "little-pydoc"
 version = "0.1.0"
 dependencies = [
  "little-api-reference",

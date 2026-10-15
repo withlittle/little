@@ -1,19 +1,22 @@
 ---
 title: Rust API reference
-description: Add a page for a Rust crate and each of its modules, from their doc comments, with the doc_comments plugin.
+description: Add a page for a Rust crate and each of its modules, from their doc comments, with the rustdoc plugin.
 ---
 
 # Rust API reference
 
 little's repository has a plugin,
-[`doc_comments`](https://github.com/withlittle/little/tree/main/plugins/doc_comments),
+[`rustdoc`](https://github.com/withlittle/little/tree/main/plugins/rustdoc),
 that adds an API reference to a site: a page for a Rust crate and each of its
-modules, built from their doc comments, as
-[rustdoc](https://doc.rust-lang.org/rustdoc/) builds them. It reads the
-crate's code with [syn](https://github.com/dtolnay/syn)'s parser, without
-compiling it, so it needs neither Cargo nor the crate's dependencies, and a
-site builds the same each time, offline. Why it works as it does is in
-[ADR 0044](https://github.com/withlittle/little/blob/main/decisions/0044-a-plugin-for-rusts-doc-comments.md).
+modules, built from their doc comments, as Rust's own
+[rustdoc](https://doc.rust-lang.org/rustdoc/) builds them. It's named for
+rustdoc, but doesn't run it: it reads the crate's code with
+[syn](https://github.com/dtolnay/syn)'s parser, without compiling it, so it
+needs neither Cargo nor the crate's dependencies, and a site builds the same
+each time, offline. Why it works as it does is in
+[ADR 0044](https://github.com/withlittle/little/blob/main/decisions/0044-a-plugin-for-rusts-doc-comments.md),
+and why it's named so, in
+[ADR 0047](https://github.com/withlittle/little/blob/main/decisions/0047-naming-api-reference-plugins.md).
 
 This manual uses it on little's own code: [little's API](../api/README.md)
 is a page for each of little's modules, for those who work on little.
@@ -25,11 +28,11 @@ repository:
 
 ```sh
 rustup target add wasm32-wasip2
-cargo build --release --target wasm32-wasip2 --manifest-path plugins/doc_comments/Cargo.toml
+cargo build --release --target wasm32-wasip2 --manifest-path plugins/rustdoc/Cargo.toml
 ```
 
 That builds
-`plugins/doc_comments/target/wasm32-wasip2/release/little_doc_comments.wasm`,
+`plugins/rustdoc/target/wasm32-wasip2/release/little_rustdoc.wasm`,
 about 1.2 MB, which a site can name where it is, or copy into its folder.
 
 ## Using it
@@ -40,8 +43,8 @@ and the crate's name:
 ```yaml
 # little.yml
 plugins:
-  doc_comments:
-    wasm: ./little_doc_comments.wasm
+  rustdoc:
+    wasm: ./little_rustdoc.wasm
     read: ./src
     crate: my_crate
 ```
@@ -67,11 +70,11 @@ another entry under `plugins`, with another name, and the same `wasm`:
 # little.yml
 plugins:
   core_api:
-    wasm: ./little_doc_comments.wasm
+    wasm: ./little_rustdoc.wasm
     read: ./core/src
     crate: my_core
   cli_api:
-    wasm: ./little_doc_comments.wasm
+    wasm: ./little_rustdoc.wasm
     read: ./cli/src
     crate: my_cli
 ```
@@ -185,7 +188,7 @@ What it can't read is warned of, and `little build --strict` fails on each:
   with the modules it declares:
 
   ```text
-  warning: plugin `doc_comments`: can't parse `src/config.rs`: expected `:` on line 12
+  warning: plugin `rustdoc`: can't parse `src/config.rs`: expected `:` on line 12
   ```
 
 - a `#[doc]` that isn't a string, like
