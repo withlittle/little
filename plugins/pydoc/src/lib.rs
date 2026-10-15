@@ -235,15 +235,15 @@ mod plugin {
     wit_bindgen::generate!({
         path: "../../wit/plugin.wit",
         inline: "
-            package little:docstrings;
+            package little:pydoc;
 
-            world docstrings {
+            world pydoc {
                 import little:plugin/warnings@0.2.0;
                 export little:plugin/setup@0.2.0;
                 export little:plugin/files@0.2.0;
             }
         ",
-        world: "little:docstrings/docstrings",
+        world: "little:pydoc/pydoc",
         generate_all,
     });
 
@@ -294,7 +294,7 @@ mod tests {
     /// in the folder and what it holds.
     fn folder_with(test: &str, files: &[(&str, &str)]) -> String {
         let id = std::process::id();
-        let root = std::env::temp_dir().join(format!("little-docstrings-{test}-{id}"));
+        let root = std::env::temp_dir().join(format!("little-pydoc-{test}-{id}"));
         let _ = std::fs::remove_dir_all(&root);
         std::fs::create_dir_all(&root).unwrap();
         for (path, text) in files {

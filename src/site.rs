@@ -47,7 +47,7 @@ struct Page {
     rel: PathBuf,
     /// What it's built from, for an error or a warning: its file, like
     /// `./docs/guide/install.md`, or the plugin that adds it and where, like
-    /// ``plugin `docstrings`'s reference/README.md``.
+    /// ``plugin `pydoc`'s reference/README.md``.
     origin: String,
     /// Whether a plugin adds it, so it has no file in the site's repository.
     added: bool,

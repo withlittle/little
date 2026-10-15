@@ -2,7 +2,10 @@
 
 - Status: accepted; amended by [0046](./0046-plugin-hooks.md), whose
   hooks it exports in place of `plugin-with-pages`: `setup`, and
-  `files`, which adds its pages
+  `files`, which adds its pages, and by
+  [0047](./0047-naming-api-reference-plugins.md), which renames it
+  `rustdoc`, in `plugins/rustdoc/`, after Rust's own tool, which it
+  doesn't run
 - Date: 2026-10-14
 - Amends: [0032](./0032-docs-are-the-manual.md)
 

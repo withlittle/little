@@ -1,8 +1,8 @@
 # api_reference
 
 A library, not a plugin, that little's plugins that build an API reference
-share: [`docstrings`](../docstrings/), from Python's docstrings, and
-[`doc_comments`](../doc_comments/), from Rust's doc comments. Each reads its
+share: [`pydoc`](../pydoc/), from Python's docstrings, and
+[`rustdoc`](../rustdoc/), from Rust's doc comments. Each reads its
 language's code into what a page documents, in `src/model.rs`, and this
 writes the page's Markdown, in `src/markdown.rs`, so their pages look alike.
 Why they share it is in

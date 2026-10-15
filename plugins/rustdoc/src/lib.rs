@@ -330,15 +330,15 @@ mod plugin {
     wit_bindgen::generate!({
         path: "../../wit/plugin.wit",
         inline: "
-            package little:doc-comments;
+            package little:rustdoc;
 
-            world doc-comments {
+            world rustdoc {
                 import little:plugin/warnings@0.2.0;
                 export little:plugin/setup@0.2.0;
                 export little:plugin/files@0.2.0;
             }
         ",
-        world: "little:doc-comments/doc-comments",
+        world: "little:rustdoc/rustdoc",
         generate_all,
     });
 
@@ -389,7 +389,7 @@ mod tests {
     /// in the folder and what it holds.
     fn folder_with(test: &str, files: &[(&str, &str)]) -> String {
         let id = std::process::id();
-        let root = std::env::temp_dir().join(format!("little-doc-comments-{test}-{id}"));
+        let root = std::env::temp_dir().join(format!("little-rustdoc-{test}-{id}"));
         let _ = std::fs::remove_dir_all(&root);
         std::fs::create_dir_all(&root).unwrap();
         for (path, text) in files {

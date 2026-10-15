@@ -115,7 +115,7 @@ for the next hook.
 - A plugin can warn of what it needs to, like a file it can't read:
 
   ```text
-  warning: plugin `docstrings`: can't parse `mypackage/broken.py`: Expected a parameter or the end of the parameter list on line 3
+  warning: plugin `pydoc`: can't parse `mypackage/broken.py`: Expected a parameter or the end of the parameter list on line 3
   ```
 
 `little build --strict` fails on any of these warnings, and `little serve`

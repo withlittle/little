@@ -13,10 +13,10 @@ theme: ./theme
 # little's own code, documented from its doc comments, at /api/, as the
 # example of the Rust API reference. Its pages are reached from /api/, which
 # alone is in the nav. Build the plugin before the manual, with:
-#   cargo build --release --target wasm32-wasip2 --manifest-path plugins/doc_comments/Cargo.toml
+#   cargo build --release --target wasm32-wasip2 --manifest-path plugins/rustdoc/Cargo.toml
 plugins:
-  doc_comments:
-    wasm: ./plugins/doc_comments/target/wasm32-wasip2/release/little_doc_comments.wasm
+  rustdoc:
+    wasm: ./plugins/rustdoc/target/wasm32-wasip2/release/little_rustdoc.wasm
     read: ./src
     crate: little
     url: /api
