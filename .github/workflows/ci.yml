@@ -48,7 +48,6 @@ jobs:
         run: |
           cargo clippy --all-targets -- -D warnings
           cargo clippy --manifest-path tests/plugin/Cargo.toml --target wasm32-wasip2 --target-dir target/test-plugin -- -D warnings
-          cargo clippy --manifest-path tests/plugin/Cargo.toml --target wasm32-wasip2 --target-dir target/test-plugin-pages --features pages -- -D warnings
           cargo clippy --manifest-path plugins/api_reference/Cargo.toml --all-targets --target-dir target/api_reference -- -D warnings
           cargo clippy --manifest-path plugins/docstrings/Cargo.toml --all-targets --target wasm32-wasip2 --target-dir target/docstrings -- -D warnings
           cargo clippy --manifest-path plugins/doc_comments/Cargo.toml --all-targets --target wasm32-wasip2 --target-dir target/doc_comments -- -D warnings

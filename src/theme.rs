@@ -13,6 +13,8 @@
 //! other theme's, file by file, so it only needs the ones it changes: a
 //! stylesheet over the CSS file it's compiled to, and the other way round. A
 //! theme is built into little, in a folder, or downloaded (see `download`).
+//! Once its files are read, and layered, a plugin's `theme` hook can change
+//! them (see `plugin`).
 //!
 //! little adds two filters to a theme's templates, for URLs the theme writes
 //! itself: `url` puts the path of the site's `url` before a URL from the root
@@ -20,14 +22,15 @@
 //! the path.
 
 use anyhow::{Context, Result, bail};
-use minijinja::{AutoEscape, Environment, ErrorKind, HtmlEscape, State, Value, path_loader};
+use minijinja::{AutoEscape, Environment, ErrorKind, HtmlEscape, State, Value};
 use std::borrow::Cow;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt;
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
 use crate::config::SiteUrl;
+use crate::plugin::{HookedFile, Plugins};
 use crate::sass;
 
 /// The folder of a theme's templates, which can extend and include each other.
@@ -135,63 +138,44 @@ impl Location {
         }
     }
 
-    /// The source of the theme's template `name`, if it has one.
-    fn template(&self, name: &str) -> Result<Option<String>, minijinja::Error> {
-        match self {
-            Self::BuiltIn => Ok(builtin::TEMPLATES
-                .iter()
-                .find(|(builtin, _)| *builtin == name)
-                .map(|(_, source)| source.to_string())),
-            Self::Folder(dir) | Self::Downloaded { dir, .. } => {
-                path_loader(dir.join(TEMPLATES_DIR))(name)
-            }
-        }
-    }
-
-    /// The theme's own static files.
-    fn static_files(&self) -> Result<Vec<StaticFile>> {
-        match self {
-            Self::BuiltIn => {
-                let file = |&(path, contents): &(&str, &[u8])| StaticFile {
-                    path: PathBuf::from(path),
-                    origin: self.describe(&format!("{STATIC_DIR}/{path}")),
-                    contents: contents.to_vec(),
-                };
-                Ok(builtin::STATIC.iter().map(file).collect())
-            }
-            Self::Folder(dir) | Self::Downloaded { dir, .. } => self.files_in(dir, STATIC_DIR),
-        }
-    }
-
-    /// The theme's own Sass in `_sass/`, by its path from there. The built-in
-    /// theme has none.
-    fn sass_files(&self) -> Result<Vec<StaticFile>> {
-        match self.folder() {
-            Some(dir) => self.files_in(dir, SASS_DIR),
-            None => Ok(Vec::new()),
-        }
-    }
-
-    /// Every file in `folder` of the theme in `dir`, by its path from there.
-    fn files_in(&self, dir: &Path, folder: &str) -> Result<Vec<StaticFile>> {
+    /// The theme's own files in `folder`, like `_static`, each by its path
+    /// from there, like `assets/style.css`, with `/` between its parts. The
+    /// built-in theme has no `_sass/`.
+    fn files_in(&self, folder: &str) -> Result<Vec<(String, ThemeFile)>> {
+        let Some(dir) = self.folder() else {
+            let file = |path: &str, contents: &[u8]| {
+                let origin = self.describe(&format!("{folder}/{path}"));
+                let contents = contents.to_vec();
+                (path.to_string(), ThemeFile { origin, contents })
+            };
+            return Ok(match folder {
+                TEMPLATES_DIR => (builtin::TEMPLATES.iter())
+                    .map(|&(path, source)| file(path, source.as_bytes()))
+                    .collect(),
+                STATIC_DIR => (builtin::STATIC.iter())
+                    .map(|&(path, contents)| file(path, contents))
+                    .collect(),
+                _ => Vec::new(),
+            });
+        };
         let root = dir.join(folder);
         let mut files = Vec::new();
         if !root.is_dir() {
             return Ok(files);
         }
-        for entry in WalkDir::new(&root) {
+        for entry in WalkDir::new(&root).sort_by_file_name() {
             let entry = entry?;
             if entry.file_type().is_dir() {
                 continue;
             }
             let path = entry.path();
             let rel = path.strip_prefix(&root)?;
-            files.push(StaticFile {
-                path: rel.to_path_buf(),
+            let file = ThemeFile {
                 origin: self.describe(&Path::new(folder).join(rel).display().to_string()),
                 contents: std::fs::read(path)
                     .with_context(|| format!("reading {}", path.display()))?,
-            });
+            };
+            files.push((rel.to_string_lossy().replace('\\', "/"), file));
         }
         Ok(files)
     }
@@ -207,8 +191,8 @@ impl fmt::Display for Location {
     }
 }
 
-/// One of a theme's files, read: a static file, ready to copy to the site's
-/// root, or one in `_sass/`, for stylesheets to load.
+/// A file, read: a static file, ready to copy to the site's root, or one in
+/// a theme's `_sass/`, for stylesheets to load.
 #[derive(Clone, Debug)]
 pub struct StaticFile {
     /// Its path from `_static/`, and so from the site's root, or `_sass/`.
@@ -216,6 +200,194 @@ pub struct StaticFile {
     /// The file it's read from, to name it in errors.
     pub origin: String,
     pub contents: Vec<u8>,
+}
+
+/// One of a theme's files, read.
+#[derive(Clone, Debug)]
+struct ThemeFile {
+    /// The file it's read from, or the plugin that gave it, to name it in
+    /// errors.
+    origin: String,
+    contents: Vec<u8>,
+}
+
+/// The files of the theme a site chose, and of each it builds on, layered,
+/// each by its path from a theme's folder, like `_templates/default.html`:
+/// each template, and each file in `_sass/`, from the nearest theme that has
+/// it, and each static file from the nearest theme with one published at its
+/// path, so a stylesheet replaces a CSS file, and a CSS file a stylesheet.
+#[derive(Clone, Debug)]
+pub struct ThemeFiles {
+    files: BTreeMap<String, ThemeFile>,
+}
+
+impl ThemeFiles {
+    /// Read the files of the first of `themes`, which builds on the rest in
+    /// turn. Fails on a Sass partial in a theme's `_static/`, or two files
+    /// there published at one path, or if none of them has
+    /// `_templates/default.html`.
+    pub fn read(themes: &[Location]) -> Result<ThemeFiles> {
+        let Some(top) = themes.first() else {
+            bail!("little can't build a site without a theme (`theme: false`) yet");
+        };
+        let mut files = BTreeMap::new();
+        let mut published = HashSet::new();
+        for theme in themes {
+            for folder in [TEMPLATES_DIR, SASS_DIR] {
+                for (path, file) in theme.files_in(folder)? {
+                    files.entry(format!("{folder}/{path}")).or_insert(file);
+                }
+            }
+            let own = theme.files_in(STATIC_DIR)?;
+            let at = publish(
+                own.iter()
+                    .map(|(path, file)| (path.as_str(), file.origin.as_str())),
+            )?;
+            for ((path, file), at) in own.into_iter().zip(at) {
+                if published.insert(at) {
+                    files.insert(format!("{STATIC_DIR}/{path}"), file);
+                }
+            }
+        }
+        if !files.contains_key(&default_path()) {
+            bail!(
+                "theme {top} has no {}, which every theme needs",
+                default_path()
+            );
+        }
+        Ok(ThemeFiles { files })
+    }
+
+    /// The files, as each of `plugins`' `theme` hooks changes them, in turn,
+    /// with each a plugin changes named for it. Stops at the first that
+    /// fails, or gives back files that aren't a theme's: one outside
+    /// `_templates/`, `_static/`, and `_sass/`, a Sass partial in `_static/`,
+    /// two published at one path, or none at `_templates/default.html`.
+    pub fn hooked(self, plugins: &mut Plugins) -> Result<ThemeFiles> {
+        let mut origins = HashMap::new();
+        let files = (self.files.into_iter())
+            .map(|(path, ThemeFile { origin, contents })| {
+                origins.insert(path.clone(), origin);
+                HookedFile {
+                    path,
+                    contents,
+                    plugin: None,
+                }
+            })
+            .collect();
+        let origin = |file: &HookedFile| match &file.plugin {
+            Some(plugin) => format!("plugin `{plugin}`'s {}", file.path),
+            None => (origins.get(&file.path).cloned()).unwrap_or_else(|| file.path.clone()),
+        };
+        let hooked = plugins.theme(files, |plugin, files| {
+            let mut statics = Vec::new();
+            for file in files {
+                match file.path.split_once('/') {
+                    Some((STATIC_DIR, path)) => statics.push((path, origin(file))),
+                    Some((TEMPLATES_DIR | SASS_DIR, _)) => {}
+                    _ => bail!(
+                        "plugin `{plugin}`'s `theme` hook gives back a file at `{}`, but a \
+                         theme's files are in {TEMPLATES_DIR}/, {STATIC_DIR}/, or {SASS_DIR}/",
+                        file.path
+                    ),
+                }
+            }
+            if !files.iter().any(|file| file.path == default_path()) {
+                bail!(
+                    "plugin `{plugin}`'s `theme` hook removes {}, which every theme needs",
+                    default_path()
+                );
+            }
+            publish(
+                statics
+                    .iter()
+                    .map(|(path, origin)| (*path, origin.as_str())),
+            )?;
+            Ok(())
+        })?;
+        let files = (hooked.into_iter())
+            .map(|file| {
+                let origin = origin(&file);
+                let contents = file.contents;
+                (file.path, ThemeFile { origin, contents })
+            })
+            .collect();
+        Ok(ThemeFiles { files })
+    }
+
+    /// The theme's static files, by their path from `_static/`, and so from
+    /// the site's root, with each Sass stylesheet compiled to the CSS file at
+    /// its path, loading from `_sass/`.
+    pub fn static_files(&self) -> Result<Vec<StaticFile>> {
+        let read = |(path, file): (&str, &ThemeFile)| StaticFile {
+            path: PathBuf::from(path),
+            origin: file.origin.clone(),
+            contents: file.contents.clone(),
+        };
+        let sass: BTreeMap<PathBuf, StaticFile> = (self.in_folder(SASS_DIR).map(read))
+            .map(|file| (file.path.clone(), file))
+            .collect();
+        let mut files = BTreeMap::new();
+        for mut file in self.in_folder(STATIC_DIR).map(read) {
+            if sass::is_sass(&file.path) {
+                file.contents = sass::compile(&file, &sass)?;
+                file.path.set_extension("css");
+            }
+            files.insert(file.path.clone(), file);
+        }
+        Ok(files.into_values().collect())
+    }
+
+    /// Each file in `folder`, like `_templates`, by its path from there.
+    fn in_folder<'a>(
+        &'a self,
+        folder: &'a str,
+    ) -> impl Iterator<Item = (&'a str, &'a ThemeFile)> + 'a {
+        (self.files.iter()).filter_map(move |(path, file)| {
+            let path = path.strip_prefix(folder)?.strip_prefix('/')?;
+            Some((path, file))
+        })
+    }
+}
+
+/// The path of the template every theme has, from the theme's folder.
+fn default_path() -> String {
+    format!("{TEMPLATES_DIR}/{DEFAULT_TEMPLATE}")
+}
+
+/// Where each of a theme's static `files`, each by its path from `_static/`
+/// and the file it's read from, is published, from the site's root: at its
+/// own path, or, for a Sass stylesheet, at the CSS file it's compiled to.
+/// Fails on a Sass partial, which is for stylesheets to load, or two files
+/// published at one path.
+fn publish<'a>(files: impl IntoIterator<Item = (&'a str, &'a str)>) -> Result<Vec<String>> {
+    let mut origins = HashMap::new();
+    let mut published = Vec::new();
+    for (path, origin) in files {
+        let path = Path::new(path);
+        let at = if sass::is_partial(path) {
+            bail!(
+                "{origin} is a Sass partial, for stylesheets to load: move it to {SASS_DIR}/, \
+                 where they load from"
+            );
+        } else if sass::is_sass(path) {
+            path.with_extension("css")
+        } else {
+            path.to_path_buf()
+        };
+        let at = at.to_string_lossy().replace('\\', "/");
+        if let Some(other) = origins.insert(at.clone(), origin) {
+            let mut both = [other, origin];
+            both.sort();
+            bail!(
+                "{} and {} would both be /{at}: remove or rename one",
+                both[0],
+                both[1]
+            );
+        }
+        published.push(at);
+    }
+    Ok(published)
 }
 
 /// A theme, loaded and ready to render pages.
@@ -227,14 +399,10 @@ pub struct Theme {
 }
 
 impl Theme {
-    /// Load the first of `themes`, which builds on the rest in turn, for a
-    /// site published at `url`. A build does this before it touches its
-    /// destination, so a theme that can't build the site doesn't cost it its
-    /// last build.
-    pub fn load(themes: &[Location], url: &SiteUrl) -> Result<Self> {
-        let Some(top) = themes.first() else {
-            bail!("little can't build a site without a theme (`theme: false`) yet");
-        };
+    /// Load the theme whose `files` are read, for a site published at `url`.
+    /// A build does this before it touches its destination, so a theme that
+    /// can't build the site doesn't cost it its last build.
+    pub fn load(files: &ThemeFiles, url: &SiteUrl) -> Result<Self> {
         let mut env = Environment::new();
         let site = url.clone();
         env.add_filter("url", move |state: &State, value: Value| {
@@ -244,18 +412,17 @@ impl Theme {
         env.add_filter("absolute_url", move |state: &State, value: Value| {
             url_filter(state, value, |url| site.absolute(url))
         });
-        // Templates are read as they're needed, by name, so a theme's folder
-        // can hold other files (a README, say) without little trying to parse
-        // them. Each comes from the first theme that has it, so a theme can
-        // replace any of the templates of the one it builds on.
-        let chain = themes.to_vec();
-        env.set_loader(move |name| {
-            for theme in &chain {
-                if let Some(source) = theme.template(name)? {
-                    return Ok(Some(source));
-                }
-            }
-            Ok(None)
+        // Templates are compiled as they're needed, by name, so a theme's
+        // `_templates/` can hold other files (a README, say) without little
+        // trying to parse them.
+        let templates: HashMap<String, Vec<u8>> = (files.in_folder(TEMPLATES_DIR))
+            .map(|(name, file)| (name.to_string(), file.contents.clone()))
+            .collect();
+        env.set_loader(move |name| match templates.get(name) {
+            None => Ok(None),
+            Some(contents) => String::from_utf8(contents.clone()).map(Some).map_err(|_| {
+                minijinja::Error::new(ErrorKind::InvalidOperation, "a template must be UTF-8")
+            }),
         });
         // Loading a template compiles it, so a broken one fails the build now,
         // rather than when the first page needs it.
@@ -263,17 +430,17 @@ impl Theme {
             Ok(_) => Ok(true),
             Err(e) if e.kind() == ErrorKind::TemplateNotFound => Ok(false),
             Err(e) => {
-                let origin = themes
-                    .iter()
-                    .find(|theme| !matches!(theme.template(name), Ok(None)))
-                    .unwrap_or(top);
-                let file = origin.describe(&format!("{TEMPLATES_DIR}/{name}"));
+                let path = format!("{TEMPLATES_DIR}/{name}");
+                let file = (files.files.get(&path)).map_or(path, |file| file.origin.clone());
                 Err(anyhow::Error::new(e).context(format!("loading {file}")))
             }
         };
 
         if !has_template(DEFAULT_TEMPLATE)? {
-            bail!("theme {top} has no {TEMPLATES_DIR}/{DEFAULT_TEMPLATE}, which every theme needs");
+            bail!(
+                "the theme has no {}, which every theme needs",
+                default_path()
+            );
         }
         let mut templates = HashMap::new();
         for page_type in PageType::ALL {
@@ -290,6 +457,12 @@ impl Theme {
         Ok(Self { env, templates })
     }
 
+    /// Whether it renders pages of type `page_type`, as it doesn't the 404
+    /// page without a `404.html`.
+    pub fn renders(&self, page_type: PageType) -> bool {
+        self.templates.contains_key(&page_type)
+    }
+
     /// Render a page of type `page_type` from `ctx`, or `None` if the theme
     /// doesn't render that type of page.
     pub fn render(&self, page_type: PageType, ctx: Value) -> Result<Option<String>> {
@@ -298,62 +471,6 @@ impl Theme {
         };
         Ok(Some(self.env.get_template(name)?.render(ctx)?))
     }
-}
-
-/// The static files of every one of `themes`, the theme a site chose, then
-/// each it builds on in turn, merged, with each Sass stylesheet compiled to
-/// the CSS file at its path. Where two themes have a file at the same path,
-/// the one nearer the site wins, so a stylesheet replaces a CSS file, and a
-/// CSS file a stylesheet. The stylesheets load from the `_sass/` of every
-/// theme, merged the same way.
-pub fn static_files(themes: &[Location]) -> Result<Vec<StaticFile>> {
-    let mut files = BTreeMap::new();
-    let mut sass = BTreeMap::new();
-    for theme in themes {
-        let mut own: BTreeMap<PathBuf, StaticFile> = BTreeMap::new();
-        for file in theme.static_files()? {
-            let path = if sass::is_partial(&file.path) {
-                bail!(
-                    "{} is a Sass partial, for stylesheets to load: move it to {SASS_DIR}/, \
-                     where they load from",
-                    file.origin
-                );
-            } else if sass::is_sass(&file.path) {
-                file.path.with_extension("css")
-            } else {
-                file.path.clone()
-            };
-            if let Some(other) = own.insert(path.clone(), file) {
-                let mut both = [&other.origin, &own[&path].origin];
-                both.sort();
-                let url = path.to_string_lossy().replace('\\', "/");
-                bail!(
-                    "{} and {} would both be /{url}: remove or rename one",
-                    both[0],
-                    both[1]
-                );
-            }
-        }
-        for (path, file) in own {
-            files.entry(path).or_insert(file);
-        }
-        for file in theme.sass_files()? {
-            sass.entry(file.path.clone()).or_insert(file);
-        }
-    }
-    files
-        .into_iter()
-        .map(|(path, file)| {
-            if !sass::is_sass(&file.path) {
-                return Ok(file);
-            }
-            Ok(StaticFile {
-                contents: sass::compile(&file, &sass)?,
-                path,
-                origin: file.origin,
-            })
-        })
-        .collect()
 }
 
 /// Apply `change` to `value`, if it's text. In an HTML template the result is
@@ -378,6 +495,7 @@ fn url_filter(state: &State, value: Value, change: impl Fn(&str) -> Cow<'_, str>
 mod tests {
     use super::*;
     use minijinja::context;
+    use serde_json::json;
 
     /// A fresh scratch theme holding `files`, each a (path, contents) pair.
     fn scratch(label: &str, files: &[(&str, &str)]) -> PathBuf {
@@ -393,15 +511,39 @@ mod tests {
         root
     }
 
+    /// Load the first of `themes`, which builds on the rest, for a site at
+    /// `url`.
+    fn load_chain(themes: &[Location], url: &SiteUrl) -> Result<Theme> {
+        Theme::load(&ThemeFiles::read(themes)?, url)
+    }
+
     /// Load the theme in `dir`, which builds on nothing, for a site at the
     /// root of its domain.
     fn load(dir: &Path) -> Result<Theme> {
-        Theme::load(&[Location::Folder(dir.to_path_buf())], &SiteUrl::default())
+        load_chain(&[Location::Folder(dir.to_path_buf())], &SiteUrl::default())
+    }
+
+    /// The static files of the first of `themes`, which builds on the rest.
+    fn static_files(themes: &[Location]) -> Result<Vec<StaticFile>> {
+        ThemeFiles::read(themes)?.static_files()
     }
 
     /// The static files of the theme in `dir`, which builds on nothing.
     fn static_files_in(dir: &Path) -> Result<Vec<StaticFile>> {
         static_files(&[Location::Folder(dir.to_path_buf())])
+    }
+
+    /// The test plugin, started as `test`, with `theme` as its `theme`
+    /// hook's settings.
+    fn plugin(theme: serde_json::Value) -> Plugins {
+        let plugin = crate::config::Plugin {
+            name: "test".to_string(),
+            wasm: crate::config::Wasm::File(crate::plugin::tests::test_plugin().to_path_buf()),
+            read: Vec::new(),
+            settings: serde_json::json!({ "theme": theme }).to_string(),
+        };
+        let now = time::OffsetDateTime::UNIX_EPOCH;
+        Plugins::start(&[plugin], Path::new("."), now).unwrap()
     }
 
     /// What `theme` renders for each type of page, `None` for types it skips.
@@ -500,7 +642,7 @@ mod tests {
             )],
         );
         let render = |url: &SiteUrl| {
-            let theme = Theme::load(&[Location::Folder(dir.clone())], url).unwrap();
+            let theme = load_chain(&[Location::Folder(dir.clone())], url).unwrap();
             let page_url = format!("{}/guide/", url.path);
             let ctx = context! { page => context! { url => page_url } };
             theme.render(PageType::Page, ctx).unwrap().unwrap()
@@ -550,7 +692,7 @@ mod tests {
             Location::Folder(company.clone()),
             Location::Folder(base.clone()),
         ];
-        let theme = Theme::load(&chain, &SiteUrl::default()).unwrap();
+        let theme = load_chain(&chain, &SiteUrl::default()).unwrap();
 
         let ctx = context! { page => context! { type => "page" } };
         let html = theme.render(PageType::Page, ctx).unwrap();
@@ -571,7 +713,7 @@ mod tests {
         std::fs::write(company.join("_templates/home.html"), "{% if %}").unwrap();
         let message = format!(
             "{:#}",
-            Theme::load(&chain, &SiteUrl::default()).err().unwrap()
+            load_chain(&chain, &SiteUrl::default()).err().unwrap()
         );
         let expected = format!("loading {}", company.join("_templates/home.html").display());
         assert!(message.starts_with(&expected), "{message}");
@@ -603,6 +745,18 @@ mod tests {
             message.contains("_templates/home.html: syntax error"),
             "{message}"
         );
+
+        // A template is text.
+        let dir = scratch("binary", &[("_templates/default.html", "")]);
+        std::fs::write(dir.join("_templates/home.html"), [0xff, 0xfe]).unwrap();
+        let message = format!("{:#}", load(&dir).err().unwrap());
+        let file = dir.join("_templates/home.html");
+        assert!(
+            message.starts_with(&format!("loading {}: ", file.display())),
+            "{message}"
+        );
+        assert!(message.contains("a template must be UTF-8"), "{message}");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -727,6 +881,120 @@ mod tests {
             );
             assert_eq!(message, expected);
         }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_plugins_theme_hook_is_given_the_layered_files_by_their_paths() {
+        let root = scratch(
+            "hook-layers",
+            &[
+                ("company/_static/assets/style.scss", "a { color: navy; }"),
+                ("company/_sass/_colors.scss", "$link: navy;"),
+            ],
+        );
+        let chain = [Location::Folder(root.join("company")), Location::BuiltIn];
+        let mut plugins = plugin(json!({ "list": "_static/paths.txt" }));
+        let files = ThemeFiles::read(&chain).unwrap().hooked(&mut plugins);
+        let files = files.unwrap().static_files().unwrap();
+        let paths = files
+            .iter()
+            .find(|file| file.path == Path::new("paths.txt"));
+        assert_eq!(
+            String::from_utf8_lossy(&paths.unwrap().contents),
+            // The company's style.scss replaces the built-in style.css.
+            "_sass/_colors.scss\n_static/assets/script.js\n_static/assets/style.scss\n\
+             _templates/404.html\n_templates/default.html"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_plugins_theme_hook_changes_the_theme() {
+        let dir = scratch(
+            "hook",
+            &[
+                (
+                    "_templates/default.html",
+                    "{% include 'og.html' %}{{ page.type }}",
+                ),
+                ("_static/logo.svg", "logo"),
+                ("_static/style.css", "a {}"),
+            ],
+        );
+        let read = || ThemeFiles::read(&[Location::Folder(dir.clone())]).unwrap();
+        let mut plugins = plugin(json!({
+            "remove": ["_static/style.css"],
+            "add": [
+                { "path": "_templates/og.html", "text": "<meta>" },
+                { "path": "_static/style.scss", "text": "@use 'colors';\na { color: colors.$link; }" },
+                { "path": "_sass/_colors.scss", "text": "$link: teal;" },
+            ],
+        }));
+        let hooked = read().hooked(&mut plugins).unwrap();
+        let theme = Theme::load(&hooked, &SiteUrl::default()).unwrap();
+        let ctx = context! { page => context! { type => "page" } };
+        let html = theme.render(PageType::Page, ctx).unwrap();
+        assert_eq!(html.as_deref(), Some("<meta>page"));
+        let files = hooked.static_files().unwrap();
+        assert_eq!(
+            contents(&files),
+            [
+                ("logo.svg".into(), "logo".into()),
+                ("style.css".into(), "a {\n  color: teal;\n}\n".into()),
+            ]
+        );
+        // A file the plugin gives back as it was is still the theme's.
+        let logo = dir.join(STATIC_DIR).join("logo.svg");
+        assert_eq!(files[0].origin, logo.display().to_string());
+        assert_eq!(files[1].origin, "plugin `test`'s _static/style.scss");
+
+        // A template it breaks is named for it.
+        let broken = json!({ "add": [{ "path": "_templates/home.html", "text": "{% if %}" }] });
+        let hooked = read().hooked(&mut plugin(broken)).unwrap();
+        let message = format!(
+            "{:#}",
+            Theme::load(&hooked, &SiteUrl::default()).err().unwrap()
+        );
+        assert!(
+            message.starts_with("loading plugin `test`'s _templates/home.html: syntax error"),
+            "{message}"
+        );
+
+        // What it gives back must be a theme's files.
+        let error = |theme: serde_json::Value| {
+            let hooked = read().hooked(&mut plugin(theme));
+            format!("{:#}", hooked.unwrap_err())
+        };
+        let add = |path: &str| json!({ "add": [{ "path": path, "text": "" }] });
+        for path in ["style.css", "_assets/style.css"] {
+            assert_eq!(
+                error(add(path)),
+                format!(
+                    "plugin `test`'s `theme` hook gives back a file at `{path}`, but a theme's \
+                     files are in _templates/, _static/, or _sass/"
+                )
+            );
+        }
+        assert_eq!(
+            error(json!({ "remove": ["_templates/default.html"] })),
+            "plugin `test`'s `theme` hook removes _templates/default.html, which every theme \
+             needs"
+        );
+        assert_eq!(
+            error(add("_static/_colors.scss")),
+            "plugin `test`'s _static/_colors.scss is a Sass partial, for stylesheets to load: \
+             move it to _sass/, where they load from"
+        );
+        let css = dir.join(STATIC_DIR).join("style.css");
+        assert_eq!(
+            error(add("_static/style.sass")),
+            format!(
+                "{} and plugin `test`'s _static/style.sass would both be /style.css: remove or \
+                 rename one",
+                css.display()
+            )
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 

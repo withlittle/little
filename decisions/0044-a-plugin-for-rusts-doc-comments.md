@@ -1,6 +1,8 @@
 # 0044 — A plugin for Rust's doc comments
 
-- Status: accepted
+- Status: accepted; amended by [0046](./0046-plugin-hooks.md), whose
+  hooks it exports in place of `plugin-with-pages`: `setup`, and
+  `files`, which adds its pages
 - Date: 2026-10-14
 - Amends: [0032](./0032-docs-are-the-manual.md)
 

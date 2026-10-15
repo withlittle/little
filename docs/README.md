@@ -41,9 +41,10 @@ itself. [Your first site](getting-started/first-site.md) goes on from there.
 - **Config that cascades.** little's defaults, then the theme's, then the
   site's: a site sets only what it changes.
 - **Plugins in a sandbox.** A plugin is one WebAssembly file, written in Rust,
-  Python, or another language, that renders code blocks, or adds pages, like
+  Python, or another language, that hooks into each step of a build, to add
   an API reference from [Python's docstrings](plugins/python-api-reference.md),
-  or [Rust's doc comments](plugins/rust-api-reference.md).
+  or [Rust's doc comments](plugins/rust-api-reference.md), say, or change
+  each page as it's written.
 
 ## This manual
 
@@ -53,7 +54,7 @@ itself. [Your first site](getting-started/first-site.md) goes on from there.
 | [Writing](writing/pages-and-files.md) | write pages, with links, code, math, diagrams, notebooks, and navigation, and keep a version for each release |
 | [Themes](themes/choosing-a-theme.md) | choose a theme for a site, or make one |
 | [Plugins](plugins/using-plugins.md) | use plugins, add an API reference, or write a plugin |
-| [Reference](reference/commands.md) | look up a command, a setting, or what a theme's templates get |
+| [Reference](reference/commands.md) | look up a command, a setting, what a theme's templates get, or a plugin's hooks |
 
 > [!TIP]
 > This manual is a little site, in the `docs/` folder of little's

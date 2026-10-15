@@ -9,13 +9,9 @@ publish = false
 crate-type = ["cdylib"]
 
 [dependencies]
-serde_json = "1.0.151"
+# Keeps the order of an object's keys, as little gives them.
+serde_json = { version = "1.0.151", features = ["preserve_order"] }
 wit-bindgen = "0.62"
-
-[features]
-# Exports `plugin-with-pages`, adding the pages its settings list, rather than
-# `plugin`.
-pages = []
 
 # Its own workspace, apart from little's.
 [workspace]

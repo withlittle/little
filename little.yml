@@ -64,3 +64,4 @@ nav:
       - { title: Commands, url: /reference/commands }
       - { title: Settings, url: /reference/settings }
       - { title: Template data, url: /reference/template-data }
+      - { title: Plugin hooks, url: /reference/plugin-hooks }

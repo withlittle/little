@@ -327,37 +327,53 @@ mod plugin {
 
     use super::{Settings, document};
 
-    wit_bindgen::generate!({ path: "../../wit/plugin.wit", world: "plugin-with-pages" });
+    wit_bindgen::generate!({
+        path: "../../wit/plugin.wit",
+        inline: "
+            package little:doc-comments;
 
-    use exports::little::plugin::code_blocks::{self, Block, Output};
-    use exports::little::plugin::pages::{self, Added, Page};
+            world doc-comments {
+                import little:plugin/warnings@0.2.0;
+                export little:plugin/setup@0.2.0;
+                export little:plugin/files@0.2.0;
+            }
+        ",
+        world: "little:doc-comments/doc-comments",
+        generate_all,
+    });
+
+    use exports::little::plugin::files::{self, Changes, File};
+    use exports::little::plugin::setup;
+    use little::plugin::warnings::warn;
 
     /// What the site set, from `setup`.
     static SETTINGS: Mutex<Option<Settings>> = Mutex::new(None);
 
     struct Plugin;
 
-    impl code_blocks::Guest for Plugin {
-        fn setup(settings: String) -> Result<Vec<String>, String> {
+    impl setup::Guest for Plugin {
+        fn setup(settings: String) -> Result<(), String> {
             *SETTINGS.lock().unwrap() = Some(Settings::parse(&settings)?);
-            Ok(Vec::new())
-        }
-
-        fn render(_: Block) -> Result<Output, String> {
-            Err("it renders no code blocks".to_string())
+            Ok(())
         }
     }
 
-    impl pages::Guest for Plugin {
-        fn pages() -> Result<Added, String> {
+    impl files::Guest for Plugin {
+        fn files(_: Vec<String>) -> Result<Changes, String> {
             let settings = SETTINGS.lock().unwrap();
             let added = document(settings.as_ref().expect("little calls `setup` first"));
+            for warning in &added.warnings {
+                warn(warning);
+            }
             let pages = added.pages.into_iter();
-            Ok(Added {
-                pages: pages
-                    .map(|(path, markdown)| Page { path, markdown })
+            Ok(Changes {
+                add: pages
+                    .map(|(path, markdown)| File {
+                        path,
+                        contents: markdown.into_bytes(),
+                    })
                     .collect(),
-                warnings: added.warnings,
+                remove: Vec::new(),
             })
         }
     }

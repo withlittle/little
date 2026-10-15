@@ -1,9 +1,12 @@
-//! Plugins that render fenced code blocks, and add pages: WebAssembly
-//! components, built for WASI 0.2, that export the interfaces in
-//! `wit/plugin.wit`. A build starts each plugin the site names once, asks
-//! each that adds pages for them, and gives it each block in its languages
-//! as each page is read, before diagrams are drawn; the Markdown or HTML it
-//! gives back takes the block's place.
+//! Plugins: WebAssembly components, built for WASI 0.2, that export hooks
+//! from `wit/plugin.wit`, each called at a step of the build. A build starts
+//! each plugin the site names once, then, as it reaches each step, calls the
+//! hook for it of each plugin that exports one, in the order the site names
+//! them, with what the step made: the config, the theme's files, the
+//! source's files, each page's text, its code blocks, and its HTML, `site`,
+//! each `page`, each page as the theme writes it, and the files the site is
+//! written with. What each hook gives back is what the next plugin, then the
+//! build, goes on with.
 //!
 //! Each runs in wasmtime's sandbox, which reaches nothing little doesn't give
 //! it: no network, no environment variables, and no files but the folders
@@ -16,28 +19,33 @@ use comrak::nodes::{AstNode, NodeValue};
 use comrak::{Arena, Options};
 use rand::SeedableRng;
 use rand::rngs::StdRng;
-use std::collections::HashMap;
+use serde_yaml::Mapping;
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fmt;
+use std::ops::Bound;
 use std::path::{Path, PathBuf};
 use std::sync::{LazyLock, Mutex, PoisonError};
 use std::time::{Duration, SystemTime};
 use time::OffsetDateTime;
-use wasmtime::component::{Component, InstancePre, Linker, ResourceTable};
+use wasmtime::component::{Component, HasSelf, InstancePre, Linker, ResourceTable};
 use wasmtime::{Engine, Store};
 use wasmtime_wasi::{FsPerms, HostWallClock, WasiCtx, WasiCtxBuilder, WasiCtxView, WasiView};
 
-use crate::config::{self, Wasm};
+use crate::config::{self, Config, Wasm};
 use crate::download;
 
-/// little's side of the interfaces in `wit/plugin.wit`, which wasmtime
-/// generates as little is compiled.
+/// little's side of the hooks in `wit/plugin.wit`, which wasmtime generates
+/// as little is compiled.
 mod bindings {
-    // `plugin-with-pages` includes `plugin`, so these bindings run either.
-    wasmtime::component::bindgen!({ path: "wit/plugin.wit", world: "plugin-with-pages" });
+    wasmtime::component::bindgen!({ path: "wit/plugin.wit", world: "hooks" });
 }
 
-use bindings::exports::little::plugin::code_blocks::{self, Block, Output};
-use bindings::exports::little::plugin::pages;
+use bindings::exports::little::plugin as wit;
+use wit::code_blocks::{Block, Output};
+
+/// The package of `wit/plugin.wit`, with its version, whose hooks little
+/// calls.
+const PACKAGE: &str = "little:plugin@0.2.0";
 
 /// One engine compiles and runs every plugin.
 static ENGINE: LazyLock<Engine> = LazyLock::new(Engine::default);
@@ -54,54 +62,143 @@ type Compiled = (Stamp, Pre);
 type Stamp = (Option<SystemTime>, u64);
 
 /// A plugin compiled, and linked to WASI, ready to start, with where its
-/// exports are.
+/// hooks are.
 #[derive(Clone)]
 struct Pre {
     instance: InstancePre<State>,
-    code_blocks: code_blocks::GuestIndices,
-    /// Unless it adds no pages, as a plugin built for `world plugin` doesn't.
-    pages: Option<pages::GuestIndices>,
+    exports: Exports,
 }
 
-/// A page a plugin adds, which a build builds as if it were a Markdown file
-/// in the source.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct AddedPage {
-    /// The plugin's name, like `docstrings`.
-    pub plugin: String,
-    /// Where the file would be, from the source's folder, with `/` between
-    /// its parts, like `reference/README.md`.
-    pub path: String,
-    pub markdown: String,
+/// Declares `Exports`, where each hook a plugin exports is in it, and
+/// `Hooks`, the hooks themselves, in a plugin that's started.
+macro_rules! hooks {
+    ($($hook:ident),*) => {
+        /// Where each hook a plugin exports is in it: none for one it
+        /// doesn't.
+        #[derive(Clone)]
+        struct Exports {
+            $($hook: Option<wit::$hook::GuestIndices>,)*
+        }
+
+        /// The hooks a plugin that's started exports.
+        struct Hooks {
+            $($hook: Option<wit::$hook::Guest>,)*
+        }
+
+        impl Exports {
+            /// The hooks `instance` exports, or why one isn't the hook in
+            /// `wit/plugin.wit`.
+            fn of(instance: &InstancePre<State>) -> Result<Exports> {
+                Ok(Exports {
+                    $($hook: {
+                        let hook = stringify!($hook).replace('_', "-");
+                        let name = format!("little:plugin/{hook}@0.2.0");
+                        match instance.component().get_export_index(None, &name) {
+                            None => None,
+                            Some(_) => Some(
+                                wit::$hook::GuestIndices::new(instance)
+                                    .map_err(|e| anyhow!("its `{hook}` hook isn't {PACKAGE}'s: {e:#}"))?,
+                            ),
+                        }
+                    },)*
+                })
+            }
+
+            /// Whether it exports any hook.
+            fn any(&self) -> bool {
+                false $(|| self.$hook.is_some())*
+            }
+
+            /// The hooks in `instance`, in `store`, or why one isn't the hook
+            /// in `wit/plugin.wit`.
+            fn load(
+                &self,
+                store: &mut Store<State>,
+                instance: &wasmtime::component::Instance,
+            ) -> Result<Hooks, String> {
+                Ok(Hooks {
+                    $($hook: match &self.$hook {
+                        None => None,
+                        Some(indices) => Some(indices.load(&mut *store, instance).map_err(|e| {
+                            let hook = stringify!($hook).replace('_', "-");
+                            format!("its `{hook}` hook isn't {PACKAGE}'s: {}", one_line(&format!("{e:#}")))
+                        })?),
+                    },)*
+                })
+            }
+        }
+    };
 }
 
-impl fmt::Display for AddedPage {
-    /// What a warning or an error names it: ``plugin `docstrings`'s
-    /// reference/README.md``.
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "plugin `{}`'s {}", self.plugin, self.path)
-    }
+hooks!(
+    setup,
+    config,
+    theme,
+    files,
+    source,
+    code_blocks,
+    content,
+    site,
+    page,
+    html,
+    destination
+);
+
+/// A hook a plugin exports, which little calls only if it does.
+fn hook<T>(hook: &Option<T>) -> &T {
+    hook.as_ref()
+        .expect("little calls only the hooks a plugin exports")
 }
 
-/// Something a plugin warns of as it adds its pages.
+/// Something a plugin warns of.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Warning {
-    /// The plugin's name, like `docstrings`.
+    /// The plugin's name, like `api`.
     pub plugin: String,
-    pub message: String,
+    pub warned: Warned,
+}
+
+/// What a plugin warns of.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Warned {
+    /// What it says, with `warn`.
+    Message(String),
+    /// One of its hooks, like `source`, failed on `on`, what the hook was
+    /// given, like `docs/guide.md`, so the build went on without its change.
+    Failed {
+        hook: &'static str,
+        on: String,
+        reason: String,
+    },
+}
+
+impl Warning {
+    /// That `plugin`'s `hook` failed on `on`, for `reason`.
+    fn failed(plugin: &str, hook: &'static str, on: &str, reason: String) -> Warning {
+        Warning {
+            plugin: plugin.to_string(),
+            warned: Warned::Failed {
+                hook,
+                on: on.to_string(),
+                reason,
+            },
+        }
+    }
 }
 
 impl fmt::Display for Warning {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "plugin `{}`: {}", self.plugin, self.message)
+        let plugin = &self.plugin;
+        match &self.warned {
+            Warned::Message(message) => write!(f, "plugin `{plugin}`: {message}"),
+            Warned::Failed { hook, on, reason } => {
+                write!(
+                    f,
+                    "plugin `{plugin}`'s `{hook}` hook failed on {on}: {reason}"
+                )
+            }
+        }
     }
-}
-
-/// What the plugins a build has started add.
-#[derive(Debug, Default)]
-pub struct Added {
-    pub pages: Vec<AddedPage>,
-    pub warnings: Vec<Warning>,
 }
 
 /// A block a plugin couldn't render, which is left as it was.
@@ -116,12 +213,27 @@ pub struct Unrendered {
     pub reason: String,
 }
 
-/// The plugins a build has started, and the languages each renders.
+/// A file a hook is given, or gives back, like one of the theme's, and the
+/// plugin whose hook last changed it, if one did.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct HookedFile {
+    /// Its path, like `_templates/default.html`.
+    pub path: String,
+    pub contents: Vec<u8>,
+    /// The plugin, like `og`.
+    pub plugin: Option<String>,
+}
+
+/// The plugins a build has started, the languages each renders, and what
+/// they've warned of.
 #[derive(Default)]
 pub struct Plugins {
     plugins: Vec<Running>,
     /// Each language a plugin renders, in lowercase, and which plugin.
     languages: HashMap<String, usize>,
+    /// What they've warned of, and which hooks failed, since
+    /// [`Plugins::take_warnings`].
+    warnings: Vec<Warning>,
 }
 
 /// A plugin a build has started.
@@ -139,15 +251,16 @@ struct Running {
 /// A plugin that's started, in the store that holds its memory.
 struct Instance {
     store: Store<State>,
-    code_blocks: code_blocks::Guest,
-    /// Unless it adds no pages.
-    pages: Option<pages::Guest>,
+    hooks: Hooks,
 }
 
-/// What a plugin's store holds: what it can reach through WASI.
+/// What a plugin's store holds: what it can reach through WASI, and what it
+/// warns of.
 struct State {
     ctx: WasiCtx,
     table: ResourceTable,
+    /// What it's warned of, with `warn`, since little last looked.
+    warnings: Vec<String>,
 }
 
 impl WasiView for State {
@@ -156,6 +269,12 @@ impl WasiView for State {
             ctx: &mut self.ctx,
             table: &mut self.table,
         }
+    }
+}
+
+impl bindings::little::plugin::warnings::Host for State {
+    fn warn(&mut self, message: String) {
+        self.warnings.push(message);
     }
 }
 
@@ -218,29 +337,202 @@ impl Plugins {
                 now,
                 instance: None,
             };
-            let languages = (plugin.start())
-                .map_err(|reason| anyhow!("plugin `{name}` can't start: {reason}"))?;
-            let index = started.plugins.len();
-            for language in languages {
-                let language = language.to_lowercase();
-                if language.is_empty() || language.contains(|c: char| c.is_whitespace() || c == ',')
-                {
-                    bail!(
-                        "plugin `{name}` renders `{language}`, but a language must be one word, \
-                         like `bob`"
-                    );
+            let cant_start = |reason| anyhow!("plugin `{name}` can't start: {reason}");
+            plugin.start().map_err(cant_start)?;
+            plugin.drain(&mut started.warnings);
+            if plugin.pre.exports.code_blocks.is_some() {
+                let languages = (plugin.call(&mut started.warnings, |store, hooks| {
+                    hook(&hooks.code_blocks).call_languages(store).map(Ok)
+                }))
+                .map_err(cant_start)?;
+                let index = started.plugins.len();
+                for language in languages {
+                    let language = language.to_lowercase();
+                    if language.is_empty()
+                        || language.contains(|c: char| c.is_whitespace() || c == ',')
+                    {
+                        bail!(
+                            "plugin `{name}` renders `{language}`, but a language must be one \
+                             word, like `bob`"
+                        );
+                    }
+                    match started.languages.get(&language) {
+                        Some(&other) if other != index => bail!(
+                            "plugins `{}` and `{name}` both render `{language}`",
+                            started.plugins[other].name
+                        ),
+                        _ => started.languages.insert(language, index),
+                    };
                 }
-                match started.languages.get(&language) {
-                    Some(&other) if other != index => bail!(
-                        "plugins `{}` and `{name}` both render `{language}`",
-                        started.plugins[other].name
-                    ),
-                    _ => started.languages.insert(language, index),
-                };
             }
             started.plugins.push(plugin);
         }
         Ok(started)
+    }
+
+    /// What the plugins have warned of, and which of their hooks failed,
+    /// since this was last called, in the order they did.
+    pub fn take_warnings(&mut self) -> Vec<Warning> {
+        std::mem::take(&mut self.warnings)
+    }
+
+    /// The `config` of the site at `site_dir`, as each plugin's `config`
+    /// hook changes it, in turn. Stops at the first that fails, or changes
+    /// it so little can't use it.
+    pub fn config(&mut self, mut config: Config, site_dir: &Path) -> Result<Config> {
+        for plugin in &mut self.plugins {
+            if plugin.pre.exports.config.is_none() {
+                continue;
+            }
+            let name = plugin.name.clone();
+            let values = (to_json(&config.values, "the config"))
+                .and_then(|json| {
+                    plugin.call(&mut self.warnings, |store, hooks| {
+                        hook(&hooks.config).call_config(store, &json)
+                    })
+                })
+                .and_then(|json| from_json(&json, "a config"))
+                .map_err(|reason| anyhow!("plugin `{name}`'s `config` hook failed: {reason}"))?;
+            config = (config.hooked(site_dir, values))
+                .map_err(|e| anyhow!("plugin `{name}`'s `config` hook {e:#}"))?;
+        }
+        Ok(config)
+    }
+
+    /// The theme's `files`, as each plugin's `theme` hook changes them, in
+    /// turn, each plugin's checked with `check`, which is given its name.
+    /// Stops at the first that fails, or gives back a file at a path that
+    /// isn't relative, two at one, or adds one where a folder is, or in a
+    /// file.
+    pub fn theme(
+        &mut self,
+        mut files: Vec<HookedFile>,
+        mut check: impl FnMut(&str, &[HookedFile]) -> Result<()>,
+    ) -> Result<Vec<HookedFile>> {
+        for plugin in &mut self.plugins {
+            if plugin.pre.exports.theme.is_none() {
+                continue;
+            }
+            let name = plugin.name.clone();
+            let (given, by): (Vec<_>, Vec<_>) = (files.into_iter())
+                .map(
+                    |HookedFile {
+                         path,
+                         contents,
+                         plugin,
+                     }| (wit::theme::File { path, contents }, plugin),
+                )
+                .unzip();
+            let back = (plugin.call(&mut self.warnings, |store, hooks| {
+                hook(&hooks.theme).call_theme(store, &given)
+            }))
+            .map_err(|reason| anyhow!("plugin `{name}`'s `theme` hook failed: {reason}"))?;
+            let before: HashMap<&str, usize> = (given.iter().enumerate())
+                .map(|(index, file)| (file.path.as_str(), index))
+                .collect();
+            let mut seen = HashSet::new();
+            files = Vec::with_capacity(back.len());
+            for wit::theme::File { path, contents } in back {
+                let fail = |why: &str| {
+                    anyhow!(
+                        "plugin `{name}`'s `theme` hook gives back a file at `{path}`, but {why}"
+                    )
+                };
+                if let Some(why) = bad_path(&path) {
+                    return Err(fail(why));
+                }
+                if !seen.insert(path.clone()) {
+                    return Err(fail("it gives back another there"));
+                }
+                // A file it gives back as it was is still the one before's.
+                let plugin = match before.get(path.as_str()) {
+                    Some(&index) if given[index].contents == contents => by[index].clone(),
+                    _ => Some(name.clone()),
+                };
+                files.push(HookedFile {
+                    path,
+                    contents,
+                    plugin,
+                });
+            }
+            files.sort_by(|a, b| a.path.cmp(&b.path));
+            // A file it adds can't be where one's folder is, or in one.
+            let paths: BTreeSet<&str> = files.iter().map(|file| file.path.as_str()).collect();
+            let first_from = |from: &str| paths.range::<str, _>(paths_from(from)).next().copied();
+            for file in (files.iter()).filter(|file| !before.contains_key(file.path.as_str())) {
+                if let Some(why) = clash(&file.path, first_from) {
+                    bail!(
+                        "plugin `{name}`'s `theme` hook gives back a file at `{}`, but {why}",
+                        file.path
+                    );
+                }
+            }
+            check(&name, &files)?;
+        }
+        Ok(files)
+    }
+
+    /// Change `files`, the source's files, by their paths, as each plugin's
+    /// `files` hook says, in turn, making each it adds with `added`, from
+    /// the plugin's name and the file's contents. Stops at the first that
+    /// fails, or adds a file at a path that isn't relative, where one is,
+    /// where a folder is, or in a file.
+    pub fn files<T>(
+        &mut self,
+        files: &mut BTreeMap<String, T>,
+        added: impl Fn(&str, Vec<u8>) -> T,
+    ) -> Result<()> {
+        for plugin in &mut self.plugins {
+            if plugin.pre.exports.files.is_none() {
+                continue;
+            }
+            let name = plugin.name.clone();
+            let paths: Vec<String> = files.keys().cloned().collect();
+            let wit::files::Changes { add, remove } = (plugin
+                .call(&mut self.warnings, |store, hooks| {
+                    hook(&hooks.files).call_files(store, &paths)
+                }))
+            .map_err(|reason| anyhow!("plugin `{name}`'s `files` hook failed: {reason}"))?;
+            for path in &remove {
+                files.remove(path);
+            }
+            let mut seen = HashSet::new();
+            for wit::files::File { path, contents } in add {
+                let fail = |why: &str| {
+                    anyhow!("plugin `{name}`'s `files` hook adds a file at `{path}`, but {why}")
+                };
+                if let Some(why) = bad_path(&path) {
+                    return Err(fail(why));
+                }
+                if !seen.insert(path.clone()) {
+                    return Err(fail("it adds another there"));
+                }
+                if files.contains_key(&path) {
+                    return Err(fail("there's one there, which it doesn't remove"));
+                }
+                let first_from = |from: &str| {
+                    (files.range::<str, _>(paths_from(from)).next()).map(|(path, _)| path.as_str())
+                };
+                if let Some(why) = clash(&path, first_from) {
+                    return Err(fail(&why));
+                }
+                files.insert(path, added(&name, contents));
+            }
+        }
+        Ok(())
+    }
+
+    /// The `text` of `page`, its file from the site's folder, like
+    /// `docs/guide.md`, as each plugin's `source` hook changes it, in turn.
+    /// A hook that fails is warned of, naming `on`, and skipped.
+    pub fn source(&mut self, page: &str, on: &str, text: String) -> String {
+        self.text(
+            "source",
+            on,
+            text,
+            |exports| exports.source.is_some(),
+            |store, hooks, text| hook(&hooks.source).call_source(store, page, text),
+        )
     }
 
     /// The plugins, for the page built from `page`, its file from the site's
@@ -252,55 +544,206 @@ impl Plugins {
         }
     }
 
-    /// The pages each plugin that adds pages adds, in turn, and what each
-    /// warns of. Stops at the first that can't add its pages, or that adds
-    /// one at a path that can't be a Markdown file in the source.
-    pub fn pages(&mut self) -> Result<Added> {
-        let mut added = Added::default();
+    /// The `html` of `page`, as for [`Plugins::source`], as each plugin's
+    /// `content` hook changes it, in turn.
+    pub fn content(&mut self, page: &str, on: &str, html: String) -> String {
+        self.text(
+            "content",
+            on,
+            html,
+            |exports| exports.content.is_some(),
+            |store, hooks, html| hook(&hooks.content).call_content(store, page, html),
+        )
+    }
+
+    /// `site`, as each plugin's `site` hook changes it, in turn, each
+    /// plugin's checked with `check`, which is given its name. Stops at the
+    /// first that fails.
+    pub fn site(
+        &mut self,
+        mut site: Mapping,
+        mut check: impl FnMut(&str, &Mapping) -> Result<()>,
+    ) -> Result<Mapping> {
         for plugin in &mut self.plugins {
-            let Some(pages) = plugin.pages() else {
+            if plugin.pre.exports.site.is_none() {
                 continue;
-            };
-            let pages::Added { pages, warnings } = pages.map_err(|reason| {
-                anyhow!("plugin `{}` can't add its pages: {reason}", plugin.name)
-            })?;
-            for pages::Page { path, markdown } in pages {
-                if let Some(why) = bad_path(&path) {
-                    bail!(
-                        "plugin `{}` adds a page at `{path}`, but {why}",
-                        plugin.name
-                    );
+            }
+            let name = plugin.name.clone();
+            site = (to_json(&site, "`site`"))
+                .and_then(|json| {
+                    plugin.call(&mut self.warnings, |store, hooks| {
+                        hook(&hooks.site).call_site(store, &json)
+                    })
+                })
+                .and_then(|json| from_json(&json, "a `site`"))
+                .map_err(|reason| anyhow!("plugin `{name}`'s `site` hook failed: {reason}"))?;
+            check(&name, &site)?;
+        }
+        Ok(site)
+    }
+
+    /// `page`, as each plugin's `page` hook changes it, in turn. A hook that
+    /// fails is warned of, naming `on`, what the page is built from, and
+    /// skipped.
+    pub fn page(&mut self, on: &str, mut page: Mapping) -> Mapping {
+        for plugin in &mut self.plugins {
+            if plugin.pre.exports.page.is_none() {
+                continue;
+            }
+            let changed = (to_json(&page, "the `page`"))
+                .and_then(|json| {
+                    plugin.call(&mut self.warnings, |store, hooks| {
+                        hook(&hooks.page).call_page(store, &json)
+                    })
+                })
+                .and_then(|json| from_json(&json, "a `page`"));
+            match changed {
+                Ok(changed) => page = changed,
+                Err(reason) => {
+                    (self.warnings).push(Warning::failed(&plugin.name, "page", on, reason))
                 }
-                added.pages.push(AddedPage {
-                    plugin: plugin.name.clone(),
+            }
+        }
+        page
+    }
+
+    /// The `html` the theme writes for the page at `url`, as a reader
+    /// follows it, as each plugin's `html` hook changes it, in turn. A hook
+    /// that fails is warned of, naming `on`, what the page is built from,
+    /// and skipped.
+    pub fn html(&mut self, url: &str, on: &str, html: String) -> String {
+        self.text(
+            "html",
+            on,
+            html,
+            |exports| exports.html.is_some(),
+            |store, hooks, html| hook(&hooks.html).call_html(store, url, html),
+        )
+    }
+
+    /// The files each plugin's `destination` hook adds to those at `paths`,
+    /// from a version's folder in the destination, in turn. Stops at the
+    /// first that fails, or adds a file at a path that isn't relative,
+    /// where one is, where a folder is, or in a file.
+    pub fn destination(&mut self, mut paths: BTreeSet<String>) -> Result<Vec<HookedFile>> {
+        let mut added = Vec::new();
+        for plugin in &mut self.plugins {
+            if plugin.pre.exports.destination.is_none() {
+                continue;
+            }
+            let name = plugin.name.clone();
+            let given: Vec<String> = paths.iter().cloned().collect();
+            let files = (plugin.call(&mut self.warnings, |store, hooks| {
+                hook(&hooks.destination).call_destination(store, &given)
+            }))
+            .map_err(|reason| anyhow!("plugin `{name}`'s `destination` hook failed: {reason}"))?;
+            for wit::destination::File { path, contents } in files {
+                let fail = |why: &str| {
+                    anyhow!(
+                        "plugin `{name}`'s `destination` hook adds a file at `{path}`, but {why}"
+                    )
+                };
+                if let Some(why) = bad_path(&path) {
+                    return Err(fail(why));
+                }
+                if paths.contains(&path) {
+                    return Err(fail("there's one there"));
+                }
+                let first_from = |from: &str| {
+                    (paths.range::<str, _>(paths_from(from)).next()).map(String::as_str)
+                };
+                if let Some(why) = clash(&path, first_from) {
+                    return Err(fail(&why));
+                }
+                paths.insert(path.clone());
+                added.push(HookedFile {
                     path,
-                    markdown,
+                    contents,
+                    plugin: Some(name.clone()),
                 });
             }
-            added
-                .warnings
-                .extend(warnings.into_iter().map(|message| Warning {
-                    plugin: plugin.name.clone(),
-                    message,
-                }));
         }
         Ok(added)
     }
+
+    /// `text`, as the hook called `name` of each plugin that `exports` it
+    /// changes it, in turn, with `call`. A hook that fails is warned of,
+    /// naming `on`, and skipped.
+    fn text(
+        &mut self,
+        name: &'static str,
+        on: &str,
+        mut text: String,
+        exports: impl Fn(&Exports) -> bool,
+        call: impl Fn(&mut Store<State>, &Hooks, &str) -> wasmtime::Result<Result<String, String>>,
+    ) -> String {
+        for plugin in &mut self.plugins {
+            if !exports(&plugin.pre.exports) {
+                continue;
+            }
+            match plugin.call(&mut self.warnings, |store, hooks| call(store, hooks, &text)) {
+                Ok(changed) => text = changed,
+                Err(reason) => {
+                    (self.warnings).push(Warning::failed(&plugin.name, name, on, reason))
+                }
+            }
+        }
+        text
+    }
 }
 
-/// Why a page a plugin adds can't be at `path`, as if it were a Markdown
-/// file in the source, if it can't: it's from the source's folder, with `/`
-/// between its parts, so a page can't be outside it.
+/// `value` as JSON, for a hook, or why it can't be: it's `what`, like `the
+/// config`.
+fn to_json(value: &Mapping, what: &str) -> Result<String, String> {
+    serde_json::to_string(value).map_err(|e| format!("little can't write {what} as JSON: {e}"))
+}
+
+/// The JSON object a hook gave back, or why it isn't one: it should be
+/// `what`, like `a config`.
+fn from_json(json: &str, what: &str) -> Result<Mapping, String> {
+    serde_json::from_str(json)
+        .map_err(|e| format!("it gave back {what} that isn't a JSON object: {e}"))
+}
+
+/// Why a file a hook adds can't be at `path`, if it can't: it's relative,
+/// with `/` between its parts, so it can't be outside its folder, on any
+/// system, as one with a drive, like `C:/`, would be on Windows.
 fn bad_path(path: &str) -> Option<&'static str> {
     if path.starts_with('/') {
-        Some("a page's path is from the source's folder, without a `/` before it")
-    } else if (path.split('/')).any(|part| matches!(part, "" | "." | "..") || part.contains('\\')) {
-        Some("a page's path has `/` between its parts, and no part is empty, `.`, or `..`")
-    } else if !path.ends_with(".md") {
-        Some("a page's path ends in `.md`")
+        Some("a file's path is relative, without a `/` before it")
+    } else if (path.split('/')).any(|part| matches!(part, "" | "." | "..")) {
+        Some("a file's path has `/` between its parts, and no part is empty, `.`, or `..`")
+    } else if path.contains(['\\', ':']) {
+        Some("a file's path has no `\\` or `:`, which mean something else on Windows")
     } else {
         None
     }
+}
+
+/// Why a file can't be at `path`, beside the files `first_from` finds, if
+/// it can't, as a disk couldn't have both: one is where a folder it's in
+/// would be, or one is in the folder that would be where it is.
+/// `first_from` gives the first of their paths, in order, from the one
+/// it's given.
+fn clash<'p>(path: &str, first_from: impl Fn(&str) -> Option<&'p str>) -> Option<String> {
+    for (end, _) in path.match_indices('/') {
+        let folder = &path[..end];
+        if first_from(folder) == Some(folder) {
+            return Some(format!(
+                "there's a file at `{folder}`, where its folder would be"
+            ));
+        }
+    }
+    // The paths in a folder sort together, just after it, with its `/`.
+    let folder = format!("{path}/");
+    (first_from(&folder))
+        .filter(|file| file.starts_with(&folder))
+        .map(|file| format!("there's a folder there, with `{file}` in it"))
+}
+
+/// The bounds of the paths, in order, from `from`.
+fn paths_from(from: &str) -> (Bound<&str>, Bound<&str>) {
+    (Bound::Included(from), Bound::Unbounded)
 }
 
 /// The plugins a build has started, for one page.
@@ -332,7 +775,12 @@ impl PagePlugins<'_> {
         options: &Options,
         lines_before: Option<usize>,
     ) -> Result<Vec<Unrendered>> {
-        let Some(plugins) = self.plugins.as_deref_mut() else {
+        let Some(Plugins {
+            plugins,
+            languages,
+            warnings,
+        }) = self.plugins.as_deref_mut()
+        else {
             return Ok(Vec::new());
         };
         // Each found first, so the Markdown a plugin gives back isn't given
@@ -343,7 +791,7 @@ impl PagePlugins<'_> {
                     return None;
                 };
                 let language = language(&block.info);
-                let plugin = *plugins.languages.get(&language).filter(|_| block.fenced)?;
+                let plugin = *languages.get(&language).filter(|_| block.fenced)?;
                 let block = Block {
                     language,
                     info: block.info.clone(),
@@ -364,10 +812,13 @@ impl PagePlugins<'_> {
         options.extension.inline_footnotes = false;
         let mut unrendered = Vec::new();
         for (node, plugin, block) in claimed {
-            let plugin = &mut plugins.plugins[plugin];
+            let plugin = &mut plugins[plugin];
             let sourcepos = node.data.borrow().sourcepos;
             let line = lines_before.map(|before| before + sourcepos.start.line);
-            match plugin.render(&block) {
+            let rendered = plugin.call(warnings, |store, hooks| {
+                hook(&hooks.code_blocks).call_render(store, &block)
+            });
+            match rendered {
                 Ok(Output::Markdown(markdown)) => {
                     let document = comrak::parse_document(arena, &markdown, &options);
                     // A warning for what's in it names the block.
@@ -405,9 +856,9 @@ impl PagePlugins<'_> {
 }
 
 impl Running {
-    /// Start the plugin afresh, in a sandbox of its own, and set it up.
-    /// Returns the languages it renders, or why it can't start.
-    fn start(&mut self) -> Result<Vec<String>, String> {
+    /// Start the plugin afresh, in a sandbox of its own, and set it up, or
+    /// say why it can't.
+    fn start(&mut self) -> Result<(), String> {
         self.instance = None;
         let mut wasi = WasiCtxBuilder::new();
         // Before the folders are opened, which keep it.
@@ -428,64 +879,50 @@ impl Running {
         let state = State {
             ctx: wasi.build(),
             table: ResourceTable::new(),
+            warnings: Vec::new(),
         };
         let mut store = Store::new(&ENGINE, state);
         let instance = (self.pre.instance.instantiate(&mut store)).map_err(|e| crashed(&e))?;
-        let code_blocks =
-            (self.pre.code_blocks.load(&mut store, &instance)).map_err(|e| crashed(&e))?;
-        let pages = (self.pre.pages.as_ref())
-            .map(|pages| pages.load(&mut store, &instance))
-            .transpose()
-            .map_err(|e| crashed(&e))?;
-        let languages =
-            (code_blocks.call_setup(&mut store, &self.settings)).map_err(|e| crashed(&e))??;
-        self.instance = Some(Instance {
-            store,
-            code_blocks,
-            pages,
-        });
-        Ok(languages)
-    }
-
-    /// The plugin's rendering of `block`, or why it can't. After a crash,
-    /// it's started again for the next block.
-    fn render(&mut self, block: &Block) -> Result<Output, String> {
-        let Instance {
-            store, code_blocks, ..
-        } = self.started()?;
-        match code_blocks.call_render(store, block) {
-            Ok(rendered) => rendered,
-            Err(e) => {
-                self.instance = None;
-                Err(crashed(&e))
-            }
+        let hooks = self.pre.exports.load(&mut store, &instance)?;
+        if let Some(setup) = &hooks.setup {
+            (setup.call_setup(&mut store, &self.settings)).map_err(|e| crashed(&e))??;
         }
+        self.instance = Some(Instance { store, hooks });
+        Ok(())
     }
 
-    /// The pages the plugin adds, or why it can't add them, unless it adds
-    /// none.
-    fn pages(&mut self) -> Option<Result<pages::Added, String>> {
-        self.pre.pages.as_ref()?;
-        let Instance { store, pages, .. } = match self.started() {
-            Ok(instance) => instance,
-            Err(reason) => return Some(Err(reason)),
-        };
-        let pages = pages.as_ref().expect("it adds pages");
-        Some(match pages.call_pages(store) {
-            Ok(added) => added,
-            Err(e) => {
-                self.instance = None;
-                Err(crashed(&e))
-            }
-        })
-    }
-
-    /// The plugin, started again if it crashed.
-    fn started(&mut self) -> Result<&mut Instance, String> {
+    /// Call one of the plugin's hooks, with `call`, started again first if
+    /// it crashed, and add what it warns of to `warnings`. Returns what the
+    /// hook gives back, or why it can't.
+    fn call<R>(
+        &mut self,
+        warnings: &mut Vec<Warning>,
+        call: impl FnOnce(&mut Store<State>, &Hooks) -> wasmtime::Result<Result<R, String>>,
+    ) -> Result<R, String> {
         if self.instance.is_none() {
             (self.start()).map_err(|reason| format!("it can't start again: {reason}"))?;
         }
-        Ok(self.instance.as_mut().expect("the plugin started"))
+        let Instance { store, hooks } = self.instance.as_mut().expect("the plugin started");
+        let called = call(store, hooks);
+        // What it warned of before it crashed, too.
+        self.drain(warnings);
+        called.unwrap_or_else(|e| {
+            self.instance = None;
+            Err(crashed(&e))
+        })
+    }
+
+    /// Add what the plugin's warned of since this was last called to
+    /// `warnings`.
+    fn drain(&mut self, warnings: &mut Vec<Warning>) {
+        let Some(Instance { store, .. }) = &mut self.instance else {
+            return;
+        };
+        let messages = store.data_mut().warnings.drain(..);
+        warnings.extend(messages.map(|message| Warning {
+            plugin: self.name.clone(),
+            warned: Warned::Message(message),
+        }));
     }
 }
 
@@ -514,13 +951,27 @@ fn compile(file: &Path) -> Result<Pre> {
     let component = Component::new(&ENGINE, &wasm)?;
     let mut linker = Linker::new(&ENGINE);
     wasmtime_wasi::p2::add_to_linker_sync(&mut linker)?;
+    bindings::little::plugin::warnings::add_to_linker::<_, HasSelf<State>>(&mut linker, |state| {
+        state
+    })?;
     let instance = linker.instantiate_pre(&component)?;
-    let pre = Pre {
-        code_blocks: code_blocks::GuestIndices::new(&instance)?,
-        // A plugin built for `world plugin` exports no pages.
-        pages: pages::GuestIndices::new(&instance).ok(),
-        instance,
-    };
+    let exports = Exports::of(&instance)?;
+    if !exports.any() {
+        let ty = component.component_type();
+        let names: Vec<_> = (ty.exports(&ENGINE))
+            .map(|(name, _)| format!("`{name}`"))
+            .collect();
+        match names.as_slice() {
+            [] => {
+                bail!("it exports nothing, but a plugin exports little's hooks, from `{PACKAGE}`")
+            }
+            names => bail!(
+                "it exports {}, but none of little's hooks, from `{PACKAGE}`",
+                list(names)
+            ),
+        }
+    }
+    let pre = Pre { instance, exports };
     compiled.insert(file.to_path_buf(), (stamp, pre.clone()));
     Ok(pre)
 }
@@ -529,11 +980,22 @@ fn compile(file: &Path) -> Result<Pre> {
 /// trap: wasm `unreachable` instruction executed`, which a Rust plugin does
 /// when it panics.
 fn crashed(error: &wasmtime::Error) -> String {
-    let reason = error.root_cause().to_string();
-    format!(
-        "it crashed: {}",
-        reason.split_whitespace().collect::<Vec<_>>().join(" ")
-    )
+    format!("it crashed: {}", one_line(&error.root_cause().to_string()))
+}
+
+/// `text`, with each run of whitespace in it, like a line break, a space.
+fn one_line(text: &str) -> String {
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// `items`, in a list, like `a`, `a and b`, or `a, b, and c`.
+fn list(items: &[String]) -> String {
+    match items {
+        [] => String::new(),
+        [item] => item.clone(),
+        [first, second] => format!("{first} and {second}"),
+        [rest @ .., last] => format!("{}, and {last}", rest.join(", ")),
+    }
 }
 
 /// A block's language: the first word of its info string, up to a comma, in
@@ -549,6 +1011,7 @@ pub(crate) mod tests {
     use crate::config::{Markdown, SiteUrl};
     use crate::notebook::parse_notebook;
     use crate::render::{Rendered, parse_document};
+    use serde_json::json;
     use std::process::Command;
     use std::slice;
     use std::sync::OnceLock;
@@ -556,39 +1019,27 @@ pub(crate) mod tests {
     /// When each test's site is built: the start of 2026.
     const NOW: i64 = 1_767_225_600;
 
-    /// The plugin in `tests/plugin`, built once for every test that needs
-    /// it, for `world plugin`, as plugins built before `pages` were.
+    /// The plugin in `tests/plugin`, which exports every hook, built once,
+    /// in `target/test-plugin`, for every test that needs it.
     pub(crate) fn test_plugin() -> &'static Path {
         static BUILT: OnceLock<PathBuf> = OnceLock::new();
-        BUILT.get_or_init(|| build_test_plugin("test-plugin", &[]))
-    }
-
-    /// The plugin in `tests/plugin`, built once with its `pages` feature, for
-    /// `world plugin-with-pages`, for every test that needs it.
-    pub(crate) fn test_plugin_with_pages() -> &'static Path {
-        static BUILT: OnceLock<PathBuf> = OnceLock::new();
-        BUILT.get_or_init(|| build_test_plugin("test-plugin-pages", &["--features", "pages"]))
-    }
-
-    /// Build the plugin in `tests/plugin`, with `args`, in `target/{target}`,
-    /// and return where its `.wasm` file is.
-    fn build_test_plugin(target: &str, args: &[&str]) -> PathBuf {
-        let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-        let target = root.join("target").join(target);
-        let status = Command::new(env!("CARGO"))
-            .args(["build", "--quiet", "--release", "--target", "wasm32-wasip2"])
-            .args(args)
-            .arg("--manifest-path")
-            .arg(root.join("tests/plugin/Cargo.toml"))
-            .env("CARGO_TARGET_DIR", &target)
-            .status()
-            .expect("cargo runs");
-        assert!(
-            status.success(),
-            "the test plugin doesn't build: is Rust's wasm32-wasip2 target installed? \
-             `rustup target add wasm32-wasip2` installs it"
-        );
-        target.join("wasm32-wasip2/release/little_test_plugin.wasm")
+        BUILT.get_or_init(|| {
+            let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+            let target = root.join("target/test-plugin");
+            let status = Command::new(env!("CARGO"))
+                .args(["build", "--quiet", "--release", "--target", "wasm32-wasip2"])
+                .arg("--manifest-path")
+                .arg(root.join("tests/plugin/Cargo.toml"))
+                .env("CARGO_TARGET_DIR", &target)
+                .status()
+                .expect("cargo runs");
+            assert!(
+                status.success(),
+                "the test plugin doesn't build: is Rust's wasm32-wasip2 target installed? \
+                 `rustup target add wasm32-wasip2` installs it"
+            );
+            target.join("wasm32-wasip2/release/little_test_plugin.wasm")
+        })
     }
 
     /// The test plugin, as a site's config names it, with `settings`, as
@@ -597,17 +1048,6 @@ pub(crate) mod tests {
         config::Plugin {
             name: name.to_string(),
             wasm: Wasm::File(test_plugin().to_path_buf()),
-            read: read.to_vec(),
-            settings: settings.to_string(),
-        }
-    }
-
-    /// The test plugin, built to add pages, as a site's config names it,
-    /// with `settings`, as JSON, reading `read`.
-    fn with_pages(name: &str, settings: &str, read: &[config::Read]) -> config::Plugin {
-        config::Plugin {
-            name: name.to_string(),
-            wasm: Wasm::File(test_plugin_with_pages().to_path_buf()),
             read: read.to_vec(),
             settings: settings.to_string(),
         }
@@ -622,6 +1062,38 @@ pub(crate) mod tests {
     /// The test plugin, started with `settings`.
     fn started(settings: &str) -> Plugins {
         start(&[named("test", settings, &[])]).unwrap()
+    }
+
+    /// What `plugins` have warned of, as little shows it.
+    fn warnings(plugins: &mut Plugins) -> Vec<String> {
+        (plugins.take_warnings().iter())
+            .map(Warning::to_string)
+            .collect()
+    }
+
+    /// A component that exports an instance with nothing in it as each of
+    /// `names`, as one built for another version of little's hooks might
+    /// export them.
+    fn exporting(names: &[&str]) -> Vec<u8> {
+        let mut wasm = b"\0asm\x0d\0\x01\0".to_vec();
+        let mut section = |id: u8, contents: Vec<u8>| {
+            wasm.push(id);
+            wasm.push(u8::try_from(contents.len()).unwrap());
+            wasm.extend(contents);
+        };
+        let mut instances = vec![u8::try_from(names.len()).unwrap()];
+        for _ in names {
+            instances.extend([0x01, 0x00]);
+        }
+        section(0x05, instances);
+        let mut exports = vec![u8::try_from(names.len()).unwrap()];
+        for (index, name) in names.iter().enumerate() {
+            exports.extend([0x00, u8::try_from(name.len()).unwrap()]);
+            exports.extend(name.as_bytes());
+            exports.extend([0x05, u8::try_from(index).unwrap(), 0x00]);
+        }
+        section(0x0b, exports);
+        wasm
     }
 
     /// Render `md` as `docs/test.md`, with `markdown`, and `plugins`.
@@ -880,7 +1352,11 @@ pub(crate) mod tests {
     fn a_plugin_must_be_a_component() {
         let site = scratch(
             "files",
-            &[("module.wasm", "\0asm\x01\0\0\0"), ("text.wasm", "Hello")],
+            &[
+                ("module.wasm", "\0asm\x01\0\0\0"),
+                ("text.wasm", "Hello"),
+                ("empty.wasm", "\0asm\x0d\0\x01\0"),
+            ],
         );
         let plugin = |file: &str, read: &[config::Read]| config::Plugin {
             wasm: Wasm::File(site.join(file)),
@@ -910,6 +1386,43 @@ pub(crate) mod tests {
                 file("text.wasm")
             )
         );
+        assert_eq!(
+            error(plugin("empty.wasm", &[])),
+            format!(
+                "loading plugin `test` from {}: it exports nothing, but a plugin exports \
+                 little's hooks, from `little:plugin@0.2.0`",
+                file("empty.wasm")
+            )
+        );
+        // A plugin built for another version of little's hooks.
+        std::fs::write(
+            site.join("old.wasm"),
+            exporting(&[
+                "little:plugin/code-blocks@0.1.0",
+                "little:plugin/pages@0.1.0",
+            ]),
+        )
+        .unwrap();
+        assert_eq!(
+            error(plugin("old.wasm", &[])),
+            format!(
+                "loading plugin `test` from {}: it exports `little:plugin/code-blocks@0.1.0` \
+                 and `little:plugin/pages@0.1.0`, but none of little's hooks, from \
+                 `little:plugin@0.2.0`",
+                file("old.wasm")
+            )
+        );
+        std::fs::write(
+            site.join("wrong.wasm"),
+            exporting(&["little:plugin/source@0.2.0"]),
+        )
+        .unwrap();
+        let message = error(plugin("wrong.wasm", &[]));
+        let expected = format!(
+            "loading plugin `test` from {}: its `source` hook isn't little:plugin@0.2.0's: ",
+            file("wrong.wasm")
+        );
+        assert!(message.starts_with(&expected), "{message}");
         let missing = config::Read {
             folder: site.join("data"),
             path: "data".to_string(),
@@ -978,111 +1491,415 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn a_plugin_adds_pages_and_warns() {
-        let site = scratch("pages", &[("pkg/hello.md", "# Hello\n")]);
-        let read = [config::Read {
-            folder: site.join("pkg"),
-            path: "pkg".to_string(),
-        }];
-        let settings = serde_json::json!({
-            "pages": [
-                { "path": "reference/README.md", "markdown": "# Reference\n" },
-                { "path": "reference/hello.md", "read": "pkg/hello.md" },
-            ],
-            "warnings": ["can't read pkg/broken.py"],
-        });
-        let mut plugins = start(&[with_pages("api", &settings.to_string(), &read)]).unwrap();
-        let added = plugins.pages().unwrap();
-
-        // It reads the folders it reads as it adds them.
-        let page = |path: &str, markdown: &str| AddedPage {
-            plugin: "api".to_string(),
-            path: path.to_string(),
-            markdown: markdown.to_string(),
-        };
+    fn a_plugin_warns_from_any_hook() {
+        let settings = json!({ "warn": "set up", "source": { "warn": "reading {arg}" } });
+        let mut plugins = started(&settings.to_string());
+        let text = plugins.source("docs/a.md", "docs/a.md", "# A\n".to_string());
+        assert_eq!(text, "# A\n");
         assert_eq!(
-            added.pages,
+            warnings(&mut plugins),
+            ["plugin `test`: set up", "plugin `test`: reading docs/a.md"]
+        );
+        assert_eq!(warnings(&mut plugins), [] as [String; 0]);
+    }
+
+    #[test]
+    fn a_hook_that_fails_is_warned_of_and_skipped() {
+        let settings = json!({
+            "warn": "set up",
+            "source": { "only": "docs/a.md", "error": "can't read {arg}" },
+            "html": { "only": "/a", "panic": "Oh no" },
+            "page": { "only": "/b", "give": "[]" },
+        });
+        let mut plugins = started(&settings.to_string());
+        plugins.take_warnings();
+        let text = plugins.source("docs/a.md", "docs/a.md at v1.4", "# A\n".to_string());
+        assert_eq!(text, "# A\n");
+        let html = plugins.html("/a", "docs/a.md", "<p>A</p>".to_string());
+        assert_eq!(html, "<p>A</p>");
+        let page = Mapping::from_iter([("url".into(), "/b".into())]);
+        assert_eq!(plugins.page("docs/b.md", page.clone()), page);
+        assert_eq!(
+            warnings(&mut plugins),
             [
-                page("reference/README.md", "# Reference\n"),
-                page("reference/hello.md", "# Hello\n"),
+                "plugin `test`'s `source` hook failed on docs/a.md at v1.4: can't read docs/a.md",
+                "plugin `test`'s `html` hook failed on docs/a.md: it crashed: wasm trap: wasm \
+                 `unreachable` instruction executed",
+                // It starts again, after a crash, for the next hook.
+                "plugin `test`: set up",
+                "plugin `test`'s `page` hook failed on docs/b.md: it gave back a `page` that \
+                 isn't a JSON object: invalid type: sequence, expected a YAML mapping at line 1 \
+                 column 0",
             ]
         );
-        assert_eq!(
-            added.pages[0].to_string(),
-            "plugin `api`'s reference/README.md"
-        );
-        let warnings: Vec<_> = added.warnings.iter().map(Warning::to_string).collect();
-        assert_eq!(warnings, ["plugin `api`: can't read pkg/broken.py"]);
+    }
 
-        // And it renders blocks, as any plugin does.
+    #[test]
+    fn each_plugin_changes_what_the_one_before_gives_back() {
+        let site = scratch("config", &[("little.yml", "title: Docs\n")]);
+        let config = config::load(&site).unwrap();
+        let first = json!({
+            "config": { "merge": { "title": "First", "description": "Hooked" } },
+            "source": { "append": " first" },
+            "content": { "replace": ["A", "B"] },
+            "site": { "merge": { "title": "Site" } },
+            "page": { "merge": { "title": "Page" } },
+            "html": { "append": " <!-- {arg} -->" },
+        });
+        let second = json!({
+            "languages": [],
+            "config": { "merge": { "title": "Second" } },
+            "source": { "append": " second" },
+            "content": { "replace": ["B", "C"] },
+            "site": { "echo": "given" },
+            "page": { "echo": "given" },
+        });
+        let mut plugins = start(&[
+            named("first", &first.to_string(), &[]),
+            named("second", &second.to_string(), &[]),
+        ])
+        .unwrap();
+
+        let config = plugins.config(config, &site).unwrap();
+        let value = |key: &str| config.values.get(key).and_then(serde_yaml::Value::as_str);
+        assert_eq!(value("title"), Some("Second"));
+        assert_eq!(value("description"), Some("Hooked"));
+        let text = plugins.source("docs/a.md", "docs/a.md", "A".to_string());
+        assert_eq!(text, "A first second");
         assert_eq!(
-            render("```test\ncount\n```\n", &mut plugins).html,
-            "<p>1</p>\n"
+            plugins.content("docs/a.md", "docs/a.md", "A".to_string()),
+            "C"
+        );
+        let mut checked = Vec::new();
+        let site_value = Mapping::from_iter([("url".into(), "/".into())]);
+        let hooked = (plugins.site(site_value, |name, site| {
+            checked.push((name.to_string(), site.get("title").cloned()));
+            Ok(())
+        }))
+        .unwrap();
+        assert_eq!(
+            hooked.get("given").and_then(serde_yaml::Value::as_str),
+            Some(r#"{"url":"/","title":"Site"}"#)
+        );
+        assert_eq!(
+            checked,
+            [
+                ("first".to_string(), Some("Site".into())),
+                ("second".to_string(), Some("Site".into())),
+            ]
+        );
+        let page = Mapping::from_iter([("url".into(), "/a".into())]);
+        let page = plugins.page("docs/a.md", page);
+        assert_eq!(
+            page.get("given").and_then(serde_yaml::Value::as_str),
+            Some(r#"{"url":"/a","title":"Page"}"#)
+        );
+        let html = plugins.html("/a", "docs/a.md", "<p>A</p>".to_string());
+        assert_eq!(html, "<p>A</p> <!-- /a -->");
+        assert_eq!(warnings(&mut plugins), [] as [String; 0]);
+        let _ = std::fs::remove_dir_all(&site);
+    }
+
+    #[test]
+    fn a_plugins_config_hook_cant_change_what_little_reads_before_it_starts() {
+        let site = scratch("config-errors", &[("little.yml", "title: Docs\n")]);
+        let error = |settings: serde_json::Value| {
+            let config = config::load(&site).unwrap();
+            let mut plugins = started(&json!({ "config": settings }).to_string());
+            format!("{:#}", plugins.config(config, &site).unwrap_err())
+        };
+        assert_eq!(
+            error(json!({ "error": "no config" })),
+            "plugin `test`'s `config` hook failed: no config"
+        );
+        assert_eq!(
+            error(json!({ "give": "[]" })),
+            "plugin `test`'s `config` hook failed: it gave back a config that isn't a JSON \
+             object: invalid type: sequence, expected a YAML mapping at line 1 column 0"
+        );
+        assert_eq!(
+            error(json!({ "merge": { "source": "./elsewhere" } })),
+            "plugin `test`'s `config` hook changes `source`, but plugins can't change \
+             `theme`, `plugins`, `source`, `destination`, `host`, or `port`"
+        );
+        let message = error(json!({ "merge": { "toc_max_depth": 9 } }));
+        assert!(
+            message.starts_with(
+                "plugin `test`'s `config` hook gives back a config little can't use: "
+            ),
+            "{message}"
         );
         let _ = std::fs::remove_dir_all(&site);
     }
 
     #[test]
-    fn a_plugin_built_before_pages_adds_none() {
-        let settings = |language: &str| {
-            let pages = serde_json::json!([{ "path": "api.md", "markdown": "# API" }]);
-            serde_json::json!({ "languages": [language], "pages": pages, "warnings": ["Hi"] })
-                .to_string()
+    fn a_plugins_files_hook_adds_and_removes_the_sources_files() {
+        let site = scratch("files-hook", &[("pkg/hello.md", "# Hello\n")]);
+        let read = [config::Read {
+            folder: site.join("pkg"),
+            path: "pkg".to_string(),
+        }];
+        let settings = json!({ "files": {
+            "remove": ["old.md", "missing.md", "guide.md"],
+            "add": [
+                { "path": "guide.md", "text": "# Guide, again\n" },
+                { "path": "api/index.md", "read": "pkg/hello.md" },
+            ],
+            "list": "paths.txt",
+        }});
+        let mut plugins = start(&[named("api", &settings.to_string(), &read)]).unwrap();
+        let mut files = BTreeMap::from_iter(
+            ["guide.md", "old.md"].map(|path| (path.to_string(), "on disk".to_string())),
+        );
+        let added = |plugin: &str, contents: Vec<u8>| {
+            format!("{plugin}: {}", String::from_utf8(contents).unwrap())
         };
-        let mut plugins = start(&[
-            named("old", &settings("old"), &[]),
-            with_pages("new", &settings("new"), &[]),
-        ])
-        .unwrap();
-        let added = plugins.pages().unwrap();
-        let plugins: Vec<_> = (added.pages.iter())
-            .map(|page| page.plugin.as_str())
-            .chain(added.warnings.iter().map(|warning| warning.plugin.as_str()))
-            .collect();
-        assert_eq!(plugins, ["new", "new"]);
-    }
+        plugins.files(&mut files, added).unwrap();
+        assert_eq!(
+            files,
+            BTreeMap::from_iter(
+                [
+                    ("api/index.md", "api: # Hello\n"),
+                    ("guide.md", "api: # Guide, again\n"),
+                    ("paths.txt", "api: guide.md\nold.md"),
+                ]
+                .map(|(path, origin)| (path.to_string(), origin.to_string()))
+            )
+        );
 
-    #[test]
-    fn a_page_a_plugin_adds_is_a_markdown_file_in_the_source() {
-        let error = |path: &str| {
-            let settings = serde_json::json!({ "pages": [{ "path": path, "markdown": "" }] });
-            let mut plugins = start(&[with_pages("api", &settings.to_string(), &[])]).unwrap();
-            format!("{:#}", plugins.pages().unwrap_err())
+        let error = |files: serde_json::Value| {
+            let mut plugins = started(&json!({ "files": files }).to_string());
+            let mut on_disk = BTreeMap::from_iter([("guide.md".to_string(), ())]);
+            format!("{:#}", plugins.files(&mut on_disk, |_, _| ()).unwrap_err())
         };
-        let message =
-            |path: &str, why: &str| format!("plugin `api` adds a page at `{path}`, but {why}");
-        let from_source = "a page's path is from the source's folder, without a `/` before it";
-        assert_eq!(error("/api.md"), message("/api.md", from_source));
-        let parts = "a page's path has `/` between its parts, and no part is empty, `.`, or `..`";
+        let add = |paths: &[&str]| {
+            let add: Vec<_> = (paths.iter())
+                .map(|path| json!({ "path": path, "text": "" }))
+                .collect();
+            json!({ "add": add })
+        };
+        let message = |path: &str, why: &str| {
+            format!("plugin `test`'s `files` hook adds a file at `{path}`, but {why}")
+        };
+        assert_eq!(
+            error(json!({ "error": "no files" })),
+            "plugin `test`'s `files` hook failed: no files"
+        );
+        assert_eq!(
+            error(add(&["guide.md"])),
+            message("guide.md", "there's one there, which it doesn't remove")
+        );
+        assert_eq!(
+            error(add(&["api.md", "api.md"])),
+            message("api.md", "it adds another there")
+        );
+        let relative = "a file's path is relative, without a `/` before it";
+        assert_eq!(error(add(&["/api.md"])), message("/api.md", relative));
+        let parts = "a file's path has `/` between its parts, and no part is empty, `.`, or `..`";
         for path in [
             "",
             "reference/",
             "reference//api.md",
             "./api.md",
             "reference/../../api.md",
-            "reference\\api.md",
         ] {
-            assert_eq!(error(path), message(path, parts));
+            assert_eq!(error(add(&[path])), message(path, parts));
         }
-        for path in ["api", "api.txt", "api.MD", "api.ipynb"] {
-            assert_eq!(error(path), message(path, "a page's path ends in `.md`"));
+        // None is outside the source on Windows, either.
+        let windows = "a file's path has no `\\` or `:`, which mean something else on Windows";
+        for path in [
+            "reference\\api.md",
+            "C:/api.md",
+            "C:api.md",
+            "api.md:stream",
+        ] {
+            assert_eq!(error(add(&[path])), message(path, windows));
         }
+        // Nor where a disk couldn't have it, beside the others.
+        assert_eq!(
+            error(add(&["guide.md/logo.png"])),
+            message(
+                "guide.md/logo.png",
+                "there's a file at `guide.md`, where its folder would be"
+            )
+        );
+        assert_eq!(
+            error(add(&["api/index.md", "api"])),
+            message("api", "there's a folder there, with `api/index.md` in it")
+        );
+        // But where one it removes was.
+        let settings = json!({ "files": {
+            "remove": ["guide.md"],
+            "add": [{ "path": "guide.md/logo.png", "text": "" }],
+        }});
+        let mut plugins = started(&settings.to_string());
+        let mut on_disk = BTreeMap::from_iter([("guide.md".to_string(), ())]);
+        plugins.files(&mut on_disk, |_, _| ()).unwrap();
+        assert_eq!(Vec::from_iter(on_disk.keys()), ["guide.md/logo.png"]);
+        let _ = std::fs::remove_dir_all(&site);
     }
 
     #[test]
-    fn a_plugin_that_cant_add_its_pages_stops_the_build() {
-        let error = |settings: &str| {
-            let mut plugins = start(&[with_pages("api", settings, &[])]).unwrap();
-            format!("{:#}", plugins.pages().unwrap_err())
+    fn a_plugins_theme_hook_changes_the_themes_files() {
+        let file = |path: &str, contents: &str, plugin: Option<&str>| HookedFile {
+            path: path.to_string(),
+            contents: contents.as_bytes().to_vec(),
+            plugin: plugin.map(str::to_string),
+        };
+        let files = vec![
+            file("_static/a.css", "a", None),
+            file("_templates/default.html", "{{ content }}", None),
+        ];
+        let first = json!({ "theme": {
+            "remove": ["_static/a.css"],
+            "add": [
+                { "path": "_static/a.css", "text": "changed" },
+                { "path": "_templates/og.html", "text": "<meta>" },
+            ],
+            "list": "_static/paths.txt",
+        }});
+        // It gives back the files as it's given them.
+        let second = json!({ "languages": [], "theme": {} });
+        let mut plugins = start(&[
+            named("first", &first.to_string(), &[]),
+            named("second", &second.to_string(), &[]),
+        ])
+        .unwrap();
+        let mut checked = Vec::new();
+        let hooked = (plugins.theme(files.clone(), |name, files| {
+            checked.push((name.to_string(), files.len()));
+            Ok(())
+        }))
+        .unwrap();
+        assert_eq!(
+            hooked,
+            [
+                file("_static/a.css", "changed", Some("first")),
+                file(
+                    "_static/paths.txt",
+                    "_static/a.css\n_templates/default.html",
+                    Some("first")
+                ),
+                file("_templates/default.html", "{{ content }}", None),
+                file("_templates/og.html", "<meta>", Some("first")),
+            ]
+        );
+        assert_eq!(
+            checked,
+            [("first".to_string(), 4), ("second".to_string(), 4)]
+        );
+
+        let error = |theme: serde_json::Value| {
+            let mut plugins = started(&json!({ "theme": theme }).to_string());
+            let checked = plugins.theme(files.clone(), |name, _| bail!("{name} checked it"));
+            format!("{:#}", checked.unwrap_err())
+        };
+        assert_eq!(error(json!({})), "test checked it");
+        assert_eq!(
+            error(json!({ "error": "no theme" })),
+            "plugin `test`'s `theme` hook failed: no theme"
+        );
+        assert_eq!(
+            error(json!({ "add": [{ "path": "_static/a.css", "text": "b" }] })),
+            "plugin `test`'s `theme` hook gives back a file at `_static/a.css`, but it gives \
+             back another there"
+        );
+        assert_eq!(
+            error(json!({ "add": [{ "path": "/_static/b.css", "text": "b" }] })),
+            "plugin `test`'s `theme` hook gives back a file at `/_static/b.css`, but a file's \
+             path is relative, without a `/` before it"
+        );
+        assert_eq!(
+            error(json!({ "add": [{ "path": "_static/a.css/b.css", "text": "b" }] })),
+            "plugin `test`'s `theme` hook gives back a file at `_static/a.css/b.css`, but \
+             there's a file at `_static/a.css`, where its folder would be"
+        );
+        assert_eq!(
+            error(json!({ "add": [{ "path": "_static", "text": "b" }] })),
+            "plugin `test`'s `theme` hook gives back a file at `_static`, but there's a folder \
+             there, with `_static/a.css` in it"
+        );
+    }
+
+    #[test]
+    fn a_plugins_destination_hook_adds_files() {
+        let first = json!({ "destination": {
+            "add": [{ "path": "robots.txt", "text": "User-agent: *" }],
+            "list": "paths.txt",
+        }});
+        let second = json!({ "languages": [], "destination": { "list": "seen.txt" } });
+        let mut plugins = start(&[
+            named("first", &first.to_string(), &[]),
+            named("second", &second.to_string(), &[]),
+        ])
+        .unwrap();
+        let paths = BTreeSet::from_iter(["index.html", "guide/index.html"].map(String::from));
+        let added = plugins.destination(paths.clone()).unwrap();
+        let added: Vec<_> = (added.iter())
+            .map(|file| {
+                let contents = String::from_utf8(file.contents.clone()).unwrap();
+                (file.path.as_str(), contents, file.plugin.as_deref())
+            })
+            .collect();
+        assert_eq!(
+            added,
+            [
+                ("robots.txt", "User-agent: *".to_string(), Some("first")),
+                (
+                    "paths.txt",
+                    "guide/index.html\nindex.html".to_string(),
+                    Some("first")
+                ),
+                // Each plugin is given the files the ones before it add.
+                (
+                    "seen.txt",
+                    "guide/index.html\nindex.html\npaths.txt\nrobots.txt".to_string(),
+                    Some("second")
+                ),
+            ]
+        );
+
+        let settings = json!({ "destination": { "list": "index.html" } });
+        let mut plugins = started(&settings.to_string());
+        assert_eq!(
+            format!("{:#}", plugins.destination(paths.clone()).unwrap_err()),
+            "plugin `test`'s `destination` hook adds a file at `index.html`, but there's one \
+             there"
+        );
+        let error = |path: &str| {
+            let settings = json!({ "destination": { "add": [{ "path": path, "text": "" }] } });
+            let mut plugins = started(&settings.to_string());
+            format!("{:#}", plugins.destination(paths.clone()).unwrap_err())
         };
         assert_eq!(
-            error(r#"{"pages_error":"there's no package to read"}"#),
-            "plugin `api` can't add its pages: there's no package to read"
+            error("index.html/extra.txt"),
+            "plugin `test`'s `destination` hook adds a file at `index.html/extra.txt`, but \
+             there's a file at `index.html`, where its folder would be"
         );
         assert_eq!(
-            error(r#"{"pages_panic":"Oh no"}"#),
-            "plugin `api` can't add its pages: it crashed: wasm trap: wasm `unreachable` \
-             instruction executed"
+            error("guide"),
+            "plugin `test`'s `destination` hook adds a file at `guide`, but there's a folder \
+             there, with `guide/index.html` in it"
         );
+        assert_eq!(
+            error("C:/Users/x.bat"),
+            "plugin `test`'s `destination` hook adds a file at `C:/Users/x.bat`, but a file's \
+             path has no `\\` or `:`, which mean something else on Windows"
+        );
+    }
+
+    #[test]
+    fn a_list_reads_as_a_sentence() {
+        let list = |items: &[&str]| {
+            list(
+                &items
+                    .iter()
+                    .map(|item| item.to_string())
+                    .collect::<Vec<_>>(),
+            )
+        };
+        assert_eq!(list(&["a"]), "a");
+        assert_eq!(list(&["a", "b"]), "a and b");
+        assert_eq!(list(&["a", "b", "c"]), "a, b, and c");
     }
 }

@@ -1,25 +1,49 @@
 ---
 title: Writing a plugin
-description: Write a plugin, in Rust or Python, that renders code blocks or adds pages, as a WebAssembly component.
+description: Write your first plugin, which opens links to other sites in a new tab, in Rust or Python, step by step.
 ---
 
 # Writing a plugin
 
 A [plugin](using-plugins.md) is a
 [WebAssembly component](https://component-model.bytecodealliance.org/),
-built for WASI 0.2, that exports the interface in little's
-[`wit/plugin.wit`](https://github.com/withlittle/little/blob/main/wit/plugin.wit).
-Rust's `wasm32-wasip2` target builds one, and so can Python, Go, JavaScript,
-and C.
+built for WASI 0.2, that exports the [hooks](../reference/plugin-hooks.md)
+it needs, from little's
+[`wit/plugin.wit`](https://github.com/withlittle/little/blob/main/wit/plugin.wit),
+which little calls as the build reaches each step. This page writes one, in
+Rust, that opens each link to another site in a new tab, with one hook,
+`content`, which little calls for each page once its Markdown is written as
+HTML. It turns
 
-## In Rust
+```html
+<a href="https://google.com">Google</a>
+```
 
-This plugin renders a ```` ```csv ```` block as a table, in Markdown:
+into
+
+```html
+<a href="https://google.com" target="_blank" rel="noopener noreferrer">Google</a>
+```
+
+## Make a crate
+
+You'll need [Rust](https://rustup.rs), with its `wasm32-wasip2` target,
+which builds WebAssembly components:
+
+```sh
+rustup target add wasm32-wasip2
+cargo new --lib links
+```
+
+Make the crate a `cdylib`, and add
+[wit-bindgen](https://crates.io/crates/wit-bindgen), which writes the Rust
+for the hooks, and [lol_html](https://crates.io/crates/lol_html), which
+rewrites HTML:
 
 ```toml
-# Cargo.toml
+# links/Cargo.toml
 [package]
-name = "little-csv"
+name = "links"
 version = "0.1.0"
 edition = "2024"
 
@@ -27,141 +51,191 @@ edition = "2024"
 crate-type = ["cdylib"]
 
 [dependencies]
+lol_html = "3.0.1"
 wit-bindgen = "0.62"
 ```
 
+Then copy little's
+[`wit/plugin.wit`](https://github.com/withlittle/little/blob/main/wit/plugin.wit)
+into the crate, as `links/wit/plugin.wit`.
+
+## Write the hook
+
 ```rust
-// src/lib.rs
-wit_bindgen::generate!({ path: "wit/plugin.wit", world: "plugin" });
+// links/src/lib.rs
+wit_bindgen::generate!({
+    path: "wit/plugin.wit",
+    inline: "
+        package my:links;
 
-use exports::little::plugin::code_blocks::{Block, Guest, Output};
-
-struct Csv;
-
-impl Guest for Csv {
-    fn setup(_settings: String) -> Result<Vec<String>, String> {
-        Ok(vec!["csv".to_string()])
-    }
-
-    fn render(block: Block) -> Result<Output, String> {
-        let mut rows = block.text.lines().map(|line| line.split(',').collect::<Vec<_>>());
-        let header = rows.next().ok_or("the table is empty")?;
-        let mut table = format!("| {} |\n|{}\n", header.join(" | "), " --- |".repeat(header.len()));
-        for row in rows {
-            table += &format!("| {} |\n", row.join(" | "));
+        world links {
+            export little:plugin/content@0.2.0;
         }
-        Ok(Output::Markdown(table))
+    ",
+});
+
+use exports::little::plugin::content::Guest;
+use lol_html::{RewriteStrSettings, element, rewrite_str};
+
+struct Links;
+
+impl Guest for Links {
+    fn content(_page: String, html: String) -> Result<String, String> {
+        let settings = RewriteStrSettings::new().append_element_content_handler(element!(
+            "a[href^='http']",
+            |link| {
+                link.set_attribute("target", "_blank")?;
+                link.set_attribute("rel", "noopener noreferrer")?;
+                Ok(())
+            }
+        ));
+        rewrite_str(&html, settings).map_err(|error| error.to_string())
     }
 }
 
-export!(Csv);
+export!(Links);
 ```
 
-Copy little's `wit/plugin.wit` into the crate's `wit/` folder, and build it:
+- The plugin's world, `links`, names the hooks it exports, from
+  `little:plugin`, at version 0.2.0: here, only `content`. `generate!`
+  writes a trait, `Guest`, for each, and `export!` exports the struct that
+  implements them.
+- [`content`](../reference/plugin-hooks.md#content) is given each page's
+  file, like `docs/README.md`, and its HTML, and gives back the HTML the
+  build goes on with: here, with a `target` and a `rel` on each link whose
+  `href` starts with `http`. A link within the site, like `/guide`, is left
+  as it is.
+- An error, from HTML lol_html can't read, is warned of, naming the page,
+  and the page's HTML is kept as it was.
+
+## Build it
 
 ```sh
-rustup target add wasm32-wasip2
+cd links
 cargo build --release --target wasm32-wasip2
 ```
 
-Then name `target/wasm32-wasip2/release/little_csv.wasm` in a site's
-[`plugins`](using-plugins.md#naming-a-plugin).
+That builds the plugin, `target/wasm32-wasip2/release/links.wasm`, one file,
+which runs wherever little does.
 
-## What little calls
+## Use it
 
-- `setup` is called as each build starts, before any page is built, with the
-  plugin's settings from `little.yml` as a JSON object, without `wasm`, like
-  `{"read":["src"],"style":"google"}`, where `read` is always a list. It
-  gives back the languages the plugin renders, each one word, which little
-  matches in any case, or an error, which stops the build.
-- `render` is given each block in those languages, with:
-  - `language`, its language, in lowercase, like `csv`;
-  - `info`, all that's after its fence, like `csv headers=false`;
-  - `text`, its text, which ends in a newline unless the block is empty;
-  - `page`, its page's file, from the site's folder, like `docs/sizes.md`.
+Name it in a site's [`plugins`](using-plugins.md#naming-a-plugin), by its
+path from the site's `little.yml`:
 
-  It gives back `Output::Markdown` or `Output::Html`, or an error, which
-  little warns of, leaving the block as it was.
-- little starts each plugin once a build, so a plugin keeps its state from
-  block to block, and page to page. If it crashes, as a Rust plugin does when
-  it panics, little starts it again, and calls `setup` again, before the next
-  block.
-- A plugin reads the folders `read` names at their paths from the site's
-  folder, like `std::fs::read_to_string("src/app.py")`. It can't change
-  them, or reach anything else.
-- A plugin keeps working as little changes, until the interface's version,
-  `little:plugin@0.1.0`, does.
+```yaml
+# little.yml
+plugins:
+  links: ../links/target/wasm32-wasip2/release/links.wasm
+```
+
+Then build the site, or [serve](../reference/commands.md#little-serve) it,
+which builds it again each time you build the plugin. A page with
+
+```markdown
+Search with [Google](https://google.com), or read the [guide](guide.md).
+```
+
+now has
+
+```html
+<p>Search with <a href="https://google.com" target="_blank" rel="noopener noreferrer">Google</a>, or read the <a href="/guide">guide</a>.</p>
+```
+
+## The theme's links, too
+
+`content` changes only a page's own content, which the theme gets as
+`page.content`, not the links the theme writes around it, like the one to
+the site's repository in the built-in theme's header. For those too, export
+the [`html`](../reference/plugin-hooks.md#html) hook instead, which is given
+each page as it's written, theme and all: in `src/lib.rs`, export
+`little:plugin/html@0.2.0`, `use exports::little::plugin::html::Guest`,
+and name the function `html`. Its first argument is the page's URL, like
+`/guide`, rather than its file.
+
+## Settings, warnings, and files
+
+- A plugin's settings go beside its `wasm` in `little.yml`, as
+  [Using plugins](using-plugins.md#naming-a-plugin) shows, and its
+  [`setup`](../reference/plugin-hooks.md#setup) hook is given them, as a
+  JSON object, before any other hook.
+- To warn of something, like a link it can't rewrite, a plugin imports
+  `warnings`, and calls `warn`, which `little build` shows, naming the
+  plugin, and `--strict` fails on. In Rust, a world that imports needs
+  `generate_all`:
+
+  ```rust
+  wit_bindgen::generate!({
+      path: "wit/plugin.wit",
+      inline: "
+          package my:links;
+
+          world links {
+              import little:plugin/warnings@0.2.0;
+              export little:plugin/content@0.2.0;
+          }
+      ",
+      generate_all,
+  });
+
+  use little::plugin::warnings::warn;
+  ```
+
+- A plugin can read the folders its `read` setting names, at their paths
+  from the site's folder, like `std::fs::read_to_string("src/app.py")`, but
+  can't change them, or reach anything else.
 
 ## In Python
 
 [componentize-py](https://github.com/bytecodealliance/componentize-py)
-builds the same plugin from `app.py`, with
-`componentize-py -d plugin.wit -w plugin componentize app -o csv.wasm`:
+builds the same plugin from Python. Copy `plugin.wit` into a folder, beside
+`links.wit`, which names the plugin's world, and `app.py`, which exports its
+hook:
 
-```python
-import csv
-from componentize_py_types import Err
-from wit_world import exports
-from wit_world.exports.code_blocks import Block, Output, Output_Markdown
+```wit
+// links.wit
+package my:links;
 
-class CodeBlocks(exports.CodeBlocks):
-    def setup(self, settings: str) -> list[str]:
-        return ["csv"]
-
-    def render(self, block: Block) -> Output:
-        rows = list(csv.reader(block.text.splitlines()))
-        if not rows:
-            raise Err("the table is empty")
-        table = ["| " + " | ".join(rows[0]) + " |", "|" + " --- |" * len(rows[0])]
-        table += ["| " + " | ".join(row) + " |" for row in rows[1:]]
-        return Output_Markdown("\n".join(table))
+world links {
+    export little:plugin/content@0.2.0;
+}
 ```
 
-It carries Python with it, so it's about 18 MB, rather than Rust's 77 KB, and
-adds about a second to `little build`, rather than 10 ms.
+```python
+# app.py
+import re
 
-## Adding pages
+from wit_world import exports
 
-A plugin can [add pages](using-plugins.md#pages), too, as
-[`docstrings`](python-api-reference.md) and
-[`doc_comments`](rust-api-reference.md) do, when it's built for
-`world plugin-with-pages`, which exports `pages` beside `setup` and
-`render`. For the plugin above to add a page that shows the site's
-`data/sizes.csv`, in a ```` ```csv ```` block its own `render` renders,
-change the world it's built for, and add `pages`:
+LINK = re.compile(r'<a ([^>]*href="https?://[^>]*)>')
 
-````rust
-// src/lib.rs
-wit_bindgen::generate!({ path: "wit/plugin.wit", world: "plugin-with-pages" });
 
-use exports::little::plugin::pages::{self, Added, Page};
+class Content(exports.Content):
+    def content(self, page: str, html: str) -> str:
+        return LINK.sub(r'<a \1 target="_blank" rel="noopener noreferrer">', html)
+```
 
-impl pages::Guest for Csv {
-    fn pages() -> Result<Added, String> {
-        let text = std::fs::read_to_string("data/sizes.csv").map_err(|error| error.to_string())?;
-        let markdown = format!("# Sizes\n\n```csv\n{}\n```\n", text.trim_end());
-        let page = Page { path: "data/sizes.md".to_string(), markdown };
-        Ok(Added { pages: vec![page], warnings: Vec::new() })
-    }
-}
-````
+Then build it:
 
-Then name the folder it reads, `read: data`, beside its `wasm` in the site's
-`little.yml`, and the site has a page at `/data/sizes`, with the table on
-it.
+```sh
+pip install componentize-py
+componentize-py -d plugin.wit -d links.wit -w my:links/links componentize app -o links.wasm
+```
 
-- `pages` is called once each build, after `setup`, before any page is
-  built. It gives back the pages the plugin adds, and what little should
-  warn of, each one line, like a file it can't read, which
-  `little build --strict` fails on; or an error, which stops the build, as a
-  crash does.
-- A page's `path` is where its file would be, from the source's folder, with
-  `/` between its parts, like `reference/README.md`: no part is empty, `.`,
-  or `..`, and it ends in `.md`, or the build stops.
-- The page is built as a Markdown file at that path would be: its
-  frontmatter is read, its relative links lead from its folder, and its code
-  blocks go to plugins, with `page` the file it would be, like
-  `docs/data/sizes.md`. A page that would be the same page as a file in the
-  source, or as another plugin's page, stops the build.
-- A plugin that only adds pages gives back no languages from `setup`, so its
-  `render` is never called.
+- A hook raises `componentize_py_types.Err` for an error, and a plugin that
+  imports `warnings` calls `wit_world.imports.warnings.warn`.
+- Its regular expression finds links as Markdown writes them, but not every
+  `<a>`, as lol_html does.
+- It carries Python with it, so it's about 18 MB, rather than Rust's 770 KB,
+  and adds about a second to `little build`, rather than 60 ms.
+
+## What's next
+
+- [Plugin hooks](../reference/plugin-hooks.md) lists every hook, in the
+  order little calls them, with what each is given, and gives back.
+- little's own `docstrings` and `doc_comments` plugins, in its
+  [`plugins/`](https://github.com/withlittle/little/tree/main/plugins), add
+  an API reference with the [`files`](../reference/plugin-hooks.md#files)
+  hook.
+- A plugin keeps working as little changes, until the version of its hooks,
+  `little:plugin@0.2.0`, does.

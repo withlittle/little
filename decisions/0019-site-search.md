@@ -3,7 +3,9 @@
 - Status: accepted; amended by [0021](./0021-search-files-in-pagefind.md),
   which writes search's files to `pagefind/`, as Pagefind does, indexes each
   page's URL without the site's path, which Pagefind puts back, and loads the
-  built-in theme's search box so it finds them itself
+  built-in theme's search box so it finds them itself, and by
+  [0046](./0046-plugin-hooks.md), which indexes the `title` and `content` a
+  plugin's `page` hook gives back
 - Date: 2026-10-02
 
 ## Context
