@@ -2,8 +2,11 @@
 
 - Status: accepted; amended by [0030](./0030-plugins-that-add-pages.md),
   which lets a plugin add pages, too, exporting `pages` in a second world,
-  `plugin-with-pages`, and by [0045](./0045-limits-on-downloads.md), which
-  stops a plugin's download that takes too long or is too big
+  `plugin-with-pages`, by [0045](./0045-limits-on-downloads.md), which
+  stops a plugin's download that takes too long or is too big, and by
+  [0046](./0046-plugin-hooks.md), which makes rendering code blocks one of a
+  plugin's hooks, `code-blocks`, with its languages from `languages`, not
+  `setup`, in `little:plugin@0.2.0`
 - Date: 2026-10-07
 - Amends: [0004](./0004-downloading-themes.md),
   [0016](./0016-checking-links.md),

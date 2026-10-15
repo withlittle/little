@@ -1,6 +1,8 @@
 # 0031 — A plugin for Python's docstrings
 
-- Status: accepted
+- Status: accepted; amended by [0046](./0046-plugin-hooks.md), whose
+  hooks it exports in place of `plugin-with-pages`: `setup`, and
+  `files`, which adds its pages
 - Date: 2026-10-08
 
 ## Context

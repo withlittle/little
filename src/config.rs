@@ -99,7 +99,7 @@ pub struct Config {
     /// The extensions to CommonMark each page is written with, from
     /// `markdown`.
     pub markdown: Markdown,
-    /// The plugins that render code blocks, from `plugins`, in the order
+    /// The plugins whose hooks the build calls, from `plugins`, in the order
     /// they're named.
     pub plugins: Vec<Plugin>,
     /// The versions of the site, from `versions`, in the order its menu lists
@@ -488,7 +488,37 @@ impl Config {
             ..self.clone()
         })
     }
+
+    /// The config of the site at `site_dir`, with `values` in place of its
+    /// own, as a plugin's `config` hook gives them back. Errors, which
+    /// follow ``plugin `name`'s `config` hook``, if they change one of
+    /// [`FIXED`], or little can't use them.
+    pub fn hooked(&self, site_dir: &Path, mut values: Mapping) -> Result<Config> {
+        for key in FIXED {
+            let own = self.values.get(key);
+            if values.get(key) != own {
+                let fixed: Vec<String> = FIXED.iter().map(|key| format!("`{key}`")).collect();
+                let (last, rest) = fixed.split_last().expect("some settings are fixed");
+                bail!(
+                    "changes `{key}`, but plugins can't change {}, or {last}",
+                    rest.join(", ")
+                );
+            }
+            // As it was, in its order, which a plugin's JSON may not keep.
+            if let Some(own) = own {
+                values.insert(key.into(), own.clone());
+            }
+        }
+        settle(site_dir, values, self.beneath.clone(), self.themes.clone())
+            .map_err(|e| anyhow!("gives back a config little can't use: {e:#}"))
+    }
 }
+
+/// The settings a plugin's `config` hook can't change, which little reads
+/// before plugins start, and `little serve` reads from the site's own
+/// config: the theme and plugins it uses, the folders it reads and writes,
+/// and where it serves.
+pub const FIXED: [&str; 6] = ["theme", "plugins", "source", "destination", "host", "port"];
 
 /// Check the merged config, `values`, of the site at `site_dir`, which is in
 /// `themes`, over `beneath`, and work out what it chooses.
@@ -2902,6 +2932,52 @@ mod tests {
         let message = format!("{:#}", config.for_version(&v14, &old, file).unwrap_err());
         assert!(
             message.starts_with("parsing v1.4:old/little.yml: "),
+            "{message}"
+        );
+        let _ = std::fs::remove_dir_all(&site);
+    }
+
+    #[test]
+    fn a_plugin_changes_the_config_but_not_what_little_reads_before_it_starts() {
+        let site = scratch("hooked", &[(CONFIG_FILE, "title: Docs\nport: 9000\n")]);
+        let config = load(&site).unwrap();
+        let hook = |change: &dyn Fn(&mut Mapping)| {
+            let mut values = config.values.clone();
+            change(&mut values);
+            config.hooked(&site, values).map_err(|e| format!("{e:#}"))
+        };
+
+        let hooked = hook(&|values| {
+            values.insert("title".into(), "Hooked".into());
+            values.insert("toc_max_depth".into(), 4.into());
+        })
+        .unwrap();
+        assert_eq!(get(&hooked.values, "title"), Some("Hooked"));
+        assert_eq!(hooked.toc_depths, 2..=4);
+        assert_eq!(hooked.port, 9000);
+
+        let fixed = "but plugins can't change `theme`, `plugins`, `source`, `destination`, \
+                     `host`, or `port`";
+        let changed = hook(&|values| {
+            values.insert("port".into(), 9001.into());
+        });
+        assert_eq!(changed.unwrap_err(), format!("changes `port`, {fixed}"));
+        let changed = hook(&|values| {
+            values.shift_remove("theme");
+        });
+        assert_eq!(changed.unwrap_err(), format!("changes `theme`, {fixed}"));
+        let changed = hook(&|values| {
+            let plugins = serde_yaml::from_str("{ bob: ./bob.wasm }").unwrap();
+            values.insert("plugins".into(), plugins);
+        });
+        assert_eq!(changed.unwrap_err(), format!("changes `plugins`, {fixed}"));
+
+        let changed = hook(&|values| {
+            values.insert("toc_max_depth".into(), 9.into());
+        });
+        let message = changed.unwrap_err();
+        assert!(
+            message.starts_with("gives back a config little can't use: "),
             "{message}"
         );
         let _ = std::fs::remove_dir_all(&site);

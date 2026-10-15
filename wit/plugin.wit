@@ -1,6 +1,94 @@
-/// The interface a little plugin exports: see decisions/0029, and "Writing a
-/// plugin" in little's manual, docs/plugins/writing-a-plugin.md.
-package little:plugin@0.1.0;
+/// The hooks a little plugin can export, each an interface of its own, and
+/// what it can import: see "Plugin hooks" in little's manual,
+/// docs/reference/plugin-hooks.md, and decisions/0046.
+///
+/// A plugin exports only the hooks it needs, and little calls each as the
+/// build reaches it, in the order they're written here. Each gets what the
+/// build has made so far, and gives back what the build goes on with. A
+/// site's plugins are called in the order its `plugins` names them, each
+/// with what the one before it gave back.
+package little:plugin@0.2.0;
+
+/// What a plugin can tell little, from any hook.
+interface warnings {
+    /// Warn of `message`, one line, like a file the plugin couldn't read.
+    /// `little build` shows it, naming the plugin, and `--strict` fails on
+    /// it.
+    warn: func(message: string);
+}
+
+/// Sets the plugin up.
+interface setup {
+    /// Called as the plugin starts, before any other hook, with its settings
+    /// from `little.yml`, as a JSON object, without `wasm`, and with `read`
+    /// always a list. Called again if the plugin crashes, before the next
+    /// hook, as it starts afresh. An error stops the build.
+    setup: func(settings: string) -> result<_, string>;
+}
+
+/// Changes the site's config.
+interface config {
+    /// Called once, with the site's config, as `little config` prints it, as
+    /// a JSON object. Gives back the config the build goes on with, which
+    /// can change any setting but `theme`, `plugins`, `source`,
+    /// `destination`, `host`, and `port`. An error stops the build.
+    config: func(config: string) -> result<string, string>;
+}
+
+/// Changes the theme's files.
+interface theme {
+    /// A file of the theme.
+    record file {
+        /// Its path in the theme, like `_templates/default.html`,
+        /// `_static/assets/style.css`, or `_sass/_colors.scss`.
+        path: string,
+        contents: list<u8>,
+    }
+
+    /// Called once, with each file in the `_templates/`, `_static/`, and
+    /// `_sass/` of the site's theme, or of the nearest theme it builds on
+    /// that has it, sorted by path. Gives back the files the build goes on
+    /// with, which can add, change, or leave out any. An error stops the
+    /// build.
+    theme: func(files: list<file>) -> result<list<file>, string>;
+}
+
+/// Changes which files the site is built from.
+interface files {
+    /// A file to add to the source.
+    record file {
+        /// Its path from the source folder, with `/` between its parts, like
+        /// `reference/README.md`.
+        path: string,
+        contents: list<u8>,
+    }
+
+    /// What to change.
+    record changes {
+        /// Files to build as if they were in the source folder: each
+        /// Markdown file and notebook is a page, and any other file is
+        /// copied.
+        add: list<file>,
+        /// The paths of files to leave out.
+        remove: list<string>,
+    }
+
+    /// Called once, with the path of each file in the source folder, but
+    /// hidden ones, from it, like `guide/install.md`, sorted. Gives back the
+    /// files to add, and those to leave out: a file can be added where one
+    /// is only if that one's left out. An error stops the build.
+    files: func(paths: list<string>) -> result<changes, string>;
+}
+
+/// Changes each page's text.
+interface source {
+    /// Called for each page as it's read, with its file, from the site's
+    /// folder, like `docs/guide/install.md`, and its text: Markdown, with
+    /// its frontmatter, or a notebook's JSON. Gives back the text the page
+    /// is built from. An error is warned of, and the page is built from the
+    /// text as it was.
+    source: func(page: string, text: string) -> result<string, string>;
+}
 
 /// Renders fenced code blocks in the languages the plugin chooses.
 interface code-blocks {
@@ -14,7 +102,8 @@ interface code-blocks {
         info: string,
         /// Its text, which ends in a newline unless the block is empty.
         text: string,
-        /// Its page's file, from the site's folder, like `docs/guide.md`.
+        /// Its page's file, from the site's folder, like
+        /// `docs/guide/install.md`.
         page: string,
     }
 
@@ -28,53 +117,90 @@ interface code-blocks {
         html(string),
     }
 
-    /// Called as each build starts, before any page is built, and again
-    /// before the next block after the plugin crashes, with its settings
-    /// from `little.yml` as a JSON object, without `wasm`, where `read` is
-    /// always a list. Gives back the languages the plugin renders, each one
-    /// word, or an error, which stops the build.
-    setup: func(settings: string) -> result<list<string>, string>;
+    /// Called once, after `setup`, for the languages the plugin renders,
+    /// each one word, like `bob`. A language is one plugin's alone.
+    languages: func() -> list<string>;
 
-    /// Renders a block in one of the plugin's languages, or gives back an
-    /// error, which little warns of, leaving the block as it was.
+    /// Called for each fenced block in one of the plugin's languages, as
+    /// its page is read, after `source`, before its diagrams are drawn.
+    /// Gives back what takes the block's place, or an error, which is warned
+    /// of, leaving the block as it was.
     render: func(block: block) -> result<output, string>;
 }
 
-/// A little plugin.
-world plugin {
-    export code-blocks;
+/// Changes each page's content.
+interface content {
+    /// Called for each page once it's written as HTML, before it's put in
+    /// the theme, with its file, as for `source`, and the HTML, which the
+    /// theme gets as `page.content`. Gives back the HTML the build goes on
+    /// with. An error is warned of, and the HTML is kept as it was.
+    content: func(page: string, html: string) -> result<string, string>;
 }
 
-/// Adds pages to a site: see decisions/0030.
-interface pages {
-    /// A page, which little builds as if it were a Markdown file in the
-    /// site's source.
-    record page {
-        /// Where the file would be, from the source's folder, with `/`
-        /// between its parts, like `reference/mypackage/README.md`: no part
-        /// is empty, `.`, or `..`, and it ends in `.md`.
+/// Changes what the theme gets as `site`.
+interface site {
+    /// Called once, after every page is read, with `site`, as the theme gets
+    /// it, as a JSON object: the config's settings, with `nav`, `year`, and,
+    /// for a site with versions, `version` and `versions`. A URL in it from
+    /// the root of the site has the path of the site's `url` before it, as
+    /// a reader follows it, so one a plugin adds needs it, too. Gives back
+    /// the `site` the theme gets, whose `nav` is still a list of `{ title,
+    /// url, children }`, which `page.prev`, `page.next`, and
+    /// `page.breadcrumbs` follow. An error stops the build.
+    site: func(site: string) -> result<string, string>;
+}
+
+/// Changes what the theme gets as `page`.
+interface page {
+    /// Called for each page, the 404 page too, before it's put in the
+    /// theme, with `page`, as the theme gets it, as a JSON object, its URLs
+    /// as they are in `site`. Gives back the `page` the theme gets, whose
+    /// `title` and `content` search indexes. An error is warned of, and the
+    /// theme gets `page` as it was.
+    page: func(page: string) -> result<string, string>;
+}
+
+/// Changes each page as it's written.
+interface html {
+    /// Called for each page the theme writes, the 404 page too, with its
+    /// URL, as a reader follows it, like `/guide/install`, and its HTML.
+    /// Gives back the HTML that's written. An error is warned of, and the
+    /// HTML is written as it was.
+    html: func(url: string, html: string) -> result<string, string>;
+}
+
+/// Adds files to the site as it's written.
+interface destination {
+    /// A file to add.
+    record file {
+        /// Its path from the site's folder in the destination, with `/`
+        /// between its parts, like `sitemap.xml`.
         path: string,
-        /// What the file would hold: Markdown, with frontmatter if it likes.
-        markdown: string,
+        contents: list<u8>,
     }
 
-    /// What `pages` adds.
-    record added {
-        /// The pages.
-        pages: list<page>,
-        /// Anything little should warn of, like a file the plugin couldn't
-        /// read, each one line.
-        warnings: list<string>,
-    }
-
-    /// Called once each build, after `setup`, before any page is built.
-    /// Gives back the pages the plugin adds, or an error, which stops the
-    /// build.
-    pages: func() -> result<added, string>;
+    /// Called once, after every page is put in the theme, before the site
+    /// is written, with the path of each file it writes, from its folder in
+    /// the destination, like `guide/install/index.html`, sorted. Gives back
+    /// files to add, like a `sitemap.xml`, but not where one is. An error
+    /// stops the build.
+    destination: func(paths: list<string>) -> result<list<file>, string>;
 }
 
-/// A little plugin that adds pages, and can render code blocks too.
-world plugin-with-pages {
-    include plugin;
-    export pages;
+/// Every hook, which little's own bindings are generated from. A plugin's
+/// world exports only those it needs, like `world links { export
+/// little:plugin/content@0.2.0; }`.
+world hooks {
+    import warnings;
+    export setup;
+    export config;
+    export theme;
+    export files;
+    export source;
+    export code-blocks;
+    export content;
+    export site;
+    export page;
+    export html;
+    export destination;
 }

@@ -58,8 +58,9 @@ has no 404 page, and the host shows its own.
 [broken link](../writing/links-and-images.md#checking-links), a
 [formula](../writing/math.md) it couldn't render, a
 [diagram](../writing/diagrams.md) it couldn't draw, or a code block a
-[plugin](../plugins/using-plugins.md) couldn't render, or a plugin's
-warning. So build with it in CI, to keep a broken site from being published.
+[plugin](../plugins/using-plugins.md) couldn't render, a plugin's warning,
+or a [hook](../reference/plugin-hooks.md) of one that failed on a page. So
+build with it in CI, to keep a broken site from being published.
 `dist/` is written either way.
 
 Links to other sites are checked too, so a site that's down, or turns link

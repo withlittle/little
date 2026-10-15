@@ -1,6 +1,8 @@
 # 0030 — Plugins that add pages
 
-- Status: accepted
+- Status: accepted; amended by [0046](./0046-plugin-hooks.md), which adds
+  pages, and other files, with the `files` hook, in place of `pages`, and
+  warnings with `warn`, so a plugin's page can be a notebook
 - Date: 2026-10-08
 - Amends: [0013](./0013-pages-that-clash.md),
   [0029](./0029-plugins-that-render-code-blocks.md)

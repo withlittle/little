@@ -53,8 +53,8 @@ and a rejection of their worst friction.
 - **Config:** cascading YAML.
 - **Plugins:** sandboxed **WASM** components (wasmtime, built in), so
   plugins are language-agnostic, and one `.wasm` file runs wherever little
-  does. For now, they render fenced code blocks in languages of their own
-  (e.g. Sphinx-style docstring extraction as a plugin).
+  does. They hook into each step of the build, from its config to the files
+  it writes (e.g. Sphinx-style docstring extraction as a plugin).
 - **Styling:** bring-your-own; little compiles a theme's Sass (grass, built
   in), and pairs with the standalone Tailwind CLI (no Node).
 - **Search:** Pagefind, built in, indexes each page as it's built, for a

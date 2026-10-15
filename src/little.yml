@@ -87,8 +87,8 @@ markdown:
 # names, like `theme: forest`, or `theme: base` with `themeVariables`, each
 # colour in quotes, like "#6f42c1".
 
-# `plugins`, which render code blocks in languages of their own, has no
-# default either. It names each plugin and its `.wasm` file, by a path or an
+# `plugins`, whose hooks little calls as it builds a site, has no default
+# either. It names each plugin and its `.wasm` file, by a path or an
 # https:// URL, like `csv: ./plugins/little_csv.wasm`, or gives the file as
 # `wasm`, beside settings the plugin reads itself, and `read`, the folders it
 # can read, which only the site can set. `csv: false` turns a theme's off.

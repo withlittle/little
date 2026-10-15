@@ -21,14 +21,16 @@ use std::fmt;
 use std::fs;
 use std::io::ErrorKind;
 use std::iter::Peekable;
+use std::mem;
 use std::path::{Component, Path, PathBuf};
 use std::slice;
 use time::OffsetDateTime;
 use walkdir::WalkDir;
 
 use crate::config::{Config, Repo, Shared, SiteUrl};
-use crate::theme::{PageType, StaticFile, Theme};
-use crate::{config, git, math, mermaid, notebook, plugin, render, search, theme};
+use crate::plugin::{Plugins, Warned};
+use crate::theme::{PageType, StaticFile, Theme, ThemeFiles};
+use crate::{config, git, math, mermaid, notebook, plugin, render, search};
 
 /// Where a site's 404 page is written: the root of the destination, which is
 /// where static hosts look for it.
@@ -41,7 +43,7 @@ const MARKER_FILE: &str = ".little-build";
 /// A rendered content page.
 struct Page {
     /// Path relative to the source folder (e.g. `guide/install.md`), or, for
-    /// a page a plugin adds, where its file would be.
+    /// a file a plugin's `files` hook adds, its path there.
     rel: PathBuf,
     /// What it's built from, for an error or a warning: its file, like
     /// `./docs/guide/install.md`, or the plugin that adds it and where, like
@@ -202,8 +204,9 @@ pub struct Built {
     /// Each code block in its pages that a plugin couldn't render, so is
     /// left as it was, in the order of the pages, to warn of.
     pub unrendered_blocks: Vec<UnrenderedBlock>,
-    /// What each plugin warned of as it added its pages, in the order of the
-    /// versions, then of the plugins.
+    /// What each plugin warned of, and each of its hooks that failed, so
+    /// the build went on without its change, in the order of the versions,
+    /// then as they happened.
     pub plugin_warnings: Vec<PluginWarning>,
     /// The path in the destination of each file written for a version of
     /// the site from a git ref, whose links to other sites aren't checked,
@@ -211,8 +214,8 @@ pub struct Built {
     pub from_refs: HashSet<PathBuf>,
 }
 
-/// Something a plugin warned of as it added its pages, and the git ref of
-/// the version of the site it was adding them to, if it's from one.
+/// Something a plugin warned of, or a hook of its that failed, and the git
+/// ref of the version of the site it was building, if it's from one.
 #[derive(Clone, Debug)]
 pub struct PluginWarning {
     /// The ref, like `v1.4`.
@@ -222,10 +225,13 @@ pub struct PluginWarning {
 
 impl fmt::Display for PluginWarning {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let plugin::Warning { plugin, message } = &self.warning;
-        match &self.git_ref {
-            Some(git_ref) => write!(f, "plugin `{plugin}` at {git_ref}: {message}"),
-            None => self.warning.fmt(f),
+        // A hook that failed names what it failed on, which names the ref.
+        match (&self.git_ref, &self.warning.warned) {
+            (Some(git_ref), Warned::Message(message)) => {
+                let plugin = &self.warning.plugin;
+                write!(f, "plugin `{plugin}` at {git_ref}: {message}")
+            }
+            _ => self.warning.fmt(f),
         }
     }
 }
@@ -355,13 +361,16 @@ struct Source {
     /// Its theme, which writes URLs under the version's.
     theme: Theme,
     pages: Vec<Page>,
-    /// The source's files that aren't pages.
+    /// The source's files that aren't pages, and those its plugins add.
     files: Vec<StaticFile>,
-    /// What its plugins warned of as they added their pages.
-    warnings: Vec<plugin::Warning>,
+    /// Its plugins, which go on to hook into putting its pages in the theme.
+    plugins: Plugins,
     /// Where its source folder is in the site's repository, if the site
     /// says which that is.
     in_repo: Option<InRepo>,
+    /// The files it's read from, if it's from a git ref, which are kept
+    /// until it's built, as its plugins can read them.
+    checkout: Option<git::Checkout>,
 }
 
 /// Where a version's source folder is in the site's repository, so each of
@@ -464,6 +473,12 @@ pub fn build(site_dir: &Path) -> Result<Built> {
     // Once, so every page of a build has the same year, and every diagram
     // the same today, even at midnight.
     let now = time_of_build(env::var_os("SOURCE_DATE_EPOCH"))?;
+    // The site's plugins start before anything's read, so their `config`
+    // hooks change the config the build reads, and their `theme` hooks the
+    // theme every version is in.
+    let mut plugins = Plugins::start(&config.plugins, site_dir, now)?;
+    let config = plugins.config(config, site_dir)?;
+    let theme = ThemeFiles::read(&config.themes)?.hooked(&mut plugins)?;
     // A site without `versions` is one version, of its files as they are.
     let versions: Vec<Option<&config::Version>> = if config.versions.is_empty() {
         vec![None]
@@ -477,22 +492,32 @@ pub fn build(site_dir: &Path) -> Result<Built> {
 
     // Every version is in the site's theme, so its static files are read
     // once, and written once, for the version at the root of the site.
-    let theme_files = theme::static_files(&config.themes)?;
+    let theme_files = theme.static_files()?;
     let theme_urls = (theme_files.iter())
         .map(|file| file_url(&file.path))
         .collect();
 
     // Every version is read, and every page rendered, before the destination
-    // is touched, so a build that fails leaves the last one in place.
+    // is touched, so a build that fails leaves the last one in place. The
+    // site's plugins build the version of its files as they are; one from a
+    // git ref starts its own, with its own settings.
+    let mut site_plugins = Some(plugins);
     let mut sources = Vec::new();
     for &version in &versions {
         let place = Place::new(&config, version, &theme_urls);
         let git_ref = version.and_then(|version| version.git_ref.as_deref());
         let source = match (version, git_ref, &repository) {
             (Some(version), Some(git_ref), Some(repository)) => {
-                read_ref(site_dir, &config, repository, version, git_ref, place, now)
+                check_out(&config, repository, version, git_ref).and_then(|(checkout, config)| {
+                    let plugins = Plugins::start(&config.plugins, site_dir, now)?;
+                    let checkout = Some(checkout);
+                    read_source(site_dir, &config, checkout, plugins, &theme, place, now)
+                })
             }
-            _ => read_source(site_dir, &config, None, place, now),
+            _ => {
+                let plugins = site_plugins.take().unwrap_or_default();
+                read_source(site_dir, &config, None, plugins, &theme, place, now)
+            }
         };
         sources.push(in_version(source, version)?);
     }
@@ -517,6 +542,11 @@ pub fn build(site_dir: &Path) -> Result<Built> {
         plugin_warnings: Vec::new(),
         from_refs: HashSet::new(),
     };
+    // When every version is from a git ref, the site's plugins build none,
+    // but may have warned as they started.
+    if let Some(mut plugins) = site_plugins {
+        built.plugin_warnings.extend(warned(&mut plugins, None));
+    }
     let mut ready = Vec::new();
     for (source, &version) in sources.into_iter().zip(&versions) {
         let finished = finish(source, every.as_ref(), &theme_files, now, &mut built);
@@ -558,20 +588,29 @@ fn in_version<T>(result: Result<T>, version: Option<&config::Version>) -> Result
     }
 }
 
-/// Read `version` of the site, to build at `place`, as it was at its ref,
-/// `git_ref`, in `repository`, with the site's config, but its own pages,
-/// nav, and plugins' settings, from its entry in `versions`, or its own
-/// little.yml there, if it has one: the files it reads are checked out of the
-/// repository apart from the site's own, and deleted once they're read.
-fn read_ref(
-    site_dir: &Path,
+/// What `plugins` have warned of since they were last asked, as warnings of
+/// the version of the site from `git_ref`, if it's from one.
+fn warned(plugins: &mut Plugins, git_ref: Option<&str>) -> Vec<PluginWarning> {
+    (plugins.take_warnings().into_iter())
+        .map(|warning| PluginWarning {
+            git_ref: git_ref.map(str::to_string),
+            warning,
+        })
+        .collect()
+}
+
+/// Check out `version` of the site, as it was at its ref, `git_ref`, in
+/// `repository`, and its config: the site's, `config`, but with its own
+/// pages, nav, and plugins' settings, from its entry in `versions`, or its
+/// own little.yml there, if it has one. Only the files it reads are checked
+/// out, apart from the site's own, and they're deleted once the checkout is
+/// dropped.
+fn check_out(
     config: &Config,
     repository: &git::Repository,
     version: &config::Version,
     git_ref: &str,
-    place: Place,
-    now: OffsetDateTime,
-) -> Result<Source> {
+) -> Result<(git::Checkout, Config)> {
     let checkout = repository.checkout(git_ref)?;
     let file = checkout.site_dir().join(config::CONFIG_FILE);
     checkout.extract(&[&file])?;
@@ -604,22 +643,33 @@ fn read_ref(
             );
         }
     }
-    read_source(site_dir, &config, Some(&checkout), place, now)
+    Ok((checkout, config))
+}
+
+/// A file a version of a site is built from, by its path in the source.
+enum Found {
+    /// One in the source folder, at its path.
+    OnDisk(PathBuf),
+    /// One a plugin's `files` hook adds, named, with its contents.
+    Added { plugin: String, contents: Vec<u8> },
 }
 
 /// Read the version of the site at `site_dir` that `config` configures, to
-/// build at `place`: its files from `checkout`, if it's from a git ref, or
-/// else as they are. Its pages are rendered, but not yet put in its theme.
+/// build at `place`, in `theme`, with `plugins`: its files from `checkout`,
+/// if it's from a git ref, or else as they are, and those its plugins add.
+/// Its pages are rendered, but not yet put in its theme.
 fn read_source(
     site_dir: &Path,
     config: &Config,
-    checkout: Option<&git::Checkout>,
+    checkout: Option<git::Checkout>,
+    mut plugins: Plugins,
+    theme: &ThemeFiles,
     mut place: Place,
     now: OffsetDateTime,
 ) -> Result<Source> {
     // A file from a git ref is named as git names it, like
     // `v1.4:docs/guide.md`.
-    let describe = |path: &Path| match checkout {
+    let describe = |path: &Path| match &checkout {
         Some(checkout) => checkout.describe(path),
         None => path.display().to_string(),
     };
@@ -631,15 +681,13 @@ fn read_source(
     // Walk every file in the source folder but hidden ones, without walking
     // hidden folders, or the destination, which can be inside it, as it
     // would be at a git ref, had it been committed. The source folder itself
-    // (depth 0) can be hidden. Each Markdown file and notebook is rendered
-    // into a page, and every other file, like an image, is copied as it is.
-    let destination = match checkout {
+    // (depth 0) can be hidden.
+    let destination = match &checkout {
         None => destination_in(source_dir, &config.destination_dir),
         Some(checkout) => (config.destination_dir.strip_prefix(site_dir).ok())
             .and_then(|rel| destination_in(source_dir, &checkout.site_dir().join(rel))),
     };
-    let mut documents = Vec::new();
-    let mut files = Vec::new();
+    let mut found = BTreeMap::new();
     let entries = WalkDir::new(source_dir).into_iter().filter_entry(|entry| {
         entry.depth() == 0
             || !(is_hidden(Path::new(entry.file_name()))
@@ -648,24 +696,52 @@ fn read_source(
     for entry in entries.filter_map(Result::ok) {
         let path = entry.path();
         // A link to a file counts as the file, as it always has for pages.
-        if !path.is_file() {
-            continue;
+        if path.is_file() {
+            let rel = path.strip_prefix(source_dir)?;
+            found.insert(slashed(rel), Found::OnDisk(path.to_path_buf()));
         }
-        let rel = path.strip_prefix(source_dir)?.to_path_buf();
-        let parse = match path.extension().and_then(|s| s.to_str()) {
+    }
+    // Plugins see the paths, and add files, or leave them out, before any
+    // is read.
+    plugins.files(&mut found, |plugin, contents| Found::Added {
+        plugin: plugin.to_string(),
+        contents,
+    })?;
+
+    // Each Markdown file and notebook is rendered into a page, and every
+    // other file, like an image, is copied as it is.
+    let mut documents = Vec::new();
+    let mut files = Vec::new();
+    for (path, found) in found {
+        let (rel, origin, contents, added) = match found {
+            Found::OnDisk(file) => {
+                let origin = describe(&file);
+                let contents = fs::read(&file).with_context(|| format!("reading {origin}"))?;
+                let rel = file.strip_prefix(source_dir)?.to_path_buf();
+                (rel, origin, contents, false)
+            }
+            Found::Added { plugin, contents } => {
+                let origin = match &checkout {
+                    Some(checkout) => format!("plugin `{plugin}`'s {path} at {}", checkout.git_ref),
+                    None => format!("plugin `{plugin}`'s {path}"),
+                };
+                (PathBuf::from(path), origin, contents, true)
+            }
+        };
+        let parse = match rel.extension().and_then(|s| s.to_str()) {
             Some("md") => render::parse_document,
             Some("ipynb") => notebook::parse_notebook,
             _ => {
-                let origin = describe(path);
                 files.push(StaticFile {
-                    contents: fs::read(path).with_context(|| format!("reading {origin}"))?,
-                    origin,
                     path: rel,
+                    contents,
+                    origin,
                 });
                 continue;
             }
         };
-        documents.push((path.to_path_buf(), rel, parse));
+        let text = String::from_utf8(contents).with_context(|| format!("reading {origin}"))?;
+        documents.push((rel, origin, added, text, parse));
     }
     // The version's own file at the path of one of the theme's is the one
     // it links to, as the root's own file is.
@@ -675,8 +751,8 @@ fn read_source(
         }
     }
 
-    let theme = Theme::load(&config.themes, &place.url)?;
-    let in_repo = match (&config.repo, checkout) {
+    let theme = Theme::load(theme, &place.url)?;
+    let in_repo = match (&config.repo, &checkout) {
         (None, _) => None,
         (Some(repo), None) => folder_in_repo(source_dir, site_dir)?.map(|folder| InRepo {
             repo: repo.clone(),
@@ -692,57 +768,27 @@ fn read_source(
             editable: false,
         }),
     };
-    // A plugin downloaded from a URL is kept in the site's own folder, for
-    // every version.
-    let mut plugins = plugin::Plugins::start(&config.plugins, site_dir, now)?;
-    // Before any page is built, so a plugin can't change the pages it adds
-    // as it renders blocks.
-    let added = plugins.pages()?;
-    // A plugin's page is its file from the site's folder, like
-    // `docs/guide.md`, wherever little is run from, even if a plugin adds it.
-    let version_dir = checkout.map_or(site_dir, git::Checkout::site_dir);
+    // A page's file is from the site's folder, like `docs/guide.md`,
+    // wherever little is run from, even if a plugin adds it.
+    let version_dir = checkout.as_ref().map_or(site_dir, git::Checkout::site_dir);
     let source_in_site = source_dir.strip_prefix(version_dir).unwrap_or(source_dir);
-    let page_file = |rel: &Path| {
-        (source_in_site.join(rel))
-            .to_string_lossy()
-            .replace('\\', "/")
-    };
 
     let mut pages = Vec::new();
-    for (path, rel, parse) in documents {
-        let origin = describe(&path);
-        let raw = fs::read_to_string(&path).with_context(|| format!("reading {origin}"))?;
-        let rendered = parse(
-            &raw,
+    for (rel, origin, added, text, parse) in documents {
+        let file = slashed(&source_in_site.join(&rel));
+        let text = plugins.source(&file, &origin, text);
+        let mut rendered = parse(
+            &text,
             &folder_url(&rel),
             &config.toc_depths,
             &place.url,
             &config.markdown,
             now,
-            &mut plugins.on(&page_file(&rel)),
+            &mut plugins.on(&file),
         )
         .with_context(|| format!("rendering {origin}"))?;
-        pages.push(page_from(rel, origin, false, rendered, &place.destination));
-    }
-
-    // A plugin's page is built as a Markdown file at its path would be.
-    for page in &added.pages {
-        let rel = PathBuf::from(&page.path);
-        let origin = match checkout {
-            Some(checkout) => format!("{page} at {}", checkout.git_ref),
-            None => page.to_string(),
-        };
-        let rendered = render::parse_document(
-            &page.markdown,
-            &folder_url(&rel),
-            &config.toc_depths,
-            &place.url,
-            &config.markdown,
-            now,
-            &mut plugins.on(&page_file(&rel)),
-        )
-        .with_context(|| format!("rendering {origin}"))?;
-        pages.push(page_from(rel, origin, true, rendered, &place.destination));
+        rendered.html = plugins.content(&file, &origin, mem::take(&mut rendered.html));
+        pages.push(page_from(rel, origin, added, rendered, &place.destination));
     }
 
     // Deterministic output order (nav has its own ordering), and so a
@@ -751,14 +797,15 @@ fn read_source(
     check_clashes(&pages)?;
     Ok(Source {
         place,
-        git_ref: checkout.map(|checkout| checkout.git_ref.clone()),
+        git_ref: checkout.as_ref().map(|checkout| checkout.git_ref.clone()),
         values: config.values.clone(),
         searchable: config.search,
         theme,
         pages,
         files,
-        warnings: added.warnings,
+        plugins,
         in_repo,
+        checkout,
     })
 }
 
@@ -782,20 +829,14 @@ fn finish(
         theme,
         pages,
         files,
-        warnings,
+        mut plugins,
         in_repo,
+        checkout: _checkout,
     } = source;
-    let warnings = warnings.into_iter().map(|warning| PluginWarning {
-        git_ref: git_ref.clone(),
-        warning,
-    });
-    built.plugin_warnings.extend(warnings);
 
     // What little works out is the bottom of the cascade: the nav it builds
     // from the folders, the year, and the version go beneath the config, so
     // a theme or site that sets `nav`, `year`, or `version` replaces it.
-    // `page.breadcrumbs`, `page.prev`, and `page.next` follow the nav the
-    // theme gets, so they agree with its sidebar.
     let tree = build_tree(&pages);
     let mut site = Mapping::new();
     site.insert("nav".into(), serde_yaml::to_value(build_nav(&tree))?);
@@ -809,23 +850,41 @@ fn finish(
         let entries = versions.at(None).into_iter().map(Value::Mapping);
         site.insert("versions".into(), Value::Sequence(entries.collect()));
     }
-    let nav: Vec<NavItem> = serde_yaml::from_value(site["nav"].clone())
+    nav_in(&site)
         .context("`nav` in little.yml must be a list of links, each `{ title, url, children }`")?;
-    link_items(&mut site["nav"], &place.url);
+    if let Some(nav) = site.get_mut("nav") {
+        link_items(nav, &place.url);
+    }
+    // Plugins get `site` as the theme does, and `page.breadcrumbs`,
+    // `page.prev`, and `page.next` follow the nav they leave it with, so
+    // they agree with the theme's sidebar.
+    let site = plugins.site(site, |name, site| {
+        nav_in(site).map(drop).with_context(|| {
+            format!(
+                "plugin `{name}`'s `site` hook gives back a `nav` that isn't a list of links, \
+                 each `{{ title, url, children }}`"
+            )
+        })
+    })?;
+    let nav = nav_in(&site).context("`nav` must be a list of links")?;
     let site_value = MjValue::from_serialize(&site);
     let neighbours = neighbours_in(&nav);
-    let trails = breadcrumbs_in(&nav);
+    let trails = breadcrumbs_in(&nav, &place.url.link("/"));
 
-    // The theme owns 100% of the markup; little only hands it structured data.
-    let render = |page_type: PageType, data: &PageData, frontmatter: &Mapping| {
-        let page = page_value(data, frontmatter, &place.url)?;
-        theme.render(
+    // The theme owns 100% of the markup; little only hands it structured
+    // data, which plugins can change, then change what the theme makes of it.
+    let mut render = |page_type: PageType, page: Mapping, url: &str, on: &str| {
+        let page = plugins.page(on, page);
+        // Search indexes the page's own content and title, as plugins leave
+        // them, not the theme's markup around it.
+        let text = |key: &str| page.get(key).and_then(Value::as_str).map(str::to_string);
+        let searched = (text("title"), text("content"));
+        let html = theme.render(
             page_type,
-            context! {
-                site => site_value.clone(),
-                page => page,
-            },
-        )
+            context! { site => site_value.clone(), page => page },
+        )?;
+        let html = html.map(|html| plugins.html(url, on, html));
+        anyhow::Ok(html.map(|html| (html, searched)))
     };
     // A page from a git ref links to its file at the ref's commit, which
     // can't be edited.
@@ -833,16 +892,11 @@ fn finish(
     let mut outputs = Vec::new();
     let mut searched = Vec::new();
     for page in &pages {
+        let url = place.url.link(&page.url);
         let children = page.is_index().then(|| children_of(&tree, &page.rel));
-        let (prev, next) = neighbours
-            .get(page.url.as_str())
-            .copied()
-            .unwrap_or_default();
+        let (prev, next) = neighbours.get(&*url).copied().unwrap_or_default();
         // A page that isn't in the nav has nothing above it there.
-        let breadcrumbs = trails
-            .get(page.url.as_str())
-            .map(Vec::as_slice)
-            .unwrap_or_default();
+        let breadcrumbs = (trails.get(&*url)).map(Vec::as_slice).unwrap_or_default();
         // A page a plugin adds has no file in the site's repository.
         let file_urls = (in_repo.as_ref())
             .filter(|_| !page.added)
@@ -864,19 +918,16 @@ fn finish(
                 .map(|urls| urls.edit.as_str()),
             versions: in_versions.as_deref(),
         };
-        if let Some(html) = render(page.page_type, &data, &page.frontmatter)
-            .with_context(|| format!("rendering {}", page.origin))?
-        {
-            // Search indexes the page's own content, not the theme's markup
-            // around it, but in the language the theme gives it, at its URL
-            // from the root of its version, beside its index.
+        let rendered = page_value(&data, &page.frontmatter, &place.url)
+            .and_then(|value| render(page.page_type, value, &url, &page.origin))
+            .with_context(|| format!("rendering {}", page.origin))?;
+        if let Some((html, (title, content))) = rendered {
+            // In the language the theme gives it, at its URL from the root
+            // of its version, beside its index.
             if searchable {
-                searched.push(search::Page {
-                    url: &page.url,
-                    title: &page.title,
-                    content: &page.html,
-                    lang: search::lang(&html),
-                });
+                let title = title.unwrap_or_else(|| page.title.clone());
+                let content = content.unwrap_or_else(|| page.html.clone());
+                searched.push((&page.url, title, content, search::lang(&html)));
             }
             let origin = page.origin.clone();
             built
@@ -915,8 +966,8 @@ fn finish(
     // A 404 page has no content, or file: all `page` has is its type and
     // URL, and the home of each version. Only the version at the root of
     // the site has one, at the root of the destination, where static hosts
-    // look for it.
-    if place.is_root() {
+    // look for it, and only if its theme has a template for it.
+    if place.is_root() && theme.renders(PageType::NotFound) {
         let not_found_url = format!("/{NOT_FOUND_FILE}");
         let homes = versions.map(|versions| versions.at(None));
         let data = PageData {
@@ -933,10 +984,14 @@ fn finish(
             edit_url: None,
             versions: homes.as_deref(),
         };
-        if let Some(html) =
-            render(PageType::NotFound, &data, &Mapping::new()).context("rendering the 404 page")?
-        {
-            let name = "the 404 page".to_string();
+        let name = "the 404 page".to_string();
+        let rendered = page_value(&data, &Mapping::new(), &place.url)
+            .and_then(|value| {
+                let url = place.url.link(&not_found_url);
+                render(PageType::NotFound, value, &url, &name)
+            })
+            .context("rendering the 404 page")?;
+        if let Some((html, _)) = rendered {
             outputs.push(Output {
                 path: place.destination.join(NOT_FOUND_FILE),
                 url: not_found_url.clone(),
@@ -958,18 +1013,50 @@ fn finish(
     for file in files.into_iter().chain(theme_files.iter().cloned()) {
         static_files.entry(file.path.clone()).or_insert(file);
     }
-    let static_files: Vec<_> = static_files.into_values().collect();
-    check_static_files(&static_files, &place.destination, &outputs)?;
+    let mut static_files: Vec<_> = static_files.into_values().collect();
 
     // Every page the theme rendered is searchable, but the 404 page, which
     // isn't one to find.
     let search_files = if searchable {
-        let files = search::index(&searched)?;
-        check_search_files(&files, &static_files, &place.destination, &outputs)?;
-        files
+        let pages: Vec<_> = (searched.iter())
+            .map(|(url, title, content, lang)| search::Page {
+                url,
+                title,
+                content,
+                lang: lang.clone(),
+            })
+            .collect();
+        search::index(&pages)?
     } else {
         Vec::new()
     };
+
+    // Plugins add files beside every file the version writes, knowing their
+    // paths in its folder, like a sitemap of its pages.
+    let mut paths = BTreeSet::new();
+    for output in &outputs {
+        paths.insert(slashed(output.path.strip_prefix(&place.destination)?));
+    }
+    paths.extend(static_files.iter().map(|file| slashed(&file.path)));
+    paths.extend(search_files.iter().map(|file| slashed(&file.path)));
+    for file in plugins.destination(paths)? {
+        let plugin = file.plugin.unwrap_or_default();
+        let origin = match &git_ref {
+            Some(git_ref) => format!("plugin `{plugin}`'s {} at {git_ref}", file.path),
+            None => format!("plugin `{plugin}`'s {}", file.path),
+        };
+        static_files.push(StaticFile {
+            path: PathBuf::from(file.path),
+            contents: file.contents,
+            origin,
+        });
+    }
+    check_static_files(&static_files, &place.destination, &outputs)?;
+    check_search_files(&search_files, &static_files, &place.destination, &outputs)?;
+
+    built
+        .plugin_warnings
+        .extend(warned(&mut plugins, git_ref.as_deref()));
     Ok(Ready {
         destination: place.destination,
         from_ref: git_ref.is_some(),
@@ -1144,34 +1231,50 @@ fn time_of_build(source_date_epoch: Option<OsString>) -> Result<OffsetDateTime> 
         })
 }
 
-/// What a template sees as `page`: what little works out for it, with the
-/// page's frontmatter merged over it the way each level of the config merges
-/// over the one beneath, so the author has the last word. It changes only
-/// what the theme sees: a page is built at its own URL, with the template for
-/// its own type, whatever its frontmatter says.
+/// What a template sees as `page`: what little works out for it, `data`,
+/// with the page's frontmatter merged over it the way each level of the
+/// config merges over the one beneath, so the author has the last word. It
+/// changes only what the theme sees: a page is built at its own URL, with
+/// the template for its own type, whatever its frontmatter says.
 ///
-/// Then each of the page's links gets the path of the site's `url`, whoever
+/// Each of the page's links gets the path of the site's `url`, whoever
 /// wrote it, as do the links in its Markdown, unless it's to another site,
-/// like its file in the site's repository.
+/// like its file in the site's repository. Those in `page.breadcrumbs`,
+/// `page.prev`, and `page.next` have it already, from the nav the theme
+/// gets.
 fn page_value(data: &PageData, frontmatter: &Mapping, url: &SiteUrl) -> Result<Mapping> {
     let Value::Mapping(mut page) = serde_yaml::to_value(data)? else {
         unreachable!("a struct serializes to a mapping");
     };
-    config::merge(&mut page, frontmatter.clone());
-    for key in ["url", "source_url", "edit_url"] {
-        link(page.get_mut(key), url);
-    }
-    for key in ["prev", "next"] {
-        if let Some(Value::Mapping(item)) = page.get_mut(key) {
-            link(item.get_mut("url"), url);
-        }
-    }
-    for key in ["breadcrumbs", "children", "toc"] {
+    link(page.get_mut("url"), url);
+    for key in ["children", "toc"] {
         if let Some(items) = page.get_mut(key) {
             link_items(items, url);
         }
     }
+    let mut frontmatter = frontmatter.clone();
+    for key in ["url", "source_url", "edit_url"] {
+        link(frontmatter.get_mut(key), url);
+    }
+    for key in ["prev", "next"] {
+        if let Some(Value::Mapping(item)) = frontmatter.get_mut(key) {
+            link(item.get_mut("url"), url);
+        }
+    }
+    for key in ["breadcrumbs", "children", "toc"] {
+        if let Some(items) = frontmatter.get_mut(key) {
+            link_items(items, url);
+        }
+    }
+    config::merge(&mut page, frontmatter);
     Ok(page)
+}
+
+/// The nav in `site`, what the theme gets as `site.nav`, or why it isn't
+/// one.
+fn nav_in(site: &Mapping) -> Result<Vec<NavItem>, serde_yaml::Error> {
+    let nav = site.get("nav").cloned();
+    serde_yaml::from_value(nav.unwrap_or(Value::Sequence(Vec::new())))
 }
 
 /// Put the site's path before the `url` of each of `items`, a list shaped
@@ -1378,7 +1481,13 @@ fn folder_url(rel: &Path) -> String {
 /// The URL of the file at `rel`, from the root of its version, like
 /// `/assets/style.css` for `assets/style.css`.
 fn file_url(rel: &Path) -> String {
-    format!("/{}", rel.to_string_lossy().replace('\\', "/"))
+    format!("/{}", slashed(rel))
+}
+
+/// `path`, with `/` between its parts, as plugins' hooks get it, like
+/// `guide/install.md`.
+fn slashed(path: &Path) -> String {
+    path.to_string_lossy().replace('\\', "/")
 }
 
 /// Derive a page's pretty, extensionless URL: its folder's, then its name,
@@ -1618,12 +1727,12 @@ fn push_links<'a>(items: &'a [NavItem], links: &mut Vec<Link<'a>>) {
 
 /// What's above each page in the nav, by its URL: its `page.breadcrumbs`. They
 /// follow the nav from the top down, so they agree with the sidebar: each item
-/// the page is in, as the nav titles it. The nav lists the home page beside the
-/// items at its top, but it's above them, so their trails start with it. A
-/// page listed twice gets the trail to the last place, where its `page.prev`
-/// and `page.next` come from too.
-fn breadcrumbs_in(nav: &[NavItem]) -> HashMap<&str, Vec<Breadcrumb<'_>>> {
-    let is_home = |item: &NavItem| item.url.as_deref() == Some("/");
+/// the page is in, as the nav titles it. The nav lists the home page, at
+/// `home`, beside the items at its top, but it's above them, so their trails
+/// start with it. A page listed twice gets the trail to the last place, where
+/// its `page.prev` and `page.next` come from too.
+fn breadcrumbs_in<'a>(nav: &'a [NavItem], home: &str) -> HashMap<&'a str, Vec<Breadcrumb<'a>>> {
+    let is_home = |item: &NavItem| item.url.as_deref() == Some(home);
     let home = nav.iter().find(|item| is_home(item)).map(Breadcrumb::from);
     let mut trails = HashMap::new();
     for item in nav {
@@ -2077,7 +2186,7 @@ mod tests {
             page("api/reference.md", "Reference"),
         ];
         let nav = build_nav(&build_tree(&pages));
-        let trails = breadcrumbs_in(&nav);
+        let trails = breadcrumbs_in(&nav, "/");
 
         // The home page is above every other page. The folders without a
         // README.md, api/ and guide/advanced/, are labels on the way down.
@@ -2102,7 +2211,7 @@ mod tests {
             page("guide/install.md", "Install"),
         ];
         let nav = build_nav(&build_tree(&pages));
-        let trails = breadcrumbs_in(&nav);
+        let trails = breadcrumbs_in(&nav, "/");
         assert_eq!(trail(&trails["/guide/"]), "");
         assert_eq!(trail(&trails["/guide/install"]), "Guide /guide/");
     }
@@ -2119,7 +2228,7 @@ mod tests {
              - { title: Guide, url: /guide/, children: [{ title: Install, url: /guide/install }] }\n",
         )
         .unwrap();
-        let trails = breadcrumbs_in(&nav);
+        let trails = breadcrumbs_in(&nav, "/");
 
         // The trails use the nav's titles. A page listed twice gets the trail
         // to the last place, where its `prev` and `next` come from too.
@@ -2139,7 +2248,7 @@ mod tests {
             "- { title: Docs, children: [{ title: Home, url: / }, { title: Guide, url: /guide/ }] }\n",
         )
         .unwrap();
-        let trails = breadcrumbs_in(&nav);
+        let trails = breadcrumbs_in(&nav, "/");
         assert_eq!(trail(&trails["/"]), "Docs (label)");
         assert_eq!(trail(&trails["/guide/"]), "Docs (label)");
     }
@@ -2854,14 +2963,16 @@ mod tests {
         let _ = fs::remove_dir_all(&site);
     }
 
-    /// A site's config that has the test plugin, built to add pages, add
-    /// `pages`, and warn of `warnings`, as `api`, beside `config`.
-    fn adding_pages(config: &str, pages: serde_json::Value, warnings: &[&str]) -> String {
-        let plugin = serde_json::json!({
-            "wasm": crate::plugin::tests::test_plugin_with_pages(),
-            "pages": pages,
-            "warnings": warnings,
+    /// A site's config that has the test plugin, as `api`, beside `config`,
+    /// adding the files `add` lists to the source, and warning of `warn`.
+    fn adding_files(config: &str, add: serde_json::Value, warn: Option<&str>) -> String {
+        let mut plugin = serde_json::json!({
+            "wasm": crate::plugin::tests::test_plugin(),
+            "files": { "add": add },
         });
+        if let Some(warn) = warn {
+            plugin["warn"] = warn.into();
+        }
         format!("{config}plugins:\n  api: {plugin}\n")
     }
 
@@ -2870,18 +2981,18 @@ mod tests {
         let pages = serde_json::json!([
             {
                 "path": "reference/README.md",
-                "markdown": "# Reference\n\nSee [base](pkg/base.md#thing), and [the guide](../guide.md).\n",
+                "text": "# Reference\n\nSee [base](pkg/base.md#thing), and [the guide](../guide.md).\n",
             },
             {
                 "path": "reference/pkg/base.md",
-                "markdown": "---\ntitle: The base\n---\n## `Thing`\n\n```test\nblock\n```\n\n\
-                             [Up](../README.md) [Gone](gone.md)\n",
+                "text": "---\ntitle: The base\n---\n## `Thing`\n\n```test\nblock\n```\n\n\
+                         [Up](../README.md) [Gone](gone.md)\n",
             },
         ]);
-        let site_cfg = adding_pages(
+        let site_cfg = adding_files(
             "theme: ./theme\nrepo: https://github.com/withlittle/little\n",
             pages,
-            &["can't read pkg/broken.py"],
+            Some("can't read pkg/broken.py"),
         );
         let site = scratch_site(
             "added",
@@ -2959,7 +3070,7 @@ mod tests {
     #[test]
     fn a_plugins_page_cant_be_the_same_page_as_another() {
         let clash = |label: &str, files: &[(&str, &str)], pages: serde_json::Value| {
-            let site_cfg = adding_pages("theme: ./theme\n", pages, &[]);
+            let site_cfg = adding_files("theme: ./theme\n", pages, None);
             let mut files = files.to_vec();
             files.push(("little.yml", &site_cfg));
             files.push(("theme/_templates/default.html", "{{ page.content | safe }}"));
@@ -2968,7 +3079,7 @@ mod tests {
             let _ = fs::remove_dir_all(&site);
             error.replace(&site.display().to_string(), ".")
         };
-        let page = |path: &str| serde_json::json!({ "path": path, "markdown": "# API\n" });
+        let page = |path: &str| serde_json::json!({ "path": path, "text": "# API\n" });
         assert_eq!(
             clash(
                 "clash-file",
@@ -2987,6 +3098,185 @@ mod tests {
             "plugin `api`'s api.md and plugin `api`'s api/README.md would both be the page at \
              /api/: rename or move one"
         );
+    }
+
+    #[test]
+    fn plugins_hook_into_each_step_of_the_build() {
+        let plugin = serde_json::json!({
+            "wasm": crate::plugin::tests::test_plugin(),
+            "config": { "merge": { "title": "Hooked" } },
+            "files": {
+                "remove": ["old.md"],
+                "add": [{ "path": "added.md", "text": "# Added\n\nHello, world.\n" }],
+            },
+            "source": { "replace": ["world", "plugins"] },
+            "content": { "append": "<p>{arg}</p>" },
+            "site": { "merge": { "motto": "Hooked, too" } },
+            "page": { "only": "/docs/", "merge": { "badge": "New", "title": "Welcome" } },
+            "html": { "only": "/docs/added", "append": "<a href=\"/docs/gone\">Gone</a>" },
+            "destination": { "list": "files.txt" },
+        });
+        let site_cfg =
+            format!("theme: ./theme\nurl: https://example.com/docs\nplugins:\n  test: {plugin}\n");
+        let site = scratch_site(
+            "hooks",
+            &[
+                ("little.yml", &site_cfg),
+                ("docs/README.md", "# Home\n\nHello, world.\n"),
+                ("docs/old.md", "# Old\n"),
+                ("theme/little.yml", "search: true\n"),
+                (
+                    "theme/_templates/default.html",
+                    "<html lang=\"en\">{{ site.title }} | {{ site.motto }} | {{ page.badge }} | \
+                     {{ page.title }}\n{{ page.content | safe }}</html>",
+                ),
+            ],
+        );
+        let built = build(&site).unwrap();
+        let dist = site.join("dist");
+        let read = |file: &str| fs::read_to_string(dist.join(file)).unwrap();
+
+        // `config` titles the site, and `site` gives it a motto. `files`
+        // leaves out a page and adds one, whose text `source` changes, as it
+        // does every page's, and `content` adds to each page's HTML, naming
+        // its file. `page` changes what the theme gets, for the page at its
+        // URL under the site's path, and `html` changes what it makes.
+        let home = read("index.html");
+        assert!(
+            home.starts_with("<html lang=\"en\">Hooked | Hooked, too | New | Welcome\n"),
+            "{home}"
+        );
+        assert!(
+            home.ends_with("<p>Hello, plugins.</p>\n<p>docs/README.md</p></html>"),
+            "{home}"
+        );
+        let added = read("added/index.html");
+        assert!(
+            added.starts_with("<html lang=\"en\">Hooked | Hooked, too |  | Added\n"),
+            "{added}"
+        );
+        assert!(
+            added.ends_with(
+                "<p>Hello, plugins.</p>\n<p>docs/added.md</p></html><a href=\"/docs/gone\">Gone</a>"
+            ),
+            "{added}"
+        );
+        assert!(!dist.join("old").exists());
+
+        // `destination` adds a file, knowing the path of every file the
+        // build writes, and it's noted as the plugin's.
+        let files = read("files.txt");
+        let paths: Vec<_> = files.lines().collect();
+        assert_eq!(paths[..2], ["added/index.html", "index.html"], "{files}");
+        assert!(paths.contains(&"pagefind/pagefind.js"), "{files}");
+        assert!(
+            paths[2..].iter().all(|path| path.starts_with("pagefind/")),
+            "{files}"
+        );
+        assert_eq!(
+            built.origins[Path::new("files.txt")],
+            "plugin `test`'s files.txt"
+        );
+
+        // Search indexes each page as `page` leaves it...
+        let pages = indexed(&dist);
+        let home = (pages.iter())
+            .find(|page| page.contains(r#""url":"/""#))
+            .unwrap();
+        assert!(home.contains(r#""title":"Welcome""#), "{home}");
+        assert!(home.contains("Hello, plugins."), "{home}");
+        assert!(home.contains("docs/README.md"), "{home}");
+        // ...and links are checked as `html` leaves them.
+        let broken: Vec<_> = (crate::links::check(&built, crate::links::Scope::Internal))
+            .unwrap()
+            .iter()
+            .map(|b| b.to_string())
+            .collect();
+        assert_eq!(broken.len(), 1, "{broken:?}");
+        assert!(
+            broken[0].starts_with("broken link /docs/gone in plugin `test`'s added.md: "),
+            "{broken:?}"
+        );
+        assert!(
+            built.plugin_warnings.is_empty(),
+            "{:?}",
+            built.plugin_warnings
+        );
+        let _ = fs::remove_dir_all(&site);
+    }
+
+    #[test]
+    fn a_hook_that_fails_is_warned_of_or_stops_the_build() {
+        let site = scratch_site(
+            "hooks-fail",
+            &[
+                ("docs/README.md", "# Home\n\nHello, world.\n"),
+                ("theme/_templates/default.html", "{{ page.content | safe }}"),
+            ],
+        );
+        let with = |mut plugin: serde_json::Value| {
+            plugin["wasm"] = serde_json::json!(crate::plugin::tests::test_plugin());
+            let site_cfg = format!("theme: ./theme\nplugins:\n  test: {plugin}\n");
+            fs::write(site.join("little.yml"), site_cfg).unwrap();
+            build(&site)
+        };
+
+        // One that changes a page is warned of, naming what it's built from,
+        // and the page is built as if it hadn't been called.
+        let built = with(serde_json::json!({
+            "source": { "error": "no source for {arg}", "replace": ["world", "plugins"] },
+            "page": { "warn": "on {arg}" },
+        }))
+        .unwrap();
+        let home = fs::read_to_string(site.join("dist/index.html")).unwrap();
+        assert!(home.contains("Hello, world."), "{home}");
+        let warnings: Vec<_> = (built.plugin_warnings.iter())
+            .map(|w| w.to_string())
+            .collect();
+        let readme = site.join("docs/README.md");
+        assert_eq!(
+            warnings,
+            [
+                format!(
+                    "plugin `test`'s `source` hook failed on {}: no source for docs/README.md",
+                    readme.display()
+                ),
+                "plugin `test`: on /".to_string(),
+            ]
+        );
+
+        // One that changes the site, its files, or what's written, stops the
+        // build.
+        let error = |hooks| format!("{:#}", with(hooks).unwrap_err());
+        assert_eq!(
+            error(serde_json::json!({ "files": { "error": "boom" } })),
+            "plugin `test`'s `files` hook failed: boom"
+        );
+        let message = error(serde_json::json!({ "site": { "merge": { "nav": "nowhere" } } }));
+        assert!(
+            message.starts_with(
+                "plugin `test`'s `site` hook gives back a `nav` that isn't a list of links, each \
+                 `{ title, url, children }`: "
+            ),
+            "{message}"
+        );
+        assert_eq!(
+            error(serde_json::json!({
+                "destination": { "add": [{ "path": "index.html", "text": "Mine" }] }
+            })),
+            "plugin `test`'s `destination` hook adds a file at `index.html`, but there's one there"
+        );
+        assert_eq!(
+            error(serde_json::json!({
+                "destination": { "add": [{ "path": "index.html/extra.txt", "text": "Mine" }] }
+            })),
+            "plugin `test`'s `destination` hook adds a file at `index.html/extra.txt`, but \
+             there's a file at `index.html`, where its folder would be"
+        );
+        // Each stops the build before it's written, so the last build stays.
+        let home = fs::read_to_string(site.join("dist/index.html")).unwrap();
+        assert!(home.contains("Hello, world."), "{home}");
+        let _ = fs::remove_dir_all(&site);
     }
 
     #[test]
@@ -4465,8 +4755,8 @@ mod tests {
         let site_cfg = |version: &str| {
             format!(
                 "theme: ./theme\nplugins:\n  api:\n    wasm: api.wasm\n    read: pkg\n    \
-                 pages: [{{ path: reference/hello.md, read: pkg/hello.md }}]\n    \
-                 warnings: [\"can't read pkg/broken.py\"]\n\
+                 files: {{ add: [{{ path: reference/hello.md, read: pkg/hello.md }}] }}\n    \
+                 warn: \"can't read pkg/broken.py\"\n\
                  versions:\n  - {{ title: \"2.0\", url: / }}\n  \
                  - {{ title: \"1.4\", url: /1.4, {version} }}\n"
             )
@@ -4486,7 +4776,7 @@ mod tests {
                 ("theme/_templates/default.html", "{{ page.content | safe }}"),
             ],
         );
-        let wasm = fs::read(crate::plugin::tests::test_plugin_with_pages()).unwrap();
+        let wasm = fs::read(crate::plugin::tests::test_plugin()).unwrap();
         fs::write(site.join("api.wasm"), wasm).unwrap();
 
         let built = build(&site).unwrap();
@@ -4528,7 +4818,7 @@ mod tests {
         // ...unless the version's `plugins` say where it reads there, over the
         // site's settings...
         let moved = "ref: v1.3, plugins: { api: { read: lib, \
-                     pages: [{ path: reference/hello.md, read: lib/hello.md }] } }";
+                     files: { add: [{ path: reference/hello.md, read: lib/hello.md }] } } }";
         fs::write(site.join("little.yml"), site_cfg(moved)).unwrap();
         let built = build(&site).unwrap();
         let hi = read("1.4/reference/hello/index.html");
