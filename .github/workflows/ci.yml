@@ -30,7 +30,7 @@ jobs:
         with:
           components: rustfmt, clippy
           # For the plugins: tests/plugin, which the tests build, plugins/pydoc,
-          # and plugins/rustdoc.
+          # plugins/rustdoc, and plugins/jsdoc.
           targets: wasm32-wasip2
 
       - name: Cache cargo build artifacts
@@ -43,6 +43,7 @@ jobs:
           cargo fmt --check --manifest-path plugins/api_reference/Cargo.toml
           cargo fmt --check --manifest-path plugins/pydoc/Cargo.toml
           cargo fmt --check --manifest-path plugins/rustdoc/Cargo.toml
+          cargo fmt --check --manifest-path plugins/jsdoc/Cargo.toml
 
       - name: Lint (clippy, warnings are errors)
         run: |
@@ -51,6 +52,7 @@ jobs:
           cargo clippy --manifest-path plugins/api_reference/Cargo.toml --all-targets --target-dir target/api_reference -- -D warnings
           cargo clippy --manifest-path plugins/pydoc/Cargo.toml --all-targets --target wasm32-wasip2 --target-dir target/pydoc -- -D warnings
           cargo clippy --manifest-path plugins/rustdoc/Cargo.toml --all-targets --target wasm32-wasip2 --target-dir target/rustdoc -- -D warnings
+          cargo clippy --manifest-path plugins/jsdoc/Cargo.toml --all-targets --target wasm32-wasip2 --target-dir target/jsdoc -- -D warnings
 
       - name: Test
         run: |
@@ -58,9 +60,11 @@ jobs:
           cargo test --manifest-path plugins/api_reference/Cargo.toml --target-dir target/api_reference
           cargo test --manifest-path plugins/pydoc/Cargo.toml --target-dir target/pydoc
           cargo test --manifest-path plugins/rustdoc/Cargo.toml --target-dir target/rustdoc
+          cargo test --manifest-path plugins/jsdoc/Cargo.toml --target-dir target/jsdoc
 
       - name: Build release
         run: |
           cargo build --release
           cargo build --release --target wasm32-wasip2 --manifest-path plugins/pydoc/Cargo.toml --target-dir target/pydoc
           cargo build --release --target wasm32-wasip2 --manifest-path plugins/rustdoc/Cargo.toml --target-dir target/rustdoc
+          cargo build --release --target wasm32-wasip2 --manifest-path plugins/jsdoc/Cargo.toml --target-dir target/jsdoc

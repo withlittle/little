@@ -25,6 +25,11 @@ cargo build --release --target wasm32-wasip2 --manifest-path plugins/pydoc/Cargo
 cargo test --manifest-path plugins/pydoc/Cargo.toml
 cargo clippy --manifest-path plugins/pydoc/Cargo.toml --all-targets --target wasm32-wasip2
 
+# the jsdoc plugin, in its own workspace
+cargo build --release --target wasm32-wasip2 --manifest-path plugins/jsdoc/Cargo.toml
+cargo test --manifest-path plugins/jsdoc/Cargo.toml
+cargo clippy --manifest-path plugins/jsdoc/Cargo.toml --all-targets --target wasm32-wasip2
+
 # the library they share, in its own workspace
 cargo test --manifest-path plugins/api_reference/Cargo.toml
 cargo clippy --manifest-path plugins/api_reference/Cargo.toml --all-targets
@@ -166,6 +171,13 @@ Content and theme live outside `src/`:
   for a Rust crate and each of its modules, from their doc comments, parsed
   with syn, and with intra-doc links led to their items. The manual uses it
   on `src/`. Its tests run natively, as pydoc's do.
+- `plugins/jsdoc/` — the `jsdoc` plugin, a crate in its own
+  workspace, built for `wasm32-wasip2`, that adds an API reference, with the
+  `files` hook: a page
+  for a JavaScript or TypeScript package and each of its modules, from
+  their doc comments, with JSDoc's and TSDoc's tags, parsed with oxc's
+  parser, in ES modules, CommonJS, and scripts. Its tests run natively, as
+  pydoc's do.
 - `plugins/api_reference/` — a library, in its own workspace, not a plugin,
   that the plugins that add an API reference share: what a page documents,
   in no language in particular, and the Markdown of the page.
@@ -526,3 +538,13 @@ Record notable choices as short ADRs in `decisions/`. Locked so far:
   runs its language's tool, and its page says so first; the manual's pages
   keep their names, like "Rust API reference" — see
   [`decisions/0047-naming-api-reference-plugins.md`](./decisions/0047-naming-api-reference-plugins.md).
+- **A plugin for JavaScript's doc comments:** `plugins/jsdoc/`, in its own
+  workspace, adds a page for a JavaScript or TypeScript package and each of
+  its modules, under `url`, `/reference/<package>` by default, parsing its
+  code with oxc's parser, without running it, or Node, from the one folder
+  it reads, and `package`, its name on npm. It documents what each module
+  exports that has docs, where it's defined, from JSDoc's and TSDoc's tags,
+  in ES modules, CommonJS, as TypeScript reads it, and scripts; lists
+  re-exports; leads `{@link}`s to their items; and shares its model and
+  Markdown with `pydoc` and `rustdoc`. It doesn't infer types — see
+  [`decisions/0048-a-plugin-for-javascripts-doc-comments.md`](./decisions/0048-a-plugin-for-javascripts-doc-comments.md).

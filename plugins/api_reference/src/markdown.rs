@@ -223,7 +223,7 @@ fn listing(object: &Object, kind: Items, items: &[Item]) -> (Vec<&'static str>, 
             };
             (header, rows)
         }
-        Items::Raises | Items::Warns => {
+        Items::Raises | Items::Warns | Items::Throws => {
             let rows = (items.iter())
                 .map(|item| vec![ty(item.ty.as_deref()), item.description.clone()])
                 .collect();
@@ -235,6 +235,44 @@ fn listing(object: &Object, kind: Items, items: &[Item]) -> (Vec<&'static str>, 
                 .collect();
             (vec!["Name", "Description"], rows)
         }
+        Items::TypeParameters => {
+            let rows = (items.iter())
+                .map(|item| {
+                    let mut written = item.name.clone().unwrap_or_default();
+                    if let Some(constraint) = &item.ty {
+                        written += &format!(" extends {constraint}");
+                    }
+                    if let Some(default) = &item.default {
+                        written += &format!(" = {default}");
+                    }
+                    vec![code(&written), item.description.clone()]
+                })
+                .collect();
+            (vec!["Name", "Description"], rows)
+        }
+        Items::Properties | Items::Members => {
+            let defaults = items.iter().any(|item| item.default.is_some());
+            let rows = (items.iter())
+                .map(|item| {
+                    let mut row = vec![name(item)];
+                    if kind == Items::Properties {
+                        row.push(ty(item.ty.as_deref()));
+                    }
+                    if defaults {
+                        row.push(ty(item.default.as_deref()));
+                    }
+                    row.push(item.description.clone());
+                    row
+                })
+                .collect();
+            let header = match (kind, defaults) {
+                (Items::Properties, true) => vec!["Name", "Type", "Default", "Description"],
+                (Items::Properties, false) => vec!["Name", "Type", "Description"],
+                (_, true) => vec!["Name", "Value", "Description"],
+                (_, false) => vec!["Name", "Description"],
+            };
+            (header, rows)
+        }
     }
 }
 
@@ -242,11 +280,14 @@ fn listing(object: &Object, kind: Items, items: &[Item]) -> (Vec<&'static str>, 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 enum Group {
     Attributes,
+    Properties,
     Classes,
+    Interfaces,
     Macros,
     Structs,
     Enums,
     Constants,
+    Variables,
     Statics,
     Traits,
     AssociatedTypes,
@@ -274,6 +315,9 @@ impl Group {
             Kind::AssociatedConstant => Group::AssociatedConstants,
             Kind::Static => Group::Statics,
             Kind::Macro => Group::Macros,
+            Kind::Interface => Group::Interfaces,
+            Kind::Variable => Group::Variables,
+            Kind::Field => Group::Properties,
         }
     }
 
@@ -282,7 +326,10 @@ impl Group {
     fn title(self, kind: Kind) -> &'static str {
         match self {
             Group::Attributes => "Attributes",
+            Group::Properties => "Properties",
             Group::Classes => "Classes",
+            Group::Interfaces => "Interfaces",
+            Group::Variables => "Variables",
             Group::Macros => "Macros",
             Group::Structs => "Structs",
             Group::Enums => "Enums",
@@ -292,7 +339,12 @@ impl Group {
             Group::AssociatedTypes => "Associated Types",
             Group::AssociatedConstants => "Associated Constants",
             Group::Functions => match kind {
-                Kind::Class | Kind::Struct | Kind::Enum | Kind::Union | Kind::Trait => "Methods",
+                Kind::Class
+                | Kind::Struct
+                | Kind::Enum
+                | Kind::Union
+                | Kind::Trait
+                | Kind::Interface => "Methods",
                 _ => "Functions",
             },
             Group::TypeAliases => "Type Aliases",
@@ -779,6 +831,81 @@ What it is.
         let (header, rows) = listing(&class, Items::Attributes, &items);
         assert_eq!(header, ["Name", "Type", "Description"]);
         assert_eq!(rows, [["`x`", "`float`", ""], ["`y`", "`str`", ""]]);
+    }
+
+    #[test]
+    fn a_type_parameter_shows_its_constraint_and_default() {
+        let items = [Item {
+            name: Some("T".to_string()),
+            ty: Some("string".to_string()),
+            default: Some("\"a\"".to_string()),
+            description: "The key.".to_string(),
+        }];
+        let function = object("f", Kind::Function, "");
+        let (header, rows) = listing(&function, Items::TypeParameters, &items);
+        assert_eq!(header, ["Name", "Description"]);
+        assert_eq!(rows, [["`T extends string = \"a\"`", "The key."]]);
+    }
+
+    #[test]
+    fn properties_and_members_show_defaults_and_values_only_if_one_has_them() {
+        let property = |name: &str, default: Option<&str>| Item {
+            name: Some(name.to_string()),
+            ty: Some("number".to_string()),
+            default: default.map(str::to_string),
+            ..Item::default()
+        };
+        let alias = object("Options", Kind::TypeAlias, "");
+        let items = [property("a", None), property("b?", Some("1"))];
+        let (header, rows) = listing(&alias, Items::Properties, &items);
+        assert_eq!(header, ["Name", "Type", "Default", "Description"]);
+        assert_eq!(rows[0], ["`a`", "`number`", "", ""]);
+        assert_eq!(rows[1], ["`b?`", "`number`", "`1`", ""]);
+        let (header, _) = listing(&alias, Items::Properties, &items[..1]);
+        assert_eq!(header, ["Name", "Type", "Description"]);
+        let enumeration = object("Color", Kind::Enum, "");
+        let (header, rows) = listing(&enumeration, Items::Members, &items);
+        assert_eq!(header, ["Name", "Value", "Description"]);
+        assert_eq!(rows[1], ["`b?`", "`1`", ""]);
+        let (header, rows) = listing(&enumeration, Items::Members, &items[..1]);
+        assert_eq!(header, ["Name", "Description"]);
+        assert_eq!(rows[0], ["`a`", ""]);
+    }
+
+    #[test]
+    fn properties_come_first_and_an_interfaces_functions_are_methods() {
+        let mut interface = object("Shape", Kind::Interface, "");
+        interface.members = vec![
+            object("area", Kind::Method, "Its area."),
+            object("sides", Kind::Field, "Its sides."),
+        ];
+        let mut module = object("shapes", Kind::Module, "");
+        module.members = vec![
+            object("count", Kind::Variable, "A count."),
+            interface,
+            object("Square", Kind::Class, "A square."),
+        ];
+        let page = page(&module, "shapes.ts", &PYTHON, &[]);
+        let order: Vec<&str> = (page.lines())
+            .filter(|line| line.starts_with("**") || line.starts_with('#'))
+            .collect();
+        assert_eq!(
+            order,
+            [
+                "# shapes",
+                "**Classes:**",
+                "**Interfaces:**",
+                "**Variables:**",
+                "## `Square`",
+                "## `Shape`",
+                "**Properties:**",
+                "**Methods:**",
+                "### `Shape.sides`",
+                "### `Shape.area`",
+                "## `count`",
+            ]
+        );
+        assert!(page.contains("`property`\n\nIts sides."));
     }
 
     #[test]

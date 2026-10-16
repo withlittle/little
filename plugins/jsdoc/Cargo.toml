@@ -1,0 +1,30 @@
+[package]
+name = "little-jsdoc"
+version = "0.1.0"
+edition = "2024"
+description = "A plugin for little that builds an API reference from JavaScript's and TypeScript's doc comments"
+license = "MIT"
+publish = false
+
+# A WebAssembly component, built for wasm32-wasip2.
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+little-api-reference = { path = "../api_reference" }
+oxc_allocator = "0.154.0"
+oxc_ast = "0.154.0"
+oxc_codegen = { version = "0.154.0", default-features = false }
+oxc_parser = { version = "0.154.0", default-features = false }
+oxc_span = "0.154.0"
+pulldown-cmark = { version = "0.13.4", default-features = false }
+serde_json = "1.0.151"
+wit-bindgen = "0.62"
+
+[profile.release]
+opt-level = "s"
+lto = true
+strip = true
+
+# Its own workspace, apart from little's.
+[workspace]

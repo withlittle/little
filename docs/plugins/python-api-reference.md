@@ -149,7 +149,8 @@ warning: plugin `pydoc`: can't parse `mypackage/broken.py`: Expected a parameter
 
 ## Limits, for now
 
-- It reads only Python; [`rustdoc`](rust-api-reference.md) reads Rust.
+- It reads only Python; [`rustdoc`](rust-api-reference.md) reads Rust, and
+  [`jsdoc`](javascript-api-reference.md), JavaScript and TypeScript.
 - A type isn't linked to its class's heading, nor to another module's page.
 - An object a package imports from a module whose name starts with `_`
   isn't documented, as the plugin documents an object where it's defined.

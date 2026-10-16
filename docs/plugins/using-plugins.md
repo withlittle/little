@@ -6,8 +6,9 @@ description: Add to what little does as it builds a site, with plugins, each one
 # Using plugins
 
 A plugin adds to what little does as it builds a site: an API reference,
-from [Python's docstrings](python-api-reference.md), or
-[Rust's doc comments](rust-api-reference.md), say, links to other sites that
+from [Python's docstrings](python-api-reference.md),
+[Rust's doc comments](rust-api-reference.md), or
+[JavaScript's](javascript-api-reference.md), say, links to other sites that
 open in a new tab, or a table from a ```` ```csv ```` block. It's one
 `.wasm` file, which runs wherever little does, in a sandbox, and little
 calls its [hooks](../reference/plugin-hooks.md) as the build reaches each
