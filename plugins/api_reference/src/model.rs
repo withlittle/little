@@ -3,7 +3,7 @@
 //! writes it.
 
 /// What an object is, which a page labels it with, and groups it by: a
-/// kind of Python's, of Rust's, or of both.
+/// kind of Python's, of Rust's, of JavaScript's, or of more than one.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Kind {
     Package,
@@ -24,6 +24,12 @@ pub enum Kind {
     AssociatedConstant,
     Static,
     Macro,
+    Interface,
+    Variable,
+    /// A class's field or accessor, or an interface's property, in
+    /// JavaScript or TypeScript: labelled `property`, as they call it, but
+    /// listed under Properties, not under Attributes, as Python's are.
+    Field,
 }
 
 impl Kind {
@@ -48,6 +54,9 @@ impl Kind {
             Kind::AssociatedConstant => "associated constant",
             Kind::Static => "static",
             Kind::Macro => "macro",
+            Kind::Interface => "interface",
+            Kind::Variable => "variable",
+            Kind::Field => "property",
         }
     }
 }
@@ -141,6 +150,12 @@ pub enum Items {
     Warns,
     Fields,
     Variants,
+    Throws,
+    /// The properties of a type, from its docs or its code.
+    Properties,
+    TypeParameters,
+    /// The members of an enum, with their values.
+    Members,
 }
 
 impl Items {
@@ -157,6 +172,10 @@ impl Items {
             Items::Warns => "Warns",
             Items::Fields => "Fields",
             Items::Variants => "Variants",
+            Items::Throws => "Throws",
+            Items::Properties => "Properties",
+            Items::TypeParameters => "Type Parameters",
+            Items::Members => "Members",
         }
     }
 }
@@ -166,9 +185,11 @@ impl Items {
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Item {
     pub name: Option<String>,
-    /// Its type, as the docstring writes it.
+    /// Its type, as the docstring writes it, or a type parameter's
+    /// constraint.
     pub ty: Option<String>,
-    /// Its default value, as the docstring writes it.
+    /// Its default value, as the docstring writes it, or an enum member's
+    /// value.
     pub default: Option<String>,
     /// What it is, as Markdown.
     pub description: String,

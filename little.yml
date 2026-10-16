@@ -58,6 +58,7 @@ nav:
         url: /plugins/rust-api-reference
         children:
           - { title: little's API, url: /api/ }
+      - { title: JavaScript API reference, url: /plugins/javascript-api-reference }
       - { title: Writing a plugin, url: /plugins/writing-a-plugin }
   - title: Reference
     children:

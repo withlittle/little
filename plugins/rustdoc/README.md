@@ -55,4 +55,5 @@ cargo clippy --manifest-path plugins/rustdoc/Cargo.toml --all-targets --target w
 
 What a page documents, in no language in particular, and the Markdown it
 writes from it, are in [`plugins/api_reference/`](../api_reference/), a
-library it shares with [`pydoc`](../pydoc/), with its own tests.
+library it shares with [`pydoc`](../pydoc/) and [`jsdoc`](../jsdoc/), with
+its own tests.
