@@ -4,8 +4,9 @@ A little static site generator for documentation: drop Markdown, or Jupyter
 notebooks, into `docs/` and get a site. One self-contained binary, a
 three-level cascading config, and themes that own 100% of the markup.
 
-> **Status:** early development (v0.1). Expect breaking changes. See the
-> [roadmap](./VISION.md#roadmap-thin-vertical-slices).
+> **Status:** early development (v0.1), versioned with
+> [Semantic Versioning](https://semver.org/). Expect breaking changes. See
+> the [roadmap](./VISION.md#roadmap-thin-vertical-slices).
 
 ## Install
 
