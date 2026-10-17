@@ -181,7 +181,13 @@ Content and theme live outside `src/`:
 - `plugins/api_reference/` — a library, in its own workspace, not a plugin,
   that the plugins that add an API reference share: what a page documents,
   in no language in particular, and the Markdown of the page.
-- Project meta (`VISION.md`, `AGENTS.md`, `decisions/`) lives at the repo root.
+- `.github/workflows/release-plugin.yml` — releases a plugin when a tag
+  that names it and its version, like `pydoc-v0.1.0`, is pushed: checks
+  the tag, builds the plugin's `.wasm` file, and publishes it in a GitHub
+  release, with notes that git-cliff writes, from `cliff.toml`, from the
+  commits that changed the plugin's folder or `plugins/api_reference/`.
+- Project meta (`VISION.md`, `AGENTS.md`, `RELEASING.md`, `decisions/`)
+  lives at the repo root.
 
 ## Core principles (do not violate)
 1. **The theme owns 100% of the markup.** The core never emits baked-in HTML; it
@@ -231,6 +237,10 @@ Content and theme live outside `src/`:
   breaks what the manual documents for sites, themes, or plugins to rely
   on, as [0051](./decisions/0051-semantic-versioning-and-conventional-commits.md)
   lists.
+- A plugin is released from a tag on `main`, like `pydoc-v0.2.0`, after a
+  pull request that raises its version, as [`RELEASING.md`](./RELEASING.md)
+  says. A release can't be undone, so don't push a tag: the maintainer
+  does.
 - Commits follow [Conventional Commits](https://www.conventionalcommits.org/),
   as `committed.toml` checks in CI: `type(scope)!: description`, with a
   lowercase, imperative description, no full stop, and a first line of up
@@ -601,3 +611,14 @@ Record notable choices as short ADRs in `decisions/`. Locked so far:
   one a pull request adds, and pull requests are still merged with a
   merge commit — see
   [`decisions/0051-semantic-versioning-and-conventional-commits.md`](./decisions/0051-semantic-versioning-and-conventional-commits.md).
+- **Releasing plugins:** a plugin is released from a tag that names it and
+  its version, like `pydoc-v0.2.0`, on `main`, pushed by hand, once a pull
+  request, `chore(pydoc): release 0.2.0`, has raised the version in its
+  `Cargo.toml`, its `Cargo.lock`, and the manual's URLs for it. A workflow
+  checks the tag, builds the plugin's `.wasm` file, and publishes it, not
+  as the repository's latest release, which is little's, with notes that
+  name the `little:plugin` it's built for, and list what breaks, then the
+  features, fixes, and performance, from the commits that changed its
+  folder or `plugins/api_reference/`, with git-cliff. The manual gives each
+  plugin's URL with its version, and releases are immutable — see
+  [`decisions/0052-releasing-plugins-from-tags.md`](./decisions/0052-releasing-plugins-from-tags.md).
