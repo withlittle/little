@@ -70,8 +70,9 @@ documents little's own code with `rustdoc`, so
 manual.
 
 See [`AGENTS.md`](./AGENTS.md) for architecture and conventions,
-[`VISION.md`](./VISION.md) for where little is headed, and
-[`decisions/`](./decisions/) for design records.
+[`VISION.md`](./VISION.md) for where little is headed,
+[`decisions/`](./decisions/) for design records, and
+[`RELEASING.md`](./RELEASING.md) for how the plugins are released.
 
 ## License
 

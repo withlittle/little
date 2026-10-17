@@ -1,0 +1,56 @@
+# git-cliff's config, for the changes a plugin's release notes list: what's
+# breaking, then features, fixes, and performance, from Conventional Commits.
+# It's shared by every plugin, so each run names the plugin's tags and
+# folders, as .github/workflows/release-plugin.yml and RELEASING.md do.
+
+[changelog]
+# No heading for the version, which the release's title has. PLUGIN, from
+# the environment, leaves out the scope of the plugin's own commits.
+body = """
+{%- macro entry(commit, plugin) -%}
+- {% if commit.scope and commit.scope != plugin %}**{{ commit.scope }}:** {% endif %}\
+{{ commit.message | upper_first }} \
+([{{ commit.id | truncate(length=7, end="") }}](https://github.com/withlittle/little/commit/{{ commit.id }}))
+{%- endmacro -%}
+{%- set plugin = get_env(name="PLUGIN", default="") -%}
+{%- set breaking = commits | filter(attribute="breaking", value=true) -%}
+{%- if breaking -%}
+### Breaking changes
+{% for commit in breaking %}
+{{ self::entry(commit=commit, plugin=plugin) }}
+{%- if commit.breaking_description != commit.message %}
+
+  {{ commit.breaking_description | upper_first }}
+{%- endif %}
+{%- endfor %}
+
+{% endif -%}
+{%- for group, commits in commits | filter(attribute="breaking", value=false) | group_by(attribute="group") -%}
+### {{ group }}
+{% for commit in commits %}
+{{ self::entry(commit=commit, plugin=plugin) }}
+{%- endfor %}
+
+{% endfor -%}
+"""
+# Not true, which trims each line, and so a breaking change's indent.
+trim = false
+
+[git]
+conventional_commits = true
+# Commits from before Conventional Commits were adopted are left out.
+filter_unconventional = true
+# Only the types that are released are listed; any type can be breaking.
+commit_parsers = [
+  { message = "^feat", group = "Features" },
+  { message = "^fix", group = "Fixes" },
+  { message = "^perf", group = "Performance" },
+  { message = ".*", skip = true },
+]
+protect_breaking_commits = true
+
+[bump]
+# Cargo's convention until 1.0, as decisions/0051 sets: a breaking change
+# raises the minor version, 0.1.4 to 0.2.0, and anything else the patch.
+features_always_bump_minor = false
+breaking_always_bump_major = false

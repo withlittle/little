@@ -1,0 +1,136 @@
+name: Release a plugin
+
+# A tag that names a plugin and its version, like pydoc-v0.1.0, releases
+# that plugin's .wasm file, as RELEASING.md and decisions/0052 describe.
+# little's own tags, when it has them, won't match.
+on:
+  push:
+    tags:
+      - "pydoc-v*"
+      - "rustdoc-v*"
+      - "jsdoc-v*"
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  release:
+    name: build and release
+    runs-on: ubuntu-latest
+    permissions:
+      # To publish the release.
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # Every commit and tag: the tag must be on main, and the notes list
+          # the changes since the plugin's last tag.
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Read the plugin and version from the tag
+        run: |
+          pattern='^(pydoc|rustdoc|jsdoc)-v((0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*))$'
+          if [[ ! $GITHUB_REF_NAME =~ $pattern ]]; then
+            echo "::error::$GITHUB_REF_NAME isn't a plugin's name and version, like pydoc-v0.1.0"
+            exit 1
+          fi
+          echo "PLUGIN=${BASH_REMATCH[1]}" >> "$GITHUB_ENV"
+          echo "VERSION=${BASH_REMATCH[2]}" >> "$GITHUB_ENV"
+
+      - name: Check the tag is on main
+        run: |
+          if ! git merge-base --is-ancestor HEAD origin/main; then
+            echo "::error::$GITHUB_REF_NAME is on a commit that isn't on main"
+            exit 1
+          fi
+
+      - name: Check the version isn't released
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          # This finds a draft release too.
+          if gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1; then
+            echo "::error::$GITHUB_REF_NAME is released already, and a release is never changed"
+            exit 1
+          fi
+
+      - name: Install stable Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-wasip2
+
+      - name: Check the version in Cargo.toml
+        run: |
+          manifest="plugins/$PLUGIN/Cargo.toml"
+          version=$(cargo metadata --no-deps --format-version 1 --manifest-path "$manifest" \
+            | jq -r --arg name "little-$PLUGIN" '.packages[] | select(.name == $name) | .version')
+          if [[ $version != "$VERSION" ]]; then
+            echo "::error file=$manifest::$GITHUB_REF_NAME is version $VERSION, but $manifest says ${version:-nothing}"
+            exit 1
+          fi
+
+      - name: Install git-cliff
+        uses: taiki-e/install-action@v2
+        with:
+          tool: git-cliff@2.14.2
+
+      - name: Write the release notes
+        run: |
+          repo="https://github.com/$GITHUB_REPOSITORY"
+          wit=$(sed -n 's/^package little:plugin@\(.*\);$/\1/p' wit/plugin.wit)
+          case $PLUGIN in
+            pydoc) page=python-api-reference.md ;;
+            rustdoc) page=rust-api-reference.md ;;
+            jsdoc) page=javascript-api-reference.md ;;
+          esac
+          # The plugin's tag before this one, if it has one. Its changes are
+          # those in its own folder and the library it shares, as cliff.toml
+          # lists them.
+          previous=$(git describe --tags --abbrev=0 --match "$PLUGIN-v*" HEAD^ 2>/dev/null || true)
+          if [[ -n $previous ]]; then
+            changes=$(git cliff --tag-pattern "^$PLUGIN-v" \
+              --include-path "plugins/$PLUGIN/**" \
+              --include-path "plugins/api_reference/**" \
+              "$previous..HEAD")
+          fi
+          {
+            echo "Built for [\`little:plugin@$wit\`]($repo/blob/$GITHUB_REF_NAME/wit/plugin.wit), the version of little's plugin hooks it uses."
+            echo
+            echo "To use it, name it by its URL in your site's \`little.yml\`, with the settings [its page in the manual]($repo/blob/$GITHUB_REF_NAME/docs/plugins/$page) lists:"
+            echo
+            echo '```yaml'
+            echo "plugins:"
+            echo "  $PLUGIN:"
+            echo "    wasm: $repo/releases/download/$GITHUB_REF_NAME/little_$PLUGIN.wasm"
+            echo '```'
+            echo
+            if [[ -z $previous ]]; then
+              echo "This is $PLUGIN's first release."
+            else
+              echo "## Changes since $previous"
+              echo
+              echo "${changes:-No features, fixes, or breaking changes.}"
+            fi
+          } > "$RUNNER_TEMP/notes.md"
+          cat "$RUNNER_TEMP/notes.md"
+
+      - name: Build
+        run: >-
+          cargo build --release --locked --target wasm32-wasip2
+          --manifest-path "plugins/$PLUGIN/Cargo.toml" --target-dir "target/$PLUGIN"
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        # Not "Latest", which is for little's own releases. gh publishes the
+        # release once the file is uploaded, and deletes it if that fails.
+        run: >-
+          gh release create "$GITHUB_REF_NAME"
+          "target/$PLUGIN/wasm32-wasip2/release/little_$PLUGIN.wasm"
+          --verify-tag --latest=false
+          --title "$PLUGIN $VERSION"
+          --notes-file "$RUNNER_TEMP/notes.md"
