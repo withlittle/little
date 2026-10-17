@@ -56,9 +56,9 @@ On a branch from `main`:
 
 1. Raise `version` in `plugins/<plugin>/Cargo.toml`.
 2. Run its tests, `cargo test --manifest-path plugins/<plugin>/Cargo.toml`,
-   which updates its `Cargo.lock` to the new version too. The release
-   builds with `--locked`, so it fails if `Cargo.lock` isn't committed with
-   `Cargo.toml`.
+   which updates its `Cargo.lock` to the new version too. CI builds with
+   `--locked`, as the release does, so if `Cargo.lock` isn't committed with
+   `Cargo.toml`, the pull request fails, before the release can.
 3. Change the URLs in its page in the manual,
    `docs/plugins/python-api-reference.md`, `rust-api-reference.md`, or
    `javascript-api-reference.md`, to the new version, so the manual gives

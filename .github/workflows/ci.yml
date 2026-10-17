@@ -45,29 +45,33 @@ jobs:
           cargo fmt --check --manifest-path plugins/rustdoc/Cargo.toml
           cargo fmt --check --manifest-path plugins/jsdoc/Cargo.toml
 
+      # pydoc, rustdoc, and jsdoc are linted, tested, and built with --locked,
+      # as their releases are, so a pull request that raises one's version
+      # without its Cargo.lock fails here. Each command needs it, or cargo
+      # would update Cargo.lock for those after it.
       - name: Lint (clippy, warnings are errors)
         run: |
           cargo clippy --all-targets -- -D warnings
           cargo clippy --manifest-path tests/plugin/Cargo.toml --target wasm32-wasip2 --target-dir target/test-plugin -- -D warnings
           cargo clippy --manifest-path plugins/api_reference/Cargo.toml --all-targets --target-dir target/api_reference -- -D warnings
-          cargo clippy --manifest-path plugins/pydoc/Cargo.toml --all-targets --target wasm32-wasip2 --target-dir target/pydoc -- -D warnings
-          cargo clippy --manifest-path plugins/rustdoc/Cargo.toml --all-targets --target wasm32-wasip2 --target-dir target/rustdoc -- -D warnings
-          cargo clippy --manifest-path plugins/jsdoc/Cargo.toml --all-targets --target wasm32-wasip2 --target-dir target/jsdoc -- -D warnings
+          cargo clippy --locked --manifest-path plugins/pydoc/Cargo.toml --all-targets --target wasm32-wasip2 --target-dir target/pydoc -- -D warnings
+          cargo clippy --locked --manifest-path plugins/rustdoc/Cargo.toml --all-targets --target wasm32-wasip2 --target-dir target/rustdoc -- -D warnings
+          cargo clippy --locked --manifest-path plugins/jsdoc/Cargo.toml --all-targets --target wasm32-wasip2 --target-dir target/jsdoc -- -D warnings
 
       - name: Test
         run: |
           cargo test
           cargo test --manifest-path plugins/api_reference/Cargo.toml --target-dir target/api_reference
-          cargo test --manifest-path plugins/pydoc/Cargo.toml --target-dir target/pydoc
-          cargo test --manifest-path plugins/rustdoc/Cargo.toml --target-dir target/rustdoc
-          cargo test --manifest-path plugins/jsdoc/Cargo.toml --target-dir target/jsdoc
+          cargo test --locked --manifest-path plugins/pydoc/Cargo.toml --target-dir target/pydoc
+          cargo test --locked --manifest-path plugins/rustdoc/Cargo.toml --target-dir target/rustdoc
+          cargo test --locked --manifest-path plugins/jsdoc/Cargo.toml --target-dir target/jsdoc
 
       - name: Build release
         run: |
           cargo build --release
-          cargo build --release --target wasm32-wasip2 --manifest-path plugins/pydoc/Cargo.toml --target-dir target/pydoc
-          cargo build --release --target wasm32-wasip2 --manifest-path plugins/rustdoc/Cargo.toml --target-dir target/rustdoc
-          cargo build --release --target wasm32-wasip2 --manifest-path plugins/jsdoc/Cargo.toml --target-dir target/jsdoc
+          cargo build --release --locked --target wasm32-wasip2 --manifest-path plugins/pydoc/Cargo.toml --target-dir target/pydoc
+          cargo build --release --locked --target wasm32-wasip2 --manifest-path plugins/rustdoc/Cargo.toml --target-dir target/rustdoc
+          cargo build --release --locked --target wasm32-wasip2 --manifest-path plugins/jsdoc/Cargo.toml --target-dir target/jsdoc
 
   commits:
     name: commit messages
