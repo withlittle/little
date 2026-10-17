@@ -232,7 +232,7 @@ fn unpack_tar_gz(archive: &[u8], dest: &Path, limit: u64) -> Result<()> {
 }
 
 /// The one folder in `dir`: GitHub's archives keep a theme in a folder named
-/// for its repository and tag, like `theme-bootstrap-0.0.1/`.
+/// for its repository and tag, like `my-theme-1.0/`.
 fn single_folder(dir: &Path) -> Result<PathBuf> {
     let mut paths = Vec::new();
     for entry in fs::read_dir(dir).with_context(|| format!("reading {}", dir.display()))? {
@@ -742,7 +742,7 @@ mod tests {
         assert_eq!(cache_name("foobar"), "85944171f73967e8");
 
         let url = |tag: &str| {
-            format!("https://github.com/withlittle/theme-bootstrap/archive/refs/tags/{tag}.tar.gz")
+            format!("https://github.com/example/my-theme/archive/refs/tags/{tag}.tar.gz")
         };
         assert_ne!(cache_name(&url("0.0.1")), cache_name(&url("0.0.2")));
     }

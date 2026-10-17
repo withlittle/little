@@ -86,11 +86,11 @@ it](#building-on-another-theme), file by file.
 Set `theme` to the URL of a theme's `.zip` or `.tar.gz` archive, and the first
 build downloads it. On GitHub, a tag's archive is at
 `https://github.com/OWNER/REPO/archive/refs/tags/TAG.tar.gz`, so to build a
-site with [theme-bootstrap](https://github.com/withlittle/theme-bootstrap):
+site with the `1.0` tag of `example/my-theme`:
 
 ```yaml
 # little.yml
-theme: https://github.com/withlittle/theme-bootstrap/archive/refs/tags/0.0.1.tar.gz
+theme: https://github.com/example/my-theme/archive/refs/tags/1.0.tar.gz
 ```
 
 - The archive must hold the theme in a single folder, as GitHub's do.
@@ -117,13 +117,13 @@ by file, so it needs only what it changes. A company theme can be just a
 
 ```yaml
 # company-theme/little.yml
-theme: https://github.com/withlittle/theme-bootstrap/archive/refs/tags/0.0.1.tar.gz
+theme: https://github.com/example/my-theme/archive/refs/tags/1.0.tar.gz
 font: "Inter, sans-serif"
 colors:
   accent: navy
 ```
 
-A site that uses it cascades **little → theme-bootstrap → company-theme →
+A site that uses it cascades **little → my-theme → company-theme →
 site**. Themes can build on themes that build on others, but not in a loop.
 In a theme's `little.yml`, a path is relative to the theme's folder, and a
 URL is downloaded into the site's `.little/`.

@@ -9,10 +9,10 @@
 Many themes are written in [Sass](https://sass-lang.com/), as Bootstrap and
 Bulma are. little copies a theme's `_static/` as-is, so a `.scss` file there
 is published as it is, and no browser reads it. A theme has to ship its Sass
-compiled, as [theme-bootstrap](https://github.com/withlittle/theme-bootstrap)
-ships Bootstrap's CSS. To change Bootstrap's colours, its author has to
-compile Bootstrap again with another tool, and a company theme that builds on
-it can't change them at all, only add CSS over them.
+compiled, as one built on Bootstrap ships Bootstrap's CSS. To change
+Bootstrap's colours, its author has to compile Bootstrap again with another
+tool, and a company theme that builds on it can't change them at all, only
+add CSS over them.
 
 ## Options considered
 - **What compiles Sass:**
