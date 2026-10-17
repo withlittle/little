@@ -558,3 +558,12 @@ Record notable choices as short ADRs in `decisions/`. Locked so far:
   stops the build. `crate` and `package` stay, for links and the default
   `url` — see
   [`decisions/0049-an-api-references-url-and-title.md`](./decisions/0049-an-api-references-url-and-title.md).
+- **One repository:** little, its built-in theme, `wit/plugin.wit`, its
+  plugins and the library they share, and the manual stay in one
+  repository, `withlittle/little`, with little at its root, so a change to
+  what little gives themes or plugins is one pull request, tested together.
+  Each plugin is its own Cargo workspace, and each component is released on
+  its own, from a tag that names it. One moves to a repository of its own
+  once it has maintainers of its own, or its CI holds the rest up, but not
+  while the plugin interface or templates' data still breaks — see
+  [`decisions/0050-one-repository-for-little-its-themes-and-plugins.md`](./decisions/0050-one-repository-for-little-its-themes-and-plugins.md).
