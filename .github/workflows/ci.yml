@@ -68,3 +68,19 @@ jobs:
           cargo build --release --target wasm32-wasip2 --manifest-path plugins/pydoc/Cargo.toml --target-dir target/pydoc
           cargo build --release --target wasm32-wasip2 --manifest-path plugins/rustdoc/Cargo.toml --target-dir target/rustdoc
           cargo build --release --target wasm32-wasip2 --manifest-path plugins/jsdoc/Cargo.toml --target-dir target/jsdoc
+
+  commits:
+    name: commit messages
+    # Only a pull request has commits of its own to check, against
+    # committed.toml.
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # committed reads each of the pull request's commits.
+          fetch-depth: 0
+
+      - name: Check commit messages (Conventional Commits)
+        uses: crate-ci/committed@v1.1.11
