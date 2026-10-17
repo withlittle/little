@@ -20,19 +20,23 @@ it does is in
 and why it's named so, in
 [ADR 0047](https://github.com/withlittle/little/blob/main/decisions/0047-naming-api-reference-plugins.md).
 
-## Building it
+## Getting it
 
-Its `.wasm` file isn't released yet, so build it, in a clone of little's
-repository:
+Each version of `pydoc` is released in little's repository, as a `.wasm`
+file, about 1.6 MB, which a site names by its URL, with the version in it:
 
-```sh
-rustup target add wasm32-wasip2
-cargo build --release --target wasm32-wasip2 --manifest-path plugins/pydoc/Cargo.toml
+```text
+https://github.com/withlittle/little/releases/download/pydoc-v0.1.0/little_pydoc.wasm
 ```
 
-That builds
-`plugins/pydoc/target/wasm32-wasip2/release/little_pydoc.wasm`,
-about 1.6 MB, which a site can name where it is, or copy into its folder.
+little downloads it in the site's first build, and uses that copy from then
+on, as for [any plugin](using-plugins.md#naming-a-plugin), so to update it,
+change the URL to a later version's. Its releases, among
+[little's](https://github.com/withlittle/little/releases), list what changed
+in each version, and the version of little's
+[hooks](../reference/plugin-hooks.md) it's built for. To build it yourself,
+see its
+[README](https://github.com/withlittle/little/tree/main/plugins/pydoc#building-it).
 
 ## Using it
 
@@ -43,7 +47,7 @@ and, if you like, what its page is called, and where its pages go:
 # little.yml
 plugins:
   pydoc:
-    wasm: ./little_pydoc.wasm
+    wasm: https://github.com/withlittle/little/releases/download/pydoc-v0.1.0/little_pydoc.wasm
     read: ./mypackage
     title: API reference
     url: /
@@ -168,4 +172,3 @@ warning: plugin `pydoc`: can't parse `mypackage/broken.py`: Expected a parameter
   it's written, but for a title, which is bold.
 - The source has no line numbers, and doesn't link to the file in the
   site's repository.
-- Its `.wasm` file isn't released, so you build it.

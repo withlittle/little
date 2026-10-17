@@ -19,19 +19,23 @@ offline. Why it works as it does is in
 and why it's named so, in
 [ADR 0047](https://github.com/withlittle/little/blob/main/decisions/0047-naming-api-reference-plugins.md).
 
-## Building it
+## Getting it
 
-Its `.wasm` file isn't released yet, so build it, in a clone of little's
-repository:
+Each version of `jsdoc` is released in little's repository, as a `.wasm`
+file, about 1.2 MB, which a site names by its URL, with the version in it:
 
-```sh
-rustup target add wasm32-wasip2
-cargo build --release --target wasm32-wasip2 --manifest-path plugins/jsdoc/Cargo.toml
+```text
+https://github.com/withlittle/little/releases/download/jsdoc-v0.1.0/little_jsdoc.wasm
 ```
 
-That builds
-`plugins/jsdoc/target/wasm32-wasip2/release/little_jsdoc.wasm`,
-about 1.2 MB, which a site can name where it is, or copy into its folder.
+little downloads it in the site's first build, and uses that copy from then
+on, as for [any plugin](using-plugins.md#naming-a-plugin), so to update it,
+change the URL to a later version's. Its releases, among
+[little's](https://github.com/withlittle/little/releases), list what changed
+in each version, and the version of little's
+[hooks](../reference/plugin-hooks.md) it's built for. To build it yourself,
+see its
+[README](https://github.com/withlittle/little/tree/main/plugins/jsdoc#building-it).
 
 ## Using it
 
@@ -43,7 +47,7 @@ where its pages go:
 # little.yml
 plugins:
   jsdoc:
-    wasm: ./little_jsdoc.wasm
+    wasm: https://github.com/withlittle/little/releases/download/jsdoc-v0.1.0/little_jsdoc.wasm
     read: ./src
     package: my-lib
     title: API reference
@@ -77,11 +81,11 @@ another entry under `plugins`, with another name, and the same `wasm`:
 # little.yml
 plugins:
   core_api:
-    wasm: ./little_jsdoc.wasm
+    wasm: https://github.com/withlittle/little/releases/download/jsdoc-v0.1.0/little_jsdoc.wasm
     read: ./packages/core/src
     package: "@my-org/core"
   cli_api:
-    wasm: ./little_jsdoc.wasm
+    wasm: https://github.com/withlittle/little/releases/download/jsdoc-v0.1.0/little_jsdoc.wasm
     read: ./packages/cli/src
     package: "@my-org/cli"
 ```
@@ -233,4 +237,3 @@ What it can't read is warned of, and `little build --strict` fails on each:
   isn't linked to its docs.
 - The source has no line numbers, and doesn't link to the file in the
   site's repository.
-- Its `.wasm` file isn't released, so you build it.

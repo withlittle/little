@@ -21,19 +21,23 @@ and why it's named so, in
 This manual uses it on little's own code: [little's API](../api/README.md)
 is a page for each of little's modules, for those who work on little.
 
-## Building it
+## Getting it
 
-Its `.wasm` file isn't released yet, so build it, in a clone of little's
-repository:
+Each version of `rustdoc` is released in little's repository, as a `.wasm`
+file, about 1.2 MB, which a site names by its URL, with the version in it:
 
-```sh
-rustup target add wasm32-wasip2
-cargo build --release --target wasm32-wasip2 --manifest-path plugins/rustdoc/Cargo.toml
+```text
+https://github.com/withlittle/little/releases/download/rustdoc-v0.1.0/little_rustdoc.wasm
 ```
 
-That builds
-`plugins/rustdoc/target/wasm32-wasip2/release/little_rustdoc.wasm`,
-about 1.2 MB, which a site can name where it is, or copy into its folder.
+little downloads it in the site's first build, and uses that copy from then
+on, as for [any plugin](using-plugins.md#naming-a-plugin), so to update it,
+change the URL to a later version's. Its releases, among
+[little's](https://github.com/withlittle/little/releases), list what changed
+in each version, and the version of little's
+[hooks](../reference/plugin-hooks.md) it's built for. To build it yourself,
+see its
+[README](https://github.com/withlittle/little/tree/main/plugins/rustdoc#building-it).
 
 ## Using it
 
@@ -45,7 +49,7 @@ its pages go:
 # little.yml
 plugins:
   rustdoc:
-    wasm: ./little_rustdoc.wasm
+    wasm: https://github.com/withlittle/little/releases/download/rustdoc-v0.1.0/little_rustdoc.wasm
     read: ./src
     crate: my_crate
     title: API reference
@@ -79,11 +83,11 @@ another entry under `plugins`, with another name, and the same `wasm`:
 # little.yml
 plugins:
   core_api:
-    wasm: ./little_rustdoc.wasm
+    wasm: https://github.com/withlittle/little/releases/download/rustdoc-v0.1.0/little_rustdoc.wasm
     read: ./core/src
     crate: my_core
   cli_api:
-    wasm: ./little_rustdoc.wasm
+    wasm: https://github.com/withlittle/little/releases/download/rustdoc-v0.1.0/little_rustdoc.wasm
     read: ./cli/src
     crate: my_cli
 ```
@@ -219,4 +223,3 @@ What it can't read is warned of, and `little build --strict` fails on each:
   standard library, or another crate, isn't linked to its docs.
 - The source has no line numbers, and doesn't link to the file in the
   site's repository.
-- Its `.wasm` file isn't released, so you build it.
