@@ -223,7 +223,30 @@ Content and theme live outside `src/`:
   (`docs/`), and the reference pages, in the same PR; a new page goes in
   `nav` in `little.yml`. Keep the README short: it links to the manual.
   `cargo run -- build --strict` checks the manual's links.
-- Commits: imperative subject; include the Copilot co-author trailer.
+- Versions follow [Semantic Versioning](https://semver.org/): each
+  component's, in its `Cargo.toml`, is raised as it's released, and
+  `little:plugin`'s, in `wit/plugin.wit`, by the change that needs it.
+  Until 1.0, a breaking change raises the minor version, 0.1.4 to 0.2.0,
+  and anything else the patch, 0.1.4 to 0.1.5. A change is breaking if it
+  breaks what the manual documents for sites, themes, or plugins to rely
+  on, as [0051](./decisions/0051-semantic-versioning-and-conventional-commits.md)
+  lists.
+- Commits follow [Conventional Commits](https://www.conventionalcommits.org/),
+  as `committed.toml` checks in CI: `type(scope)!: description`, with a
+  lowercase, imperative description, no full stop, and a first line of up
+  to 100 characters. `committed main..HEAD`, after
+  `cargo install committed`, checks a branch as CI does.
+  - Type: `feat`, `fix`, or `perf` for a change to what people use, which
+    is released; `docs`, `refactor`, `test`, `style`, `build`, `ci`, or
+    `chore` for any other; `revert`, with a `Refs:` footer, to undo one.
+  - Scope: the plugin a commit is about, `pydoc`, `rustdoc`, `jsdoc`, or
+    `api_reference`; none for little, its theme, `wit/`, or more than one
+    component.
+  - Breaking: `!` before the `:`, and a footer,
+    `BREAKING-CHANGE: <what to change>`, beside the co-author trailer;
+    written `BREAKING CHANGE:`, with a space, git misses the trailer.
+  - Include the Copilot co-author trailer. Rebase a branch on `main`,
+    rather than merging `main` into it.
 
 ## Decisions
 Record notable choices as short ADRs in `decisions/`. Locked so far:
@@ -558,3 +581,23 @@ Record notable choices as short ADRs in `decisions/`. Locked so far:
   stops the build. `crate` and `package` stay, for links and the default
   `url` — see
   [`decisions/0049-an-api-references-url-and-title.md`](./decisions/0049-an-api-references-url-and-title.md).
+- **One repository:** little, its built-in theme, `wit/plugin.wit`, its
+  plugins and the library they share, and the manual stay in one
+  repository, `withlittle/little`, with little at its root, so a change to
+  what little gives themes or plugins is one pull request, tested together.
+  Each plugin is its own Cargo workspace, and each component is released on
+  its own, from a tag that names it. One moves to a repository of its own
+  once it has maintainers of its own, or its CI holds the rest up, but not
+  while the plugin interface or templates' data still breaks — see
+  [`decisions/0050-one-repository-for-little-its-themes-and-plugins.md`](./decisions/0050-one-repository-for-little-its-themes-and-plugins.md).
+- **Versions and commits:** little, `pydoc`, `rustdoc`, and `jsdoc` each
+  follow Semantic Versioning, with its own version, in its `Cargo.toml`,
+  and `little:plugin` has its own, in `wit/plugin.wit`. Until 1.0, where
+  SemVer sets no rules, a breaking change raises the minor version, and
+  anything else the patch, as Cargo and wasmtime read 0.y.z; a change is
+  breaking if it breaks what the manual documents for sites, themes, or
+  plugins to rely on. Commits follow Conventional Commits, with a
+  plugin's name as the scope, or none, for little; committed checks each
+  one a pull request adds, and pull requests are still merged with a
+  merge commit — see
+  [`decisions/0051-semantic-versioning-and-conventional-commits.md`](./decisions/0051-semantic-versioning-and-conventional-commits.md).

@@ -1,0 +1,13 @@
+# Commit messages follow Conventional Commits: see
+# decisions/0051-semantic-versioning-and-conventional-commits.md.
+style = "conventional"
+allowed_types = ["feat", "fix", "perf", "docs", "refactor", "test", "style", "build", "ci", "chore", "revert"]
+# A plugin's name, or no scope, for little.
+allowed_scopes = ["pydoc", "rustdoc", "jsdoc", "api_reference"]
+# Descriptions are lowercase, as the spec's examples are.
+subject_capitalized = false
+subject_length = 100
+# A body's lines can be any length.
+line_length = 0
+# A branch is rebased on main, not merged with it.
+merge_commit = false

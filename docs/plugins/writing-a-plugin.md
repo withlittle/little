@@ -237,5 +237,8 @@ componentize-py -d plugin.wit -d links.wit -w my:links/links componentize app -o
   [`plugins/`](https://github.com/withlittle/little/tree/main/plugins), add
   an API reference with the [`files`](../reference/plugin-hooks.md#files)
   hook.
-- A plugin keeps working as little changes, until the version of its hooks,
-  `little:plugin@0.2.0`, does.
+- The version of little's hooks, `little:plugin@0.2.0`, is numbered as
+  little's [versions](../getting-started/install.md#update-it) are. A hook
+  little adds makes it 0.2.1, and a plugin built for 0.2.0 keeps working;
+  a change that would break plugins makes it 0.3.0, and each must be built
+  again, for 0.3.0, to load.
