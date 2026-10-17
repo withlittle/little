@@ -31,8 +31,11 @@ struct Settings {
     read: String,
     /// The crate's name, as its code names it, like `my_crate`.
     krate: String,
-    /// The folder its pages go in, from the source's, like
-    /// `reference/my_crate`, or empty for the source's own.
+    /// What the site calls the crate's page, like `API reference`, if it's
+    /// not its name.
+    title: Option<String>,
+    /// The folder its pages go in, from the source's, like `my_crate`, or
+    /// empty for the source's own.
     url: String,
 }
 
@@ -44,6 +47,7 @@ impl Settings {
         };
         let mut read = Vec::new();
         let mut krate = None;
+        let mut title = None;
         let mut url = None;
         for (name, value) in settings {
             match name.as_str() {
@@ -61,16 +65,24 @@ impl Settings {
                          with `_` for each `-` in its package's name",
                     )?);
                 }
+                "title" => {
+                    let text = value.as_str().filter(|title| !title.trim().is_empty());
+                    title = Some(text.map(String::from).ok_or(
+                        "`title` must be what the site calls the crate's page, like \
+                         `title: API reference`",
+                    )?);
+                }
                 "url" => {
                     url = Some((value.as_str().and_then(folder)).ok_or(
-                        "`url` must be the folder its pages go in, like `/reference`, with no \
-                         part `.` or `..`",
+                        "`url` must be the folder its pages go in, like `/api`, with no part `.` \
+                         or `..`",
                     )?);
                 }
                 _ => {
                     return Err(format!(
                         "it has no setting `{name}`, only `read`, the folder the crate's code is \
-                         in, `crate`, its name, and `url`, the folder its pages go in"
+                         in, `crate`, its name, `title`, what the site calls its page, and `url`, \
+                         the folder its pages go in"
                     ));
                 }
             }
@@ -94,8 +106,13 @@ impl Settings {
             }
         };
         let krate = krate.ok_or("name the crate in `crate`, like `crate: my_crate`")?;
-        let url = url.unwrap_or_else(|| format!("reference/{krate}"));
-        Ok(Settings { read, krate, url })
+        let url = url.unwrap_or_else(|| krate.clone());
+        Ok(Settings {
+            read,
+            krate,
+            title,
+            url,
+        })
     }
 }
 
@@ -134,10 +151,15 @@ fn document(settings: &Settings) -> Added {
             .collect(),
         documented: &documented,
     };
-    Added {
+    let mut added = Added {
         pages: (0..modules.len()).map(|index| pages.page(index)).collect(),
         warnings,
+    };
+    // The crate's page is the first, as the crate is the first module.
+    if let (Some(title), Some((_, page))) = (&settings.title, added.pages.first_mut()) {
+        *page = markdown::titled(title, page);
     }
+    added
 }
 
 /// The path of the page of `module`, in the folder `url`: the crate's, and
@@ -172,7 +194,7 @@ struct Pages<'a> {
     scopes: &'a Scopes,
     documented: &'a Documented,
     /// The path of each module's page, in the order of the modules, like
-    /// `reference/my_crate/config.md`.
+    /// `my_crate/config.md`.
     paths: Vec<String>,
     /// The id of each heading on each module's page, by the name it shows,
     /// like `Config::load`.
@@ -404,6 +426,7 @@ mod tests {
         Settings {
             read: read.to_string(),
             krate: krate.to_string(),
+            title: None,
             url: url.to_string(),
         }
     }
@@ -423,14 +446,17 @@ mod tests {
     #[test]
     fn settings_name_the_folder_read_its_crate_and_where_the_pages_go() {
         let parsed = Settings::parse(r#"{"read":["src"],"crate":"my_crate"}"#);
-        assert_eq!(
-            parsed,
-            Ok(settings("src", "my_crate", "reference/my_crate"))
-        );
+        assert_eq!(parsed, Ok(settings("src", "my_crate", "my_crate")));
         let parsed = Settings::parse(r#"{"read":["."],"crate":"little","url":"/api/"}"#);
         assert_eq!(parsed, Ok(settings(".", "little", "api")));
         let parsed = Settings::parse(r#"{"read":["src"],"crate":"little","url":"/"}"#);
         assert_eq!(parsed, Ok(settings("src", "little", "")));
+        let parsed = Settings::parse(r#"{"read":["src"],"crate":"little","title":"API"}"#);
+        let titled = Settings {
+            title: Some("API".to_string()),
+            ..settings("src", "little", "little")
+        };
+        assert_eq!(parsed, Ok(titled));
     }
 
     #[test]
@@ -458,6 +484,34 @@ mod tests {
             let error = Settings::parse(&json).unwrap_err();
             assert!(error.starts_with("`url` must be"), "{url}: {error}");
         }
+        for title in [r#""""#, r#"" ""#, "3", "null"] {
+            let json = format!(r#"{{"read":["src"],"crate":"x","title":{title}}}"#);
+            let error = Settings::parse(&json).unwrap_err();
+            assert!(error.starts_with("`title` must be"), "{title}: {error}");
+        }
+    }
+
+    #[test]
+    fn a_title_is_in_the_frontmatter_of_the_crates_page_alone() {
+        let root = folder_with(
+            "title",
+            &[
+                ("src/lib.rs", "//! The crate.\n\npub mod config;\n"),
+                ("src/config.rs", "//! Config.\n"),
+            ],
+        );
+        let mut settings = settings(&format!("{root}/src"), "demo", "api");
+        let added = document(&settings);
+        let krate = markdown(&added, "api/README.md");
+        assert!(krate.starts_with("# demo\n"), "{krate}");
+        settings.title = Some("API: \"demo\"".to_string());
+        let added = document(&settings);
+        let krate = markdown(&added, "api/README.md");
+        let frontmatter = "---\ntitle: \"API: \\\"demo\\\"\"\n---\n\n# demo\n";
+        assert!(krate.starts_with(frontmatter), "{krate}");
+        let config = markdown(&added, "api/config.md");
+        assert!(config.starts_with("# config\n"), "{config}");
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

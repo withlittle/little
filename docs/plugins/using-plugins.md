@@ -86,9 +86,8 @@ it to read.
 A plugin can add pages, and other files, to a site, or leave files in its
 source out, with its [`files`](../reference/plugin-hooks.md#files) hook. A
 page it adds is built as if its file were in the source, at the path the
-plugin chooses, like `reference/mypackage/README.md`, for
-`/reference/mypackage/`: it's in the nav and search, its links are checked,
-and its code blocks go to plugins.
+plugin chooses, like `mypackage/README.md`, for `/mypackage/`: it's in the
+nav and search, its links are checked, and its code blocks go to plugins.
 
 - A page that would be the same page as a file in the source, or as another
   plugin's page, stops the build, naming both.

@@ -1,6 +1,9 @@
 # 0048 — A plugin for JavaScript's doc comments
 
-- Status: accepted
+- Status: accepted; amended by
+  [0049](./0049-an-api-references-url-and-title.md), which puts its pages
+  in `/<package>`, not `/reference/<package>`, unless `url` is set, and
+  titles the package's page with `title`
 - Date: 2026-10-16
 
 ## Context

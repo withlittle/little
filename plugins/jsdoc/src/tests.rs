@@ -19,6 +19,7 @@ fn settings(read: &str, package: &str, url: &str) -> Settings {
     Settings {
         read: read.to_string(),
         package: package.to_string(),
+        title: None,
         url: url.to_string(),
     }
 }
@@ -60,16 +61,19 @@ fn assert_has(page: &str, parts: &[&str]) {
 #[test]
 fn settings_name_the_folder_read_its_package_and_where_the_pages_go() {
     let parsed = Settings::parse(r#"{"read":["src"],"package":"my-lib"}"#);
-    assert_eq!(parsed, Ok(settings("src", "my-lib", "reference/my-lib")));
+    assert_eq!(parsed, Ok(settings("src", "my-lib", "my-lib")));
     let parsed = Settings::parse(r#"{"read":["."],"package":"@scope/lib","url":"/api/"}"#);
     assert_eq!(parsed, Ok(settings(".", "@scope/lib", "api")));
     let parsed = Settings::parse(r#"{"read":["src"],"package":"@scope/lib"}"#);
-    assert_eq!(
-        parsed,
-        Ok(settings("src", "@scope/lib", "reference/@scope/lib"))
-    );
+    assert_eq!(parsed, Ok(settings("src", "@scope/lib", "@scope/lib")));
     let parsed = Settings::parse(r#"{"read":["src"],"package":"x","url":"/"}"#);
     assert_eq!(parsed, Ok(settings("src", "x", "")));
+    let parsed = Settings::parse(r#"{"read":["src"],"package":"x","title":"API"}"#);
+    let titled = Settings {
+        title: Some("API".to_string()),
+        ..settings("src", "x", "x")
+    };
+    assert_eq!(parsed, Ok(titled));
 }
 
 #[test]
@@ -102,6 +106,32 @@ fn settings_must_be_known() {
         let error = Settings::parse(&json).unwrap_err();
         assert!(error.starts_with("`url` must be"), "{url}: {error}");
     }
+    for title in [r#""""#, r#"" ""#, "3", "null"] {
+        let json = format!(r#"{{"read":["src"],"package":"x","title":{title}}}"#);
+        let error = Settings::parse(&json).unwrap_err();
+        assert!(error.starts_with("`title` must be"), "{title}: {error}");
+    }
+}
+
+#[test]
+fn a_title_is_in_the_frontmatter_of_the_packages_page_alone() {
+    let files = [
+        ("index.ts", "/** The package. */\nexport const a = 1;\n"),
+        ("config.ts", "/** Config. */\nexport const b = 2;\n"),
+    ];
+    let root = folder_with("title", &files);
+    let mut settings = settings(&root, "demo", "api");
+    let added = document(&settings);
+    let package = markdown(&added, "api/README.md");
+    assert!(package.starts_with("# demo\n"), "{package}");
+    settings.title = Some("API: \"demo\"".to_string());
+    let added = document(&settings);
+    std::fs::remove_dir_all(&root).unwrap();
+    let package = markdown(&added, "api/README.md");
+    let frontmatter = "---\ntitle: \"API: \\\"demo\\\"\"\n---\n\n# demo\n";
+    assert!(package.starts_with(frontmatter), "{package}");
+    let config = markdown(&added, "api/config.md");
+    assert!(config.starts_with("# config\n"), "{config}");
 }
 
 #[test]

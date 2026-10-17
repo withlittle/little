@@ -5,7 +5,9 @@
   `files`, which adds its pages, and by
   [0047](./0047-naming-api-reference-plugins.md), which renames it
   `rustdoc`, in `plugins/rustdoc/`, after Rust's own tool, which it
-  doesn't run
+  doesn't run, and by [0049](./0049-an-api-references-url-and-title.md),
+  which puts its pages in `/<crate>`, not `/reference/<crate>`, unless
+  `url` is set, and titles the crate's page with `title`
 - Date: 2026-10-14
 - Amends: [0032](./0032-docs-are-the-manual.md)
 

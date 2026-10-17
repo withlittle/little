@@ -25,8 +25,11 @@ const PYTHON: Language = Language {
 struct Settings {
     /// The folders it documents, as it sees them, like `mypackage`.
     read: Vec<String>,
-    /// The folder its pages go in, from the source's, like `reference`, or
-    /// empty for the source's own.
+    /// What the site calls the page of the one package or module it
+    /// documents, like `API reference`, if it's not its name.
+    title: Option<String>,
+    /// The folder its pages go in, from the source's, like `api`, or empty
+    /// for the source's own.
     url: String,
 }
 
@@ -37,7 +40,8 @@ impl Settings {
             return Err(format!("its settings must be a mapping, not {json}"));
         };
         let mut read = Vec::new();
-        let mut url = "reference".to_string();
+        let mut title = None;
+        let mut url = String::new();
         for (name, value) in settings {
             match name.as_str() {
                 "read" => {
@@ -47,16 +51,24 @@ impl Settings {
                         .map(String::from)
                         .collect();
                 }
+                "title" => {
+                    let text = value.as_str().filter(|title| !title.trim().is_empty());
+                    title = Some(text.map(String::from).ok_or(
+                        "`title` must be what the site calls the page of the package or module \
+                         it documents, like `title: API reference`",
+                    )?);
+                }
                 "url" => {
                     url = (value.as_str().and_then(folder)).ok_or(
-                        "`url` must be the folder its pages go in, like `/reference`, with no \
-                         part `.` or `..`",
+                        "`url` must be the folder its pages go in, like `/api`, with no part `.` \
+                         or `..`",
                     )?;
                 }
                 _ => {
                     return Err(format!(
                         "it has no setting `{name}`, only `read`, the folders it documents, \
-                         and `url`, the folder their pages go in"
+                         `title`, what the site calls the page of the package or module it \
+                         documents, and `url`, the folder their pages go in"
                     ));
                 }
             }
@@ -64,7 +76,7 @@ impl Settings {
         if read.is_empty() {
             return Err("name the folders it documents in `read`, like `read: ./mypackage`".into());
         }
-        Ok(Settings { read, url })
+        Ok(Settings { read, title, url })
     }
 }
 
@@ -88,6 +100,9 @@ struct Added {
 /// The pages of the packages and modules in the folders `settings` reads.
 fn document(settings: &Settings) -> Result<Added, String> {
     let mut added = Added::default();
+    // The packages and modules in the folders it reads, not in a package
+    // there, of which `title` titles one.
+    let mut tops = Vec::new();
     for folder in &settings.read {
         if is_file(&join(folder, "__init__.py")) {
             let name = package_name(folder).ok_or_else(|| {
@@ -97,6 +112,7 @@ fn document(settings: &Settings) -> Result<Added, String> {
                 )
             })?;
             added.package(folder, name, &join(&settings.url, name));
+            tops.push(Entry::Package(name.to_string()));
             continue;
         }
         let entries = added.entries(folder);
@@ -107,6 +123,10 @@ fn document(settings: &Settings) -> Result<Added, String> {
             ));
         }
         added.add(folder, &entries, &settings.url);
+        tops.extend(entries);
+    }
+    if let Some(title) = &settings.title {
+        added.title(title, &tops, &settings.url)?;
     }
     Ok(added)
 }
@@ -117,7 +137,47 @@ enum Entry {
     Module(String),
 }
 
+impl Entry {
+    fn name(&self) -> &str {
+        match self {
+            Entry::Package(name) | Entry::Module(name) => name,
+        }
+    }
+
+    /// The path of its page, from the folder the pages of its folder go in.
+    fn page(&self) -> String {
+        match self {
+            Entry::Package(name) => format!("{name}/README.md"),
+            Entry::Module(name) => format!("{name}.md"),
+        }
+    }
+}
+
 impl Added {
+    /// Give the page of the one package or module in `tops`, whose pages
+    /// are in `dir`, the title `title`; one for more than one is an error.
+    fn title(&mut self, title: &str, tops: &[Entry], dir: &str) -> Result<(), String> {
+        let [top] = tops else {
+            if tops.is_empty() {
+                // A folder with nothing in it is warned of already.
+                return Ok(());
+            }
+            let names: Vec<String> = tops.iter().map(|top| format!("`{}`", top.name())).collect();
+            return Err(format!(
+                "`title` titles the page of the one package or module it documents, but `read` \
+                 holds {}: give each package an entry of its own under `plugins`, with another \
+                 name and the same `wasm`, or leave `title` out",
+                names.join(", ")
+            ));
+        };
+        let path = join(dir, &top.page());
+        // A module that can't be parsed has no page, and is warned of.
+        if let Some((_, page)) = self.pages.iter_mut().find(|(page, _)| *page == path) {
+            *page = markdown::titled(title, page);
+        }
+        Ok(())
+    }
+
     /// Add the pages of the package in `folder`, which is called `name`, in
     /// `dir`, and give back its summary.
     fn package(&mut self, folder: &str, name: &str, dir: &str) -> String {
@@ -136,10 +196,10 @@ impl Added {
     fn add(&mut self, folder: &str, entries: &[Entry], dir: &str) -> Vec<Listed> {
         let mut listed = Vec::new();
         for entry in entries {
-            let (name, link, summary) = match entry {
+            let (name, summary) = match entry {
                 Entry::Package(name) => {
                     let summary = self.package(&join(folder, name), name, &join(dir, name));
-                    (name, format!("{name}/README.md"), summary)
+                    (name, summary)
                 }
                 Entry::Module(name) => {
                     let file = join(folder, &format!("{name}.py"));
@@ -147,14 +207,13 @@ impl Added {
                         continue;
                     };
                     let markdown = markdown::page(&module, &file, &PYTHON, &[]);
-                    self.pages
-                        .push((join(dir, &format!("{name}.md")), markdown));
-                    (name, format!("{name}.md"), markdown::summary(&module.docs))
+                    self.pages.push((join(dir, &entry.page()), markdown));
+                    (name, markdown::summary(&module.docs))
                 }
             };
             listed.push(Listed {
                 name: name.clone(),
-                link: Some(link),
+                link: Some(entry.page()),
                 summary,
             });
         }
@@ -308,6 +367,7 @@ mod tests {
     fn settings(read: &[&str], url: &str) -> Settings {
         Settings {
             read: read.iter().map(|folder| folder.to_string()).collect(),
+            title: None,
             url: url.to_string(),
         }
     }
@@ -327,11 +387,17 @@ mod tests {
     #[test]
     fn settings_name_the_folders_read_and_where_the_pages_go() {
         let parsed = Settings::parse(r#"{"read":["mypackage","src"]}"#);
-        assert_eq!(parsed, Ok(settings(&["mypackage", "src"], "reference")));
+        assert_eq!(parsed, Ok(settings(&["mypackage", "src"], "")));
         let parsed = Settings::parse(r#"{"read":["."],"url":"/api/python/"}"#);
         assert_eq!(parsed, Ok(settings(&["."], "api/python")));
         let parsed = Settings::parse(r#"{"read":["."],"url":"/"}"#);
         assert_eq!(parsed, Ok(settings(&["."], "")));
+        let parsed = Settings::parse(r#"{"read":["."],"title":"API"}"#);
+        let titled = Settings {
+            title: Some("API".to_string()),
+            ..settings(&["."], "")
+        };
+        assert_eq!(parsed, Ok(titled));
     }
 
     #[test]
@@ -350,6 +416,60 @@ mod tests {
             let error = Settings::parse(&json).unwrap_err();
             assert!(error.starts_with("`url` must be"), "{url}: {error}");
         }
+        for title in [r#""""#, r#"" ""#, "3", "null"] {
+            let json = format!(r#"{{"read":["."],"title":{title}}}"#);
+            let error = Settings::parse(&json).unwrap_err();
+            assert!(error.starts_with("`title` must be"), "{title}: {error}");
+        }
+    }
+
+    #[test]
+    fn a_title_is_in_the_frontmatter_of_the_one_package_or_module_it_documents() {
+        let root = folder_with(
+            "title",
+            &[
+                ("one/pkg/__init__.py", "\"\"\"The package.\"\"\"\n"),
+                ("one/pkg/module.py", "\"\"\"A module.\"\"\"\n"),
+                ("module/tool.py", "\"\"\"A tool.\"\"\"\n"),
+                ("two/pkg/__init__.py", ""),
+                ("two/loose.py", "\"\"\"Loose.\"\"\"\n"),
+                ("none/notes.txt", "Not Python."),
+            ],
+        );
+        let titled = |read: &[&str]| {
+            let titled = Settings {
+                title: Some("API: \"pkg\"".to_string()),
+                ..settings(read, "api")
+            };
+            document(&titled)
+        };
+        let frontmatter = "---\ntitle: \"API: \\\"pkg\\\"\"\n---\n\n";
+        for read in [format!("{root}/one/pkg"), format!("{root}/one")] {
+            let added = titled(&[&read]).unwrap();
+            let package = markdown(&added, "api/pkg/README.md");
+            let heading = format!("{frontmatter}# pkg\n");
+            assert!(package.starts_with(&heading), "{package}");
+            let module = markdown(&added, "api/pkg/module.md");
+            assert!(module.starts_with("# module\n"), "{module}");
+        }
+        let added = titled(&[&format!("{root}/module")]).unwrap();
+        let tool = markdown(&added, "api/tool.md");
+        assert!(
+            tool.starts_with(&format!("{frontmatter}# tool\n")),
+            "{tool}"
+        );
+
+        let error = titled(&[&format!("{root}/two")]).unwrap_err();
+        assert!(error.contains("`read` holds `loose`, `pkg`: "), "{error}");
+        let error = titled(&[&format!("{root}/one/pkg"), &format!("{root}/module")]).unwrap_err();
+        assert!(error.contains("`read` holds `pkg`, `tool`: "), "{error}");
+        let added = titled(&[&format!("{root}/none")]).unwrap();
+        assert!(added.pages.is_empty());
+
+        let added = document(&settings(&[&format!("{root}/one")], "api")).unwrap();
+        let package = markdown(&added, "api/pkg/README.md");
+        assert!(package.starts_with("# pkg\n"), "{package}");
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
