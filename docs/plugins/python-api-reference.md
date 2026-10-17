@@ -36,7 +36,8 @@ about 1.6 MB, which a site can name where it is, or copy into its folder.
 
 ## Using it
 
-Name it in your site's `little.yml`, with the folder your package is in:
+Name it in your site's `little.yml`, with the folder your package is in,
+and, if you like, what its page is called, and where its pages go:
 
 ```yaml
 # little.yml
@@ -44,39 +45,47 @@ plugins:
   pydoc:
     wasm: ./little_pydoc.wasm
     read: ./mypackage
+    title: API reference
+    url: /
 ```
 
 - `read` names the folders it documents, from the site's folder, like
   `./mypackage`, or `[./mypackage, ./tools]`. A folder with an
   `__init__.py` is a package, named by the folder. Any other holds the
   packages and modules it documents, like `./src` for `src/mypackage/`.
-- `url` is the folder its pages go in, from the source's folder:
-  `/reference` unless you set it, like `url: /api`, or `url: /` for the
-  source's own.
+- `title`, if you set it, is the
+  [title](../writing/frontmatter.md#a-pages-title) of the package's page,
+  like `API reference`, in place of the package's name, which is still its
+  heading. It's the title of one package's or module's page, so `read`
+  holds only that one, like `./mypackage`, or `./src` for
+  `src/mypackage/` alone; more stops the build.
+- `url` is the folder its pages go in, from the source's folder: `/`, the
+  source's own, unless you set it, like `url: /api`. Each package is in a
+  folder of its name there, like `/mypackage/`.
 
 It has no other settings. One it doesn't have, or no `read`, stops the
 build, saying why.
 
 ## Its pages
 
-For `read: ./mypackage`, with `mypackage/solvers/base.py`, it adds:
+For the example above, with `mypackage/solvers/base.py`, it adds:
 
-- `reference/mypackage/README.md`, at `/reference/mypackage/`, for the
-  package: its docstring, a table of its modules and packages, each with the
-  first paragraph of its docstring, linked to its page, and what its
-  `__init__.py` defines;
-- `reference/mypackage/solvers/README.md`, for the package in it, the same
-  way;
-- `reference/mypackage/solvers/base.md`, at
-  `/reference/mypackage/solvers/base`, for the module.
+- `mypackage/README.md`, at `/mypackage/`, for the package, titled
+  `API reference`: its docstring, a table of its modules and packages, each
+  with the first paragraph of its docstring, linked to its page, and what
+  its `__init__.py` defines;
+- `mypackage/solvers/README.md`, for the package in it, the same way;
+- `mypackage/solvers/base.md`, at `/mypackage/solvers/base`, for the
+  module.
 
 Each is built as if it were a Markdown file at that path in the site's
 source, so it's in the nav and search, and its links are checked. A file in
-the source at the same path stops the build, naming both, but
-`docs/reference/README.md` is yours to write, if you like, linking to each
-package's page by its path, like `[mypackage](mypackage/README.md)`. A site
-with [a nav of its own](../writing/navigation.md#writing-the-nav-yourself)
-lists the pages it wants.
+the source at the same path stops the build, naming both, but `README.md`
+in `url`, like `docs/api/README.md` for `url: /api`, is yours to write, if
+you like, linking to each package's page by its path, like
+`[mypackage](mypackage/README.md)`. A site with
+[a nav of its own](../writing/navigation.md#writing-the-nav-yourself) lists
+the pages it wants.
 
 It skips modules and folders whose names start with `_` or `.`, and folders
 without an `__init__.py`, which aren't packages.

@@ -62,6 +62,15 @@ pub fn page(
     out
 }
 
+/// `page` with `title` in its frontmatter, which the site calls it in its
+/// nav, breadcrumbs, browser tab, and search, in place of its heading.
+pub fn titled(title: &str, page: &str) -> String {
+    // A string in JSON is one in YAML too, quoted, so a `:`, `#`, or quote
+    // in the title reads back as it is.
+    let title = serde_json::Value::from(title);
+    format!("---\ntitle: {title}\n---\n\n{page}")
+}
+
 /// The id comrak gives the heading of each object on the page of `module`,
 /// in `language`, by the name the heading shows, like `Solver.solve`.
 pub fn ids(module: &Object, language: &Language) -> HashMap<String, String> {
@@ -933,6 +942,18 @@ What it is.
         }];
         assert_eq!(summary(&titled), "");
         assert_eq!(summary(&[]), "");
+    }
+
+    #[test]
+    fn a_title_goes_in_frontmatter_quoted() {
+        assert_eq!(
+            titled("API reference", "# my-lib\n"),
+            "---\ntitle: \"API reference\"\n---\n\n# my-lib\n"
+        );
+        assert_eq!(
+            titled("\"Core\": #1 \\ API", "# core\n"),
+            "---\ntitle: \"\\\"Core\\\": #1 \\\\ API\"\n---\n\n# core\n"
+        );
     }
 
     #[test]

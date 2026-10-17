@@ -148,7 +148,7 @@ files: func(paths: list<string>) -> result<changes, string>;
   files do.
 - A page a plugin adds has no file in the site's repository, so no
   `page.source_url` or `page.edit_url`, and a warning about it, like a
-  broken link in it, names it as ``plugin `pydoc`'s reference/README.md``.
+  broken link in it, names it as ``plugin `pydoc`'s mypackage/README.md``.
 
 ## source
 

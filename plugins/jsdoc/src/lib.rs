@@ -33,8 +33,11 @@ struct Settings {
     /// The package's name, as its `package.json` names it, like `my-lib`
     /// or `@scope/my-lib`.
     package: String,
-    /// The folder its pages go in, from the source's, like
-    /// `reference/my-lib`, or empty for the source's own.
+    /// What the site calls the package's page, like `API reference`, if
+    /// it's not its name.
+    title: Option<String>,
+    /// The folder its pages go in, from the source's, like `my-lib`, or
+    /// empty for the source's own.
     url: String,
 }
 
@@ -46,6 +49,7 @@ impl Settings {
         };
         let mut read = Vec::new();
         let mut package = None;
+        let mut title = None;
         let mut url = None;
         for (name, value) in settings {
             match name.as_str() {
@@ -63,16 +67,24 @@ impl Settings {
                         "`package` must be the package's name, like `my-lib` or `@scope/my-lib`",
                     )?);
                 }
+                "title" => {
+                    let text = value.as_str().filter(|title| !title.trim().is_empty());
+                    title = Some(text.map(String::from).ok_or(
+                        "`title` must be what the site calls the package's page, like \
+                         `title: API reference`",
+                    )?);
+                }
                 "url" => {
                     url = Some((value.as_str().and_then(folder)).ok_or(
-                        "`url` must be the folder its pages go in, like `/reference`, with no \
-                         part `.` or `..`",
+                        "`url` must be the folder its pages go in, like `/api`, with no part `.` \
+                         or `..`",
                     )?);
                 }
                 _ => {
                     return Err(format!(
                         "it has no setting `{name}`, only `read`, the folder the package's code \
-                         is in, `package`, its name, and `url`, the folder its pages go in"
+                         is in, `package`, its name, `title`, what the site calls its page, and \
+                         `url`, the folder its pages go in"
                     ));
                 }
             }
@@ -95,8 +107,13 @@ impl Settings {
             }
         };
         let package = package.ok_or("name the package in `package`, like `package: my-lib`")?;
-        let url = url.unwrap_or_else(|| format!("reference/{package}"));
-        Ok(Settings { read, package, url })
+        let url = url.unwrap_or_else(|| package.clone());
+        Ok(Settings {
+            read,
+            package,
+            title,
+            url,
+        })
     }
 }
 
@@ -161,12 +178,17 @@ fn document(settings: &Settings) -> Added {
             .collect(),
         objects,
     };
-    Added {
+    let mut added = Added {
         pages: (0..layout.pages.len())
             .map(|page| pages.page(page))
             .collect(),
         warnings,
+    };
+    // The package's page is the first in its layout.
+    if let (Some(title), Some((_, page))) = (&settings.title, added.pages.first_mut()) {
+        *page = markdown::titled(title, page);
     }
+    added
 }
 
 /// What the page at `index` shows: the module it shows, if it shows one,

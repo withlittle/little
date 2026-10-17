@@ -38,7 +38,8 @@ about 1.2 MB, which a site can name where it is, or copy into its folder.
 ## Using it
 
 Name it in your site's `little.yml`, with the folder your crate's code is in,
-and the crate's name:
+and the crate's name, and, if you like, what its page is called, and where
+its pages go:
 
 ```yaml
 # little.yml
@@ -47,18 +48,26 @@ plugins:
     wasm: ./little_rustdoc.wasm
     read: ./src
     crate: my_crate
+    title: API reference
+    url: /api
 ```
 
 - `read` names the folder the crate's `lib.rs` or `main.rs` is in, from the
   site's folder, like `./src`. Where it has both, it documents `lib.rs`, the
   crate's library.
 - `crate` is the crate's name, as its code names it, like `my_crate` for a
-  package called `my-crate`. It's the title of the crate's page, and a link
-  to a path that starts with it, like ``[`my_crate::Config`]``, leads where
-  `crate::Config` does.
-- `url` is the folder its pages go in, from the source's folder:
-  `/reference/my_crate` unless you set it, like `url: /api`, or `url: /` for
-  the source's own.
+  package called `my-crate`. It's the heading of the crate's page, and its
+  title and folder unless you set `title` and `url`, and a link to a path
+  that starts with it, like ``[`my_crate::Config`]``, leads where
+  `crate::Config` does. The plugin needs it, as the name is in
+  `Cargo.toml`, outside the folder it reads, which is all it can see.
+- `title`, if you set it, is the
+  [title](../writing/frontmatter.md#a-pages-title) of the crate's page,
+  like `API reference`, in place of the crate's name, which is still its
+  heading.
+- `url` is the folder its pages go in, from the source's folder: the
+  crate's name, like `/my_crate`, unless you set it, like `url: /api`, or
+  `url: /` for the source's own.
 
 It has no other settings. One it doesn't have, or no `read` or `crate`,
 stops the build, saying why.
@@ -81,24 +90,21 @@ plugins:
 
 ## Its pages
 
-For `crate: my_crate`, where `src/lib.rs` declares `mod config;` and
+For the example above, where `src/lib.rs` declares `mod config;` and
 `mod site;`, and `src/site.rs` declares `mod versions;`, it adds:
 
-- `reference/my_crate/README.md`, at `/reference/my_crate/`, for the crate:
-  its docs, a table of its modules, each with the first paragraph of its
-  docs, linked to its page, a table of what it re-exports, and what
-  `lib.rs` defines;
-- `reference/my_crate/config.md`, at `/reference/my_crate/config`, for the
-  module in `src/config.rs`;
-- `reference/my_crate/site/README.md`, for `site`, which declares a module,
-  the same way, and `reference/my_crate/site/versions.md`, for that module,
-  in `src/site/versions.rs`.
+- `api/README.md`, at `/api/`, for the crate, titled `API reference`: its
+  docs, a table of its modules, each with the first paragraph of its docs,
+  linked to its page, a table of what it re-exports, and what `lib.rs`
+  defines;
+- `api/config.md`, at `/api/config`, for the module in `src/config.rs`;
+- `api/site/README.md`, for `site`, which declares a module, the same way,
+  and `api/site/versions.md`, for that module, in `src/site/versions.rs`.
 
 Each is built as if it were a Markdown file at that path in the site's
 source, so it's in the nav and search, and its links are checked. A file in
-the source at the same path stops the build, naming both, but
-`docs/reference/README.md` is yours to write, if you like, linking to each
-crate's page by its path, like `[my_crate](my_crate/README.md)`. A site with
+the source at the same path, like `docs/api/README.md`, stops the build,
+naming both. A site with
 [a nav of its own](../writing/navigation.md#writing-the-nav-yourself) lists
 the pages it wants: this manual lists only little's crate's page, which
 links to the rest.

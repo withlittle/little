@@ -19,6 +19,7 @@ plugins:
     wasm: ./plugins/rustdoc/target/wasm32-wasip2/release/little_rustdoc.wasm
     read: ./src
     crate: little
+    title: little's API
     url: /api
 
 # The manual's pages in the order to read them, rather than by title. A page

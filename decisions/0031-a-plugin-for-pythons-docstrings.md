@@ -5,7 +5,9 @@
   `files`, which adds its pages, and by
   [0047](./0047-naming-api-reference-plugins.md), which renames it
   `pydoc`, in `plugins/pydoc/`, after Python's own tool, which it doesn't
-  run
+  run, and by [0049](./0049-an-api-references-url-and-title.md), which
+  puts its packages in `/`, not `/reference`, unless `url` is set, and
+  titles the page of the one it documents with `title`
 - Date: 2026-10-08
 
 ## Context

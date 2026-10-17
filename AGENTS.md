@@ -393,7 +393,7 @@ Record notable choices as short ADRs in `decisions/`. Locked so far:
   [`decisions/0030-plugins-that-add-pages.md`](./decisions/0030-plugins-that-add-pages.md).
 - **A plugin for Python's docstrings:** `plugins/pydoc/`, in little's
   repository, in its own workspace, adds a page for each module and package
-  in the folders it reads, under `url`, `/reference` by default, like
+  in the folders it reads, under `url`, `/` by default, like
   mkdocstrings', parsing Python with Ruff's parser, without running it, and
   finding each docstring's style, NumPy's, Google's, or Sphinx's, for
   itself. A module it can't parse is warned of, and left out — see
@@ -500,7 +500,7 @@ Record notable choices as short ADRs in `decisions/`. Locked so far:
   [`decisions/0043-a-versions-own-nav-and-plugins.md`](./decisions/0043-a-versions-own-nav-and-plugins.md).
 - **A plugin for Rust's doc comments:** `plugins/rustdoc/`, in its own
   workspace, adds a page for a crate and each of its modules, `pub` or not,
-  under `url`, `/reference/<crate>` by default, like Rust's own rustdoc's,
+  under `url`, `/<crate>` by default, like Rust's own rustdoc's,
   parsing Rust with syn, without compiling it, from the one folder it
   reads, with `lib.rs` or `main.rs`, and `crate`, its name. It documents
   each `pub` item with docs where it's defined, leads intra-doc links to
@@ -540,7 +540,7 @@ Record notable choices as short ADRs in `decisions/`. Locked so far:
   [`decisions/0047-naming-api-reference-plugins.md`](./decisions/0047-naming-api-reference-plugins.md).
 - **A plugin for JavaScript's doc comments:** `plugins/jsdoc/`, in its own
   workspace, adds a page for a JavaScript or TypeScript package and each of
-  its modules, under `url`, `/reference/<package>` by default, parsing its
+  its modules, under `url`, `/<package>` by default, parsing its
   code with oxc's parser, without running it, or Node, from the one folder
   it reads, and `package`, its name on npm. It documents what each module
   exports that has docs, where it's defined, from JSDoc's and TSDoc's tags,
@@ -548,3 +548,13 @@ Record notable choices as short ADRs in `decisions/`. Locked so far:
   re-exports; leads `{@link}`s to their items; and shares its model and
   Markdown with `pydoc` and `rustdoc`. It doesn't infer types — see
   [`decisions/0048-a-plugin-for-javascripts-doc-comments.md`](./decisions/0048-a-plugin-for-javascripts-doc-comments.md).
+- **An API reference's URL and title:** unless `url` is set, `pydoc` puts
+  each package in a folder of its name at the root, and `rustdoc` and
+  `jsdoc` put their pages in `/<crate>` and `/<package>`, not under
+  `/reference`, a folder of little's choosing. Each takes `title`, which it
+  writes in the frontmatter of the page of what it documents, so the nav,
+  breadcrumbs, tab, and search call it that, while its `#` heading is still
+  the name; `pydoc` with `title` documents one package or module, and more
+  stops the build. `crate` and `package` stay, for links and the default
+  `url` — see
+  [`decisions/0049-an-api-references-url-and-title.md`](./decisions/0049-an-api-references-url-and-title.md).

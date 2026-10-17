@@ -36,7 +36,8 @@ about 1.2 MB, which a site can name where it is, or copy into its folder.
 ## Using it
 
 Name it in your site's `little.yml`, with the folder your package's code is
-in, and the package's name:
+in, and the package's name, and, if you like, what its page is called, and
+where its pages go:
 
 ```yaml
 # little.yml
@@ -45,16 +46,26 @@ plugins:
     wasm: ./little_jsdoc.wasm
     read: ./src
     package: my-lib
+    title: API reference
+    url: /api
 ```
 
 - `read` names the folder your package's code is in, from the site's
   folder, like `./src` or `./lib`: the code you write, in TypeScript or
   JavaScript, rather than what a build makes of it.
 - `package` is the package's name, as npm knows it, like `my-lib` or
-  `@my-org/my-lib`. It's the title of the package's page.
-- `url` is the folder its pages go in, from the source's folder:
-  `/reference/my-lib` unless you set it, like `url: /api`, or `url: /` for
-  the source's own.
+  `@my-org/my-lib`. It's the heading of the package's page, and its title
+  and folder unless you set `title` and `url`, and a link to a module can
+  start with it, like ``{@link module:my-lib/config}``. The plugin needs
+  it, as the name is in `package.json`, outside the folder it reads, which
+  is all it can see.
+- `title`, if you set it, is the
+  [title](../writing/frontmatter.md#a-pages-title) of the package's page,
+  like `API reference`, in place of the package's name, which is still its
+  heading.
+- `url` is the folder its pages go in, from the source's folder: the
+  package's name, like `/my-lib` or `/@my-org/my-lib`, unless you set it,
+  like `url: /api`, or `url: /` for the source's own.
 
 It has no other settings. One it doesn't have, or no `read` or `package`,
 stops the build, saying why.
@@ -82,16 +93,15 @@ in `read`, and each `.d.ts`, is a module, but those in `node_modules`, or
 whose names start with `.` or `_`. Of two with the same name but for their
 extension, like `config.ts` and `config.js`, it reads the TypeScript.
 
-For `package: my-lib`, where `src/` has `index.ts`, `config.ts`,
+For the example above, where `src/` has `index.ts`, `config.ts`,
 `site/index.ts`, and `site/versions.ts`, it adds:
 
-- `reference/my-lib/README.md`, at `/reference/my-lib/`, for the package:
-  a table of its modules, each with the first paragraph of its docs,
-  linked to its page, then what `index.ts` exports;
-- `reference/my-lib/config.md`, at `/reference/my-lib/config`, for the
-  module in `src/config.ts`;
-- `reference/my-lib/site/README.md`, for `site/index.ts`, the same way,
-  and `reference/my-lib/site/versions.md`, for `site/versions.ts`.
+- `api/README.md`, at `/api/`, for the package, titled `API reference`: a
+  table of its modules, each with the first paragraph of its docs, linked
+  to its page, then what `index.ts` exports;
+- `api/config.md`, at `/api/config`, for the module in `src/config.ts`;
+- `api/site/README.md`, for `site/index.ts`, the same way, and
+  `api/site/versions.md`, for `site/versions.ts`.
 
 A module with nothing documented has no page. A folder with no `index`
 has the page of the module beside it of the same name, like `site.ts`, if
@@ -99,9 +109,8 @@ there is one, else just a table of its modules.
 
 Each page is built as if it were a Markdown file at that path in the site's
 source, so it's in the nav and search, and its links are checked. A file in
-the source at the same path stops the build, naming both, but
-`docs/reference/README.md` is yours to write, if you like, linking to each
-package's page by its path, like `[my-lib](my-lib/README.md)`.
+the source at the same path, like `docs/api/README.md`, stops the build,
+naming both.
 
 ## What a page shows
 
