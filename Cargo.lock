@@ -3013,6 +3013,7 @@ dependencies = [
  "clap",
  "codemap",
  "comrak",
+ "dunce",
  "flate2",
  "futures",
  "grass",

@@ -73,6 +73,38 @@ jobs:
           cargo build --release --locked --target wasm32-wasip2 --manifest-path plugins/rustdoc/Cargo.toml --target-dir target/rustdoc
           cargo build --release --locked --target wasm32-wasip2 --manifest-path plugins/jsdoc/Cargo.toml --target-dir target/jsdoc
 
+  # The job above tests on Linux x64. This one tests on each other platform
+  # little could be released for, on its own runner. Formatting, lints, and
+  # the plugins' builds don't depend on the platform, so they run only above.
+  test:
+    name: test / ${{ matrix.name }}
+    strategy:
+      # Each platform's run finishes, whichever fails.
+      fail-fast: false
+      matrix:
+        include:
+          - { name: Linux arm64, os: ubuntu-24.04-arm }
+          - { name: macOS arm64, os: macos-latest }
+          - { name: macOS x64, os: macos-15-intel }
+          - { name: Windows x64, os: windows-latest }
+          - { name: Windows arm64, os: windows-11-arm }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install stable Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          # For tests/plugin, which the tests build.
+          targets: wasm32-wasip2
+
+      - name: Cache cargo build artifacts
+        uses: Swatinem/rust-cache@v2
+
+      - name: Test
+        run: cargo test
+
   commits:
     name: commit messages
     # Only a pull request has commits of its own to check, against

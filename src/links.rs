@@ -447,19 +447,28 @@ mod tests {
     }
 
     /// Build the site holding `files`, and warn of each broken link in
-    /// `scope`, naming each file by its path in the site.
+    /// `scope`, naming each file by its path in the site, written with `/`
+    /// on any system.
     fn broken_links(label: &str, scope: Scope, files: &[(&str, &str)]) -> Vec<String> {
         let site = scratch_site(label, files);
         let built = site::build(&site).unwrap();
         let broken = check(&built, scope).unwrap();
         fs::remove_dir_all(&site).unwrap();
-        let prefix = format!("{}/", site.display());
+        let in_site = |file: &str| {
+            let names: Vec<_> = Path::new(file)
+                .strip_prefix(&site)
+                .ok()?
+                .iter()
+                .map(|name| name.to_string_lossy())
+                .collect();
+            Some(names.join("/"))
+        };
         broken
             .into_iter()
             .map(|mut link| {
                 for file in &mut link.files {
-                    if let Some(rel) = file.strip_prefix(&prefix) {
-                        *file = rel.to_string();
+                    if let Some(rel) = in_site(file) {
+                        *file = rel;
                     }
                 }
                 link.to_string()
@@ -757,7 +766,7 @@ mod tests {
 
     #[test]
     fn checks_only_links_within_the_site_from_a_git_ref() {
-        use crate::git::tests::{commit_all, git_in};
+        use crate::git::tests::{commit_all, git_in, init};
         // A link to another site from a version from a ref isn't checked, as
         // the ref can't be fixed, but one within the site is, even to the
         // site's own `url`.
@@ -773,7 +782,7 @@ mod tests {
                 ),
             ],
         );
-        git_in(&site, &["init", "--quiet"]);
+        init(&site);
         commit_all(&site);
         git_in(&site, &["tag", "v1.4"]);
         let site_cfg = "theme: ./theme\nurl: https://example.com/proj\nversions:\n  \

@@ -50,6 +50,11 @@ wasmtime = { version = "49.0.2", default-features = false, features = ["anyhow",
 wasmtime-wasi = { version = "49.0.2", default-features = false, features = ["p2"] }
 zip = { version = "8.6.0", default-features = false, features = ["deflate-flate2"] }
 
+[dev-dependencies]
+# For tests that compare paths with git's: Windows' canonical paths, without
+# the `\\?\` git doesn't write.
+dunce = "1.0.5"
+
 # Without its symbols, which only name the frames of a panic's backtrace,
 # little is a fifth smaller. LTO isn't worth its build time: thin LTO made it
 # no smaller, and fat LTO a further 30% smaller, but many times as slow.

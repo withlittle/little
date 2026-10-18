@@ -705,17 +705,19 @@ mod tests {
                 ("logo.svg".into(), "company logo".into()),
             ]
         );
-        let origin = |dir: &Path, file: &str| dir.join(STATIC_DIR).join(file).display().to_string();
-        assert_eq!(files[0].origin, origin(&base, "css/style.css"));
-        assert_eq!(files[1].origin, origin(&company, "logo.svg"));
+        let css = base.join(STATIC_DIR).join("css").join("style.css");
+        let logo = company.join(STATIC_DIR).join("logo.svg");
+        assert_eq!(files[0].origin, css.display().to_string());
+        assert_eq!(files[1].origin, logo.display().to_string());
 
         // A broken template is named as the file it's read from.
-        std::fs::write(company.join("_templates/home.html"), "{% if %}").unwrap();
+        let home = company.join("_templates").join("home.html");
+        std::fs::write(&home, "{% if %}").unwrap();
         let message = format!(
             "{:#}",
             load_chain(&chain, &SiteUrl::default()).err().unwrap()
         );
-        let expected = format!("loading {}", company.join("_templates/home.html").display());
+        let expected = format!("loading {}", home.display());
         assert!(message.starts_with(&expected), "{message}");
 
         let _ = std::fs::remove_dir_all(&root);
@@ -741,16 +743,17 @@ mod tests {
             ("_templates/default.html", ""),
             ("_templates/home.html", "{% if %}"),
         ]);
+        let home = Path::new("_templates").join("home.html");
         assert!(
-            message.contains("_templates/home.html: syntax error"),
+            message.contains(&format!("{}: syntax error", home.display())),
             "{message}"
         );
 
         // A template is text.
         let dir = scratch("binary", &[("_templates/default.html", "")]);
-        std::fs::write(dir.join("_templates/home.html"), [0xff, 0xfe]).unwrap();
+        let file = dir.join("_templates").join("home.html");
+        std::fs::write(&file, [0xff, 0xfe]).unwrap();
         let message = format!("{:#}", load(&dir).err().unwrap());
-        let file = dir.join("_templates/home.html");
         assert!(
             message.starts_with(&format!("loading {}: ", file.display())),
             "{message}"
@@ -806,8 +809,8 @@ mod tests {
             ]
         );
         // Named as the stylesheet it's compiled from, in a broken link, say.
-        let origin = dir.join("_static/assets/style.scss").display().to_string();
-        assert_eq!(files[2].origin, origin);
+        let origin = dir.join("_static").join("assets").join("style.scss");
+        assert_eq!(files[2].origin, origin.display().to_string());
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -858,7 +861,7 @@ mod tests {
             ("_static/assets/style.scss", "@use 'colors';"),
             ("_static/assets/_colors.scss", "$link: teal;"),
         ]);
-        let partial = dir.join("_static/assets/_colors.scss");
+        let partial = dir.join("_static").join("assets").join("_colors.scss");
         let expected = format!(
             "{} is a Sass partial, for stylesheets to load: move it to _sass/, where they load from",
             partial.display()
@@ -866,13 +869,14 @@ mod tests {
         assert_eq!(message, expected);
 
         // Two files in one theme that would be the same file.
-        for other in ["_static/style.css", "_static/style.sass"] {
+        for other in ["style.css", "style.sass"] {
             let (dir, message) = error(&[
                 ("_templates/default.html", ""),
                 ("_static/style.scss", ""),
-                (other, ""),
+                (&format!("_static/{other}"), ""),
             ]);
-            let mut both = [dir.join(other), dir.join("_static/style.scss")];
+            let static_dir = dir.join("_static");
+            let mut both = [static_dir.join(other), static_dir.join("style.scss")];
             both.sort();
             let expected = format!(
                 "{} and {} would both be /style.css: remove or rename one",

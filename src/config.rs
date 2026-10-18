@@ -1476,13 +1476,13 @@ mod tests {
                 ("b/little.yml", "theme: ../a\n"),
             ],
         );
-        let (a, b) = (site.join("a"), site.join("a/../b"));
+        let (a, b) = (site.join("a"), site.join("a").join("..").join("b"));
         let message = error(&site, "theme: ./a\n");
         let expected = format!(
             "themes build on each other in a loop: {} -> {} -> {}",
             a.display(),
             b.display(),
-            b.join("../a").display()
+            b.join("..").join("a").display()
         );
         assert_eq!(message, expected);
 
