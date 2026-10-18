@@ -1,8 +1,9 @@
 name: Release a plugin
 
 # A tag that names a plugin and its version, like pydoc-v0.1.0, releases
-# that plugin's .wasm file, as RELEASING.md and docs/decisions/0052 describe.
-# little's own tags, when it has them, won't match.
+# that plugin's .wasm file, and its third-party notices, as RELEASING.md and
+# docs/decisions/0052 and 0054 describe. little's own tags, when it has them,
+# won't match.
 on:
   push:
     tags:
@@ -117,6 +118,14 @@ jobs:
           } > "$RUNNER_TEMP/notes.md"
           cat "$RUNNER_TEMP/notes.md"
 
+      - name: Install cargo-about
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-about@0.9.2
+
+      - name: Write the third-party notices
+        run: scripts/notices.sh "$PLUGIN" "target/$PLUGIN/THIRD-PARTY-NOTICES.md"
+
       - name: Build
         run: >-
           cargo build --release --locked --target wasm32-wasip2
@@ -127,10 +136,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         # Not "Latest", which is for little's own releases. gh publishes the
-        # release once the file is uploaded, and deletes it if that fails.
+        # release once its files are uploaded, and deletes it if that fails.
         run: >-
           gh release create "$GITHUB_REF_NAME"
           "target/$PLUGIN/wasm32-wasip2/release/little_$PLUGIN.wasm"
+          "target/$PLUGIN/THIRD-PARTY-NOTICES.md"
           --verify-tag --latest=false
           --title "$PLUGIN $VERSION"
           --notes-file "$RUNNER_TEMP/notes.md"

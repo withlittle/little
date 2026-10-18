@@ -1,0 +1,11 @@
+# How cargo-about writes pydoc's third-party notices, which its releases
+# include: see docs/decisions/0054-third-party-notices.md.
+
+# The licences pydoc's crates may use, in order of preference: where a crate
+# offers a choice, the first listed wins.
+accepted = ["MIT", "Apache-2.0", "Unicode-3.0", "Unicode-DFS-2016", "Zlib"]
+targets = ["wasm32-wasip2"]
+ignore-build-dependencies = true
+ignore-dev-dependencies = true
+# Leaves out pydoc and little-api-reference, which aren't published.
+private = { ignore = true }

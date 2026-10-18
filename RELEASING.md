@@ -5,8 +5,9 @@ is released on its own, from a tag that names it and its version, like
 `pydoc-v0.2.0`. Pushing the tag to GitHub runs
 [`release-plugin.yml`](./.github/workflows/release-plugin.yml), which checks
 the tag, builds the plugin's `.wasm` file, and publishes it in a release of
-little's repository, with notes that list what changed in the plugin since
-its last release. Why it works so is in
+little's repository, beside its [third-party notices](#third-party-notices),
+with notes that list what changed in the plugin since its last release. Why
+it works so is in
 [ADR 0052](./docs/decisions/0052-releasing-plugins-from-tags.md), and how
 versions are numbered, in
 [ADR 0051](./docs/decisions/0051-semantic-versioning-and-conventional-commits.md).
@@ -97,9 +98,9 @@ anything, it checks:
 - that the plugin has no release of that version, not even a draft;
 - that the plugin's `Cargo.toml` has that version.
 
-Then it writes the notes, which its log shows, builds the `.wasm` file, as
-CI does, and publishes it, in a few minutes. Check the release on GitHub,
-or with:
+Then it writes the notes, which its log shows, and the plugin's third-party
+notices, builds the `.wasm` file, as CI does, and publishes them, in a few
+minutes. Check the release on GitHub, or with:
 
 ```sh
 gh release view pydoc-v0.2.0
@@ -108,7 +109,7 @@ gh release verify pydoc-v0.2.0   # its attestation, once releases are immutable
 
 Its notes say which version of `little:plugin` the plugin is built for, how
 to name it in `little.yml`, and what's changed; they can still be edited,
-on GitHub, though its file can't. A plugin's release isn't labelled
+on GitHub, though its files can't. A plugin's release isn't labelled
 "Latest", which is left for little's own. If GitHub shows one so anyway,
 before little has a release, nothing depends on it: the manual gives each
 plugin's URL with its version.
@@ -134,6 +135,42 @@ Its log says what went wrong.
 
 A tag whose release wasn't published can be deleted, as nothing was
 released from it; one whose release was published never is.
+
+## Third-party notices
+
+A plugin's release carries a `THIRD-PARTY-NOTICES.md`, with the licences of
+the crates it's built from, which
+[cargo-about](https://github.com/EmbarkStudios/cargo-about) writes, as
+[ADR 0054](./docs/decisions/0054-third-party-notices.md) says, and little's
+releases will carry its own. CI writes them all for each pull request, as a
+release would, so one that changes a crate's licence fails there. To write
+them yourself, install cargo-about 0.9.2, with
+`cargo install --locked cargo-about@0.9.2`, then, in the repository's root:
+
+```sh
+scripts/notices.sh pydoc target/notices/pydoc.md   # or little, rustdoc, or jsdoc
+```
+
+Each one's `about.toml`, beside its `Cargo.toml`, accepts the licences its
+crates use, and clarifies the crates cargo-about can't read rightly, with
+the licence files it should use. When it fails, cargo-about says why:
+
+- `failed to satisfy license requirements`, for a crate under a licence the
+  `about.toml` doesn't accept. Read the licence: if it lets a release carry
+  the crate with only its notice, as MIT does, add it to `accepted`;
+  otherwise, don't use the crate.
+- `failed to validate all files specified in clarification`, for a new
+  version of a clarified crate, whose licence file has changed. Read the new
+  file, in `~/.cargo/registry/src/*/<crate>-<version>/`, check that the
+  clarification still gives the crate's licences, and put the file's
+  checksum, from `shasum -a 256 <file>`, in its place.
+- `config found for a crate not present in the graph`, for a clarified crate
+  that's no longer used. Delete its clarification.
+
+Nothing catches a crate that bundles code under a licence its `license`
+leaves out, like a `-sys` crate's C library, or whose licence file has
+others' notices after its own, so read a new crate's licence files as it's
+added, and clarify it as the others are.
 
 ## The first releases
 

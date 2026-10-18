@@ -1,6 +1,8 @@
 # 0052 — Releasing plugins from tags
 
-- Status: accepted
+- Status: accepted; amended by [0054](./0054-third-party-notices.md),
+  whose releases publish a plugin's third-party notices beside its `.wasm`
+  file
 - Date: 2026-10-17
 
 ## Context

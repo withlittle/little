@@ -33,8 +33,9 @@ on, as for [any plugin](using-plugins.md#naming-a-plugin), so to update it,
 change the URL to a later version's. Its releases, among
 [little's](https://github.com/withlittle/little/releases), list what changed
 in each version, and the version of little's
-[hooks](../reference/plugin-hooks.md) it's built for. To build it yourself,
-see its
+[hooks](../reference/plugin-hooks.md) it's built for, and each carries a
+`THIRD-PARTY-NOTICES.md`, with the licences of the crates it's built from.
+To build it yourself, see its
 [README](https://github.com/withlittle/little/tree/main/plugins/jsdoc#building-it).
 
 ## Using it
