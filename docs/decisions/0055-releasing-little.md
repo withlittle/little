@@ -139,7 +139,7 @@ little's builds for musl, unused.
 - Linux's binaries run on any distribution, but their C code is built
   against musl, not the system's C library, with jemalloc, more C, in place
   of musl's allocator.
-- Each release runs six builds, of up to some ten minutes, on GitHub's
+- Each release runs six builds, of up to some 20 minutes, on GitHub's
   runners, which are free for a public repository.
 - A version on crates.io, like a release, is never changed, but can be
   yanked; the crate is published last, so a run that fails before the
