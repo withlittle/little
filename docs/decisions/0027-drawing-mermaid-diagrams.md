@@ -36,7 +36,7 @@ draws a diagram as SVG, in a browser.
 - **What draws it as little builds:**
   - mermaid.js itself, through mermaid-cli, which needs Node and a headless
     Chromium: little doesn't need Node, and won't
-    ([AGENTS.md](../AGENTS.md));
+    ([AGENTS.md](https://github.com/withlittle/little/blob/main/AGENTS.md));
   - a service, like Kroki or mermaid.ink, which sends each diagram away
     over the network, and fails without one;
   - [mermaid-rs-renderer](https://crates.io/crates/mermaid-rs-renderer), a

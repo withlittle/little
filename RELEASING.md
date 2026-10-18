@@ -7,9 +7,9 @@ is released on its own, from a tag that names it and its version, like
 the tag, builds the plugin's `.wasm` file, and publishes it in a release of
 little's repository, with notes that list what changed in the plugin since
 its last release. Why it works so is in
-[ADR 0052](./decisions/0052-releasing-plugins-from-tags.md), and how
+[ADR 0052](./docs/decisions/0052-releasing-plugins-from-tags.md), and how
 versions are numbered, in
-[ADR 0051](./decisions/0051-semantic-versioning-and-conventional-commits.md).
+[ADR 0051](./docs/decisions/0051-semantic-versioning-and-conventional-commits.md).
 little's own releases aren't set up yet.
 
 A release can't be undone, so only the maintainer pushes a tag.

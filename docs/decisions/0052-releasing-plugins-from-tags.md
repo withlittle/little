@@ -104,7 +104,8 @@ before it, whatever it changed.
 - The repository's releases are immutable, a setting turned on once, so
   GitHub won't let a published release's file change, nor its tag move,
   and attests to each.
-- [`RELEASING.md`](../RELEASING.md) lists the steps.
+- [`RELEASING.md`](https://github.com/withlittle/little/blob/main/RELEASING.md)
+  lists the steps.
 
 ## Consequences
 - Releasing a plugin takes a pull request, then a tag, pushed by hand, and

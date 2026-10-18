@@ -71,7 +71,7 @@ manual.
 
 See [`AGENTS.md`](./AGENTS.md) for architecture and conventions,
 [`VISION.md`](./VISION.md) for where little is headed,
-[`decisions/`](./decisions/) for design records, and
+[`docs/decisions/`](./docs/decisions/) for design records, and
 [`RELEASING.md`](./RELEASING.md) for how the plugins are released.
 
 ## License

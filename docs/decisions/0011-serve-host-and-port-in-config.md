@@ -9,7 +9,8 @@ flag gave, like `--addr 127.0.0.1:3000`. A site that always needs another
 port, because something else has 8080 or it's served beside another site,
 had to say so on every run, and everyone who served it had to know to. Where
 little serves is a setting little owns, and those belong in the cascade, where
-a site sets them once ([AGENTS](../AGENTS.md)).
+a site sets them once
+([AGENTS](https://github.com/withlittle/little/blob/main/AGENTS.md)).
 
 ## Options considered
 - **Where it's set:** in flags only, as before, and as in Zola, mdBook, and

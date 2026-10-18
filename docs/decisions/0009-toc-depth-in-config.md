@@ -7,7 +7,8 @@
 `page.toc` held a page's `##` and `###` headings, and no others
 ([0007](./0007-page-nav-shaped-like-site-nav.md)): little's code chose them.
 But how much of each page's outline to list is a choice about how its pages
-look, which is the theme's and the site's ([VISION](../VISION.md)). A theme
+look, which is the theme's and the site's
+([VISION](https://github.com/withlittle/little/blob/main/VISION.md)). A theme
 with room for more couldn't list a `####`, and a site with long pages couldn't
 ask for fewer.
 

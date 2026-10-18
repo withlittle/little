@@ -7,10 +7,10 @@ of its modules, built from their doc comments, `/** ... */`, as
 It's named for JSDoc, but doesn't run it, nor TypeDoc, nor Node: it reads
 the package's code with [oxc](https://oxc.rs)'s parser, without running or
 type-checking it, so it needs neither npm nor the package's dependencies,
-and a site builds the same each time, offline. Why it works as it does is
-in [ADR 0048](../../decisions/0048-a-plugin-for-javascripts-doc-comments.md),
+and a site builds the same each time, offline. Why it works as it does is in
+[ADR 0048](../../docs/decisions/0048-a-plugin-for-javascripts-doc-comments.md),
 and why it's named so, in
-[ADR 0047](../../decisions/0047-naming-api-reference-plugins.md).
+[ADR 0047](../../docs/decisions/0047-naming-api-reference-plugins.md).
 
 ## Building it
 

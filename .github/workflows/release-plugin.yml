@@ -1,7 +1,7 @@
 name: Release a plugin
 
 # A tag that names a plugin and its version, like pydoc-v0.1.0, releases
-# that plugin's .wasm file, as RELEASING.md and decisions/0052 describe.
+# that plugin's .wasm file, as RELEASING.md and docs/decisions/0052 describe.
 # little's own tags, when it has them, won't match.
 on:
   push:

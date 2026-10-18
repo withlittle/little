@@ -1,6 +1,6 @@
 /// The hooks a little plugin can export, each an interface of its own, and
 /// what it can import: see "Plugin hooks" in little's manual,
-/// docs/reference/plugin-hooks.md, and decisions/0046.
+/// docs/reference/plugin-hooks.md, and docs/decisions/0046.
 ///
 /// A plugin exports only the hooks it needs, and little calls each as the
 /// build reaches it, in the order they're written here. Each gets what the
