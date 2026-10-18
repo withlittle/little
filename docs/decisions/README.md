@@ -69,3 +69,4 @@ made, and link to each other.
 - [0052 — Releasing plugins from tags](0052-releasing-plugins-from-tags.md)
 - [0053 — little's decisions are in its manual](0053-decisions-in-the-manual.md)
 - [0054 — Third-party notices](0054-third-party-notices.md)
+- [0055 — Releasing little](0055-releasing-little.md)
