@@ -1,0 +1,102 @@
+# How cargo-about writes little's third-party notices, which its releases
+# include: see docs/decisions/0054-third-party-notices.md.
+
+# The licences little's crates may use, in order of preference: where a crate
+# offers a choice, the first listed wins.
+accepted = [
+  "MIT",
+  "Apache-2.0",
+  "Apache-2.0 WITH LLVM-exception",
+  "BSD-2-Clause",
+  "BSD-3-Clause",
+  "ISC",
+  "Zlib",
+  "Unicode-3.0",
+  "Unicode-DFS-2016",
+  "MPL-2.0",
+  "CDLA-Permissive-2.0",
+  "BlueOak-1.0.0",
+  "CC0-1.0",
+  "MITNFA",
+]
+# Those little is released for, so the notices cover the crates of each.
+targets = [
+  "x86_64-unknown-linux-musl",
+  "aarch64-unknown-linux-musl",
+  "x86_64-apple-darwin",
+  "aarch64-apple-darwin",
+  "x86_64-pc-windows-msvc",
+  "aarch64-pc-windows-msvc",
+]
+ignore-build-dependencies = true
+ignore-dev-dependencies = true
+workarounds = ["chrono"]
+
+# Licence files cargo-about doesn't find, or doesn't read whole, for itself.
+# Each is checked against its checksum, so a new version of one is a warning,
+# which fails CI, and the crate's licences have to be checked again.
+
+# Its COPYING has cmark-gfm's notice, and others, after its own.
+[comrak.clarify]
+license = "BSD-2-Clause"
+[[comrak.clarify.files]]
+path = "COPYING"
+checksum = "27293e2353ce5d83e07331ffc423051908b062787d148193b8927d50d9873bd5"
+
+# It bundles Oniguruma, under BSD-2-Clause, which its `license` leaves out.
+[onig_sys.clarify]
+license = "MIT AND BSD-2-Clause"
+[[onig_sys.clarify.files]]
+path = "LICENSE.md"
+license = "MIT"
+checksum = "71f321038b088358004bee991635ac09e4c703bec467d3c30c06992c0595f189"
+[[onig_sys.clarify.files]]
+path = "oniguruma/COPYING"
+license = "BSD-2-Clause"
+checksum = "70ba5469ea0bab6e18a32d7009068f996503168d27be57747e08da34337ff26f"
+
+# It bundles jemalloc, under BSD-2-Clause, which its `license` leaves out.
+[tikv-jemalloc-sys.clarify]
+license = "(MIT OR Apache-2.0) AND BSD-2-Clause"
+[[tikv-jemalloc-sys.clarify.files]]
+path = "LICENSE-MIT"
+license = "MIT"
+checksum = "378f5840b258e2779c39418f3f2d7b2ba96f1c7917dd6be0713f88305dbda397"
+[[tikv-jemalloc-sys.clarify.files]]
+path = "jemalloc/COPYING"
+license = "BSD-2-Clause"
+checksum = "94aa2caa98c25d942f58b956c71dba6a99ff98fc3a31cbc669fe2a4cd0268b53"
+
+# Its LICENSE has Go's notice after its own.
+[curve25519-dalek.clarify]
+license = "BSD-3-Clause"
+[[curve25519-dalek.clarify.files]]
+path = "LICENSE"
+checksum = "cca0bd3c4fcdba74145ef9d49c62337e2c9fbf9368288f11d0547f1b0273219f"
+
+# Its LICENSE has the notices of AWS-LC and the code it's from, like
+# BoringSSL's and OpenSSL's, and the text of each licence, so it's given once,
+# under ISC; the crate's other licences have their standard texts.
+[aws-lc-sys.clarify]
+license = "ISC AND (Apache-2.0 OR ISC) AND Apache-2.0 AND MIT AND BSD-3-Clause AND (Apache-2.0 OR ISC OR MIT) AND (Apache-2.0 OR ISC OR MIT-0)"
+[[aws-lc-sys.clarify.files]]
+path = "LICENSE"
+license = "ISC"
+checksum = "728536b4160e051f86d7c9c388f704866b3d512cd7df97ac3516c65279523c4e"
+
+# Its LICENSE has the text of both its licences, Apache-2.0's, then ISC's,
+# with Amazon's copyright, so it's given once, under ISC, which alone
+# satisfies its `license`.
+[aws-lc-rs.clarify]
+license = "ISC AND (Apache-2.0 OR ISC)"
+[[aws-lc-rs.clarify.files]]
+path = "LICENSE"
+license = "ISC"
+checksum = "b50b376e7d24a0598488b730c3034ffcd0b58dd36c0913a24b9903a3cfd04bf7"
+
+# Its LICENSE.txt has musl's notices after its own.
+[libm.clarify]
+license = "MIT"
+[[libm.clarify.files]]
+path = "LICENSE.txt"
+checksum = "3823dda7cf046602f4b4e77ec8e227863dc4736037cc85bb33d9f19febe16bb7"

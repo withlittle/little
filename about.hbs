@@ -1,0 +1,34 @@
+{{!--
+  The template cargo-about writes the third-party notices of little and its
+  plugins with: see docs/decisions/0054-third-party-notices.md. A crate with
+  no `source` is the program's own, so it's left out.
+--}}
+# Third-party notices
+
+This program is built from the crates below, which others wrote. Each is
+listed under its licence, and the licence's text follows, as the crates give
+it, or, where a crate gives none, as SPDX gives it.
+
+## Crates
+
+They're under these licences:
+
+{{#each overview}}
+- {{{name}}}
+{{/each}}
+{{#each licenses}}
+{{#unless (and (eq (len used_by) 1) (not used_by.[0].crate.source))}}
+
+### {{{name}}}
+
+{{#each used_by}}
+{{#if crate.source}}
+- [{{{crate.name}}} {{{crate.version}}}]({{#if crate.repository}}{{{crate.repository}}}{{else}}https://crates.io/crates/{{{crate.name}}}{{/if}})
+{{/if}}
+{{/each}}
+
+````text
+{{{text}}}
+````
+{{/unless}}
+{{/each}}
