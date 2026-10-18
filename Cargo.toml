@@ -1,5 +1,7 @@
 [package]
-name = "little"
+# On crates.io, where `little` is another crate's name. The command is still
+# `little`, as [[bin]] names it.
+name = "little-docs"
 version = "0.1.0"
 edition = "2024"
 # The oldest Rust its dependencies build with, wasmtime's. Clippy warns of an
@@ -11,6 +13,31 @@ repository = "https://github.com/withlittle/little"
 homepage = "https://withlittle.github.io/little"
 keywords = ["documentation", "static-site", "site-generator", "markdown", "jupyter"]
 categories = ["command-line-utilities", "text-processing", "web-programming"]
+# What crates.io publishes: the code, the built-in theme and plugin interface
+# it compiles in, and the example that writes its notices, not the manual or
+# the plugins. A leading / keeps each to the root.
+include = ["/src/", "/theme/", "/wit/", "/examples/", "/LICENSE", "/README.md"]
+
+[[bin]]
+name = "little"
+path = "src/main.rs"
+
+# For `cargo binstall little-docs`, which downloads the binary for its
+# platform from little's release, as docs/decisions/0055 says, or else
+# builds it, but never uses a third party's.
+[package.metadata.binstall]
+pkg-url = "{ repo }/releases/download/v{ version }/little-{ target }.tar.gz"
+pkg-fmt = "tgz"
+bin-dir = "{ bin }{ binary-ext }"
+disabled-strategies = ["quick-install"]
+
+[package.metadata.binstall.overrides.x86_64-pc-windows-msvc]
+pkg-url = "{ repo }/releases/download/v{ version }/little-{ target }.zip"
+pkg-fmt = "zip"
+
+[package.metadata.binstall.overrides.aarch64-pc-windows-msvc]
+pkg-url = "{ repo }/releases/download/v{ version }/little-{ target }.zip"
+pkg-fmt = "zip"
 
 [dependencies]
 alphanumeric-sort = "1.5.8"
