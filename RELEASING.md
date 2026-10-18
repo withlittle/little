@@ -182,7 +182,7 @@ release; and that `Cargo.toml` has that version. Then it:
 - publishes `little-docs` to crates.io, from the tag, once the release is
   out, as cargo-binstall downloads its archives.
 
-It takes some ten minutes. Check the release and the crate with:
+It takes some 20 minutes. Check the release and the crate with:
 
 ```sh
 gh release view v0.2.0
