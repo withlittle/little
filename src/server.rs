@@ -305,7 +305,7 @@ fn watch_folder(
     let mut watcher = notify::recommended_watcher(move |res: notify::Result<Event>| {
         if !res.as_ref().is_ok_and(|event| {
             is_read(event)
-                || is_within(event, &destination)
+                || is_output(event, &destination)
                 || (skip_hidden && is_hidden_in(event, &root))
         }) {
             let _ = tx.send(res);
@@ -348,9 +348,16 @@ fn is_read(event: &Event) -> bool {
     event.kind.is_access()
 }
 
-/// Does this event only touch paths inside `dir`?
-fn is_within(event: &Event, dir: &Path) -> bool {
-    !event.paths.is_empty() && event.paths.iter().all(|path| path.starts_with(dir))
+/// Does this event only touch the build's own output: the destination, what's
+/// in it, or a folder that holds it? Each build removes the destination and
+/// makes it again, which Windows reports as a change to the folder it's in,
+/// though a change to a file there is reported for the file. A folder the
+/// system has lost track of, and asks to be scanned again, still counts.
+fn is_output(event: &Event, destination: &Path) -> bool {
+    !event.paths.is_empty()
+        && event.paths.iter().all(|path| {
+            path.starts_with(destination) || (destination.starts_with(path) && !event.need_rescan())
+        })
 }
 
 /// Does this event only touch hidden files in the source folder `source`?
@@ -755,6 +762,39 @@ mod tests {
             &event(&[".README.md.tmp", "README.md"]),
             source
         ));
+    }
+
+    #[test]
+    fn the_builds_output_and_the_folders_that_hold_it_are_ignored() {
+        let destination = Path::new("/theme/demo/dist");
+        let event = |paths: &[&str]| {
+            let mut event = Event::new(notify::EventKind::Any);
+            for path in paths {
+                event = event.add_path(PathBuf::from(path));
+            }
+            event
+        };
+
+        // What a build writes, and the folder it's in, which Windows reports
+        // as changed as the build removes the destination and makes it again.
+        for path in [
+            "/theme/demo/dist/index.html",
+            "/theme/demo/dist",
+            "/theme/demo",
+        ] {
+            assert!(is_output(&event(&[path]), destination), "{path}");
+        }
+        // Not a file beside it, even one whose name starts with its name.
+        for path in ["/theme/demo/README.md", "/theme/demo/distant.md"] {
+            assert!(!is_output(&event(&[path]), destination), "{path}");
+        }
+        assert!(!is_output(
+            &event(&["/theme/demo/dist", "/theme/_static/style.css"]),
+            destination
+        ));
+        // Nor a folder that holds it, when it's to be scanned again.
+        let rescan = event(&["/theme/demo"]).set_flag(notify::event::Flag::Rescan);
+        assert!(!is_output(&rescan, destination));
     }
 
     /// A throwaway folder holding `files`, each a (path, contents) pair.
