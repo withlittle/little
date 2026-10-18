@@ -43,7 +43,9 @@ impl Repository {
         let top = lines.next().unwrap_or_default();
         let prefix = lines.next().unwrap_or_default();
         Ok(Repository {
-            top: PathBuf::from(top),
+            // With the system's separators, as little names other paths: git
+            // writes `/`, even on Windows.
+            top: Path::new(top).components().collect(),
             prefix: prefix.to_string(),
         })
     }
@@ -292,9 +294,10 @@ pub(crate) mod tests {
         let _ = std::fs::remove_dir_all(&root);
         std::fs::create_dir_all(&root).unwrap();
         write(&root, files);
-        // The folder git names, which, on macOS, isn't the one the temporary
-        // folder's link leads to.
-        root.canonicalize().unwrap()
+        // The folder as git names it: on macOS, the one the temporary
+        // folder's link leads to, and on Windows, by its long name, not one
+        // like `RUNNER~1`, and without the `\\?\` that `canonicalize` adds.
+        dunce::canonicalize(&root).unwrap()
     }
 
     fn write(root: &Path, files: &[(&str, &str)]) {
@@ -449,7 +452,7 @@ pub(crate) mod tests {
         // A shallow clone has only some of the history, and its tags.
         let clone = root.with_file_name(format!("{}-clone", root.file_name().unwrap().display()));
         let _ = std::fs::remove_dir_all(&clone);
-        let url = format!("file://{}", root.display());
+        let url = url::Url::from_file_path(&root).unwrap().to_string();
         let parent = clone.parent().unwrap();
         let name = clone.file_name().unwrap().to_str().unwrap();
         git_in(parent, &["clone", "--quiet", "--depth", "1", &url, name]);

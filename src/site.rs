@@ -4721,7 +4721,8 @@ mod tests {
         // A ref that isn't there stops the build, naming the version.
         fs::write(site.join("little.yml"), site_cfg("ref: v1.5")).unwrap();
         let message = format!("{:#}", build(&site).unwrap_err());
-        let top = site.canonicalize().unwrap();
+        // The site's folder, as git names it.
+        let top = dunce::canonicalize(&site).unwrap();
         assert_eq!(
             message,
             format!(
