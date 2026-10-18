@@ -1,11 +1,13 @@
-# git-cliff's config, for the changes a plugin's release notes list: what's
-# breaking, then features, fixes, and performance, from Conventional Commits.
-# It's shared by every plugin, so each run names the plugin's tags and
-# folders, as .github/workflows/release-plugin.yml and RELEASING.md do.
+# git-cliff's config, for the changes the release notes of little, or of a
+# plugin, list: what's breaking, then features, fixes, and performance, from
+# Conventional Commits. They all share it, so each run names the tags and
+# folders of what it releases, as .github/workflows/release.yml and
+# release-plugin.yml, and RELEASING.md, do.
 
 [changelog]
 # No heading for the version, which the release's title has. PLUGIN, from
-# the environment, leaves out the scope of the plugin's own commits.
+# the environment, leaves out the scope of the plugin's own commits; little's
+# have none.
 body = """
 {%- macro entry(commit, plugin) -%}
 - {% if commit.scope and commit.scope != plugin %}**{{ commit.scope }}:** {% endif %}\

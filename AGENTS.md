@@ -11,6 +11,7 @@ cargo run -- build --strict # ...and fail on anything it warns of
 cargo run -- serve          # live-reloading dev server at http://127.0.0.1:8080
 cargo run -- config         # print the manual's merged config
 cargo build --release       # produce the release binary (target/release/little)
+cargo package --locked      # package the crate, little-docs, as a release publishes it
 cargo test                  # run tests (they build tests/plugin for wasm32-wasip2)
 cargo clippy --all-targets  # lint — keep it clean
 cargo fmt                   # format — run before committing
@@ -43,7 +44,7 @@ scripts/notices.sh little target/notices/little.md # or pydoc, rustdoc, jsdoc
 - `src/main.rs` — CLI (clap): `build` (`--strict` fails on a broken link,
   a formula that isn't rendered, a diagram that isn't drawn, a code block
   a plugin can't render, a plugin's warning, or a hook of one that failed
-  on a page), `serve`, `config`.
+  on a page), `serve`, `config`; and, on musl, jemalloc as the allocator.
 - `src/config.rs` — the 3-level cascading config (little → theme → site): the
   chain of themes a site uses, its source and destination folders, the levels
   of heading its tables of contents list, the host and port
@@ -200,6 +201,16 @@ Content and theme live outside `src/`:
   third-party notices, in a GitHub release, with notes that git-cliff
   writes, from `cliff.toml`, from the commits that changed the plugin's
   folder or `plugins/api_reference/`.
+- `.github/workflows/release.yml` — releases little when a tag of its
+  version, like `v0.1.0`, is pushed: checks the tag, builds little for
+  Linux, macOS, and Windows, on x64 and arm64, Linux's static, against
+  musl, each on a runner of its system, checks each binary runs, and packs
+  each in an archive with `LICENSE` and its third-party notices; then
+  publishes them, with a `SHA256SUMS`, attested, in a GitHub release, the
+  repository's latest, with notes that git-cliff writes from the commits
+  that changed what's built into little, and publishes its crate,
+  `little-docs`, to crates.io. A pull request that changes it,
+  `Cargo.toml`, or `Cargo.lock` runs it, but for publishing.
 - Project meta (`VISION.md`, `AGENTS.md`, `RELEASING.md`) lives at the repo
   root; ADRs are in the manual, in `docs/decisions/`.
 
@@ -256,10 +267,10 @@ Content and theme live outside `src/`:
   breaks what the manual documents for sites, themes, or plugins to rely
   on, as [0051](./docs/decisions/0051-semantic-versioning-and-conventional-commits.md)
   lists.
-- A plugin is released from a tag on `main`, like `pydoc-v0.2.0`, after a
-  pull request that raises its version, as [`RELEASING.md`](./RELEASING.md)
-  says. A release can't be undone, so don't push a tag: the maintainer
-  does.
+- little is released from a tag on `main` like `v0.2.0`, and a plugin from
+  one like `pydoc-v0.2.0`, each after a pull request that raises its
+  version, as [`RELEASING.md`](./RELEASING.md) says. A release can't be
+  undone, so don't push a tag: the maintainer does.
 - Commits follow [Conventional Commits](https://www.conventionalcommits.org/),
   as `committed.toml` checks in CI: `type(scope)!: description`, with a
   lowercase, imperative description, no full stop, and a first line of up
@@ -660,3 +671,19 @@ manual, and list each in its `README.md`. Locked so far:
   from `examples/syntax_notices.rs`. `scripts/notices.sh` fails on any
   warning, and CI runs it for each pull request — see
   [`docs/decisions/0054-third-party-notices.md`](./docs/decisions/0054-third-party-notices.md).
+- **Releasing little:** little is released from a tag of its version, like
+  `v0.2.0`, on `main`, pushed by hand, once a pull request,
+  `chore: release 0.2.0`, has raised it in `Cargo.toml`, `Cargo.lock`, and
+  the manual's Pages workflow. `release.yml` checks the tag as a plugin's
+  is, builds little for six targets, each on a GitHub runner of its system,
+  Linux's static, against musl, with jemalloc, and Windows' with the C
+  runtime built in, and checks each runs. It publishes each in an archive,
+  `little-<target>.tar.gz`, or `.zip`, with its files at the root, and no
+  version in its name, beside its licence and notices, with a `SHA256SUMS`
+  and GitHub's attestations, as the repository's latest release, with
+  notes from git-cliff. Then it publishes the crate, `little-docs`, as
+  `little` is taken, though the command is still `little`, with crates.io's
+  trusted publishing, but for its first version, published by hand; CI
+  packages it for each pull request, and cargo-binstall downloads the
+  release's archives. The binaries aren't signed yet — see
+  [`docs/decisions/0055-releasing-little.md`](./docs/decisions/0055-releasing-little.md).

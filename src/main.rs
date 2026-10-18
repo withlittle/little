@@ -27,6 +27,12 @@ use anyhow::{Result, bail};
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
+// musl's own allocator is slow when many threads allocate at once, as a
+// build's do, so little's Linux binaries use jemalloc, as Cargo.toml says.
+#[cfg(all(target_env = "musl", target_pointer_width = "64"))]
+#[global_allocator]
+static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
+
 #[derive(Parser)]
 #[command(
     name = "little",

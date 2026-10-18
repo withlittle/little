@@ -10,15 +10,20 @@ three-level cascading config, and themes that own 100% of the markup.
 
 ## Install
 
-There are no prebuilt binaries yet, so build little from source with the stable
-[Rust toolchain](https://rustup.rs):
+Download little for your system from its
+[latest release](https://github.com/withlittle/little/releases/latest), and
+put it on your `PATH`, or install it with Cargo. It's `little-docs` on
+crates.io, where `little` is another crate's name, but the command is still
+`little`:
 
 ```sh
-cargo install --locked --git https://github.com/withlittle/little little
+cargo binstall little-docs           # little's release, for your system
+cargo install --locked little-docs   # or build it, with Rust 1.96 or later
 ```
 
-Or, in a clone of this repository, run `cargo install --locked --path .`, or
-`cargo build --release` for a standalone binary at `target/release/little`.
+[Install](./docs/getting-started/install.md), in the manual, says which
+archive is for your system, how to check it, and how to build little from
+source.
 
 ## Quick start
 
@@ -72,7 +77,8 @@ manual.
 See [`AGENTS.md`](./AGENTS.md) for architecture and conventions,
 [`VISION.md`](./VISION.md) for where little is headed,
 [`docs/decisions/`](./docs/decisions/) for design records, and
-[`RELEASING.md`](./RELEASING.md) for how the plugins are released.
+[`RELEASING.md`](./RELEASING.md) for how little and its plugins are
+released.
 
 ## License
 

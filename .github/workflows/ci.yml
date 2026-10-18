@@ -82,6 +82,12 @@ jobs:
           scripts/notices.sh rustdoc target/notices/rustdoc.md
           scripts/notices.sh jsdoc target/notices/jsdoc.md
 
+      # The crate a release publishes to crates.io, built as crates.io would
+      # build it, so a pull request that leaves a file little needs out of
+      # Cargo.toml's include fails here, not a release (docs/decisions/0055).
+      - name: Package little-docs
+        run: cargo package --locked
+
       - name: Build release
         run: |
           cargo build --release
