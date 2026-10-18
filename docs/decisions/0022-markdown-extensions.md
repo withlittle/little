@@ -13,10 +13,10 @@
 little renders Markdown with comrak, with five of GitHub's extensions to
 CommonMark on, tables, strikethrough, autolinks, task lists, and footnotes,
 and no way for a site to change them. Slice 2 of little's
-[roadmap](../VISION.md), authoring essentials, asks for callouts: a note or
-a warning that stands out from the text around it. comrak has GitHub's, which
-GitHub calls alerts, and about 30 more extensions, each off unless it's
-asked for.
+[roadmap](https://github.com/withlittle/little/blob/main/VISION.md),
+authoring essentials, asks for callouts: a note or a warning that stands out
+from the text around it. comrak has GitHub's, which GitHub calls alerts, and
+about 30 more extensions, each off unless it's asked for.
 
 An author who writes on GitHub expects `:tada:` to be 🎉, and `<details>` to
 fold, but little leaves `:tada:` as it is, and drops raw HTML, leaving

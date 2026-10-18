@@ -18,10 +18,11 @@
   [0024](./0024-jupyter-notebooks.md)
 
 ## Context
-Slice 3 of little's [roadmap](../VISION.md) asks for "a polished,
-responsive, accessible default theme". The built-in theme is what every new
-site looks like, and what this manual looks like, but it began as a stand-in,
-to see little's features while they were built:
+Slice 3 of little's
+[roadmap](https://github.com/withlittle/little/blob/main/VISION.md) asks for
+"a polished, responsive, accessible default theme". The built-in theme is
+what every new site looks like, and what this manual looks like, but it
+began as a stand-in, to see little's features while they were built:
 - it was light only;
 - it had one breakpoint, at 720px, below which the nav and the table of
   contents stacked above the page, so a reader on a phone scrolled past a

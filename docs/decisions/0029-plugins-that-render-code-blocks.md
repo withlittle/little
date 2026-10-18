@@ -15,9 +15,10 @@
   [0027](./0027-drawing-mermaid-diagrams.md)
 
 ## Context
-little keeps its core small, and leaves what only some sites need to
-plugins ([VISION.md](../VISION.md)): API docs from docstrings, diagrams in
-languages other than Mermaid, like Graphviz, D2, and PlantUML
+little keeps its core small, and leaves what only some sites need to plugins
+([VISION.md](https://github.com/withlittle/little/blob/main/VISION.md)): API
+docs from docstrings, diagrams in languages other than Mermaid, like
+Graphviz, D2, and PlantUML
 ([0027](./0027-drawing-mermaid-diagrams.md)), charts, and tables from data.
 little can't load a plugin, so each of these would be built into little,
 or loaded by a theme, as a script in each reader's browser.

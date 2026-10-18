@@ -8,8 +8,10 @@
 - Date: 2026-10-04
 
 ## Context
-Slice 2 of little's [roadmap](../VISION.md), authoring essentials, asks for
-code in colour. An author names a code block's language after its fence,
+Slice 2 of little's
+[roadmap](https://github.com/withlittle/little/blob/main/VISION.md),
+authoring essentials, asks for code in colour. An author names a code block's
+language after its fence,
 ```` ```rust ````, as on GitHub, and expects to see it in colour, as there.
 little writes it as comrak does, as plain text in
 `<pre><code class="language-rust">`, so a theme that wants colour has to load

@@ -136,7 +136,8 @@ Content and theme live outside `src/`:
   <https://withlittle.github.io/little>. It's a little site, so each page
   uses what it documents, where it can, and the README links to it. Pages
   link to each other by their files, and to little's own files on GitHub.
-  Meta docs, like ADRs, don't go here. little's own API, which the
+  little's ADRs are in `docs/decisions/`, listed in its `README.md`, which alone
+  is in `nav`; other meta docs don't go here. little's own API, which the
   `rustdoc` plugin adds from `src/`'s doc comments, is at `/api/`, with
   no file in `docs/`.
 - `theme/` — little's built-in theme, compiled into the binary: `_templates/`
@@ -186,8 +187,8 @@ Content and theme live outside `src/`:
   the tag, builds the plugin's `.wasm` file, and publishes it in a GitHub
   release, with notes that git-cliff writes, from `cliff.toml`, from the
   commits that changed the plugin's folder or `plugins/api_reference/`.
-- Project meta (`VISION.md`, `AGENTS.md`, `RELEASING.md`, `decisions/`)
-  lives at the repo root.
+- Project meta (`VISION.md`, `AGENTS.md`, `RELEASING.md`) lives at the repo
+  root; ADRs are in the manual, in `docs/decisions/`.
 
 ## Core principles (do not violate)
 1. **The theme owns 100% of the markup.** The core never emits baked-in HTML; it
@@ -227,7 +228,8 @@ Content and theme live outside `src/`:
 - Add unit tests for parsing/merging logic (frontmatter, config cascade).
 - A change people using little can see updates its page in the manual
   (`docs/`), and the reference pages, in the same PR; a new page goes in
-  `nav` in `little.yml`. Keep the README short: it links to the manual.
+  `nav` in `little.yml`, but a new ADR in the list in
+  `docs/decisions/README.md`. Keep the README short: it links to the manual.
   `cargo run -- build --strict` checks the manual's links.
 - Versions follow [Semantic Versioning](https://semver.org/): each
   component's, in its `Cargo.toml`, is raised as it's released, and
@@ -235,7 +237,7 @@ Content and theme live outside `src/`:
   Until 1.0, a breaking change raises the minor version, 0.1.4 to 0.2.0,
   and anything else the patch, 0.1.4 to 0.1.5. A change is breaking if it
   breaks what the manual documents for sites, themes, or plugins to rely
-  on, as [0051](./decisions/0051-semantic-versioning-and-conventional-commits.md)
+  on, as [0051](./docs/decisions/0051-semantic-versioning-and-conventional-commits.md)
   lists.
 - A plugin is released from a tag on `main`, like `pydoc-v0.2.0`, after a
   pull request that raises its version, as [`RELEASING.md`](./RELEASING.md)
@@ -259,143 +261,144 @@ Content and theme live outside `src/`:
     rather than merging `main` into it.
 
 ## Decisions
-Record notable choices as short ADRs in `decisions/`. Locked so far:
-- **Language:** Rust — see [`decisions/0001-language-rust.md`](./decisions/0001-language-rust.md).
+Record notable choices as short ADRs in `docs/decisions/`, part of the
+manual, and list each in its `README.md`. Locked so far:
+- **Language:** Rust — see [`docs/decisions/0001-language-rust.md`](./docs/decisions/0001-language-rust.md).
 - **Markdown:** comrak. **Templating:** minijinja. **Config:** cascading YAML.
 - **Themes:** `_templates/` + `_static/`, a template per type of page — see
-  [`decisions/0002-theme-structure.md`](./decisions/0002-theme-structure.md).
+  [`docs/decisions/0002-theme-structure.md`](./docs/decisions/0002-theme-structure.md).
 - **Choosing themes:** `theme` is `true` (built-in), `false`, a folder, or a
   URL, and a theme can build on another, file by file — see
-  [`decisions/0003-choosing-and-layering-themes.md`](./decisions/0003-choosing-and-layering-themes.md).
+  [`docs/decisions/0003-choosing-and-layering-themes.md`](./docs/decisions/0003-choosing-and-layering-themes.md).
 - **Downloading themes:** an HTTPS `.zip` or `.tar.gz`, unpacked into the
   site's `.little/` and never downloaded again; links and paths that leave the
   archive are refused — see
-  [`decisions/0004-downloading-themes.md`](./decisions/0004-downloading-themes.md).
+  [`docs/decisions/0004-downloading-themes.md`](./docs/decisions/0004-downloading-themes.md).
 - **Previous and next pages:** `page.prev` and `page.next` follow `site.nav`
   from top to bottom, and are left out at either end — see
-  [`decisions/0005-previous-and-next-pages.md`](./decisions/0005-previous-and-next-pages.md).
+  [`docs/decisions/0005-previous-and-next-pages.md`](./docs/decisions/0005-previous-and-next-pages.md).
 - **Frontmatter and config win:** every frontmatter key reaches `page` and
   merges over what little works out; a `nav` in `little.yml` replaces
   little's — see
-  [`decisions/0006-frontmatter-and-config-win.md`](./decisions/0006-frontmatter-and-config-win.md).
+  [`docs/decisions/0006-frontmatter-and-config-win.md`](./docs/decisions/0006-frontmatter-and-config-win.md).
 - **A page's table of contents:** `page.toc` is shaped like `site.nav`,
   `{ title, url, children }`, with each `###` under the `##` above it and
   each heading's `#fragment` as its `url` — see
-  [`decisions/0007-page-nav-shaped-like-site-nav.md`](./decisions/0007-page-nav-shaped-like-site-nav.md).
+  [`docs/decisions/0007-page-nav-shaped-like-site-nav.md`](./docs/decisions/0007-page-nav-shaped-like-site-nav.md).
 - **Naming a page's navigation:** name each for what readers see, since
   authors write the same names in frontmatter: `page.toc`, not `page.nav`,
   beside `page.prev` and `page.next` — see
-  [`decisions/0008-page-toc.md`](./decisions/0008-page-toc.md).
+  [`docs/decisions/0008-page-toc.md`](./docs/decisions/0008-page-toc.md).
 - **Which headings a page's table of contents lists:** the levels from
   `toc_min_depth` to `toc_max_depth`, which cascade like any config: little
   sets 2 to 6, every heading but the page's `#` title, and the built-in theme
   a max of 3 — see
-  [`decisions/0009-toc-depth-in-config.md`](./decisions/0009-toc-depth-in-config.md).
+  [`docs/decisions/0009-toc-depth-in-config.md`](./docs/decisions/0009-toc-depth-in-config.md).
 - **Breadcrumbs:** `page.breadcrumbs` lists the items above a page in
   `site.nav`, from the top down, each `{ title, url }`: the home page, if it's
   at the nav's top, then the sections the page is in, but not the page
-  itself — see [`decisions/0010-breadcrumbs.md`](./decisions/0010-breadcrumbs.md).
+  itself — see [`docs/decisions/0010-breadcrumbs.md`](./docs/decisions/0010-breadcrumbs.md).
 - **Where `little serve` serves:** `host` and `port`, which cascade like any
   config: little sets `127.0.0.1` and `8080`, and `little serve --host` and
   `--port` override them for a single run — see
-  [`decisions/0011-serve-host-and-port-in-config.md`](./decisions/0011-serve-host-and-port-in-config.md).
+  [`docs/decisions/0011-serve-host-and-port-in-config.md`](./docs/decisions/0011-serve-host-and-port-in-config.md).
 - **Hidden files:** a file or folder in the source whose name starts with `.`
   is left out, and saving it doesn't rebuild in `little serve`; only names
   inside the source count, so it can be hidden itself, and a theme's
   `_static/` is still copied whole — see
-  [`decisions/0012-hidden-files.md`](./decisions/0012-hidden-files.md).
+  [`docs/decisions/0012-hidden-files.md`](./docs/decisions/0012-hidden-files.md).
 - **Pages that clash:** two files in the source that would be the same page,
   like `guide.md` and `guide/README.md`, stop the build before any page is
   rendered, with an error that names both; URLs that differ only in case
   aren't checked — see
-  [`decisions/0013-pages-that-clash.md`](./decisions/0013-pages-that-clash.md).
+  [`docs/decisions/0013-pages-that-clash.md`](./docs/decisions/0013-pages-that-clash.md).
 - **Publishing under a path:** a site's `url`, like
   `https://withlittle.github.io/little`, puts its path before every URL
   little gives the theme and every link in Markdown, and `little serve`
   serves the site under it; a theme writes its own URLs through the `url`
   filter, and makes them absolute with `absolute_url` — see
-  [`decisions/0014-site-url-and-its-path.md`](./decisions/0014-site-url-and-its-path.md).
+  [`docs/decisions/0014-site-url-and-its-path.md`](./docs/decisions/0014-site-url-and-its-path.md).
 - **Files and relative links:** every file in the source that isn't hidden or
   Markdown is copied to the same path in the destination, over a theme's file
   at that path, but for a destination inside the source; a relative link or
   image leads from the folder of the file it's in, as on GitHub, whatever URL
   its page is served at — see
-  [`decisions/0015-files-and-relative-links.md`](./decisions/0015-files-and-relative-links.md).
+  [`docs/decisions/0015-files-and-relative-links.md`](./docs/decisions/0015-files-and-relative-links.md).
 - **Checking links:** `little build` checks every link in the built site
   with lychee-lib, built in, and warns of each broken page, file, `#fragment`,
   or link to another site, naming the file it's in; `--strict` fails on one,
   and `little serve` checks only links within the site — see
-  [`decisions/0016-checking-links.md`](./decisions/0016-checking-links.md).
+  [`docs/decisions/0016-checking-links.md`](./docs/decisions/0016-checking-links.md).
 - **Links to pages' files:** a link in Markdown to a `.md` file, like
   `install.md#usage` or `guide/README.md`, leads to the page built from it,
   as it leads to the file on GitHub, even one that isn't there, so it's
   warned of; a warning shows a broken link in Markdown as it's written, and
   one in the theme or a copied file as a reader follows it — see
-  [`decisions/0017-links-to-pages-files.md`](./decisions/0017-links-to-pages-files.md).
+  [`docs/decisions/0017-links-to-pages-files.md`](./docs/decisions/0017-links-to-pages-files.md).
 - **Sass in themes:** a `.scss` or `.sass` file in a theme's `_static/` is
   compiled with grass, built in, to the CSS file at its path, loading only
   from the theme's `_sass/`, which isn't published and layers like
   `_templates/`; a partial in `_static/` stops the build, and Sass in the
   source is copied as-is — see
-  [`decisions/0018-sass-in-themes.md`](./decisions/0018-sass-in-themes.md).
+  [`docs/decisions/0018-sass-in-themes.md`](./docs/decisions/0018-sass-in-themes.md).
 - **Site search:** `search`, which little sets `false` and the built-in
   theme `true`, indexes each page's own content, under its title and URL,
   with Pagefind, built in, into the destination's `pagefind/`, in the language
   of the page's `<html lang>`, but not the 404 page; the theme owns the
   search box, and a page or file where search writes one stops the build —
-  see [`decisions/0019-site-search.md`](./decisions/0019-site-search.md).
+  see [`docs/decisions/0019-site-search.md`](./docs/decisions/0019-site-search.md).
 - **Where search's files go:** `pagefind/`, Pagefind's default, and the
   built-in theme loads Pagefind's search box with `defer`, not as a module,
   so it finds them itself, even under the path of the site's `url`; each
   page is indexed at its URL from the root of the site, and Pagefind puts
   the site's path back, from where it finds them — see
-  [`decisions/0021-search-files-in-pagefind.md`](./decisions/0021-search-files-in-pagefind.md).
+  [`docs/decisions/0021-search-files-in-pagefind.md`](./docs/decisions/0021-search-files-in-pagefind.md).
 - **Linking to a page's file:** `repo`, the repository's address as a
   browser shows it, reaches the theme as `site.repo`, and, on GitHub and
   GitLab, gives each page `page.source_url` and `page.edit_url`, on `branch`,
   which little sets to `main`, with each path from the nearest folder with a
   `.git`, else the site's folder; links into the repository aren't
   checked — see
-  [`decisions/0020-links-to-a-pages-file-in-its-repo.md`](./decisions/0020-links-to-a-pages-file-in-its-repo.md).
+  [`docs/decisions/0020-links-to-a-pages-file-in-its-repo.md`](./docs/decisions/0020-links-to-a-pages-file-in-its-repo.md).
 - **Markdown's extensions:** `markdown` turns each of comrak's extensions
   to what an author can write on or off, under little's own names, like
   `emoji` and `raw_html`, and cascades like any config: little turns on
   GitHub's and leaves the rest off. Callouts are GitHub's alerts, in GitHub's
   markup — see
-  [`decisions/0022-markdown-extensions.md`](./decisions/0022-markdown-extensions.md).
+  [`docs/decisions/0022-markdown-extensions.md`](./docs/decisions/0022-markdown-extensions.md).
 - **Highlighting code:** little highlights each code block as it builds the
   page, with bat's grammars, built in through two-face, in the classes
   `markdown.highlight` chooses: `pygments`, little's default, `github`, or
   `false`, for none. A highlighted block is a `<pre class="highlight">`, with
   a flat `<span>` for each token with a class; a language bat doesn't have
   stays plain — see
-  [`decisions/0023-highlighting-code.md`](./decisions/0023-highlighting-code.md).
+  [`docs/decisions/0023-highlighting-code.md`](./docs/decisions/0023-highlighting-code.md).
 - **Jupyter notebooks:** each `.ipynb` file in the source is a page, as a
   `.md` file is, read in format 4 with little's own serde types, not the
   stricter `nbformat` crate, and built into comrak's tree, so it's written as
   Markdown is. Outputs are code blocks in `output`, HTML and SVG when
   `raw_html` is on, or images with `data:` URLs; frontmatter is in a raw or
   Markdown cell at the top — see
-  [`decisions/0024-jupyter-notebooks.md`](./decisions/0024-jupyter-notebooks.md).
+  [`docs/decisions/0024-jupyter-notebooks.md`](./docs/decisions/0024-jupyter-notebooks.md).
 - **Rendering math:** `markdown.math` writes math as `mathml`, little's
   default, rendered with math-core, built in, as each page is built; `tex`,
   marked with `data-math-style` for a theme's script; or `false`, for none,
   and `true` is an error. Each formula is read on its own, and one that
   can't be is written as TeX and warned of, as a broken link is; a heading's
   math is TeX in `page.toc` — see
-  [`decisions/0025-rendering-math-as-mathml.md`](./decisions/0025-rendering-math-as-mathml.md).
+  [`docs/decisions/0025-rendering-math-as-mathml.md`](./docs/decisions/0025-rendering-math-as-mathml.md).
 - **The year a site is built:** `site.year`, for a theme's copyright notice,
   is the year the build starts in, in UTC, or that of `SOURCE_DATE_EPOCH`,
   for reproducible builds; it's worked out once, beneath the config, like
   `site.nav`, and the built-in theme shows no notice — see
-  [`decisions/0026-the-year-a-site-is-built.md`](./decisions/0026-the-year-a-site-is-built.md).
+  [`docs/decisions/0026-the-year-a-site-is-built.md`](./docs/decisions/0026-the-year-a-site-is-built.md).
 - **Drawing diagrams:** `markdown.mermaid` writes a ```` ```mermaid ````
   block as `svg`, little's default, an `<svg>` drawn with merman, built in,
   as each page is built, with the id `mermaid-N`, the same in each build; or
   `false`, as code, for a theme's script. One merman can't read is code, and
   warned of, as a broken link is. A diagram can carry HTML, so `svg` with
   `raw_html: false` stops the build — see
-  [`decisions/0027-drawing-mermaid-diagrams.md`](./decisions/0027-drawing-mermaid-diagrams.md).
+  [`docs/decisions/0027-drawing-mermaid-diagrams.md`](./docs/decisions/0027-drawing-mermaid-diagrams.md).
 - **How diagrams look:** `mermaid` holds Mermaid's own config, in Mermaid's
   own names, like `theme` and `themeVariables`, which each diagram little
   draws starts from, as a site passes it to `mermaid.initialize()`. It
@@ -403,7 +406,7 @@ Record notable choices as short ADRs in `decisions/`. Locked so far:
   gantt chart's width in code, beneath it; a diagram's own config goes over
   it. little checks only that `theme` is one of Mermaid's and that no
   setting is empty, as an unquoted `#` colour is — see
-  [`decisions/0028-how-diagrams-look.md`](./decisions/0028-how-diagrams-look.md).
+  [`docs/decisions/0028-how-diagrams-look.md`](./docs/decisions/0028-how-diagrams-look.md).
 - **Plugins that render code blocks:** `plugins` names each plugin and its
   `.wasm` file, a WebAssembly component built for WASI 0.2 that exports
   hooks from `wit/plugin.wit`, by a path or an HTTPS URL, downloaded once into
@@ -416,26 +419,26 @@ Record notable choices as short ADRs in `decisions/`. Locked so far:
   those it reads, a clock at the build's start, and the same random numbers
   each build; a block it can't render is warned of, as a broken link is —
   see
-  [`decisions/0029-plugins-that-render-code-blocks.md`](./decisions/0029-plugins-that-render-code-blocks.md).
+  [`docs/decisions/0029-plugins-that-render-code-blocks.md`](./docs/decisions/0029-plugins-that-render-code-blocks.md).
 - **Plugins that add pages:** a plugin's `files` hook, in place of 0030's
   `pages`, adds files, each built as if it were in the source at its path,
   so a Markdown file or a notebook is a page, but has no file in the
   repository; one that would be the same page as a file or another
   plugin's page stops the build, as does an error from `files`, or a crash.
   What a plugin warns of is warned of, and `--strict` fails on it — see
-  [`decisions/0030-plugins-that-add-pages.md`](./decisions/0030-plugins-that-add-pages.md).
+  [`docs/decisions/0030-plugins-that-add-pages.md`](./docs/decisions/0030-plugins-that-add-pages.md).
 - **A plugin for Python's docstrings:** `plugins/pydoc/`, in little's
   repository, in its own workspace, adds a page for each module and package
   in the folders it reads, under `url`, `/` by default, like
   mkdocstrings', parsing Python with Ruff's parser, without running it, and
   finding each docstring's style, NumPy's, Google's, or Sphinx's, for
   itself. A module it can't parse is warned of, and left out — see
-  [`decisions/0031-a-plugin-for-pythons-docstrings.md`](./decisions/0031-a-plugin-for-pythons-docstrings.md).
+  [`docs/decisions/0031-a-plugin-for-pythons-docstrings.md`](./docs/decisions/0031-a-plugin-for-pythons-docstrings.md).
 - **Docs are the manual:** `docs/` is little's manual, published at
   `https://withlittle.github.io/little`, grouped by what a reader is trying
   to do, and ordered by `nav` in `little.yml`; each page uses what it
   documents, and the README points to it — see
-  [`decisions/0032-docs-are-the-manual.md`](./decisions/0032-docs-are-the-manual.md).
+  [`docs/decisions/0032-docs-are-the-manual.md`](./docs/decisions/0032-docs-are-the-manual.md).
 - **The built-in theme's design:** plain CSS, with no framework or Node, in
   cascade layers, `little.tokens` to `little.print`, so CSS that isn't in a
   layer wins over it, but for a few `!important`s, and it works without a
@@ -445,7 +448,7 @@ Record notable choices as short ADRs in `decisions/`. Locked so far:
   of contents folds up above the page. It has a skip link, landmarks, a
   visible focus ring, AA contrast, underlined links, and styles for reduced
   motion, forced colours, and print, and needs browsers from 2024 — see
-  [`decisions/0033-the-built-in-themes-design.md`](./decisions/0033-the-built-in-themes-design.md).
+  [`docs/decisions/0033-the-built-in-themes-design.md`](./docs/decisions/0033-the-built-in-themes-design.md).
 - **The built-in theme's script:** `assets/script.js`, deferred, only adds
   to the theme, so every page works without it. A button in the header
   chooses light or dark, kept in `localStorage` as `little-theme`, and
@@ -457,27 +460,27 @@ Record notable choices as short ADRs in `decisions/`. Locked so far:
   reader is in the table of contents beside the page with `data-current`.
   It uses nothing newer than Baseline 2024, so not the `popover`
   property — see
-  [`decisions/0034-the-built-in-themes-script.md`](./decisions/0034-the-built-in-themes-script.md).
+  [`docs/decisions/0034-the-built-in-themes-script.md`](./docs/decisions/0034-the-built-in-themes-script.md).
 - **Numbers in the nav's order:** little sorts each folder's pages and
   folders by title, whatever their case, with each run of digits as a
   number, by its value, with alphanumeric-sort, 1.5.8 or later, for a total
   order: `2.` before `10.`, and `1` before `01`. A `nav` in `little.yml` is
   kept as it's written — see
-  [`decisions/0035-numbers-in-the-navs-order.md`](./decisions/0035-numbers-in-the-navs-order.md).
+  [`docs/decisions/0035-numbers-in-the-navs-order.md`](./docs/decisions/0035-numbers-in-the-navs-order.md).
 - **Folding the built-in theme's nav:** each folder within a top-level one
   is a `<details>`, folded, but for those the current page is in, which the
   template finds from the `aria-current="page"` in its items' HTML, so
   little's data doesn't change. A folder with a page folds from a button
   beside its link. The script scrolls only the sidebar to the current page;
   which folders are open isn't remembered — see
-  [`decisions/0036-folding-the-built-in-themes-nav.md`](./decisions/0036-folding-the-built-in-themes-nav.md).
+  [`docs/decisions/0036-folding-the-built-in-themes-nav.md`](./docs/decisions/0036-folding-the-built-in-themes-nav.md).
 - **Wrapping long names in the built-in theme:** a title with no spaces, a
   name, like `enable_iterative_imputer`, gets a `<wbr>` after each `_` and
   `.`, from the template's `breakable` macro, in the sidebar, tables of
   contents, breadcrumbs, and pager, so it wraps at its joints; a title with
   spaces wraps at them. Each also has `overflow-wrap: anywhere`, so nothing
   runs out of its box; `<title>` and hidden names are as they were — see
-  [`decisions/0037-wrapping-long-names-in-the-built-in-theme.md`](./decisions/0037-wrapping-long-names-in-the-built-in-theme.md).
+  [`docs/decisions/0037-wrapping-long-names-in-the-built-in-theme.md`](./docs/decisions/0037-wrapping-long-names-in-the-built-in-theme.md).
 - **The built-in theme's page and tables:** from 75rem, on a site with a
   nav, a page without a table of contents keeps its empty column, so the
   text starts in the same place on every page. A table, but a `.dataframe`,
@@ -486,14 +489,14 @@ Record notable choices as short ADRs in `decisions/`. Locked so far:
   and takes its frame, so nothing moves; without the script, a table is as
   wide as its columns, as before. A column aligned in Markdown keeps its
   alignment — see
-  [`decisions/0038-the-built-in-themes-page-and-tables.md`](./decisions/0038-the-built-in-themes-page-and-tables.md).
+  [`docs/decisions/0038-the-built-in-themes-page-and-tables.md`](./docs/decisions/0038-the-built-in-themes-page-and-tables.md).
 - **A long site name in the built-in theme's header:** a name too long for
   one line, in the header or the drawer, wraps onto a second, balanced,
   and is cut short with an ellipsis past that, with
   `-webkit-line-clamp: 2`, so the buttons beside it stay on the screen. The
   description has only the room the name leaves, and an icon button
   doesn't shrink; a name that fits on one line looks as it did — see
-  [`decisions/0039-a-long-site-name-in-the-built-in-themes-header.md`](./decisions/0039-a-long-site-name-in-the-built-in-themes-header.md).
+  [`docs/decisions/0039-a-long-site-name-in-the-built-in-themes-header.md`](./docs/decisions/0039-a-long-site-name-in-the-built-in-themes-header.md).
 - **Versions:** `versions` lists a site's versions, the latest first, each
   with the git `ref`, a tag, branch, or commit, it's read from, but for at
   most one, the site's files as they are. `little build` builds them all,
@@ -503,7 +506,7 @@ Record notable choices as short ADRs in `decisions/`. Locked so far:
   each version, else its home, and the built-in theme has a menu of them in
   its header. A shallow clone stops the build; a version from a ref's links
   to other sites aren't checked — see
-  [`decisions/0040-versions-from-git-refs.md`](./decisions/0040-versions-from-git-refs.md).
+  [`docs/decisions/0040-versions-from-git-refs.md`](./docs/decisions/0040-versions-from-git-refs.md).
 - **A version's title and URL:** each version has a `title`, what the menu
   shows, like `2.0 (Alpha)`, and a `url`, where it's published from the
   root of the site, like `/1.4` or `/versions/1.4`, as the nav's items do,
@@ -513,7 +516,7 @@ Record notable choices as short ADRs in `decisions/`. Locked so far:
   against the others' folders. `site.version` is the title, and each entry
   in `site.versions` and `page.versions` has `root`, true for the one at
   `/` — see
-  [`decisions/0041-version-titles-and-urls.md`](./decisions/0041-version-titles-and-urls.md).
+  [`docs/decisions/0041-version-titles-and-urls.md`](./docs/decisions/0041-version-titles-and-urls.md).
 - **What versions share:** every version is built with the site's config,
   theme, and plugins, as the site's `little.yml` sets them; one from a ref
   has its own pages and files, nav, and the folders its plugins read, from
@@ -522,7 +525,7 @@ Record notable choices as short ADRs in `decisions/`. Locked so far:
   moved. The theme's files are written once, with the version at `/`, and
   every version links to them there, but to a file of its own at the same
   path — see
-  [`decisions/0042-versions-share-the-sites-config-and-theme-files.md`](./decisions/0042-versions-share-the-sites-config-and-theme-files.md).
+  [`docs/decisions/0042-versions-share-the-sites-config-and-theme-files.md`](./docs/decisions/0042-versions-share-the-sites-config-and-theme-files.md).
 - **A version's own nav and plugins:** an entry in `versions` with a `ref`
   can set its own `nav`, with each URL from its home, and `plugins`, over
   the site's, setting by setting, with a `read` from the site's folder at
@@ -530,7 +533,7 @@ Record notable choices as short ADRs in `decisions/`. Locked so far:
   site's plugins, and give none a `.wasm` file. Any other setting of
   little's there, like `theme` or `search`, stops the build; any other key
   is for the theme — see
-  [`decisions/0043-a-versions-own-nav-and-plugins.md`](./decisions/0043-a-versions-own-nav-and-plugins.md).
+  [`docs/decisions/0043-a-versions-own-nav-and-plugins.md`](./docs/decisions/0043-a-versions-own-nav-and-plugins.md).
 - **A plugin for Rust's doc comments:** `plugins/rustdoc/`, in its own
   workspace, adds a page for a crate and each of its modules, `pub` or not,
   under `url`, `/<crate>` by default, like Rust's own rustdoc's,
@@ -540,14 +543,14 @@ Record notable choices as short ADRs in `decisions/`. Locked so far:
   their items, and shares its model and Markdown with `pydoc`, in
   `plugins/api_reference/`. The manual documents little with it, at
   `/api/` — see
-  [`decisions/0044-a-plugin-for-rusts-doc-comments.md`](./decisions/0044-a-plugin-for-rusts-doc-comments.md).
+  [`docs/decisions/0044-a-plugin-for-rusts-doc-comments.md`](./docs/decisions/0044-a-plugin-for-rusts-doc-comments.md).
 - **Limits on downloads:** a download of a theme or a plugin stops if the
   server takes over 30 seconds to connect, or 30 more to answer, or if it
   takes over 5 minutes in all, or is over 200 MB, with ureq's own limits,
   and a theme's archive stops unpacking once the bytes it writes come to
   over 1 GB. Nothing is kept, and the error says which limit it hit; the
   limits are fixed, in `src/download.rs`, not settings — see
-  [`decisions/0045-limits-on-downloads.md`](./decisions/0045-limits-on-downloads.md).
+  [`docs/decisions/0045-limits-on-downloads.md`](./docs/decisions/0045-limits-on-downloads.md).
 - **Plugin hooks:** there's one kind of plugin, which exports the hooks it
   needs from `little:plugin@0.2.0`, each an interface in
   `wit/plugin.wit`: `setup`, `config`, `theme`, `files`, `source`,
@@ -560,7 +563,7 @@ Record notable choices as short ADRs in `decisions/`. Locked so far:
   reads before plugins start; search indexes what `page` gives back, and
   links are checked in what `html` gives back. A plugin built for 0.1.0
   doesn't load — see
-  [`decisions/0046-plugin-hooks.md`](./decisions/0046-plugin-hooks.md).
+  [`docs/decisions/0046-plugin-hooks.md`](./docs/decisions/0046-plugin-hooks.md).
 - **Naming API reference plugins:** a plugin that adds an API reference
   from a language's code is named `<language>doc`, as the language's own
   tool is: `rustdoc`, for Rust's doc comments, and `pydoc`, for Python's
@@ -570,7 +573,7 @@ Record notable choices as short ADRs in `decisions/`. Locked so far:
   `little_rustdoc.wasm`, and its entry in the manual's `plugins`. Neither
   runs its language's tool, and its page says so first; the manual's pages
   keep their names, like "Rust API reference" — see
-  [`decisions/0047-naming-api-reference-plugins.md`](./decisions/0047-naming-api-reference-plugins.md).
+  [`docs/decisions/0047-naming-api-reference-plugins.md`](./docs/decisions/0047-naming-api-reference-plugins.md).
 - **A plugin for JavaScript's doc comments:** `plugins/jsdoc/`, in its own
   workspace, adds a page for a JavaScript or TypeScript package and each of
   its modules, under `url`, `/<package>` by default, parsing its
@@ -580,7 +583,7 @@ Record notable choices as short ADRs in `decisions/`. Locked so far:
   in ES modules, CommonJS, as TypeScript reads it, and scripts; lists
   re-exports; leads `{@link}`s to their items; and shares its model and
   Markdown with `pydoc` and `rustdoc`. It doesn't infer types — see
-  [`decisions/0048-a-plugin-for-javascripts-doc-comments.md`](./decisions/0048-a-plugin-for-javascripts-doc-comments.md).
+  [`docs/decisions/0048-a-plugin-for-javascripts-doc-comments.md`](./docs/decisions/0048-a-plugin-for-javascripts-doc-comments.md).
 - **An API reference's URL and title:** unless `url` is set, `pydoc` puts
   each package in a folder of its name at the root, and `rustdoc` and
   `jsdoc` put their pages in `/<crate>` and `/<package>`, not under
@@ -590,7 +593,7 @@ Record notable choices as short ADRs in `decisions/`. Locked so far:
   the name; `pydoc` with `title` documents one package or module, and more
   stops the build. `crate` and `package` stay, for links and the default
   `url` — see
-  [`decisions/0049-an-api-references-url-and-title.md`](./decisions/0049-an-api-references-url-and-title.md).
+  [`docs/decisions/0049-an-api-references-url-and-title.md`](./docs/decisions/0049-an-api-references-url-and-title.md).
 - **One repository:** little, its built-in theme, `wit/plugin.wit`, its
   plugins and the library they share, and the manual stay in one
   repository, `withlittle/little`, with little at its root, so a change to
@@ -599,7 +602,7 @@ Record notable choices as short ADRs in `decisions/`. Locked so far:
   its own, from a tag that names it. One moves to a repository of its own
   once it has maintainers of its own, or its CI holds the rest up, but not
   while the plugin interface or templates' data still breaks — see
-  [`decisions/0050-one-repository-for-little-its-themes-and-plugins.md`](./decisions/0050-one-repository-for-little-its-themes-and-plugins.md).
+  [`docs/decisions/0050-one-repository-for-little-its-themes-and-plugins.md`](./docs/decisions/0050-one-repository-for-little-its-themes-and-plugins.md).
 - **Versions and commits:** little, `pydoc`, `rustdoc`, and `jsdoc` each
   follow Semantic Versioning, with its own version, in its `Cargo.toml`,
   and `little:plugin` has its own, in `wit/plugin.wit`. Until 1.0, where
@@ -610,7 +613,7 @@ Record notable choices as short ADRs in `decisions/`. Locked so far:
   plugin's name as the scope, or none, for little; committed checks each
   one a pull request adds, and pull requests are still merged with a
   merge commit — see
-  [`decisions/0051-semantic-versioning-and-conventional-commits.md`](./decisions/0051-semantic-versioning-and-conventional-commits.md).
+  [`docs/decisions/0051-semantic-versioning-and-conventional-commits.md`](./docs/decisions/0051-semantic-versioning-and-conventional-commits.md).
 - **Releasing plugins:** a plugin is released from a tag that names it and
   its version, like `pydoc-v0.2.0`, on `main`, pushed by hand, once a pull
   request, `chore(pydoc): release 0.2.0`, has raised the version in its
@@ -621,4 +624,11 @@ Record notable choices as short ADRs in `decisions/`. Locked so far:
   features, fixes, and performance, from the commits that changed its
   folder or `plugins/api_reference/`, with git-cliff. The manual gives each
   plugin's URL with its version, and releases are immutable — see
-  [`decisions/0052-releasing-plugins-from-tags.md`](./decisions/0052-releasing-plugins-from-tags.md).
+  [`docs/decisions/0052-releasing-plugins-from-tags.md`](./docs/decisions/0052-releasing-plugins-from-tags.md).
+- **Decisions in the manual:** these ADRs are in `docs/decisions/`, each a
+  page of the manual, at `/decisions/`, built, searched, and checked like
+  any other, and still read on GitHub; `docs/decisions/README.md` lists
+  them, and alone is in `nav`, under Reference. A record links to little's
+  files outside `docs/`, like `VISION.md`, on GitHub. A page can't leave
+  itself out of search yet, so search finds amended records too — see
+  [`docs/decisions/0053-decisions-in-the-manual.md`](./docs/decisions/0053-decisions-in-the-manual.md).

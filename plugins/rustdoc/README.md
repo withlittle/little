@@ -9,9 +9,9 @@ rustdoc, but doesn't run it: it reads the crate's code with
 needs neither Cargo nor the crate's dependencies, and a site builds the same
 each time, offline. little's manual documents little's own code with it. Why
 it works as it does is in
-[ADR 0044](../../decisions/0044-a-plugin-for-rusts-doc-comments.md), and why
-it's named so, in
-[ADR 0047](../../decisions/0047-naming-api-reference-plugins.md).
+[ADR 0044](../../docs/decisions/0044-a-plugin-for-rusts-doc-comments.md), and
+why it's named so, in
+[ADR 0047](../../docs/decisions/0047-naming-api-reference-plugins.md).
 
 ## Building it
 

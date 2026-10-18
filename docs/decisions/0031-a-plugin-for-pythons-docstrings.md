@@ -12,11 +12,13 @@
 
 ## Context
 An API reference, built from the docstrings in a package's code, is the
-first plugin [VISION.md](../VISION.md) plans. Python's docstrings are
-where Sphinx's autodoc and mkdocstrings build one from, written in NumPy's,
-Google's, or Sphinx's style, and little reads none of them. Now that a
-plugin can add pages ([0030](./0030-plugins-that-add-pages.md)), one can
-build a page for each module of a package, named in `little.yml` alone.
+first plugin
+[VISION.md](https://github.com/withlittle/little/blob/main/VISION.md) plans.
+Python's docstrings are where Sphinx's autodoc and mkdocstrings build one
+from, written in NumPy's, Google's, or Sphinx's style, and little reads none
+of them. Now that a plugin can add pages
+([0030](./0030-plugins-that-add-pages.md)), one can build a page for each
+module of a package, named in `little.yml` alone.
 
 Other languages write docs in their code too, as Javadoc, JSDoc, TSDoc,
 and PHP's docblocks, and will want the same.

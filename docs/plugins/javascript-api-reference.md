@@ -15,9 +15,9 @@ doesn't run it, nor TypeDoc, nor Node: it reads the package's code with
 [oxc](https://oxc.rs)'s parser, without running it, so it needs neither
 Node nor the package's dependencies, and a site builds the same each time,
 offline. Why it works as it does is in
-[ADR 0048](https://github.com/withlittle/little/blob/main/decisions/0048-a-plugin-for-javascripts-doc-comments.md),
+[ADR 0048](../decisions/0048-a-plugin-for-javascripts-doc-comments.md),
 and why it's named so, in
-[ADR 0047](https://github.com/withlittle/little/blob/main/decisions/0047-naming-api-reference-plugins.md).
+[ADR 0047](../decisions/0047-naming-api-reference-plugins.md).
 
 ## Getting it
 

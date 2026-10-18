@@ -9,9 +9,9 @@ but doesn't run it: it reads the package's code with
 [Ruff](https://github.com/astral-sh/ruff)'s parser, without running it, so it
 needs neither Python nor the package's dependencies, and a site builds the
 same each time, offline. Why it works as it does is in
-[ADR 0031](../../decisions/0031-a-plugin-for-pythons-docstrings.md), and why
-it's named so, in
-[ADR 0047](../../decisions/0047-naming-api-reference-plugins.md).
+[ADR 0031](../../docs/decisions/0031-a-plugin-for-pythons-docstrings.md), and
+why it's named so, in
+[ADR 0047](../../docs/decisions/0047-naming-api-reference-plugins.md).
 
 ## Building it
 

@@ -12,9 +12,11 @@
 A reader who knows what they're looking for, but not where it is, has only
 the nav, or a search engine that may not have the site. mdBook, MkDocs,
 Sphinx, and Starlight each search a site out of the box, and search is slice
-4 of little's [roadmap](../VISION.md). A static site has no server to search,
-so its index is built with the site and searched in the browser. It mustn't
-need Node, and the theme owns the markup, so the search box is the theme's.
+4 of little's
+[roadmap](https://github.com/withlittle/little/blob/main/VISION.md). A static
+site has no server to search, so its index is built with the site and
+searched in the browser. It mustn't need Node, and the theme owns the
+markup, so the search box is the theme's.
 
 ## Options considered
 - **What searches:**
