@@ -68,3 +68,4 @@ made, and link to each other.
 - [0051 — Semantic Versioning and Conventional Commits](0051-semantic-versioning-and-conventional-commits.md)
 - [0052 — Releasing plugins from tags](0052-releasing-plugins-from-tags.md)
 - [0053 — little's decisions are in its manual](0053-decisions-in-the-manual.md)
+- [0054 — Third-party notices](0054-third-party-notices.md)

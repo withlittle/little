@@ -33,6 +33,10 @@ cargo clippy --manifest-path plugins/jsdoc/Cargo.toml --all-targets --target was
 # the library they share, in its own workspace
 cargo test --manifest-path plugins/api_reference/Cargo.toml
 cargo clippy --manifest-path plugins/api_reference/Cargo.toml --all-targets
+
+# the third-party notices releases carry, with cargo-about 0.9.2
+# (cargo install --locked cargo-about@0.9.2)
+scripts/notices.sh little target/notices/little.md # or pydoc, rustdoc, jsdoc
 ```
 
 ## Architecture (keep the core small)
@@ -182,11 +186,20 @@ Content and theme live outside `src/`:
 - `plugins/api_reference/` — a library, in its own workspace, not a plugin,
   that the plugins that add an API reference share: what a page documents,
   in no language in particular, and the Markdown of the page.
+- `about.toml`, `about.hbs`, `scripts/notices.sh` — the third-party notices
+  that little's and the plugins' releases carry, which cargo-about writes,
+  through `about.hbs`, from the `about.toml` beside each one's
+  `Cargo.toml`: the licences its crates may use, and the crates cargo-about
+  can't read rightly, clarified with the licence files it should use,
+  pinned by their checksums. `examples/syntax_notices.rs` adds those of the
+  syntax definitions two-face bundles to little's. CI writes them all, and
+  fails on any warning.
 - `.github/workflows/release-plugin.yml` — releases a plugin when a tag
   that names it and its version, like `pydoc-v0.1.0`, is pushed: checks
-  the tag, builds the plugin's `.wasm` file, and publishes it in a GitHub
-  release, with notes that git-cliff writes, from `cliff.toml`, from the
-  commits that changed the plugin's folder or `plugins/api_reference/`.
+  the tag, builds the plugin's `.wasm` file, and publishes it, beside its
+  third-party notices, in a GitHub release, with notes that git-cliff
+  writes, from `cliff.toml`, from the commits that changed the plugin's
+  folder or `plugins/api_reference/`.
 - Project meta (`VISION.md`, `AGENTS.md`, `RELEASING.md`) lives at the repo
   root; ADRs are in the manual, in `docs/decisions/`.
 
@@ -221,6 +234,10 @@ Content and theme live outside `src/`:
 - Format with `cargo fmt`; keep `cargo clippy` clean.
 - Reach for a well-maintained crate before writing our own code; justify a
   heavy dependency in an ADR.
+- A new crate's licence must be one its component's `about.toml` accepts,
+  or CI fails: read it before accepting it, and clarify a crate that
+  bundles code its `license` leaves out, as
+  [`RELEASING.md`](./RELEASING.md#third-party-notices) says.
 - Comment the *why*, not the *what*; don't over-comment.
 - Doc comments in `src/` are published, as little's API at `/api/` in the
   manual: give each module a `//!`, and each `pub` item a `///`, in the
@@ -632,3 +649,14 @@ manual, and list each in its `README.md`. Locked so far:
   files outside `docs/`, like `VISION.md`, on GitHub. A page can't leave
   itself out of search yet, so search finds amended records too — see
   [`docs/decisions/0053-decisions-in-the-manual.md`](./docs/decisions/0053-decisions-in-the-manual.md).
+- **Third-party notices:** little's releases, and each plugin's, carry a
+  `THIRD-PARTY-NOTICES.md`, written as the release is made, not committed,
+  by cargo-about 0.9.2, through `about.hbs`, from the `about.toml` beside
+  each one's `Cargo.toml`. Each accepts only the licences its crates use;
+  little's clarifies seven crates, whose `license` leaves out the C code
+  they bundle, or whose licence files hold more than one licence, or
+  others' notices, pinned by checksums; and any other crate gets its own
+  licence file, or SPDX's text. little's end with those of the syntax definitions two-face bundles,
+  from `examples/syntax_notices.rs`. `scripts/notices.sh` fails on any
+  warning, and CI runs it for each pull request — see
+  [`docs/decisions/0054-third-party-notices.md`](./docs/decisions/0054-third-party-notices.md).
