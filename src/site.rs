@@ -1766,7 +1766,7 @@ mod tests {
     use std::io::Read;
 
     fn page(rel: &str, title: &str) -> Page {
-        let origin = Path::new("docs").join(rel).display().to_string();
+        let origin = format!("docs/{rel}");
         let rel = PathBuf::from(rel);
         let url = derive_url(&rel);
         let out_path = out_path_for_url(Path::new("dist"), &url);
@@ -1787,6 +1787,12 @@ mod tests {
             unrendered_diagrams: Vec::new(),
             unrendered_blocks: Vec::new(),
         }
+    }
+
+    /// `path`, written with `/`, with the system's separators, as little
+    /// names files in what it warns of.
+    fn native(path: &str) -> PathBuf {
+        path.split('/').collect()
     }
 
     /// A fresh scratch site holding `files`, each a (path, contents) pair.
@@ -2399,7 +2405,8 @@ mod tests {
         fs::write(fancy.join("_static/index.html"), "static").unwrap();
         let message = format!("{:#}", build(&site).unwrap_err());
         let expected = format!(
-            "_static/index.html in the theme from {url} clashes with the page built from {}",
+            "{} in the theme from {url} clashes with the page built from {}",
+            native("_static/index.html").display(),
             site.join("docs").join("README.md").display()
         );
         assert_eq!(message, expected);
@@ -2660,12 +2667,13 @@ mod tests {
 
         // A stylesheet that doesn't compile fails the build, which leaves the
         // last one.
-        let colors = site.join("theme/_sass/_colors.scss");
+        let colors = site.join(native("theme/_sass/_colors.scss"));
         fs::write(&colors, "$link: $missing;").unwrap();
         let message = format!("{:#}", build(&site).unwrap_err());
         let expected = format!(
             "compiling {}: {}:1:8: Undefined variable.",
-            site.join("theme/_static/assets/style.scss").display(),
+            site.join(native("theme/_static/assets/style.scss"))
+                .display(),
             colors.display()
         );
         assert_eq!(message, expected);
@@ -2810,7 +2818,7 @@ mod tests {
         assert!(home.contains(link), "{home}");
 
         // A notebook little can't read stops the build, naming it.
-        let broken = site.join("docs/broken.ipynb");
+        let broken = site.join(native("docs/broken.ipynb"));
         fs::write(&broken, "{").unwrap();
         let message = format!("{:#}", build(&site).unwrap_err());
         let expected = format!(
@@ -3086,8 +3094,11 @@ mod tests {
                 &[("docs/reference.md", "# Reference\n")],
                 serde_json::json!([page("reference/README.md")]),
             ),
-            "./docs/reference.md and plugin `api`'s reference/README.md would both be the page \
-             at /reference/: rename or move one"
+            format!(
+                "{} and plugin `api`'s reference/README.md would both be the page at \
+                 /reference/: rename or move one",
+                Path::new(".").join(native("docs/reference.md")).display()
+            )
         );
         assert_eq!(
             clash(
@@ -3233,7 +3244,7 @@ mod tests {
         let warnings: Vec<_> = (built.plugin_warnings.iter())
             .map(|w| w.to_string())
             .collect();
-        let readme = site.join("docs/README.md");
+        let readme = site.join(native("docs/README.md"));
         assert_eq!(
             warnings,
             [
@@ -4129,7 +4140,7 @@ mod tests {
         // ...but not on one, or where one's folder goes, whether it's the
         // theme's or one in the source.
         let built_from = |file: &str| {
-            let source = site.join("docs").join(file);
+            let source = site.join("docs").join(native(file));
             format!("the page built from {}", source.display())
         };
         for folder in [site.join("theme").join("_static"), site.join("docs")] {
@@ -4139,7 +4150,7 @@ mod tests {
                 ("guide/install/index.html", built_from("guide/install.md")),
                 ("404.html", "the 404 page".to_string()),
             ] {
-                let path = folder.join(file);
+                let path = folder.join(native(file));
                 fs::create_dir_all(path.parent().unwrap()).unwrap();
                 fs::write(&path, "static").unwrap();
                 let message = format!("{:#}", build(&site).unwrap_err());
@@ -4273,9 +4284,9 @@ mod tests {
         // ...but not one on one of them, whether it's the theme's or one in
         // the source, or a page...
         let docs = site.join("docs");
-        let theme_file = site.join("theme/_static/pagefind/pagefind.js");
-        let source_file = docs.join("pagefind/pagefind.js");
-        let page = docs.join("pagefind/pagefind.js.md");
+        let theme_file = site.join(native("theme/_static/pagefind/pagefind.js"));
+        let source_file = docs.join(native("pagefind/pagefind.js"));
+        let page = docs.join(native("pagefind/pagefind.js.md"));
         for (file, name) in [
             (&theme_file, theme_file.display().to_string()),
             (&source_file, source_file.display().to_string()),
@@ -4639,7 +4650,7 @@ mod tests {
         let clashes = |url: &str, files: &[(&str, &str)]| {
             fs::write(site.join("little.yml"), site_cfg(url)).unwrap();
             for (file, name) in files {
-                let path = docs.join(file);
+                let path = docs.join(native(file));
                 fs::create_dir_all(path.parent().unwrap()).unwrap();
                 fs::write(&path, "# Mine\n").unwrap();
                 let message = format!("{:#}", build(&site).unwrap_err());

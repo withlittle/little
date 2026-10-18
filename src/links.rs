@@ -447,19 +447,28 @@ mod tests {
     }
 
     /// Build the site holding `files`, and warn of each broken link in
-    /// `scope`, naming each file by its path in the site.
+    /// `scope`, naming each file by its path in the site, written with `/`
+    /// on any system.
     fn broken_links(label: &str, scope: Scope, files: &[(&str, &str)]) -> Vec<String> {
         let site = scratch_site(label, files);
         let built = site::build(&site).unwrap();
         let broken = check(&built, scope).unwrap();
         fs::remove_dir_all(&site).unwrap();
-        let prefix = format!("{}/", site.display());
+        let in_site = |file: &str| {
+            let names: Vec<_> = Path::new(file)
+                .strip_prefix(&site)
+                .ok()?
+                .iter()
+                .map(|name| name.to_string_lossy())
+                .collect();
+            Some(names.join("/"))
+        };
         broken
             .into_iter()
             .map(|mut link| {
                 for file in &mut link.files {
-                    if let Some(rel) = file.strip_prefix(&prefix) {
-                        *file = rel.to_string();
+                    if let Some(rel) = in_site(file) {
+                        *file = rel;
                     }
                 }
                 link.to_string()
