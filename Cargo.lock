@@ -3033,6 +3033,7 @@ dependencies = [
  "serde_yaml 0.9.34+deprecated",
  "tar",
  "tempfile",
+ "tikv-jemallocator",
  "time",
  "tiny_http",
  "tokio",
