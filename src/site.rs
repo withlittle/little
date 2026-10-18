@@ -4313,7 +4313,7 @@ mod tests {
     fn versioned_site(label: &str, old: &[(&str, &str)], new: &[(&str, &str)]) -> PathBuf {
         let site = scratch_site(label, old);
         fs::write(site.join(".gitignore"), "dist/\n").unwrap();
-        git::tests::git_in(&site, &["init", "--quiet"]);
+        git::tests::init(&site);
         git::tests::commit_all(&site);
         git::tests::git_in(&site, &["tag", "v1.4"]);
         for (file, _) in old {

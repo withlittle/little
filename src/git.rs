@@ -264,6 +264,15 @@ pub(crate) mod tests {
         String::from_utf8_lossy(&output.stdout).trim().to_string()
     }
 
+    /// Make `dir` a fresh git repository, whose files are checked out as
+    /// they're committed, by little too, whatever the system's git config:
+    /// Git for Windows sets `core.autocrlf`, which checks lines out ending
+    /// in `\r\n`.
+    pub(crate) fn init(dir: &Path) {
+        git_in(dir, &["init", "--quiet"]);
+        git_in(dir, &["config", "core.autocrlf", "false"]);
+    }
+
     /// Commit every file in the repository at `dir`, as it is.
     pub(crate) fn commit_all(dir: &Path) {
         git_in(dir, &["add", "--all"]);
@@ -282,7 +291,7 @@ pub(crate) mod tests {
     /// committed.
     fn repository(label: &str, files: &[(&str, &str)]) -> PathBuf {
         let root = scratch(label, files);
-        git_in(&root, &["init", "--quiet"]);
+        init(&root);
         commit_all(&root);
         root
     }

@@ -757,7 +757,7 @@ mod tests {
 
     #[test]
     fn checks_only_links_within_the_site_from_a_git_ref() {
-        use crate::git::tests::{commit_all, git_in};
+        use crate::git::tests::{commit_all, git_in, init};
         // A link to another site from a version from a ref isn't checked, as
         // the ref can't be fixed, but one within the site is, even to the
         // site's own `url`.
@@ -773,7 +773,7 @@ mod tests {
                 ),
             ],
         );
-        git_in(&site, &["init", "--quiet"]);
+        init(&site);
         commit_all(&site);
         git_in(&site, &["tag", "v1.4"]);
         let site_cfg = "theme: ./theme\nurl: https://example.com/proj\nversions:\n  \
