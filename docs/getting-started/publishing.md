@@ -99,8 +99,9 @@ workflow that installs little and builds it:
        runs-on: ubuntu-latest
        steps:
          - uses: actions/checkout@v7
-         - uses: dtolnay/rust-toolchain@stable
-         - run: cargo install --locked --git https://github.com/withlittle/little little
+         - run: |
+             curl -fsSL https://github.com/withlittle/little/releases/download/v0.1.0/little-x86_64-unknown-linux-musl.tar.gz \
+               | sudo tar -xz -C /usr/local/bin little
          - run: little build --strict
          - uses: actions/upload-pages-artifact@v5
            with:
@@ -117,8 +118,9 @@ workflow that installs little and builds it:
            uses: actions/deploy-pages@v5
    ```
 
-- Each run builds little before it builds the site, which takes a few
-  minutes, as little has no prebuilt binaries yet.
+- Each run downloads little 0.1.0, for Linux on x64, so the site is built
+  by the same little each time, until you change the version in its URL to
+  a newer [release](https://github.com/withlittle/little/releases)'s.
 - For a site in a folder of its own, like `website/`, run
   `little -C website build --strict`, and upload `website/dist`.
 - A site with [versions](../writing/versions.md#publishing-versions) needs
