@@ -25,6 +25,10 @@ case $component in
 esac
 
 mkdir -p "$(dirname "$out")"
+# rustup can install what rust-toolchain.toml asks for on the first cargo
+# command, saying so on stderr, which would fail the check below: so run one
+# first.
+cargo metadata --locked --format-version 1 --manifest-path "$manifest" > /dev/null
 log=$(mktemp)
 trap 'rm -f "$log"' EXIT
 # cargo-about reads the about.toml beside the manifest. It only warns of a
