@@ -108,6 +108,11 @@ jobs:
       # jemalloc's pages are 64 KiB on arm64 Linux, so it runs on kernels with
       # 4, 16, or 64 KiB pages, like a Raspberry Pi 5's, or Asahi Linux's.
       AARCH64_UNKNOWN_LINUX_MUSL_JEMALLOC_SYS_WITH_LG_PAGE: 16
+      # Ubuntu's GCC compiles atomics on arm64 to calls into libgcc, which
+      # jemalloc's configure can't link against musl, so it finds none, as
+      # https://github.com/jemalloc/jemalloc/issues/2782 says; this compiles
+      # them inline.
+      CFLAGS_aarch64_unknown_linux_musl: -mno-outline-atomics
       # Windows' binaries have the C runtime built in, so they need no Visual
       # C++ Redistributable.
       CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS: -C target-feature=+crt-static
