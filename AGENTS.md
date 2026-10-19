@@ -706,3 +706,12 @@ manual, and list each in its `README.md`. Locked so far:
   environment, and a link to another site that's down fails the build,
   leaving the manual that's published — see
   [`docs/decisions/0056-publishing-the-manual.md`](./docs/decisions/0056-publishing-the-manual.md).
+- **Starting a site:** `little init [PATH]` starts a site in `PATH`, in
+  the folder `-C` names, or in that folder itself, asking nothing: a
+  `little.yml` with the folder's name, as YAML, and `description`, `url`,
+  and `repo` commented out; a home page in `docs/`, with no links within
+  the site, unless `docs/` has a `README` page already; and `/dist/` added
+  to `.gitignore`, unless it ignores `dist/`. It stops, writing nothing,
+  where there's a `little.yml`, and writes its own last; it doesn't start
+  a git repository, or choose a theme — see
+  [`docs/decisions/0057-starting-a-site-with-little-init.md`](./docs/decisions/0057-starting-a-site-with-little-init.md).
