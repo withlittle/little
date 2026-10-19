@@ -15,12 +15,12 @@ three-level cascading config, and themes that own 100% of the markup.
 
 ## Start in a minute
 
-With little [installed](getting-started/install.md), make a folder with a
-page in it, and serve it:
+With little [installed](getting-started/install.md), start a site, and serve
+it:
 
 ```sh
-mkdir -p my-docs/docs && cd my-docs
-echo "# Hello, little" > docs/README.md
+little init my-docs
+cd my-docs
 little serve
 ```
 

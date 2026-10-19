@@ -71,3 +71,4 @@ made, and link to each other.
 - [0054 — Third-party notices](0054-third-party-notices.md)
 - [0055 — Releasing little](0055-releasing-little.md)
 - [0056 — Publishing the manual](0056-publishing-the-manual.md)
+- [0057 — Starting a site with `little init`](0057-starting-a-site-with-little-init.md)

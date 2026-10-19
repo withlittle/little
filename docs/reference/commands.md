@@ -1,11 +1,13 @@
 ---
 title: Commands
-description: little's commands, build, serve, and config, and their options.
+description: little's commands, init, build, serve, and config, and their options.
 ---
 
 # Commands
 
 ```sh
+little init my-docs                  # start a site in my-docs/
+little init                          # start a site in the current folder
 little build                         # render the site into dist/, and warn of broken links
 little build --strict                # fail on anything it would warn of, as for CI
 little serve                         # dev server with live reload at http://127.0.0.1:8080
@@ -16,10 +18,41 @@ little --help                        # list every command and option
 ```
 
 Every command works on the site in the current folder, the one holding its
-`little.yml`, unless `-C` (or `--dir`) names another. Each reads the site's
-[config](../getting-started/configuring.md) first, and stops, saying why, if
-a setting is wrong, even one that command doesn't use. `little --version`
-prints little's version.
+`little.yml`, unless `-C` (or `--dir`) names another. Each but `little init`
+reads the site's [config](../getting-started/configuring.md) first, and
+stops, saying why, if a setting is wrong, even one that command doesn't use.
+`little --version` prints little's version.
+
+## little init
+
+`little init` starts a site in the folder you name, making it if it isn't
+there, or in the current folder, without one, so `little serve` serves it
+straight away:
+
+```sh
+little init my-docs
+```
+
+```text
+created my-docs/little.yml
+created my-docs/docs/README.md
+created my-docs/.gitignore
+next: cd my-docs && little serve
+```
+
+- `little.yml` names the site after its folder, here `my-docs`, and has
+  what a site sets next, like its `url` and `repo`, ready to uncomment.
+- `docs/README.md` is the site's home page. If `docs/` has one already, a
+  `README.md` or `README.ipynb` in any case, it's kept.
+- `.gitignore` keeps the built site, in `dist/`, out of git. If there's one
+  already, `/dist/` is added to its end, unless it ignores `dist/` already.
+- It won't start a site where there's a `little.yml`, and stops, writing
+  nothing. It writes `little.yml` last, so if it fails part of the way
+  through, run it again.
+- It doesn't ask anything, start a git repository, or choose a theme: the
+  site has the built-in one until you [choose
+  another](../themes/choosing-a-theme.md).
+- The folder is in the one `-C` names, if you give it, as with `git -C`.
 
 ## little build
 

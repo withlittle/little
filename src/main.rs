@@ -1,8 +1,8 @@
 //! little, a static documentation site generator: the `little` command.
-//! `little build` builds a site, its Markdown and notebooks, with its theme,
-//! into HTML, as [`site`] does; `little serve` serves it, building it again
-//! as it changes, with [`server`]; and `little config` prints its
-//! [`config`].
+//! `little init` starts a site, as [`init`] does; `little build` builds a
+//! site, its Markdown and notebooks, with its theme, into HTML, as [`site`]
+//! does; `little serve` serves it, building it again as it changes, with
+//! [`server`]; and `little config` prints its [`config`].
 //!
 //! It's a command, not a library, so its modules are for each other, and
 //! for those who work on little, not for other crates.
@@ -11,6 +11,7 @@ mod config;
 mod download;
 mod git;
 mod highlight;
+mod init;
 mod links;
 mod math;
 mod mermaid;
@@ -50,6 +51,13 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
+    /// Start a site: a little.yml, named after its folder, a home page in
+    /// docs/, and /dist/ in its .gitignore
+    Init {
+        /// Folder to start the site in, made if it isn't there (defaults to
+        /// the current directory)
+        path: Option<PathBuf>,
+    },
     /// Build the site into its destination folder (dist/ by default), and
     /// warn of each formula it can't render, each diagram it can't draw,
     /// each code block a plugin can't render, each warning from a plugin,
@@ -77,6 +85,14 @@ enum Commands {
 fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.command {
+        Commands::Init { path } => {
+            // PATH is from the folder -C names, as git -C's paths are.
+            let dir = match path {
+                Some(path) => cli.dir.join(path),
+                None => cli.dir,
+            };
+            println!("{}", init::init(&dir)?);
+        }
         Commands::Build { strict } => {
             let built = site::build(&cli.dir)?;
             for warning in &built.plugin_warnings {

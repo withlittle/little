@@ -41,10 +41,15 @@ scripts/notices.sh little target/notices/little.md # or pydoc, rustdoc, jsdoc
 ```
 
 ## Architecture (keep the core small)
-- `src/main.rs` — CLI (clap): `build` (`--strict` fails on a broken link,
-  a formula that isn't rendered, a diagram that isn't drawn, a code block
-  a plugin can't render, a plugin's warning, or a hook of one that failed
-  on a page), `serve`, `config`; and, on musl, jemalloc as the allocator.
+- `src/main.rs` — CLI (clap): `init`, `build` (`--strict` fails on a
+  broken link, a formula that isn't rendered, a diagram that isn't drawn,
+  a code block a plugin can't render, a plugin's warning, or a hook of one
+  that failed on a page), `serve`, `config`; and, on musl, jemalloc as the
+  allocator.
+- `src/init.rs` — `little init`: starts a site in a folder, with a
+  `little.yml` that names it after the folder, a home page in `docs/`,
+  unless it has one, and `/dist/` in its `.gitignore`; stops where there's
+  a `little.yml`, and writes its own last.
 - `src/config.rs` — the 3-level cascading config (little → theme → site): the
   chain of themes a site uses, its source and destination folders, the levels
   of heading its tables of contents list, the host and port
@@ -701,3 +706,12 @@ manual, and list each in its `README.md`. Locked so far:
   environment, and a link to another site that's down fails the build,
   leaving the manual that's published — see
   [`docs/decisions/0056-publishing-the-manual.md`](./docs/decisions/0056-publishing-the-manual.md).
+- **Starting a site:** `little init [PATH]` starts a site in `PATH`, in
+  the folder `-C` names, or in that folder itself, asking nothing: a
+  `little.yml` with the folder's name, as YAML, and `description`, `url`,
+  and `repo` commented out; a home page in `docs/`, with no links within
+  the site, unless `docs/` has a `README` page already; and `/dist/` added
+  to `.gitignore`, unless it ignores `dist/`. It stops, writing nothing,
+  where there's a `little.yml`, and writes its own last; it doesn't start
+  a git repository, or choose a theme — see
+  [`docs/decisions/0057-starting-a-site-with-little-init.md`](./docs/decisions/0057-starting-a-site-with-little-init.md).
