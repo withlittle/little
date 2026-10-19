@@ -2,7 +2,7 @@
 # On crates.io, where `little` is another crate's name. The command is still
 # `little`, as [[bin]] names it.
 name = "little-docs"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 # The oldest Rust its dependencies build with, wasmtime's. Clippy warns of an
 # API from a later one.

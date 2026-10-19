@@ -100,7 +100,7 @@ workflow that installs little and builds it:
        steps:
          - uses: actions/checkout@v7
          - run: |
-             curl -fsSL https://github.com/withlittle/little/releases/download/v0.1.0/little-x86_64-unknown-linux-musl.tar.gz \
+             curl -fsSL https://github.com/withlittle/little/releases/download/v0.2.0/little-x86_64-unknown-linux-musl.tar.gz \
                | sudo tar -xz -C /usr/local/bin little
          - run: little build --strict
          - uses: actions/upload-pages-artifact@v5
@@ -118,7 +118,7 @@ workflow that installs little and builds it:
            uses: actions/deploy-pages@v5
    ```
 
-- Each run downloads little 0.1.0, for Linux on x64, so the site is built
+- Each run downloads little 0.2.0, for Linux on x64, so the site is built
   by the same little each time, until you change the version in its URL to
   a newer [release](https://github.com/withlittle/little/releases)'s.
 - For a site in a folder of its own, like `website/`, run
