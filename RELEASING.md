@@ -31,6 +31,13 @@ release, so anyone can check that a file came from it. Its title and notes
 can still be edited. It applies only to releases published after it's
 turned on.
 
+On the computer you release from, install the
+[GitHub CLI](https://cli.github.com), `gh`, which the steps below use, with
+`brew install gh`, then sign in with `gh auth login`: choose HTTPS, and
+**Yes** to "Authenticate Git with your GitHub credentials?", so `git push`
+can push a tag. GitHub doesn't take a password for Git, and GitHub
+Desktop's sign-in doesn't reach `git` in a terminal.
+
 ## Releasing a plugin
 
 ### 1. See what's changed
