@@ -195,6 +195,10 @@ Content and theme live outside `src/`:
   pinned by their checksums. `examples/syntax_notices.rs` adds those of the
   syntax definitions two-face bundles to little's. CI writes them all, and
   fails on any warning.
+- `.github/workflows/docs.yml` — builds the manual with little from the
+  same commit, and the `rustdoc` plugin it uses, with `--strict`, for each
+  pull request and push to `main`, and publishes each push's on GitHub
+  Pages, at <https://withlittle.github.io/little>.
 - `.github/workflows/release-plugin.yml` — releases a plugin when a tag
   that names it and its version, like `pydoc-v0.1.0`, is pushed: checks
   the tag, builds the plugin's `.wasm` file, and publishes it, beside its
@@ -258,7 +262,8 @@ Content and theme live outside `src/`:
   (`docs/`), and the reference pages, in the same PR; a new page goes in
   `nav` in `little.yml`, but a new ADR in the list in
   `docs/decisions/README.md`. Keep the README short: it links to the manual.
-  `cargo run -- build --strict` checks the manual's links.
+  `cargo run -- build --strict` checks the manual's links, as the Docs
+  workflow does for each pull request.
 - Versions follow [Semantic Versioning](https://semver.org/): each
   component's, in its `Cargo.toml`, is raised as it's released, and
   `little:plugin`'s, in `wit/plugin.wit`, by the change that needs it.
@@ -674,7 +679,7 @@ manual, and list each in its `README.md`. Locked so far:
 - **Releasing little:** little is released from a tag of its version, like
   `v0.2.0`, on `main`, pushed by hand, once a pull request,
   `chore: release 0.2.0`, has raised it in `Cargo.toml`, `Cargo.lock`, and
-  the manual's Pages workflow. `release.yml` checks the tag as a plugin's
+  the Publishing page's workflow. `release.yml` checks the tag as a plugin's
   is, builds little for six targets, each on a GitHub runner of its system,
   Linux's static, against musl, with jemalloc, and Windows' with the C
   runtime built in, and checks each runs. It publishes each in an archive,
@@ -687,3 +692,12 @@ manual, and list each in its `README.md`. Locked so far:
   packages it for each pull request, and cargo-binstall downloads the
   release's archives. The binaries aren't signed yet — see
   [`docs/decisions/0055-releasing-little.md`](./docs/decisions/0055-releasing-little.md).
+- **Publishing the manual:** `.github/workflows/docs.yml` builds the
+  manual with little from the same commit, not a release, with the
+  `rustdoc` plugin, and `--strict`, and publishes it on GitHub Pages, at
+  `https://withlittle.github.io/little`, from each push to `main`, so it
+  can document a feature before a release has it; a pull request's run
+  only builds it. Only `main` can deploy to the `github-pages`
+  environment, and a link to another site that's down fails the build,
+  leaving the manual that's published — see
+  [`docs/decisions/0056-publishing-the-manual.md`](./docs/decisions/0056-publishing-the-manual.md).
