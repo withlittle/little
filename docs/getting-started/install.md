@@ -127,9 +127,10 @@ Download the latest release's archive again, or run the same
 since the one before.
 
 little's releases follow [Semantic Versioning](https://semver.org/). Until
-1.0, only a release that raises the minor version, like 0.2.0 after 0.1.4,
-can break a site, a theme, or a plugin; one that raises the patch version,
-like 0.1.5, adds features and fixes bugs. little's plugins are numbered the
-same way, each on its own.
+1.0, a release that raises the minor version, like 0.2.0 after 0.1.4, adds
+features, and can break a site, a theme, or a plugin, which its notes list
+first. One that raises the patch version, like 0.1.5, only fixes bugs, or
+makes something faster, so it's safe to update to. little's plugins are
+numbered the same way, each on its own.
 
 Next, start [your first site](first-site.md).
