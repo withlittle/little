@@ -272,10 +272,13 @@ Content and theme live outside `src/`:
 - Versions follow [Semantic Versioning](https://semver.org/): each
   component's, in its `Cargo.toml`, is raised as it's released, and
   `little:plugin`'s, in `wit/plugin.wit`, by the change that needs it.
-  Until 1.0, a breaking change raises the minor version, 0.1.4 to 0.2.0,
-  and anything else the patch, 0.1.4 to 0.1.5. A change is breaking if it
-  breaks what the manual documents for sites, themes, or plugins to rely
-  on, as [0051](./docs/decisions/0051-semantic-versioning-and-conventional-commits.md)
+  Until 1.0, a feature or a breaking change raises the minor version,
+  0.1.4 to 0.2.0, and anything else the patch, 0.1.4 to 0.1.5, as
+  [0058](./docs/decisions/0058-features-raise-the-minor-version.md) sets;
+  but a new hook raises only `little:plugin`'s patch, so plugins built for
+  0.2.0 still load. A change is breaking if it breaks what the manual
+  documents for sites, themes, or plugins to rely on, as
+  [0051](./docs/decisions/0051-semantic-versioning-and-conventional-commits.md)
   lists.
 - little is released from a tag on `main` like `v0.2.0`, and a plugin from
   one like `pydoc-v0.2.0`, each after a pull request that raises its

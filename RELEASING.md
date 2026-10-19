@@ -66,11 +66,11 @@ PLUGIN=$plugin git cliff --unreleased --tag-pattern "^$plugin-v" \
 
 It warns of the commits it skips, like merges, which aren't Conventional
 Commits; that's expected. With `--bumped-version` added, the same command
-prints the tag to release next: after a breaking change, it raises the
-minor version, from `pydoc-v0.1.4` to `pydoc-v0.2.0`, and after anything
-else, the patch, to `pydoc-v0.1.5`. With nothing to list, there's nothing
-to release, so it says so, and prints the last tag. Keep `--unreleased`:
-without it, it raises the patch even then.
+prints the tag to release next: after a feature or a breaking change, it
+raises the minor version, from `pydoc-v0.1.4` to `pydoc-v0.2.0`, and after
+anything else, the patch, to `pydoc-v0.1.5`. With nothing to list, there's
+nothing to release, so it says so, and prints the last tag. Keep
+`--unreleased`: without it, it raises the patch even then.
 
 ### 2. Raise its version, in a pull request
 

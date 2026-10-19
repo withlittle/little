@@ -52,7 +52,7 @@ commit_parsers = [
 protect_breaking_commits = true
 
 [bump]
-# Cargo's convention until 1.0, as docs/decisions/0051 sets: a breaking change
+# Until 1.0, as docs/decisions/0058 sets: a feature or a breaking change
 # raises the minor version, 0.1.4 to 0.2.0, and anything else the patch.
-features_always_bump_minor = false
+features_always_bump_minor = true
 breaking_always_bump_major = false
