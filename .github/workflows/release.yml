@@ -40,7 +40,7 @@ jobs:
     steps:
       - name: Checkout
         if: github.event_name == 'push'
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           # Every commit: the tag must be on main.
           fetch-depth: 0
@@ -120,7 +120,7 @@ jobs:
       TARGET: ${{ matrix.target }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           persist-credentials: false
 
@@ -167,7 +167,7 @@ jobs:
       CARGO_PROFILE_DEV_DEBUG: 0
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           persist-credentials: false
 
@@ -195,7 +195,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           persist-credentials: false
 
@@ -256,7 +256,7 @@ jobs:
       VERSION: ${{ needs.check.outputs.version }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           # Every commit and tag: the notes list the changes since little's
           # last tag.
@@ -333,8 +333,8 @@ jobs:
     needs: [check, release]
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
-    # crates.io trusts this workflow, in this environment, to publish
-    # little-docs, once RELEASING.md's first release has set it up.
+    # crates.io trusts this workflow, in this environment, which only a v*
+    # tag can use, to publish little-docs, as RELEASING.md says.
     environment: crates-io
     permissions:
       contents: read
@@ -344,35 +344,25 @@ jobs:
       VERSION: ${{ needs.check.outputs.version }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           persist-credentials: false
 
-      # So the job can be run again, and so little's first release, before
-      # little-docs is on crates.io, succeeds.
-      - name: Check little-docs is on crates.io, without this version
+      # So the job can be run again.
+      - name: Check whether crates.io has this version
         id: crate
         run: |
           # crates.io asks for a user agent that says who's asking.
           agent="little's release workflow (https://github.com/$GITHUB_REPOSITORY)"
-          url=https://crates.io/api/v1/crates/little-docs
+          url=https://crates.io/api/v1/crates/little-docs/$VERSION
           status=$(curl -sS -o /dev/null -w '%{http_code}' -A "$agent" "$url")
-          if [[ $status == 404 ]]; then
-            echo "::notice::little-docs isn't on crates.io yet, so its first version is published by hand, as RELEASING.md says"
-            echo "publish=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          elif [[ $status != 200 ]]; then
-            echo "::error::crates.io answered $status for $url"
-            exit 1
-          fi
-          status=$(curl -sS -o /dev/null -w '%{http_code}' -A "$agent" "$url/$VERSION")
           if [[ $status == 200 ]]; then
             echo "::notice::little-docs $VERSION is on crates.io already"
             echo "publish=false" >> "$GITHUB_OUTPUT"
           elif [[ $status == 404 ]]; then
             echo "publish=true" >> "$GITHUB_OUTPUT"
           else
-            echo "::error::crates.io answered $status for $url/$VERSION"
+            echo "::error::crates.io answered $status for $url"
             exit 1
           fi
 
