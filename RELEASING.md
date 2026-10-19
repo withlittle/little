@@ -21,15 +21,7 @@ How versions are numbered is in
 
 A release can't be undone, so only the maintainer pushes a tag.
 
-## Once, before the first release
-
-Turn on immutable releases: in the repository's **Settings**, under
-**Releases**, select **Enable release immutability**. From then on, a
-published release's file can't be changed or deleted, nor its tag moved or
-deleted, as ADR 0051 says a release never is, and GitHub attests to each
-release, so anyone can check that a file came from it. Its title and notes
-can still be edited. It applies only to releases published after it's
-turned on.
+## Before you release
 
 On the computer you release from, install the
 [GitHub CLI](https://cli.github.com), `gh`, which the steps below use, with
@@ -37,6 +29,22 @@ On the computer you release from, install the
 **Yes** to "Authenticate Git with your GitHub credentials?", so `git push`
 can push a tag. GitHub doesn't take a password for Git, and GitHub
 Desktop's sign-in doesn't reach `git` in a terminal.
+
+Releases also rely on three settings outside the repository's files, set
+once, by hand:
+
+- **Release immutability**, in the repository's **Settings**, under
+  **Releases**: a published release's files can't be changed or deleted,
+  nor its tag moved or deleted, as ADR 0051 says a release never is, and
+  GitHub attests to each release, so anyone can check that a file came
+  from it. A release's title and notes can still be edited.
+- A trusted publisher, in `little-docs`'s **Settings** on crates.io, under
+  **Trusted Publishing**: the repository `withlittle/little`, the workflow
+  `release.yml`, and the environment `crates-io`. It gives **publish to
+  crates.io** a token for its run alone, so there's no API token to keep.
+- The `crates-io` environment, in the repository's **Settings**, under
+  **Environments**, which only tags like `v*` can use, so only a release
+  can ask crates.io for a token.
 
 ## Releasing a plugin
 
@@ -117,15 +125,13 @@ minutes. Check the release on GitHub, or with:
 
 ```sh
 gh release view pydoc-v0.2.0
-gh release verify pydoc-v0.2.0   # its attestation, once releases are immutable
+gh release verify pydoc-v0.2.0   # its attestation
 ```
 
 Its notes say which version of `little:plugin` the plugin is built for, how
 to name it in `little.yml`, and what's changed; they can still be edited,
 on GitHub, though its files can't. A plugin's release isn't labelled
-"Latest", which is left for little's own. If GitHub shows one so anyway,
-before little has a release, nothing depends on it: the manual gives each
-plugin's URL with its version.
+"Latest", which is left for little's own.
 
 ## Releasing little
 
@@ -266,38 +272,3 @@ Nothing catches a crate that bundles code under a licence its `license`
 leaves out, like a `-sys` crate's C library, or whose licence file has
 others' notices after its own, so read a new crate's licence files as it's
 added, and clarify it as the others are.
-
-## The first releases
-
-little's `Cargo.toml`, and each plugin's, says 0.1.0, which hasn't been
-released, so their first releases skip steps 1 and 2. Each one's notes say
-it's its first release, rather than list every change before it. Once the
-pull request that added little's release is merged:
-
-1. Tag `main`, as in a plugin's step 3, with `pydoc-v0.1.0`, and once its
-   release is published, `rustdoc-v0.1.0`, then `jsdoc-v0.1.0`. The
-   manual's URL for each leads nowhere until it's released.
-2. Tag `main` with `v0.1.0`, as in little's step 3. Its release is
-   published, but not its crate: crates.io's trusted publishing can't
-   publish a crate's first version, so **publish to crates.io** says so,
-   and skips it.
-3. Publish `little-docs` 0.1.0 yourself, from the tag, with an
-   [API token](https://crates.io/settings/tokens) with the `publish-new`
-   scope, which `cargo login` asks for:
-
-   ```sh
-   cargo login
-   git switch --detach v0.1.0
-   cargo publish --locked
-   cargo logout
-   ```
-
-4. On crates.io, in `little-docs`'s **Settings**, under **Trusted
-   Publishing**, add a publisher on GitHub: the repository
-   `withlittle/little`, the workflow `release.yml`, and the environment
-   `crates-io`. From then on, **publish to crates.io** publishes each
-   release, with a token crates.io gives that run alone, so delete the API
-   token.
-5. Optionally, in the repository's **Settings**, under **Environments**,
-   limit `crates-io`, which the first run made, to tags like `v*`, so only
-   a release can ask crates.io for a token.
