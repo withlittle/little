@@ -1,0 +1,79 @@
+name: Docs
+
+# little's manual, docs/, built by little from the same commit, and
+# published on GitHub Pages, at https://withlittle.github.io/little, from
+# each push to main (docs/decisions/0056). A pull request's run only builds
+# it, so a page or link the pull request breaks fails there.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A pull request's newer run cancels its older one, as CI's does. main's
+# wait for each other, so a deploy isn't cut short, and one waiting gives
+# way to a newer one, so the latest commit's manual is the one published.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Install stable Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          # For the rustdoc plugin, which documents src/ at /api/.
+          targets: wasm32-wasip2
+
+      - name: Cache cargo build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            .
+            plugins/rustdoc
+
+      # Into the plugin's own target/, where little.yml looks for it.
+      - name: Build the rustdoc plugin
+        run: cargo build --release --locked --target wasm32-wasip2 --manifest-path plugins/rustdoc/Cargo.toml
+
+      # --strict fails on a broken link, within the manual or to another
+      # site, and on anything else little warns of, as the manual's
+      # Publishing page says a site's CI should.
+      - name: Build the manual
+        run: cargo run --release --locked -- build --strict
+
+      - name: Upload the manual
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    # Only main's manual is published, as the github-pages environment
+    # allows only main to deploy.
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5

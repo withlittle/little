@@ -38,10 +38,10 @@ itself.
 
 ## Documentation
 
-little's manual is a little site, in [`docs/`](./docs/README.md), which will
-be published at <https://withlittle.github.io/little>. To read it as a site
-now, run `little serve` (or `cargo run -- serve`) in a clone of this
-repository, and open <http://127.0.0.1:8080/little/>.
+little's manual is a little site, in [`docs/`](./docs/README.md), published
+at <https://withlittle.github.io/little> from `main`. To read your changes
+to it as a site, run `little serve` (or `cargo run -- serve`) in a clone of
+this repository, and open <http://127.0.0.1:8080/little/>.
 
 - [Getting started](./docs/getting-started/install.md): install little,
   start a site, configure it, and publish it.
