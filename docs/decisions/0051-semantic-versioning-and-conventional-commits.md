@@ -1,6 +1,9 @@
 # 0051 — Semantic Versioning and Conventional Commits
 
-- Status: accepted
+- Status: accepted; amended by
+  [0058](./0058-features-raise-the-minor-version.md), which raises the
+  minor version, not the patch, for a feature until 1.0, but for
+  `little:plugin`'s
 - Date: 2026-10-17
 
 ## Context

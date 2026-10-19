@@ -72,3 +72,4 @@ made, and link to each other.
 - [0055 — Releasing little](0055-releasing-little.md)
 - [0056 — Publishing the manual](0056-publishing-the-manual.md)
 - [0057 — Starting a site with `little init`](0057-starting-a-site-with-little-init.md)
+- [0058 — Features raise the minor version](0058-features-raise-the-minor-version.md)

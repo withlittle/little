@@ -644,10 +644,10 @@ manual, and list each in its `README.md`. Locked so far:
 - **Versions and commits:** little, `pydoc`, `rustdoc`, and `jsdoc` each
   follow Semantic Versioning, with its own version, in its `Cargo.toml`,
   and `little:plugin` has its own, in `wit/plugin.wit`. Until 1.0, where
-  SemVer sets no rules, a breaking change raises the minor version, and
-  anything else the patch, as Cargo and wasmtime read 0.y.z; a change is
-  breaking if it breaks what the manual documents for sites, themes, or
-  plugins to rely on. Commits follow Conventional Commits, with a
+  SemVer sets no rules, a breaking change raises the minor version, as
+  Cargo and wasmtime read 0.y.z, and, since 0058, so does a feature; a
+  change is breaking if it breaks what the manual documents for sites,
+  themes, or plugins to rely on. Commits follow Conventional Commits, with a
   plugin's name as the scope, or none, for little; committed checks each
   one a pull request adds, and pull requests are still merged with a
   merge commit — see
@@ -715,3 +715,13 @@ manual, and list each in its `README.md`. Locked so far:
   where there's a `little.yml`, and writes its own last; it doesn't start
   a git repository, or choose a theme — see
   [`docs/decisions/0057-starting-a-site-with-little-init.md`](./docs/decisions/0057-starting-a-site-with-little-init.md).
+- **Features raise the minor version:** until 1.0, a feature raises the
+  minor version of little, `pydoc`, `rustdoc`, or `jsdoc`, from 0.1.4 to
+  0.2.0, as SemVer's summary says, not the patch, as Cargo's convention
+  would, and so does a breaking change, with no major version to raise;
+  anything else, a fix or something faster, raises the patch, and a
+  release's notes list what breaks first. `little:plugin` keeps 0051's
+  rule, as wasmtime reads its version: a new hook makes it 0.2.1, so
+  plugins built for 0.2.0 still load. `little init` makes little 0.2.0 —
+  see
+  [`docs/decisions/0058-features-raise-the-minor-version.md`](./docs/decisions/0058-features-raise-the-minor-version.md).
