@@ -23,7 +23,7 @@ jobs:
       contents: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           # Every commit and tag: the tag must be on main, and the notes list
           # the changes since the plugin's last tag.

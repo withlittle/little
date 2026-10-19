@@ -40,7 +40,7 @@ jobs:
     steps:
       - name: Checkout
         if: github.event_name == 'push'
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           # Every commit: the tag must be on main.
           fetch-depth: 0
@@ -120,7 +120,7 @@ jobs:
       TARGET: ${{ matrix.target }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           persist-credentials: false
 
@@ -167,7 +167,7 @@ jobs:
       CARGO_PROFILE_DEV_DEBUG: 0
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           persist-credentials: false
 
@@ -195,7 +195,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           persist-credentials: false
 
@@ -256,7 +256,7 @@ jobs:
       VERSION: ${{ needs.check.outputs.version }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           # Every commit and tag: the notes list the changes since little's
           # last tag.
@@ -344,7 +344,7 @@ jobs:
       VERSION: ${{ needs.check.outputs.version }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           persist-credentials: false
 
