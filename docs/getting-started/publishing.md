@@ -118,9 +118,10 @@ workflow that installs little and builds it:
            uses: actions/deploy-pages@v5
    ```
 
-- Each run downloads little 0.2.0, for Linux on x64, so the site is built
-  by the same little each time, until you change the version in its URL to
-  a newer [release](https://github.com/withlittle/little/releases)'s.
+- Each run downloads the release of little that `curl`'s URL names, for
+  Linux on x64, so the site is built by the same little each time, until
+  you change the version in that URL to a newer
+  [release](https://github.com/withlittle/little/releases)'s.
 - For a site in a folder of its own, like `website/`, run
   `little -C website build --strict`, and upload `website/dist`.
 - A site with [versions](../writing/versions.md#publishing-versions) needs
