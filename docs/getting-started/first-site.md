@@ -6,15 +6,23 @@ description: Start a site, add pages to it, name it, and build it.
 # Your first site
 
 A site needs only a `docs/` folder of Markdown, which little builds with its
-built-in theme.
+built-in theme, and `little init` starts one.
 
 ## Start it
 
 ```sh
-mkdir -p my-docs/docs && cd my-docs
-echo "# Hello, little" > docs/README.md
+little init my-docs
+cd my-docs
 little serve
 ```
+
+`little init` makes the folder `my-docs/`, with three files in it:
+`little.yml`, the site's config, which names it `my-docs`; `docs/README.md`,
+its home page; and a `.gitignore`, which keeps the built site out of git.
+Run it without a folder to start a site in the current one, like a
+project's: it keeps a home page `docs/` has already, and adds to a
+`.gitignore` that's there. [Commands](../reference/commands.md#little-init)
+says more.
 
 `little serve` builds the site and serves it at <http://127.0.0.1:8080>. Open
 it, edit `docs/README.md`, and save: the page reloads itself. Press Ctrl-C to
@@ -27,6 +35,7 @@ folder's `README.md` is the folder's own page, as on GitHub:
 
 ```text
 my-docs/
+├── .gitignore              # keeps dist/ out of git
 ├── little.yml              # the site's config (optional)
 ├── docs/                   # the source: each .md and .ipynb file is a page
 │   ├── README.md           # → /
@@ -69,8 +78,9 @@ See [Install](guide/install.md), and its [options](guide/install.md#options).
 
 ## Name it
 
-The built-in theme calls a site "Documentation" until you name it, in a
-`little.yml` beside `docs/`:
+`little init` names a site after its folder, and the built-in theme calls
+one without a name "Documentation". Name it, and describe it, in its
+`little.yml`, beside `docs/`:
 
 ```yaml
 # little.yml

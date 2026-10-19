@@ -28,8 +28,8 @@ source.
 ## Quick start
 
 ```sh
-mkdir -p my-docs/docs && cd my-docs
-echo "# Hello, little" > docs/README.md
+little init my-docs
+cd my-docs
 little serve
 ```
 

@@ -1434,7 +1434,7 @@ pub fn is_hidden(rel: &Path) -> bool {
 /// Is this file a directory's home page? `README.md` is the documentation
 /// convention (mirroring how GitHub renders READMEs), as is `README.ipynb`
 /// for a notebook; little maps it to the web's `index.html`.
-fn is_readme(rel: &Path) -> bool {
+pub fn is_readme(rel: &Path) -> bool {
     rel.file_stem()
         .and_then(|s| s.to_str())
         .map(|s| s.eq_ignore_ascii_case("readme"))

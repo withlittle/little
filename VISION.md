@@ -66,7 +66,7 @@ Each slice ships as a small, reviewable PR, dogfooded against little's own manua
 - [x] **0 — Walking skeleton:** Markdown → themed HTML, cascading config, live reload.
 - [x] **1 — Navigation & structure:** nested sections, explicit ordering, sidebar tree.
 - [x] **2 — Authoring essentials:** syntax highlighting, callouts/admonitions, per-page TOC, heading anchors.
-- [ ] **3 — `little init` + default theme:** scaffold a site in one command; a polished, responsive, accessible default theme.
+- [x] **3 — `little init` + default theme:** scaffold a site in one command; a polished, responsive, accessible default theme.
 - [x] **4 — Search:** client-side search index out of the box.
 - [x] **5 — Plugin API (WASM):** sandboxed plugins; first plugin — docstring / API extraction.
 - [x] **6 — Versioning:** multiple doc versions for large product sites.

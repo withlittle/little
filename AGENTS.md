@@ -41,10 +41,15 @@ scripts/notices.sh little target/notices/little.md # or pydoc, rustdoc, jsdoc
 ```
 
 ## Architecture (keep the core small)
-- `src/main.rs` — CLI (clap): `build` (`--strict` fails on a broken link,
-  a formula that isn't rendered, a diagram that isn't drawn, a code block
-  a plugin can't render, a plugin's warning, or a hook of one that failed
-  on a page), `serve`, `config`; and, on musl, jemalloc as the allocator.
+- `src/main.rs` — CLI (clap): `init`, `build` (`--strict` fails on a
+  broken link, a formula that isn't rendered, a diagram that isn't drawn,
+  a code block a plugin can't render, a plugin's warning, or a hook of one
+  that failed on a page), `serve`, `config`; and, on musl, jemalloc as the
+  allocator.
+- `src/init.rs` — `little init`: starts a site in a folder, with a
+  `little.yml` that names it after the folder, a home page in `docs/`,
+  unless it has one, and `/dist/` in its `.gitignore`; stops where there's
+  a `little.yml`, and writes its own last.
 - `src/config.rs` — the 3-level cascading config (little → theme → site): the
   chain of themes a site uses, its source and destination folders, the levels
   of heading its tables of contents list, the host and port
