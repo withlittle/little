@@ -17,13 +17,15 @@ crates.io, where `little` is another crate's name, but the command is still
 `little`:
 
 ```sh
-cargo binstall little-docs           # little's release, for your system
-cargo install --locked little-docs   # or build it, with Rust 1.96 or later
+cargo install --locked little-docs   # build it, with Rust 1.96 or later
+cargo binstall little-docs           # or download it, if you have cargo-binstall
 ```
 
-[Install](./docs/getting-started/install.md), in the manual, says which
-archive is for your system, how to check it, and how to build little from
-source.
+[cargo-binstall](https://github.com/cargo-bins/cargo-binstall) isn't part of
+Cargo, but downloads little's release for your system in seconds, rather
+than build it. [Install](./docs/getting-started/install.md), in the manual,
+says which archive is for your system, how to check it, and how to build
+little from source.
 
 ## Quick start
 

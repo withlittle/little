@@ -76,18 +76,20 @@ like `v0.1.0`, before the archive's name.
 
 little is on crates.io as [`little-docs`](https://crates.io/crates/little-docs),
 as `little` is another crate's name there, but the command is still
-`little`. [cargo-binstall](https://github.com/cargo-bins/cargo-binstall)
-installs little's release for your system, as above, into `~/.cargo/bin`:
-
-```sh
-cargo binstall little-docs
-```
-
-Or Cargo builds it, with [Rust](https://rustup.rs) 1.96 or later, which
-takes a few minutes:
+`little`. Cargo builds it, with [Rust](https://rustup.rs) 1.96 or later,
+which takes a few minutes, and installs it in `~/.cargo/bin`:
 
 ```sh
 cargo install --locked little-docs
+```
+
+Or, if you've installed
+[cargo-binstall](https://github.com/cargo-bins/cargo-binstall), which isn't
+part of Cargo, it downloads little's release for your system, as above, in
+seconds, into the same folder:
+
+```sh
+cargo binstall little-docs
 ```
 
 ## Build it from source
@@ -122,7 +124,7 @@ every [command](../reference/commands.md).
 ## Update it
 
 Download the latest release's archive again, or run the same
-`cargo binstall` or `cargo install` again. Each release's notes, on
+`cargo install` or `cargo binstall` again. Each release's notes, on
 [GitHub](https://github.com/withlittle/little/releases), list what's changed
 since the one before.
 
