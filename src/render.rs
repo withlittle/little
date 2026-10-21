@@ -351,41 +351,18 @@ fn heading_text<'a>(node: &'a AstNode<'a>) -> String {
     text
 }
 
-/// Split a `---` fenced YAML frontmatter block from the body.
+/// Split a `---` fenced YAML frontmatter block from the body. Without one, or
+/// with one that isn't closed, it's all body.
 pub(crate) fn split_frontmatter(raw: &str) -> (String, String) {
-    let first_line = raw.lines().next().map(str::trim);
-    if first_line != Some("---") {
-        return (String::new(), raw.to_string());
-    }
-
-    let mut frontmatter = String::new();
-    let mut body = String::new();
-    let mut in_frontmatter = true;
-    let mut closed = false;
-
-    for (i, line) in raw.lines().enumerate() {
-        if i == 0 {
-            continue; // skip the opening `---`
-        }
-        if in_frontmatter && line.trim() == "---" {
-            in_frontmatter = false;
-            closed = true;
-            continue;
-        }
-        if in_frontmatter {
-            frontmatter.push_str(line);
-            frontmatter.push('\n');
-        } else {
-            body.push_str(line);
-            body.push('\n');
+    let mut lines = raw.lines();
+    if lines.next().map(str::trim) == Some("---") {
+        let rest: Vec<&str> = lines.collect();
+        if let Some(end) = rest.iter().position(|line| line.trim() == "---") {
+            let joined = |lines: &[&str]| lines.iter().map(|line| format!("{line}\n")).collect();
+            return (joined(&rest[..end]), joined(&rest[end + 1..]));
         }
     }
-
-    if closed {
-        (frontmatter, body)
-    } else {
-        (String::new(), raw.to_string())
-    }
+    (String::new(), raw.to_string())
 }
 
 #[cfg(test)]
