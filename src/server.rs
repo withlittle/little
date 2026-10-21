@@ -200,66 +200,53 @@ impl Sources {
             let watcher = watch_folder(&source.0, &source.1, true, self.tx.clone())?;
             self.source = Some((source, watcher));
         }
+        let tx = &self.tx;
+        let folder =
+            |(dir, destination): &Watched| watch_folder(dir, destination, false, tx.clone());
         // The built-in theme is in the binary, and a downloaded theme never
         // changes, so only the folders of the other themes are watched.
-        let themes: Vec<Watched> = cfg
-            .themes
-            .iter()
+        let themes = (cfg.themes.iter())
             .filter_map(|theme| match theme {
                 Location::Folder(dir) => Some((dir.clone(), cfg.destination_dir.clone())),
                 Location::BuiltIn | Location::Downloaded { .. } => None,
             })
             .collect();
-        if !themes
-            .iter()
-            .eq(self.themes.iter().map(|(watched, _)| watched))
-        {
-            let mut watchers = Vec::new();
-            for theme in themes {
-                let watcher = watch_folder(&theme.0, &theme.1, false, self.tx.clone())?;
-                watchers.push((theme, watcher));
-            }
-            self.themes = watchers;
-        }
+        rewatch(&mut self.themes, themes, folder)?;
         // Like a theme, a downloaded plugin never changes. A plugin's file,
         // or a folder it reads, that isn't there fails the build, which says
         // why; it's watched once it's there and something else changes.
-        let plugins: Vec<PathBuf> = (cfg.plugins.iter())
+        let plugins = (cfg.plugins.iter())
             .filter_map(|plugin| match &plugin.wasm {
                 Wasm::File(file) => Some(file.clone()),
                 Wasm::Url(_) => None,
             })
             .filter(|file| file.parent().is_some_and(Path::is_dir))
             .collect();
-        if !plugins
-            .iter()
-            .eq(self.plugins.iter().map(|(watched, _)| watched))
-        {
-            let mut watchers = Vec::new();
-            for plugin in plugins {
-                let watcher = watch_file(&plugin, self.tx.clone())?;
-                watchers.push((plugin, watcher));
-            }
-            self.plugins = watchers;
-        }
-        let reads: Vec<Watched> = (cfg.plugins.iter())
+        rewatch(&mut self.plugins, plugins, |file| {
+            watch_file(file, tx.clone())
+        })?;
+        let reads = (cfg.plugins.iter())
             .flat_map(|plugin| &plugin.read)
             .filter(|read| read.folder.is_dir())
             .map(|read| (read.folder.clone(), cfg.destination_dir.clone()))
             .collect();
-        if !reads
-            .iter()
-            .eq(self.reads.iter().map(|(watched, _)| watched))
-        {
-            let mut watchers = Vec::new();
-            for read in reads {
-                let watcher = watch_folder(&read.0, &read.1, false, self.tx.clone())?;
-                watchers.push((read, watcher));
-            }
-            self.reads = watchers;
-        }
-        Ok(())
+        rewatch(&mut self.reads, reads, folder)
     }
+}
+
+/// Watch each of `wanted` with `watch`, in place of what's `watched`, unless
+/// it's the same.
+fn rewatch<T: PartialEq>(
+    watched: &mut Vec<(T, RecommendedWatcher)>,
+    wanted: Vec<T>,
+    watch: impl Fn(&T) -> notify::Result<RecommendedWatcher>,
+) -> notify::Result<()> {
+    if !wanted.iter().eq(watched.iter().map(|(each, _)| each)) {
+        *watched = (wanted.into_iter())
+            .map(|each| watch(&each).map(|watcher| (each, watcher)))
+            .collect::<notify::Result<_>>()?;
+    }
+    Ok(())
 }
 
 /// Watch a file: the site's config, or a plugin's. A config is optional, and
