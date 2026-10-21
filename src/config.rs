@@ -56,6 +56,7 @@
 
 use anyhow::{Context, Result, anyhow, bail};
 use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, percent_decode_str, utf8_percent_encode};
+use serde::{Deserialize, Deserializer, de::Error as _};
 use serde_yaml::{Mapping, Value};
 use std::borrow::Cow;
 use std::collections::BTreeSet;
@@ -306,7 +307,8 @@ impl Repo {
 /// highlighted with, from the settings under `markdown`, each named for what
 /// an author writes, as `src/little.yml` describes them; and how its diagrams
 /// look, from `mermaid`.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields, expecting = "settings, like `mark: true`")]
 pub struct Markdown {
     // As on GitHub.
     pub tables: bool,
@@ -318,10 +320,12 @@ pub struct Markdown {
     pub emoji: bool,
     pub raw_html: bool,
     /// How math is written, if it's found.
+    #[serde(deserialize_with = "or_false")]
     pub math: Option<Math>,
     /// Mermaid's config, from `mermaid`, as JSON, as Mermaid reads it, if a
     /// Mermaid block is drawn as an `<svg>` as little builds the page, rather
     /// than left as code.
+    #[serde(deserialize_with = "svg_or_false")]
     pub mermaid: Option<serde_json::Value>,
     // Beyond GitHub.
     pub smart_punctuation: bool,
@@ -336,12 +340,14 @@ pub struct Markdown {
     pub hard_breaks: bool,
     pub cjk_friendly_emphasis: bool,
     /// The classes code is highlighted with, if it's highlighted.
+    #[serde(deserialize_with = "or_false")]
     pub highlight: Option<Highlight>,
 }
 
 /// How math is written: as MathML, which browsers show as it is, or as its
 /// TeX, marked with `data-math-style` for a theme's script to render.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum Math {
     MathML,
     Tex,
@@ -349,10 +355,33 @@ pub enum Math {
 
 /// A set of classes for highlighted code: Pygments', like `k` for a keyword,
 /// or GitHub's, like `pl-k`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum Highlight {
     Pygments,
     GitHub,
+}
+
+/// A setting that's one of `T`'s names, or `false`, for none: not `true`, as
+/// a site's would undo its theme's choice.
+fn or_false<'de, D: Deserializer<'de>, T: Deserialize<'de>>(d: D) -> Result<Option<T>, D::Error> {
+    match Value::deserialize(d)? {
+        Value::Bool(false) => Ok(None),
+        // As it's written, so `true` is a name `T` doesn't have, beside those it has.
+        value => serde_yaml::to_string(&value)
+            .and_then(|name| T::deserialize(Value::String(name.trim_end().into())))
+            .map(Some)
+            .map_err(D::Error::custom),
+    }
+}
+
+/// `svg`, as config for `markdown` to fill in from `mermaid`, or `false`.
+fn svg_or_false<'de, D: Deserializer<'de>>(d: D) -> Result<Option<serde_json::Value>, D::Error> {
+    match Value::deserialize(d)? {
+        Value::String(form) if form == "svg" => Ok(Some(serde_json::Value::Null)),
+        Value::Bool(false) => Ok(None),
+        _ => Err(D::Error::custom("expected `svg` or `false`")),
+    }
 }
 
 impl Default for Markdown {
@@ -712,65 +741,12 @@ fn search(values: &Mapping) -> Result<bool> {
 /// little's own config sets every one, so any other is a typo. Diagrams
 /// drawn as SVG look as `mermaid` says.
 fn markdown(values: &Mapping) -> Result<Markdown> {
-    let Some(Value::Mapping(settings)) = values.get("markdown") else {
-        bail!("`markdown` must be settings, like `mark: true`");
-    };
-    let defaults = builtin_defaults();
-    let known = (defaults.get("markdown").and_then(Value::as_mapping))
-        .expect("src/little.yml sets `markdown`");
-    if let Some(key) = settings.keys().find(|key| !known.contains_key(key)) {
-        let key = serde_yaml::to_string(key)?;
-        let names: Vec<&str> = known.keys().filter_map(Value::as_str).collect();
-        bail!(
-            "`markdown` has no setting `{}`: its settings are {}",
-            key.trim_end(),
-            names.join(", ")
-        );
+    let settings = values.get("markdown").cloned().unwrap_or_default();
+    let mut markdown: Markdown =
+        serde_path_to_error::deserialize(settings).context("reading `markdown`")?;
+    if markdown.mermaid.is_some() {
+        markdown.mermaid = Some(mermaid(values)?);
     }
-    let on = |key: &str| match settings.get(key) {
-        Some(Value::Bool(on)) => Ok(*on),
-        _ => Err(anyhow!("`markdown.{key}` must be `true` or `false`")),
-    };
-    let markdown = Markdown {
-        tables: on("tables")?,
-        strikethrough: on("strikethrough")?,
-        autolinks: on("autolinks")?,
-        task_lists: on("task_lists")?,
-        footnotes: on("footnotes")?,
-        alerts: on("alerts")?,
-        emoji: on("emoji")?,
-        raw_html: on("raw_html")?,
-        // `true` isn't one, as a site's would undo its theme's `tex`.
-        math: match settings.get("math") {
-            Some(Value::String(form)) if form == "mathml" => Some(Math::MathML),
-            Some(Value::String(form)) if form == "tex" => Some(Math::Tex),
-            Some(Value::Bool(false)) => None,
-            _ => bail!("`markdown.math` must be `mathml`, `tex`, or `false`"),
-        },
-        // Nor here, as a site's would undo its theme's `false`.
-        mermaid: match settings.get("mermaid") {
-            Some(Value::String(form)) if form == "svg" => Some(mermaid(values)?),
-            Some(Value::Bool(false)) => None,
-            _ => bail!("`markdown.mermaid` must be `svg` or `false`"),
-        },
-        smart_punctuation: on("smart_punctuation")?,
-        superscript: on("superscript")?,
-        subscript: on("subscript")?,
-        mark: on("mark")?,
-        insert: on("insert")?,
-        description_lists: on("description_lists")?,
-        inline_footnotes: on("inline_footnotes")?,
-        fenced_divs: on("fenced_divs")?,
-        multiline_blockquotes: on("multiline_blockquotes")?,
-        hard_breaks: on("hard_breaks")?,
-        cjk_friendly_emphasis: on("cjk_friendly_emphasis")?,
-        highlight: match settings.get("highlight") {
-            Some(Value::String(classes)) if classes == "pygments" => Some(Highlight::Pygments),
-            Some(Value::String(classes)) if classes == "github" => Some(Highlight::GitHub),
-            Some(Value::Bool(false)) => None,
-            _ => bail!("`markdown.highlight` must be `pygments`, `github`, or `false`"),
-        },
-    };
     // comrak reads `^[…]` only with footnotes, so it'd be left as text.
     if markdown.inline_footnotes && !markdown.footnotes {
         bail!("`markdown.inline_footnotes` needs `markdown.footnotes` to be `true` too");
@@ -1743,20 +1719,24 @@ mod tests {
         // YAML reads `yes` and a quoted `"true"` as text, not `true`.
         for value in [" yes", " \"true\"", " 1", ""] {
             let message = error(&site, &format!("markdown:\n  mark:{value}\n"));
-            assert_eq!(message, "`markdown.mark` must be `true` or `false`");
+            assert!(
+                message.starts_with("reading `markdown`: mark: "),
+                "{message}"
+            );
+            assert!(message.ends_with("expected a boolean"), "{message}");
         }
         for site_cfg in ["markdown: true\n", "markdown:\n", "markdown: [math]\n"] {
             let message = error(&site, site_cfg);
-            assert_eq!(message, "`markdown` must be settings, like `mark: true`");
+            assert!(message.starts_with("reading `markdown`: "), "{message}");
         }
 
         // A typo is named, beside the settings there are.
         let message = error(&site, "markdown:\n  tabels: true\n");
-        let expected = "`markdown` has no setting `tabels`: its settings are tables, \
-                        strikethrough, autolinks, ";
+        let expected = "reading `markdown`: tabels: unknown field `tabels`, expected one of \
+                        `tables`, `strikethrough`, `autolinks`, ";
         assert!(message.starts_with(expected), "{message}");
         assert!(
-            message.ends_with(", cjk_friendly_emphasis, highlight"),
+            message.ends_with(", `cjk_friendly_emphasis`, `highlight`"),
             "{message}"
         );
 
@@ -1764,18 +1744,23 @@ mod tests {
         // which would undo a theme's `tex`.
         for value in ["true", "MathML", "katex", "\"false\"", ""] {
             let message = error(&site, &format!("markdown:\n  math: {value}\n"));
-            assert_eq!(
-                message,
-                "`markdown.math` must be `mathml`, `tex`, or `false`"
+            assert!(
+                message.starts_with("reading `markdown`: math: "),
+                "{message}"
             );
+            assert!(message.ends_with("expected `mathml` or `tex`"), "{message}");
         }
 
         // Code is highlighted with a set of classes little has, or none.
         for value in ["true", "monokai", "Pygments", "\"false\"", ""] {
             let message = error(&site, &format!("markdown:\n  highlight: {value}\n"));
-            assert_eq!(
-                message,
-                "`markdown.highlight` must be `pygments`, `github`, or `false`"
+            assert!(
+                message.starts_with("reading `markdown`: highlight: "),
+                "{message}"
+            );
+            assert!(
+                message.ends_with("expected `pygments` or `github`"),
+                "{message}"
             );
         }
 
@@ -1783,7 +1768,10 @@ mod tests {
         // undo a theme's `false`.
         for value in ["true", "SVG", "png", "\"false\"", ""] {
             let message = error(&site, &format!("markdown:\n  mermaid: {value}\n"));
-            assert_eq!(message, "`markdown.mermaid` must be `svg` or `false`");
+            assert_eq!(
+                message,
+                "reading `markdown`: mermaid: expected `svg` or `false`"
+            );
         }
 
         // A diagram can carry HTML, so a site without raw HTML says so.
