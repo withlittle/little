@@ -17,7 +17,6 @@ use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::env;
 use std::ffi::OsString;
-use std::fmt;
 use std::fs;
 use std::io::ErrorKind;
 use std::iter::Peekable;
@@ -30,7 +29,7 @@ use walkdir::WalkDir;
 use crate::config::{Config, Repo, Shared, SiteUrl};
 use crate::plugin::{Plugins, Warned};
 use crate::theme::{PageType, StaticFile, Theme, ThemeFiles};
-use crate::{config, git, math, mermaid, notebook, plugin, render, search};
+use crate::{config, git, notebook, render, search};
 
 /// Where a site's 404 page is written: the root of the destination, which is
 /// where static hosts look for it.
@@ -65,12 +64,10 @@ struct Page {
     page_type: PageType,
     /// The links and images in its Markdown, as they're written.
     links: Vec<render::WrittenLink>,
-    /// The formulas in its Markdown that couldn't be rendered.
-    unrendered_math: Vec<math::Unrendered>,
-    /// The diagrams in its Markdown that couldn't be drawn.
-    unrendered_diagrams: Vec<mermaid::Unrendered>,
-    /// The code blocks in its Markdown that plugins couldn't render.
-    unrendered_blocks: Vec<plugin::Unrendered>,
+    /// Each formula in its Markdown that couldn't be rendered, then each
+    /// diagram that couldn't be drawn, and each code block plugins couldn't
+    /// render.
+    warnings: Vec<Warning>,
 }
 
 impl Page {
@@ -195,103 +192,28 @@ pub struct Built {
     /// The repository the site's source is in, if it says, whose links
     /// aren't checked.
     pub repo: Option<Repo>,
-    /// Each formula in its pages that couldn't be rendered, so is shown as
-    /// its TeX, in the order of the pages, to warn of.
-    pub unrendered_math: Vec<UnrenderedMath>,
-    /// Each diagram in its pages that couldn't be drawn, so is shown as
-    /// code, in the order of the pages, to warn of.
-    pub unrendered_diagrams: Vec<UnrenderedDiagram>,
-    /// Each code block in its pages that a plugin couldn't render, so is
-    /// left as it was, in the order of the pages, to warn of.
-    pub unrendered_blocks: Vec<UnrenderedBlock>,
-    /// What each plugin warned of, and each of its hooks that failed, so
-    /// the build went on without its change, in the order of the versions,
-    /// then as they happened.
-    pub plugin_warnings: Vec<PluginWarning>,
+    /// What it warns of, as it happened: each formula in its pages that
+    /// couldn't be rendered, so is shown as its TeX, each diagram that
+    /// couldn't be drawn, so is shown as code, each code block a plugin
+    /// couldn't render, so is left as it was, and what each plugin warned
+    /// of, and each of its hooks that failed, so the build went on without
+    /// its change.
+    pub warnings: Vec<Warning>,
     /// The path in the destination of each file written for a version of
     /// the site from a git ref, whose links to other sites aren't checked,
     /// as a tag can't be fixed.
     pub from_refs: HashSet<PathBuf>,
 }
 
-/// Something a plugin warned of, or a hook of its that failed, and the git
-/// ref of the version of the site it was building, if it's from one.
+/// Something a build warns of.
 #[derive(Clone, Debug)]
-pub struct PluginWarning {
-    /// The ref, like `v1.4`.
-    pub git_ref: Option<String>,
-    pub warning: plugin::Warning,
-}
-
-impl fmt::Display for PluginWarning {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // A hook that failed names what it failed on, which names the ref.
-        match (&self.git_ref, &self.warning.warned) {
-            (Some(git_ref), Warned::Message(message)) => {
-                let plugin = &self.warning.plugin;
-                write!(f, "plugin `{plugin}` at {git_ref}: {message}")
-            }
-            _ => self.warning.fmt(f),
-        }
-    }
-}
-
-/// A formula in a page that couldn't be rendered, and the file it's in.
-#[derive(Clone, Debug)]
-pub struct UnrenderedMath {
-    /// What it's in, like `docs/intro.md`.
-    pub origin: String,
-    pub formula: math::Unrendered,
-}
-
-impl fmt::Display for UnrenderedMath {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let math::Unrendered { written, reason } = &self.formula;
-        write!(f, "can't render {written} in {}: {reason}", self.origin)
-    }
-}
-
-/// A diagram in a page that couldn't be drawn, and the file it's in.
-#[derive(Clone, Debug)]
-pub struct UnrenderedDiagram {
-    /// What it's in, like `docs/intro.md`.
-    pub origin: String,
-    pub diagram: mermaid::Unrendered,
-}
-
-impl fmt::Display for UnrenderedDiagram {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let Self { origin, diagram } = self;
-        match diagram.line {
-            Some(line) => write!(f, "can't draw the diagram on line {line} of {origin}"),
-            None => write!(f, "can't draw a diagram in {origin}"),
-        }?;
-        write!(f, ": {}", diagram.reason)
-    }
-}
-
-/// A code block in a page that a plugin couldn't render, and the file it's
-/// in.
-#[derive(Clone, Debug)]
-pub struct UnrenderedBlock {
-    /// What it's in, like `docs/intro.md`.
-    pub origin: String,
-    pub block: plugin::Unrendered,
-}
-
-impl fmt::Display for UnrenderedBlock {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let Self { origin, block } = self;
-        let plugin = &block.plugin;
-        match block.line {
-            Some(line) => write!(
-                f,
-                "plugin `{plugin}` can't render the block on line {line} of {origin}"
-            ),
-            None => write!(f, "plugin `{plugin}` can't render a block in {origin}"),
-        }?;
-        write!(f, ": {}", block.reason)
-    }
+pub struct Warning {
+    /// What it is, as `little build --strict` counts it, like
+    /// `formula(s) that can't be rendered`.
+    pub kind: &'static str,
+    /// What it says, naming where it is, like `can't draw a diagram in
+    /// docs/intro.ipynb: No diagram type detected`.
+    pub message: String,
 }
 
 /// Where a version of a site is built: the folder of the destination it's
@@ -536,16 +458,13 @@ pub fn build(site_dir: &Path) -> Result<Built> {
         urls: HashMap::new(),
         links: HashMap::new(),
         repo: config.repo.clone(),
-        unrendered_math: Vec::new(),
-        unrendered_diagrams: Vec::new(),
-        unrendered_blocks: Vec::new(),
-        plugin_warnings: Vec::new(),
+        warnings: Vec::new(),
         from_refs: HashSet::new(),
     };
     // When every version is from a git ref, the site's plugins build none,
     // but may have warned as they started.
     if let Some(mut plugins) = site_plugins {
-        built.plugin_warnings.extend(warned(&mut plugins, None));
+        built.warnings.extend(warned(&mut plugins, None));
     }
     let mut ready = Vec::new();
     for (source, &version) in sources.into_iter().zip(&versions) {
@@ -590,11 +509,17 @@ fn in_version<T>(result: Result<T>, version: Option<&config::Version>) -> Result
 
 /// What `plugins` have warned of since they were last asked, as warnings of
 /// the version of the site from `git_ref`, if it's from one.
-fn warned(plugins: &mut Plugins, git_ref: Option<&str>) -> Vec<PluginWarning> {
+fn warned(plugins: &mut Plugins, git_ref: Option<&str>) -> Vec<Warning> {
     (plugins.take_warnings().into_iter())
-        .map(|warning| PluginWarning {
-            git_ref: git_ref.map(str::to_string),
-            warning,
+        .map(|warning| Warning {
+            kind: "warning(s) from plugins",
+            // A hook that failed names what it failed on, which names the ref.
+            message: match (git_ref, &warning.warned) {
+                (Some(git_ref), Warned::Message(message)) => {
+                    format!("plugin `{}` at {git_ref}: {message}", warning.plugin)
+                }
+                _ => warning.to_string(),
+            },
         })
         .collect()
 }
@@ -930,28 +855,7 @@ fn finish(
                 searched.push((&page.url, title, content, search::lang(&html)));
             }
             let origin = page.origin.clone();
-            built
-                .unrendered_math
-                .extend(page.unrendered_math.iter().map(|formula| UnrenderedMath {
-                    origin: origin.clone(),
-                    formula: formula.clone(),
-                }));
-            built
-                .unrendered_diagrams
-                .extend(
-                    page.unrendered_diagrams
-                        .iter()
-                        .map(|diagram| UnrenderedDiagram {
-                            origin: origin.clone(),
-                            diagram: diagram.clone(),
-                        }),
-                );
-            built
-                .unrendered_blocks
-                .extend(page.unrendered_blocks.iter().map(|block| UnrenderedBlock {
-                    origin: origin.clone(),
-                    block: block.clone(),
-                }));
+            built.warnings.extend_from_slice(&page.warnings);
             outputs.push(Output {
                 path: page.out_path.clone(),
                 url: format!("{}{}", place.prefix, page.url),
@@ -1055,7 +959,7 @@ fn finish(
     check_search_files(&search_files, &static_files, &place.destination, &outputs)?;
 
     built
-        .plugin_warnings
+        .warnings
         .extend(warned(&mut plugins, git_ref.as_deref()));
     Ok(Ready {
         destination: place.destination,
@@ -1176,6 +1080,37 @@ fn page_from(
     let out_path = out_path_for_url(destination, &url);
     let page_type = page_type(&rel);
 
+    // A diagram or block in a notebook has no line of the file.
+    let at = |thing: &str, line: Option<usize>| match line {
+        Some(line) => format!("the {thing} on line {line} of {origin}"),
+        None => format!("a {thing} in {origin}"),
+    };
+    let math = (rendered.unrendered_math.into_iter()).map(|formula| Warning {
+        kind: "formula(s) that can't be rendered",
+        message: format!(
+            "can't render {} in {origin}: {}",
+            formula.written, formula.reason
+        ),
+    });
+    let diagrams = (rendered.unrendered_diagrams.into_iter()).map(|diagram| Warning {
+        kind: "diagram(s) that can't be drawn",
+        message: format!(
+            "can't draw {}: {}",
+            at("diagram", diagram.line),
+            diagram.reason
+        ),
+    });
+    let blocks = (rendered.unrendered_blocks.into_iter()).map(|block| Warning {
+        kind: "code block(s) that plugins can't render",
+        message: format!(
+            "plugin `{}` can't render {}: {}",
+            block.plugin,
+            at("block", block.line),
+            block.reason
+        ),
+    });
+    let warnings = math.chain(diagrams).chain(blocks).collect();
+
     Page {
         rel,
         origin,
@@ -1188,9 +1123,7 @@ fn page_from(
         toc: nest_headings(&rendered.toc),
         page_type,
         links: rendered.links,
-        unrendered_math: rendered.unrendered_math,
-        unrendered_diagrams: rendered.unrendered_diagrams,
-        unrendered_blocks: rendered.unrendered_blocks,
+        warnings,
     }
 }
 
@@ -1764,10 +1697,13 @@ mod tests {
             toc: Vec::new(),
             page_type,
             links: Vec::new(),
-            unrendered_math: Vec::new(),
-            unrendered_diagrams: Vec::new(),
-            unrendered_blocks: Vec::new(),
+            warnings: Vec::new(),
         }
+    }
+
+    /// What `built` warns of, as it says it.
+    fn warnings_of(built: &Built) -> Vec<String> {
+        built.warnings.iter().map(|w| w.message.clone()).collect()
     }
 
     /// `path`, written with `/`, with the system's separators, as little
@@ -2835,11 +2771,7 @@ mod tests {
         // Each formula that isn't is noted, with the file it's in, in the
         // order of the pages.
         let docs = site.join("docs");
-        let warnings: Vec<_> = built
-            .unrendered_math
-            .iter()
-            .map(|f| f.to_string())
-            .collect();
+        let warnings = warnings_of(&built);
         let expected = [
             format!(
                 "can't render $$\\qty{{1}}{{m}}$$ in {}: Unknown command \"\\qty\".",
@@ -2882,9 +2814,7 @@ mod tests {
         // Each that isn't is noted, with the file it's in, and the line its
         // block starts on in a Markdown file, in the order of the pages.
         let docs = site.join("docs");
-        let warnings: Vec<_> = (built.unrendered_diagrams.iter())
-            .map(|d| d.to_string())
-            .collect();
+        let warnings = warnings_of(&built);
         let expected = [
             format!(
                 "can't draw the diagram on line 9 of {}: No diagram type detected",
@@ -2935,9 +2865,7 @@ mod tests {
         // Each block it can't render is noted, with the file it's in, and the
         // line it starts on in a Markdown file, in the order of the pages.
         let docs = site.join("docs");
-        let warnings: Vec<_> = (built.unrendered_blocks.iter())
-            .map(|b| b.to_string())
-            .collect();
+        let warnings = warnings_of(&built);
         let expected = [
             format!(
                 "plugin `test` can't render the block on line 8 of {}: it is broken",
@@ -3039,9 +2967,7 @@ mod tests {
         );
 
         // What it warns of is noted, and its links are checked, naming it.
-        let warnings: Vec<_> = (built.plugin_warnings.iter())
-            .map(|w| w.to_string())
-            .collect();
+        let warnings = warnings_of(&built);
         assert_eq!(warnings, ["plugin `api`: can't read pkg/broken.py"]);
         let broken: Vec<_> = (crate::links::check(&built, crate::links::Scope::Internal))
             .unwrap()
@@ -3189,11 +3115,7 @@ mod tests {
             broken[0].starts_with("broken link /docs/gone in plugin `test`'s added.md: "),
             "{broken:?}"
         );
-        assert!(
-            built.plugin_warnings.is_empty(),
-            "{:?}",
-            built.plugin_warnings
-        );
+        assert!(built.warnings.is_empty(), "{:?}", built.warnings);
         let _ = fs::remove_dir_all(&site);
     }
 
@@ -3222,9 +3144,7 @@ mod tests {
         .unwrap();
         let home = fs::read_to_string(site.join("dist/index.html")).unwrap();
         assert!(home.contains("Hello, world."), "{home}");
-        let warnings: Vec<_> = (built.plugin_warnings.iter())
-            .map(|w| w.to_string())
-            .collect();
+        let warnings = warnings_of(&built);
         let readme = site.join(native("docs/README.md"));
         assert_eq!(
             warnings,
@@ -4702,9 +4622,7 @@ mod tests {
         );
         // What's warned of in its files names each as git does.
         let built = build(&site).unwrap();
-        let warnings: Vec<_> = (built.unrendered_math.iter())
-            .map(|f| f.to_string())
-            .collect();
+        let warnings = warnings_of(&built);
         assert_eq!(
             warnings,
             ["can't render $\\qty{1}{m}$ in v1.4:docs/README.md: Unknown command \"\\qty\"."]
@@ -4780,9 +4698,7 @@ mod tests {
         assert!(hi.starts_with("<h1 id=\"hi\">Hi<"), "{hi}");
         // What it warns of, and the pages it adds, say which version they're
         // in.
-        let warnings: Vec<_> = (built.plugin_warnings.iter())
-            .map(|w| w.to_string())
-            .collect();
+        let warnings = warnings_of(&built);
         assert_eq!(
             warnings,
             [
@@ -4816,7 +4732,7 @@ mod tests {
         let built = build(&site).unwrap();
         let hi = read("1.4/reference/hello/index.html");
         assert!(hi.starts_with("<h1 id=\"hi\">Hi<"), "{hi}");
-        assert_eq!(built.plugin_warnings.len(), 2);
+        assert_eq!(built.warnings.len(), 2);
         // ...or turn it off, for that version alone.
         let off = "ref: v1.3, plugins: { api: false }";
         fs::write(site.join("little.yml"), site_cfg(off)).unwrap();
@@ -4824,9 +4740,7 @@ mod tests {
         assert!(!site.join("dist/1.4/reference").exists());
         assert!(site.join("dist/1.4/index.html").is_file());
         assert!(site.join("dist/reference/hello/index.html").is_file());
-        let warnings: Vec<_> = (built.plugin_warnings.iter())
-            .map(|w| w.to_string())
-            .collect();
+        let warnings = warnings_of(&built);
         assert_eq!(warnings, ["plugin `api`: can't read pkg/broken.py"]);
         let _ = fs::remove_dir_all(&site);
     }

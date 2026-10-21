@@ -89,21 +89,10 @@ fn address(host: &str, port: u16) -> String {
     }
 }
 
-/// Warn of each warning from a plugin, each formula in the site `built`
-/// that can't be rendered, each diagram that can't be drawn, each code block
-/// a plugin can't render, and each broken link within it.
+/// Warn of what the site `built` warns of, and each broken link within it.
 fn warn(built: &Built) {
-    for warning in &built.plugin_warnings {
-        eprintln!("warning: {warning}");
-    }
-    for formula in &built.unrendered_math {
-        eprintln!("warning: {formula}");
-    }
-    for diagram in &built.unrendered_diagrams {
-        eprintln!("warning: {diagram}");
-    }
-    for block in &built.unrendered_blocks {
-        eprintln!("warning: {block}");
+    for warning in &built.warnings {
+        eprintln!("warning: {}", warning.message);
     }
     match links::check(built, Scope::Internal) {
         Ok(broken) => {

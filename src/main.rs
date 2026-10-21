@@ -95,43 +95,26 @@ fn main() -> Result<()> {
         }
         Commands::Build { strict } => {
             let built = site::build(&cli.dir)?;
-            for warning in &built.plugin_warnings {
-                eprintln!("warning: {warning}");
-            }
-            for formula in &built.unrendered_math {
-                eprintln!("warning: {formula}");
-            }
-            for diagram in &built.unrendered_diagrams {
-                eprintln!("warning: {diagram}");
-            }
-            for block in &built.unrendered_blocks {
-                eprintln!("warning: {block}");
+            for warning in &built.warnings {
+                eprintln!("warning: {}", warning.message);
             }
             let broken = links::check(&built, links::Scope::All)?;
             for link in &broken {
                 eprintln!("warning: {link}");
             }
             if strict {
-                let problems: Vec<_> = [
-                    (built.plugin_warnings.len(), "warning(s) from plugins"),
-                    (
-                        built.unrendered_math.len(),
-                        "formula(s) that can't be rendered",
-                    ),
-                    (
-                        built.unrendered_diagrams.len(),
-                        "diagram(s) that can't be drawn",
-                    ),
-                    (
-                        built.unrendered_blocks.len(),
-                        "code block(s) that plugins can't render",
-                    ),
-                    (broken.len(), "broken link(s)"),
-                ]
-                .into_iter()
-                .filter(|&(count, _)| count > 0)
-                .map(|(count, problem)| format!("{count} {problem}"))
-                .collect();
+                // Each kind, counted, in the order it's first warned of.
+                let mut counts: Vec<(&str, usize)> = Vec::new();
+                let kinds = built.warnings.iter().map(|warning| warning.kind);
+                for kind in kinds.chain(broken.iter().map(|_| "broken link(s)")) {
+                    match counts.iter_mut().find(|(seen, _)| *seen == kind) {
+                        Some((_, count)) => *count += 1,
+                        None => counts.push((kind, 1)),
+                    }
+                }
+                let problems: Vec<_> = (counts.iter())
+                    .map(|(kind, count)| format!("{count} {kind}"))
+                    .collect();
                 match problems.as_slice() {
                     [] => {}
                     [problem] => bail!("{problem}"),
