@@ -37,8 +37,12 @@ pub fn inline<T: Gen>(node: &T) -> String {
 
 /// The code at `span` in `text`, as it's written, but on one line.
 pub fn written(text: &str, span: Span) -> String {
-    let code = &text[span.start as usize..span.end as usize];
-    code.split_whitespace().collect::<Vec<_>>().join(" ")
+    collapse(&text[span.start as usize..span.end as usize])
+}
+
+/// `text` with each run of whitespace in it a space.
+pub fn collapse(text: &str) -> String {
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 /// The code at `span` in `text`, from the start of its first line, without

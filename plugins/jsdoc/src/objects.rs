@@ -159,6 +159,16 @@ fn private(accessibility: Option<TSAccessibility>) -> bool {
     accessibility == Some(TSAccessibility::Private)
 }
 
+/// The overloads in `group`, the methods without a body, or, if it has
+/// none, all of them.
+fn overloads<'b, 'a>(group: &[&'b MethodDefinition<'a>]) -> Vec<&'b MethodDefinition<'a>> {
+    let mut shown = group.to_vec();
+    if shown.iter().any(|method| method.value.body.is_none()) {
+        shown.retain(|method| method.value.body.is_none());
+    }
+    shown
+}
+
 impl Reader<'_> {
     /// What `declaration` is, shown under `heading`, if the module's page
     /// shows it: if it has a doc comment that doesn't hide it, or what it
@@ -367,16 +377,7 @@ impl Reader<'_> {
                 merged.description = descriptions.join("\n\n");
                 merged.tags.extend(documented.tags.iter().cloned());
             }
-            let overloads: Vec<&MethodDefinition> = (constructors.iter())
-                .filter(|constructor| constructor.value.body.is_none())
-                .copied()
-                .collect();
-            let shown = if overloads.is_empty() {
-                &constructors
-            } else {
-                &overloads
-            };
-            let lines: Vec<String> = (shown.iter())
+            let lines: Vec<String> = (overloads(&constructors).iter())
                 .map(|constructor| {
                     let head = match protected(constructor.accessibility) {
                         true => "protected constructor",
@@ -528,15 +529,6 @@ impl Reader<'_> {
     fn methods(&self, name: &str, group: &[&MethodDefinition], comment: &Comment) -> Object {
         let implementation = group[group.len() - 1];
         let callable = Callable::function(&implementation.value);
-        let overloads: Vec<&MethodDefinition> = (group.iter())
-            .filter(|method| method.value.body.is_none())
-            .copied()
-            .collect();
-        let shown: &[&MethodDefinition] = if overloads.is_empty() {
-            group
-        } else {
-            &overloads
-        };
         let star = if implementation.value.generator {
             "*"
         } else {
@@ -544,7 +536,7 @@ impl Reader<'_> {
         };
         let optional = if implementation.optional { "?" } else { "" };
         let head = format!("{star}{name}{optional}");
-        let signatures: Vec<String> = (shown.iter())
+        let signatures: Vec<String> = (overloads(group).iter())
             .map(|method| Callable::function(&method.value).signature(self.text, &head))
             .collect();
         let abstract_ = implementation.r#type == MethodDefinitionType::TSAbstractMethodDefinition;

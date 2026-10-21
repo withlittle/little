@@ -2,6 +2,7 @@
 //! description, in Markdown, then block tags, like `@param`, and the
 //! sections of a page they make.
 
+use crate::print::collapse;
 use little_api_reference::markdown::fence_for;
 use little_api_reference::model::{Item, Items, Section};
 
@@ -382,11 +383,6 @@ fn bracketed(text: &str) -> Option<(&str, &str)> {
         }
     }
     None
-}
-
-/// `text` with each run of whitespace in it a space.
-fn collapse(text: &str) -> String {
-    text.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 /// The description after a tag's name or type, without the `-` it may
