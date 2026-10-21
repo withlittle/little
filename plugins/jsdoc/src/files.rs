@@ -22,11 +22,11 @@ pub struct Source {
     pub id: String,
 }
 
-/// `name` in `folder`, with `/` between them, or `name` alone if `folder`
-/// is empty.
+/// `name` in `folder`, with `/` between them, or `name` alone in `.` or
+/// the source's folder.
 pub fn join(folder: &str, name: &str) -> String {
     match folder {
-        "" => name.to_string(),
+        "" | "." => name.to_string(),
         _ => format!("{folder}/{name}"),
     }
 }
