@@ -422,28 +422,29 @@
   .site-header .pf-trigger-text::first-letter { text-transform: uppercase; }
 
   /* The menu of versions beside the site's name: the version this is, which
-     opens a list of them all below it. */
+     opens a list of them all below it, or, in a browser that can't anchor
+     it there, in the middle of the window. */
   .version-menu {
-    position: relative;
     flex-shrink: 0;
     font-size: 0.875rem;
   }
-  .version-menu summary {
+  .version-menu button {
     display: flex;
     align-items: center;
     gap: 0.5rem;
     padding: 0.25rem 0.625rem;
     border: 1px solid var(--border);
     border-radius: var(--radius);
+    background: none;
     color: var(--text-muted);
+    font: inherit;
     font-weight: 500;
     line-height: 1.4;
     white-space: nowrap;
     cursor: pointer;
-    list-style: none;
+    anchor-name: --version-menu;
   }
-  .version-menu summary::-webkit-details-marker { display: none; }
-  .version-menu summary::after {
+  .version-menu button::after {
     content: "";
     width: 0.375rem;
     height: 0.375rem;
@@ -452,25 +453,29 @@
     rotate: 45deg;
     translate: 0 -0.125rem;
   }
-  .version-menu[open] summary::after { rotate: 225deg; translate: 0 0.0625rem; }
-  .version-menu summary:hover {
+  .version-menu:has(:popover-open) button::after { rotate: 225deg; translate: 0 0.0625rem; }
+  .version-menu button:hover {
     background: var(--bg-muted);
     color: var(--text);
   }
   .version-menu ul {
-    position: absolute;
-    top: calc(100% + 0.375rem);
-    left: 0;
-    min-width: max(100%, 7rem);
+    min-width: 7rem;
     max-height: calc(100dvh - var(--header-height) - 1rem);
     overflow-y: auto;
-    margin: 0;
     padding: 0.25rem;
     border: 1px solid var(--border);
     border-radius: var(--radius);
     background: var(--bg);
     box-shadow: var(--shadow-lg);
     list-style: none;
+  }
+  @supports (position-area: bottom) {
+    .version-menu ul {
+      position-anchor: --version-menu;
+      position-area: bottom span-right;
+      min-width: max(anchor-size(width), 7rem);
+      margin: 0.375rem 0 0;
+    }
   }
   .version-menu a {
     display: block;
@@ -491,10 +496,10 @@
   }
   /* Below the name, it's shorter, but still easy to tap. */
   @media (width < 30rem) {
-    .version-menu summary { min-height: 1.5rem; padding-block: 0; }
+    .version-menu button { min-height: 1.5rem; padding-block: 0; }
   }
   @media (prefers-reduced-motion: no-preference) {
-    .version-menu summary::after { transition: rotate 0.15s ease-out, translate 0.15s ease-out; }
+    .version-menu button::after { transition: rotate 0.15s ease-out, translate 0.15s ease-out; }
   }
 
   /* On each version but the one at the root of the site, a note above the

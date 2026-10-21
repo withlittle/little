@@ -4870,7 +4870,8 @@ mod tests {
         let latest = read("guide/index.html");
         assert!(
             latest.contains(
-                "<summary><span class=\"visually-hidden\">Version </span>1.4 (Latest)</summary>"
+                "<button type=\"button\" popovertarget=\"_versions\">\
+                 <span class=\"visually-hidden\">Version </span>1.4 (Latest)</button>"
             ),
             "{latest}"
         );

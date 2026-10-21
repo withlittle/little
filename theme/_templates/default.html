@@ -92,18 +92,18 @@
       {% endif %}
       {% if versions %}
       {# The site's name, and the version this is, which opens a list of
-         them all. A <details> needs no script; the theme's script closes it
-         on a click elsewhere, or Escape. #}
+         them all. A popover needs no script, and closes on a click
+         elsewhere, or Escape. #}
       <div class="brand-group">
         <a class="brand" href="{{ '/' | url }}">{{ site.name }}</a>
-        <details class="version-menu">
-          <summary><span class="visually-hidden">Version </span>{{ site.version }}</summary>
-          <ul>
+        <div class="version-menu">
+          <button type="button" popovertarget="_versions"><span class="visually-hidden">Version </span>{{ site.version }}</button>
+          <ul id="_versions" popover>
             {% for version in versions %}
             <li><a href="{{ version.url | safe }}"{% if version.title == site.version %} aria-current="true"{% endif %}>{{ version.title }}</a></li>
             {% endfor %}
           </ul>
-        </details>
+        </div>
       </div>
       {% else %}
       <a class="brand" href="{{ '/' | url }}">{{ site.name }}</a>
