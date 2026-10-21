@@ -6,9 +6,10 @@
 use std::collections::HashMap;
 use std::ops::Range;
 
+use little_api_reference::pages::join;
 use pulldown_cmark::{Event, Options, Parser, Tag};
 
-use crate::files::{self, Layout, Source, join};
+use crate::files::{self, Layout, Source};
 use crate::reader::{Export, Import, Module};
 
 /// Where a link leads.

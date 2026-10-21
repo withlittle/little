@@ -191,7 +191,8 @@ Content and theme live outside `src/`:
   pydoc's do.
 - `plugins/api_reference/` — a library, in its own workspace, not a plugin,
   that the plugins that add an API reference share: what a page documents,
-  in no language in particular, and the Markdown of the page.
+  in no language in particular, and the Markdown of the page; and the
+  settings, and the pages, paths, and links between them, they have alike.
 - `about.toml`, `about.hbs`, `scripts/notices.sh` — the third-party notices
   that little's and the plugins' releases carry, which cargo-about writes,
   through `about.hbs`, from the `about.toml` beside each one's

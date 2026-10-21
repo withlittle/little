@@ -15,10 +15,10 @@ mod tests;
 
 use std::collections::HashMap;
 
-use little_api_reference::{markdown, model};
-use serde_json::Value;
+use little_api_reference::pages::{Added, join, relative};
+use little_api_reference::{markdown, model, settings};
 
-use crate::files::{Layout, Source, join};
+use crate::files::{Layout, Source};
 use crate::links::{Scope, Target};
 use crate::markdown::{Language, Listed};
 use crate::model::{Item, Object, Section};
@@ -44,42 +44,23 @@ struct Settings {
 impl Settings {
     /// The settings in `json`, as little gives them to the plugin.
     fn parse(json: &str) -> Result<Settings, String> {
-        let Ok(Value::Object(settings)) = serde_json::from_str(json) else {
-            return Err(format!("its settings must be a mapping, not {json}"));
-        };
         let mut read = Vec::new();
         let mut package = None;
         let mut title = None;
         let mut url = None;
-        for (name, value) in settings {
+        for (name, value) in settings::mapping(json)? {
             match name.as_str() {
-                "read" => {
-                    let folders = value.as_array().into_iter().flatten();
-                    read = folders
-                        .filter_map(Value::as_str)
-                        .map(String::from)
-                        .collect();
-                }
+                "read" => read = settings::folders(&value),
                 "package" => {
-                    let name = (value.as_str())
-                        .filter(|name| !name.is_empty() && folder(name).as_deref() == Some(name));
+                    let name = (value.as_str()).filter(|name| {
+                        !name.is_empty() && settings::folder(name).as_deref() == Some(name)
+                    });
                     package = Some(name.map(String::from).ok_or(
                         "`package` must be the package's name, like `my-lib` or `@scope/my-lib`",
                     )?);
                 }
-                "title" => {
-                    let text = value.as_str().filter(|title| !title.trim().is_empty());
-                    title = Some(text.map(String::from).ok_or(
-                        "`title` must be what the site calls the package's page, like \
-                         `title: API reference`",
-                    )?);
-                }
-                "url" => {
-                    url = Some((value.as_str().and_then(folder)).ok_or(
-                        "`url` must be the folder its pages go in, like `/api`, with no part `.` \
-                         or `..`",
-                    )?);
-                }
+                "title" => title = Some(settings::title(&value, "the package's page")?),
+                "url" => url = Some(settings::url(&value)?),
                 _ => {
                     return Err(format!(
                         "it has no setting `{name}`, only `read`, the folder the package's code \
@@ -89,23 +70,7 @@ impl Settings {
                 }
             }
         }
-        let read = match <[String; 1]>::try_from(read) {
-            Ok([folder]) => folder,
-            Err(read) if read.is_empty() => {
-                return Err(
-                    "name the folder the package's code is in, in `read`, like `read: ./src`"
-                        .into(),
-                );
-            }
-            Err(_) => {
-                return Err(
-                    "it documents one package, in one folder, so `read` names one; for each \
-                     other package, add another entry under `plugins`, with another name and the \
-                     same `wasm`"
-                        .into(),
-                );
-            }
-        };
+        let read = settings::one_folder(read, "package", "the package's code")?;
         let package = package.ok_or("name the package in `package`, like `package: my-lib`")?;
         let url = url.unwrap_or_else(|| package.clone());
         Ok(Settings {
@@ -115,23 +80,6 @@ impl Settings {
             url,
         })
     }
-}
-
-/// `url` as a folder from the source's, with `/` between its parts, or none
-/// if a part is empty, `.`, or `..`.
-fn folder(url: &str) -> Option<String> {
-    let url = url.trim_matches('/');
-    let parts_ok =
-        (url.split('/')).all(|part| !matches!(part, "" | "." | "..") && !part.contains('\\'));
-    (url.is_empty() || parts_ok).then(|| url.to_string())
-}
-
-/// What the plugin adds: each page's path and Markdown, and what it warns
-/// of.
-#[derive(Debug, Default)]
-struct Added {
-    pages: Vec<(String, String)>,
-    warnings: Vec<String>,
 }
 
 /// The pages of the package in the folder `settings` reads: its own, and
@@ -211,21 +159,6 @@ fn language(name: &'static str) -> Language {
         name,
         separator: ".",
     }
-}
-
-/// The relative link from the page at `from` to the one at `to`, each a
-/// path from the source's folder, like `../config.md`.
-fn relative(from: &str, to: &str) -> String {
-    let folders: Vec<&str> = from.split('/').collect();
-    let folders = &folders[..folders.len() - 1];
-    let parts: Vec<&str> = to.split('/').collect();
-    let shared = (folders.iter().zip(&parts[..parts.len() - 1]))
-        .take_while(|(folder, part)| folder == part)
-        .count();
-    let up = std::iter::repeat_n("..", folders.len() - shared);
-    up.chain(parts[shared..].iter().copied())
-        .collect::<Vec<_>>()
-        .join("/")
 }
 
 /// A package's pages, as they're written.
@@ -429,16 +362,10 @@ mod plugin {
         fn files(_: Vec<String>) -> Result<Changes, String> {
             let settings = SETTINGS.lock().unwrap();
             let added = document(settings.as_ref().expect("little calls `setup` first"));
-            for warning in &added.warnings {
-                warn(warning);
-            }
-            let pages = added.pages.into_iter();
+            let add = added.files(warn).into_iter();
             Ok(Changes {
-                add: pages
-                    .map(|(path, markdown)| File {
-                        path,
-                        contents: markdown.into_bytes(),
-                    })
+                add: add
+                    .map(|(path, contents)| File { path, contents })
                     .collect(),
                 remove: Vec::new(),
             })

@@ -2,8 +2,10 @@
 //! description, in Markdown, then block tags, like `@param`, and the
 //! sections of a page they make.
 
+use crate::print::collapse;
 use little_api_reference::markdown::fence_for;
 use little_api_reference::model::{Item, Items, Section};
+use pulldown_cmark::{Event, Parser, TagEnd};
 
 /// A doc comment.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -384,11 +386,6 @@ fn bracketed(text: &str) -> Option<(&str, &str)> {
     None
 }
 
-/// `text` with each run of whitespace in it a space.
-fn collapse(text: &str) -> String {
-    text.split_whitespace().collect::<Vec<_>>().join(" ")
-}
-
 /// The description after a tag's name or type, without the `-` it may
 /// start with.
 pub fn description(text: &str) -> String {
@@ -686,49 +683,30 @@ fn closing(line: &str, fence: &str) -> bool {
 
 /// The sections of a description, `text`: what's before its first
 /// heading, untitled, then each heading's, titled by it, but those with no
-/// text.
+/// text; a heading in a list or a quote is part of it.
 fn headed(text: &str) -> Vec<Section> {
     let mut sections = Vec::new();
-    let mut title = None;
-    let mut lines = Vec::new();
-    let mut fence: Option<&str> = None;
-    for line in text.split('\n') {
-        match fence {
-            Some(open) if closing(line, open) => fence = None,
-            Some(_) => {}
-            None => {
-                if let Some((_, open, _)) = opening(line) {
-                    fence = Some(open);
-                } else if let Some(heading) = heading(line) {
-                    push(&mut sections, title.replace(heading), &lines.join("\n"));
-                    lines.clear();
-                    continue;
-                }
+    let (mut title, mut from, mut depth) = (None, 0, 0);
+    let mut events = Parser::new(text).into_offset_iter();
+    while let Some((event, range)) = events.next() {
+        match event {
+            Event::Start(pulldown_cmark::Tag::Heading { .. }) if depth == 0 => {
+                push(&mut sections, title, &text[from..range.start]);
+                let inner: Vec<_> = (events.by_ref())
+                    .take_while(|(event, _)| !matches!(event, Event::End(TagEnd::Heading(_))))
+                    .map(|(_, inner)| inner)
+                    .collect();
+                title = (inner.first().zip(inner.last()))
+                    .map(|(first, last)| text[first.start..last.end].to_string());
+                from = range.end;
             }
+            Event::Start(_) => depth += 1,
+            Event::End(_) => depth -= 1,
+            _ => {}
         }
-        lines.push(line);
     }
-    push(&mut sections, title, &lines.join("\n"));
+    push(&mut sections, title, &text[from..]);
     sections
-}
-
-/// The title of the heading `line` is, if it's one, like `Notes` for
-/// `## Notes`.
-fn heading(line: &str) -> Option<String> {
-    let rest = line.trim_start_matches(' ');
-    let level = rest.len() - rest.trim_start_matches('#').len();
-    let text = &rest[level..];
-    let starts = line.len() - rest.len() <= 3 && (1..=6).contains(&level);
-    if !starts || !(text.is_empty() || text.starts_with([' ', '\t'])) {
-        return None;
-    }
-    let title = text.trim();
-    let unclosed = title.trim_end_matches('#');
-    let title = match unclosed.is_empty() || unclosed.ends_with([' ', '\t']) {
-        true => unclosed.trim_end(),
-        false => title,
-    };
-    (!title.is_empty()).then(|| title.to_string())
 }
 
 /// Push the section titled `title`, of `text`, to `sections`, if it has
@@ -896,6 +874,13 @@ mod tests {
             ..Context::default()
         };
         assert!(!titles(&super::sections(&comment, &typed)).contains(&"Type".to_string()));
+    }
+
+    #[test]
+    fn headings_in_code_blocks_and_lists_dont_start_sections() {
+        let text =
+            "Intro\n\n```sh\n# install\n```\n\n- item\n\n  ## Inner\n\nNotes\n---\n\nSlowly.";
+        assert_eq!(titles(&headed(text)), ["", "Notes"]);
     }
 
     #[test]

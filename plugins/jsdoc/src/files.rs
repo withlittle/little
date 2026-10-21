@@ -4,6 +4,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use little_api_reference::model::Kind;
+use little_api_reference::pages::join;
 
 /// The extensions of the files the plugin reads, the one it prefers first,
 /// when a folder has files with the same name but for it, like `index.ts`
@@ -20,15 +21,6 @@ pub struct Source {
     /// Its path without its extension, like `util/strings`, which names its
     /// module.
     pub id: String,
-}
-
-/// `name` in `folder`, with `/` between them, or `name` alone if `folder`
-/// is empty.
-pub fn join(folder: &str, name: &str) -> String {
-    match folder {
-        "" => name.to_string(),
-        _ => format!("{folder}/{name}"),
-    }
 }
 
 /// `name` without its extension, and the extension's place in
