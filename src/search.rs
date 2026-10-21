@@ -81,20 +81,14 @@ fn document(page: &Page) -> String {
     let lang = (page.lang.as_ref())
         .map(|lang| format!(" lang=\"{lang}\""))
         .unwrap_or_default();
+    // Escaped for an attribute's value, which Pagefind unescapes.
+    let mut title = String::new();
+    comrak::html::escape(&mut title, page.title).expect("writing to a String");
     format!(
-        "<html{lang}><head><meta data-pagefind-meta=\"title[content]\" content=\"{}\"></head>\
+        "<html{lang}><head><meta data-pagefind-meta=\"title[content]\" content=\"{title}\"></head>\
          <body>{}</body></html>",
-        escape(page.title),
         page.content
     )
-}
-
-/// `text`, escaped for an attribute's value. Pagefind unescapes it.
-fn escape(text: &str) -> String {
-    text.replace('&', "&amp;")
-        .replace('"', "&quot;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
 }
 
 #[cfg(test)]
