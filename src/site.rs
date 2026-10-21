@@ -9,7 +9,7 @@
 //! theme's files are written once, for the version at the root, and the
 //! others link to them there.
 
-use anyhow::{Context, Result, anyhow, bail};
+use anyhow::{Context, Result, bail};
 use minijinja::{Value as MjValue, context};
 use serde::{Deserialize, Serialize};
 use serde_yaml::{Mapping, Value};
@@ -471,12 +471,6 @@ pub fn build(site_dir: &Path) -> Result<Built> {
         let finished = finish(source, every.as_ref(), &theme_files, now, &mut built);
         ready.push(in_version(finished, version)?);
     }
-    // The version at `/`, which config checks there's one of, has the
-    // others in its folders.
-    let root = (versions.iter())
-        .position(|version| version.is_none_or(|version| version.path.is_empty()))
-        .unwrap_or_default();
-    check_versions(&ready[root], &config.versions, &config.destination_dir)?;
 
     let pages: usize = ready.iter().map(|version| version.pages).sum();
     let destination = &config.destination_dir;
@@ -955,8 +949,26 @@ fn finish(
             origin,
         });
     }
-    check_static_files(&static_files, &place.destination, &outputs)?;
-    check_search_files(&search_files, &static_files, &place.destination, &outputs)?;
+    let for_search = format!("/{}/, where little writes files for search", search::DIR);
+    let mut written: Vec<(&Path, String)> = (search_files.iter())
+        .map(|file| (file.path.as_path(), for_search.clone()))
+        .collect();
+    // The version at the root of the site has the others in its folders.
+    for version in versions.iter().flat_map(|versions| &versions.each) {
+        if let Some(folder) = version.prefix.strip_prefix('/').filter(|_| place.is_root()) {
+            let title = (version.entry.get("title").and_then(Value::as_str)).unwrap_or_default();
+            let name = format!("version `{title}`, built at {}/", version.prefix);
+            written.push((Path::new(folder), name));
+        }
+    }
+    for output in &outputs {
+        let path = output.path.strip_prefix(&place.destination)?;
+        written.push((path, output.name.clone()));
+    }
+    for file in &static_files {
+        written.push((file.path.as_path(), file.origin.clone()));
+    }
+    check_written(written)?;
 
     built
         .warnings
@@ -969,47 +981,6 @@ fn finish(
         static_files,
         search_files,
     })
-}
-
-/// Fail if a page or a file of the version of a site at its root, `root`, is
-/// in the folder of the destination, `destination`, another of its
-/// `versions` is built into, as `docs/1.4.md` would be for a version at
-/// `/1.4`, or one of them is where little writes files for search.
-fn check_versions(root: &Ready, versions: &[config::Version], destination: &Path) -> Result<()> {
-    let folders: Vec<(PathBuf, &config::Version)> = (versions.iter())
-        .filter(|version| !version.path.is_empty())
-        .map(|version| (version.folders().collect(), version))
-        .collect();
-    let version_at = |path: &Path| {
-        (folders.iter())
-            .find(|(folder, _)| path.starts_with(folder))
-            .map(|&(_, version)| version)
-    };
-    let clash = |name: &str, version: &config::Version| {
-        anyhow!(
-            "{name} clashes with version `{}`, built at {}/: rename or move one",
-            version.title,
-            version.path
-        )
-    };
-    for page in &root.outputs {
-        if let Some(version) = version_at(page.path.strip_prefix(destination)?) {
-            return Err(clash(&page.name, version));
-        }
-    }
-    for file in &root.static_files {
-        if let Some(version) = version_at(&file.path) {
-            return Err(clash(&file.origin, version));
-        }
-    }
-    if let Some(version) = (root.search_files.iter()).find_map(|file| version_at(&file.path)) {
-        bail!(
-            "version `{}` is built at {}/, where little writes files for search: change its `url`",
-            version.title,
-            version.path
-        );
-    }
-    Ok(())
 }
 
 /// Write `version` of a site into the destination, `root`, noting what each
@@ -1294,53 +1265,20 @@ fn check_clashes(pages: &[Page]) -> Result<()> {
     Ok(())
 }
 
-/// Fail if a static file, a theme's or one from the source, would land on a
-/// page in the destination: on the page itself, or on the folder it's in.
-fn check_static_files(files: &[StaticFile], destination: &Path, outputs: &[Output]) -> Result<()> {
-    for file in files {
-        let target = destination.join(&file.path);
-        if let Some(page) = outputs.iter().find(|page| page.path.starts_with(&target)) {
-            bail!("{} clashes with {}", file.origin, page.name);
-        }
-    }
-    Ok(())
-}
-
-/// Fail if a static file or a page would land on one of the files little
-/// writes for search, or on a folder they're in, or one of them would land on
-/// it, as a static file named `pagefind` would.
-fn check_search_files(
-    search_files: &[search::File],
-    static_files: &[StaticFile],
-    destination: &Path,
-    outputs: &[Output],
-) -> Result<()> {
-    let taken: BTreeSet<&Path> = search_files
-        .iter()
-        .map(|file| file.path.as_path())
-        .collect();
-    let mut written: Vec<(&Path, &str)> = (static_files.iter())
-        .map(|file| (file.path.as_path(), file.origin.as_str()))
-        .collect();
-    for page in outputs {
-        written.push((page.path.strip_prefix(destination)?, &page.name));
-    }
-    let url = |path: &Path| path.to_string_lossy().replace('\\', "/");
-    for (path, name) in written {
-        if let Some(file) = path.ancestors().find(|path| taken.contains(path)) {
-            bail!(
-                "{name} clashes with /{}, which little writes for search: rename or move it",
-                url(file)
-            );
-        }
+/// Fail if one of the files a version of a site writes, `files`, each its
+/// path in the version's folder and what it's called, is on another, or
+/// where another's folder goes, or in it, so one would overwrite the other.
+fn check_written(files: Vec<(&Path, String)>) -> Result<()> {
+    let mut written: BTreeMap<&Path, String> = BTreeMap::new();
+    for (path, name) in files {
         // Paths sort by their parts, so the files in a folder sort just after it.
-        if (taken.range(path..).next()).is_some_and(|file| file.starts_with(path)) {
-            bail!(
-                "{name} clashes with /{}/, where little writes files for search: \
-                 rename or move it",
-                url(path)
-            );
+        let under = (written.range(path..).next()).filter(|(file, _)| file.starts_with(path));
+        let other = (path.ancestors().find_map(|folder| written.get(folder)))
+            .or(under.map(|(_, other)| other));
+        if let Some(other) = other {
+            bail!("{name} clashes with {other}");
         }
+        written.insert(path, name);
     }
     Ok(())
 }
@@ -4196,10 +4134,8 @@ mod tests {
             fs::create_dir_all(file.parent().unwrap()).unwrap();
             fs::write(file, "# Mine\n").unwrap();
             let message = format!("{:#}", build(&site).unwrap_err());
-            let expected = format!(
-                "{name} clashes with /pagefind/pagefind.js, which little writes for search: \
-                 rename or move it"
-            );
+            let expected =
+                format!("{name} clashes with /pagefind/, where little writes files for search");
             assert_eq!(message, expected);
             fs::remove_file(file).unwrap();
         }
@@ -4210,7 +4146,7 @@ mod tests {
         fs::write(docs.join("pagefind"), "a file, not a folder").unwrap();
         let message = format!("{:#}", build(&site).unwrap_err());
         let expected = format!(
-            "{} clashes with /pagefind/, where little writes files for search: rename or move it",
+            "{} clashes with /pagefind/, where little writes files for search",
             docs.join("pagefind").display()
         );
         assert_eq!(message, expected);
@@ -4556,7 +4492,7 @@ mod tests {
                 fs::write(&path, "# Mine\n").unwrap();
                 let message = format!("{:#}", build(&site).unwrap_err());
                 let expected = format!(
-                    "{name}{} clashes with version `1.4`, built at {url}/: rename or move one",
+                    "{name}{} clashes with version `1.4`, built at {url}/",
                     path.display()
                 );
                 assert_eq!(message, expected);
@@ -4596,8 +4532,8 @@ mod tests {
         let message = format!("{:#}", build(&site).unwrap_err());
         assert_eq!(
             message,
-            "version `1.4` is built at /pagefind/, where little writes files for search: change \
-             its `url`"
+            "version `1.4`, built at /pagefind/ clashes with /pagefind/, where little writes \
+             files for search"
         );
         let _ = fs::remove_dir_all(&site);
     }
