@@ -11,7 +11,7 @@ use merman::render::{HeadlessError, HeadlessRenderer, RootBackgroundPostprocesso
 use serde_json::json;
 use time::OffsetDateTime;
 
-use crate::config::{Markdown, Mermaid};
+use crate::config::Markdown;
 
 /// A diagram merman can't draw, which is written as code instead, as with
 /// `markdown.mermaid: false`.
@@ -37,7 +37,7 @@ pub fn draw<'a>(
     lines_before: Option<usize>,
 ) -> Vec<Unrendered> {
     let mut unrendered = Vec::new();
-    let Some(Mermaid::Svg(config)) = &markdown.mermaid else {
+    let Some(config) = &markdown.mermaid else {
         return unrendered;
     };
     // Made only for a page with a diagram in it, as it takes a moment.
@@ -248,7 +248,7 @@ mod tests {
     /// little's defaults, drawing diagrams with Mermaid's `config`.
     fn with_config(config: serde_json::Value) -> Markdown {
         Markdown {
-            mermaid: Some(Mermaid::Svg(config)),
+            mermaid: Some(config),
             ..Markdown::default()
         }
     }

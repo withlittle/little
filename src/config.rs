@@ -322,8 +322,10 @@ pub struct Markdown {
     pub raw_html: bool,
     /// How math is written, if it's found.
     pub math: Option<Math>,
-    /// How a Mermaid block is drawn, if it's drawn rather than left as code.
-    pub mermaid: Option<Mermaid>,
+    /// Mermaid's config, from `mermaid`, as JSON, as Mermaid reads it, if a
+    /// Mermaid block is drawn as an `<svg>` as little builds the page, rather
+    /// than left as code.
+    pub mermaid: Option<serde_json::Value>,
     // Beyond GitHub.
     pub smart_punctuation: bool,
     pub superscript: bool,
@@ -346,13 +348,6 @@ pub struct Markdown {
 pub enum Math {
     MathML,
     Tex,
-}
-
-/// How a Mermaid block is drawn: as an `<svg>`, as little builds the page,
-/// with Mermaid's config from `mermaid`, as JSON, as Mermaid reads it.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Mermaid {
-    Svg(serde_json::Value),
 }
 
 /// A set of classes for highlighted code: Pygments', like `k` for a keyword,
@@ -768,7 +763,7 @@ fn markdown(values: &Mapping) -> Result<Markdown> {
         },
         // Nor here, as a site's would undo its theme's `false`.
         mermaid: match settings.get("mermaid") {
-            Some(Value::String(form)) if form == "svg" => Some(Mermaid::Svg(mermaid(values)?)),
+            Some(Value::String(form)) if form == "svg" => Some(mermaid(values)?),
             Some(Value::Bool(false)) => None,
             _ => bail!("`markdown.mermaid` must be `svg` or `false`"),
         },
@@ -1719,7 +1714,7 @@ mod tests {
         assert_eq!(builtin, Markdown::default());
         assert!(builtin.tables && builtin.alerts && builtin.emoji && builtin.raw_html);
         assert_eq!(builtin.math, Some(Math::MathML));
-        assert_eq!(builtin.mermaid, Some(Mermaid::Svg(json!({}))));
+        assert_eq!(builtin.mermaid, Some(json!({})));
         assert!(!builtin.mark);
         assert_eq!(builtin.highlight, Some(Highlight::Pygments));
 
@@ -1744,7 +1739,7 @@ mod tests {
         let site_cfg = "markdown:\n  mermaid: false\n";
         assert_eq!(markdown(site_cfg).mermaid, None);
         let site_cfg = "markdown:\n  mermaid: svg\n";
-        assert_eq!(markdown(site_cfg).mermaid, Some(Mermaid::Svg(json!({}))));
+        assert_eq!(markdown(site_cfg).mermaid, Some(json!({})));
 
         // A site chooses GitHub's classes, or none.
         let site_cfg = "markdown:\n  highlight: github\n";
@@ -1837,10 +1832,7 @@ mod tests {
         let site = scratch("mermaid", &[("theme/little.yml", theme_cfg)]);
         let mermaid = |site_cfg: &str| {
             std::fs::write(site.join(CONFIG_FILE), site_cfg).unwrap();
-            match load(&site).unwrap().markdown.mermaid {
-                Some(Mermaid::Svg(config)) => config,
-                None => panic!("diagrams should be drawn"),
-            }
+            (load(&site).unwrap().markdown.mermaid).expect("diagrams should be drawn")
         };
 
         // little sets no look, so diagrams have Mermaid's default.
