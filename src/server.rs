@@ -490,21 +490,12 @@ fn content_type(mime: &Mime) -> String {
     }
 }
 
-fn inject_livereload(html: String) -> String {
+fn inject_livereload(mut html: String) -> String {
     const SCRIPT: &str = r#"<script>
 (function(){let v=null;async function poll(){try{const r=await fetch('/__little/version',{cache:'no-store'});const t=await r.text();if(v===null){v=t;}else if(t!==v){location.reload();}}catch(e){}}setInterval(poll,400);})();
 </script>"#;
-
-    match html.rfind("</body>") {
-        Some(idx) => {
-            let mut out = String::with_capacity(html.len() + SCRIPT.len());
-            out.push_str(&html[..idx]);
-            out.push_str(SCRIPT);
-            out.push_str(&html[idx..]);
-            out
-        }
-        None => html + SCRIPT,
-    }
+    html.insert_str(html.rfind("</body>").unwrap_or(html.len()), SCRIPT);
+    html
 }
 
 #[cfg(test)]
