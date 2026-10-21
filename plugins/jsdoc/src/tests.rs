@@ -135,22 +135,6 @@ fn a_title_is_in_the_frontmatter_of_the_packages_page_alone() {
 }
 
 #[test]
-fn relative_links_go_up_to_the_folder_two_pages_share() {
-    assert_eq!(relative("api/README.md", "api/config.md"), "config.md");
-    assert_eq!(
-        relative("api/util/strings.md", "api/config.md"),
-        "../config.md"
-    );
-    assert_eq!(
-        relative("api/config.md", "api/util/README.md"),
-        "util/README.md"
-    );
-    assert_eq!(relative("README.md", "a/b/c.md"), "a/b/c.md");
-    assert_eq!(relative("a/b/c.md", "README.md"), "../../README.md");
-    assert_eq!(relative("api/config.md", "api/config.md"), "config.md");
-}
-
-#[test]
 fn each_module_with_something_documented_has_a_page() {
     let (added, root) = built(
         "walk",

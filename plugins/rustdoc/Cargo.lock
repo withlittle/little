@@ -86,7 +86,6 @@ dependencies = [
  "prettyplease",
  "proc-macro2",
  "pulldown-cmark",
- "serde_json",
  "syn",
  "wit-bindgen",
 ]

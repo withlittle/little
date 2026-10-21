@@ -273,7 +273,6 @@ dependencies = [
  "oxc_parser",
  "oxc_span",
  "pulldown-cmark",
- "serde_json",
  "wit-bindgen",
 ]
 

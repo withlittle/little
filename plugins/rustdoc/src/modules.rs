@@ -5,6 +5,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::rc::Rc;
 
+use little_api_reference::pages::join;
 use syn::ext::IdentExt;
 use syn::{Attribute, Expr, ExprLit, Ident, Item, ItemMacro, ItemMod, ItemUse, Lit, Meta, UseTree};
 
@@ -348,15 +349,6 @@ fn named(prefix: &[String], ident: &Ident, name: &Ident) -> Option<Use> {
         name: Some(name),
         path,
     })
-}
-
-/// `name` in `folder`, with `/` between them, or `name` alone in `.` or
-/// the source's folder.
-pub fn join(folder: &str, name: &str) -> String {
-    match folder {
-        "" | "." => name.to_string(),
-        _ => format!("{folder}/{name}"),
-    }
 }
 
 /// The folder `file` is in.

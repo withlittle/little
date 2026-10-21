@@ -9,8 +9,8 @@ mod python;
 
 use std::path::Path;
 
-use little_api_reference::{markdown, model};
-use serde_json::Value;
+use little_api_reference::pages::{Added, join};
+use little_api_reference::{markdown, model, settings};
 
 use crate::markdown::{Language, Listed};
 use crate::model::{Kind, Object};
@@ -36,34 +36,17 @@ struct Settings {
 impl Settings {
     /// The settings in `json`, as little gives them to the plugin.
     fn parse(json: &str) -> Result<Settings, String> {
-        let Ok(Value::Object(settings)) = serde_json::from_str(json) else {
-            return Err(format!("its settings must be a mapping, not {json}"));
-        };
         let mut read = Vec::new();
         let mut title = None;
         let mut url = String::new();
-        for (name, value) in settings {
+        for (name, value) in settings::mapping(json)? {
             match name.as_str() {
-                "read" => {
-                    let folders = value.as_array().into_iter().flatten();
-                    read = folders
-                        .filter_map(Value::as_str)
-                        .map(String::from)
-                        .collect();
-                }
+                "read" => read = settings::folders(&value),
                 "title" => {
-                    let text = value.as_str().filter(|title| !title.trim().is_empty());
-                    title = Some(text.map(String::from).ok_or(
-                        "`title` must be what the site calls the page of the package or module \
-                         it documents, like `title: API reference`",
-                    )?);
+                    let page = "the page of the package or module it documents";
+                    title = Some(settings::title(&value, page)?);
                 }
-                "url" => {
-                    url = (value.as_str().and_then(folder)).ok_or(
-                        "`url` must be the folder its pages go in, like `/api`, with no part `.` \
-                         or `..`",
-                    )?;
-                }
+                "url" => url = settings::url(&value)?,
                 _ => {
                     return Err(format!(
                         "it has no setting `{name}`, only `read`, the folders it documents, \
@@ -80,26 +63,13 @@ impl Settings {
     }
 }
 
-/// `url` as a folder from the source's, with `/` between its parts, or none
-/// if a part is empty, `.`, or `..`.
-fn folder(url: &str) -> Option<String> {
-    let url = url.trim_matches('/');
-    let parts_ok =
-        (url.split('/')).all(|part| !matches!(part, "" | "." | "..") && !part.contains('\\'));
-    (url.is_empty() || parts_ok).then(|| url.to_string())
-}
-
-/// What the plugin adds: each page's path and Markdown, and what it warns
-/// of.
-#[derive(Debug, Default)]
-struct Added {
-    pages: Vec<(String, String)>,
-    warnings: Vec<String>,
-}
+/// What the plugin adds, as it adds it.
+#[derive(Default)]
+struct Adding(Added);
 
 /// The pages of the packages and modules in the folders `settings` reads.
 fn document(settings: &Settings) -> Result<Added, String> {
-    let mut added = Added::default();
+    let mut added = Adding::default();
     // The packages and modules in the folders it reads, not in a package
     // there, of which `title` titles one.
     let mut tops = Vec::new();
@@ -128,7 +98,7 @@ fn document(settings: &Settings) -> Result<Added, String> {
     if let Some(title) = &settings.title {
         added.title(title, &tops, &settings.url)?;
     }
-    Ok(added)
+    Ok(added.0)
 }
 
 /// A package or module a folder holds, by its name.
@@ -153,7 +123,7 @@ impl Entry {
     }
 }
 
-impl Added {
+impl Adding {
     /// Give the page of the one package or module in `tops`, whose pages
     /// are in `dir`, the title `title`; one for more than one is an error.
     fn title(&mut self, title: &str, tops: &[Entry], dir: &str) -> Result<(), String> {
@@ -172,7 +142,7 @@ impl Added {
         };
         let path = join(dir, &top.page());
         // A module that can't be parsed has no page, and is warned of.
-        if let Some((_, page)) = self.pages.iter_mut().find(|(page, _)| *page == path) {
+        if let Some((_, page)) = self.0.pages.iter_mut().find(|(page, _)| *page == path) {
             *page = markdown::titled(title, page);
         }
         Ok(())
@@ -187,7 +157,7 @@ impl Added {
         let entries = self.entries(folder);
         let listed = self.add(folder, &entries, dir);
         let markdown = markdown::page(&package, &init, &PYTHON, &[("Modules", &listed)]);
-        self.pages.push((join(dir, "README.md"), markdown));
+        self.0.pages.push((join(dir, "README.md"), markdown));
         markdown::summary(&package.docs)
     }
 
@@ -207,7 +177,7 @@ impl Added {
                         continue;
                     };
                     let markdown = markdown::page(&module, &file, &PYTHON, &[]);
-                    self.pages.push((join(dir, &entry.page()), markdown));
+                    self.0.pages.push((join(dir, &entry.page()), markdown));
                     (name, markdown::summary(&module.docs))
                 }
             };
@@ -263,22 +233,13 @@ impl Added {
     }
 
     fn warn(&mut self, warning: String) {
-        self.warnings.push(warning);
+        self.0.warnings.push(warning);
     }
 }
 
 /// The name of the package in `folder`, or none if it's `.` or `..`.
 fn package_name(folder: &str) -> Option<&str> {
     (folder.rsplit('/').next()).filter(|name| !matches!(*name, "" | "." | ".."))
-}
-
-/// `name` in `folder`, with `/` between them, or `name` alone in `.` or
-/// the source's folder.
-fn join(folder: &str, name: &str) -> String {
-    match folder {
-        "" | "." => name.to_string(),
-        _ => format!("{folder}/{name}"),
-    }
 }
 
 fn is_file(path: &str) -> bool {
@@ -326,16 +287,10 @@ mod plugin {
         fn files(_: Vec<String>) -> Result<Changes, String> {
             let settings = SETTINGS.lock().unwrap();
             let added = document(settings.as_ref().expect("little calls `setup` first"))?;
-            for warning in &added.warnings {
-                warn(warning);
-            }
-            let pages = added.pages.into_iter();
+            let add = added.files(warn).into_iter();
             Ok(Changes {
-                add: pages
-                    .map(|(path, markdown)| File {
-                        path,
-                        contents: markdown.into_bytes(),
-                    })
+                add: add
+                    .map(|(path, contents)| File { path, contents })
                     .collect(),
                 remove: Vec::new(),
             })

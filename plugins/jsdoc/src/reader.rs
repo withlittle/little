@@ -5,6 +5,7 @@
 use std::collections::{HashMap, HashSet};
 
 use little_api_reference::model::{Kind, Object, Section};
+use little_api_reference::pages::join;
 use oxc_allocator::Allocator;
 use oxc_ast::ast::{
     self, Argument, ArrowFunctionExpression, AssignmentOperator, AssignmentTarget, BindingPattern,
@@ -17,7 +18,7 @@ use oxc_parser::Parser;
 use oxc_span::{GetSpan, SourceType, Span};
 
 use crate::comment::{self, Comment, Context, braced};
-use crate::files::{Source, join};
+use crate::files::Source;
 use crate::print::written;
 
 /// A module of the package, as its page shows it.

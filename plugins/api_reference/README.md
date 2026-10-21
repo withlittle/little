@@ -6,6 +6,9 @@ share: [`pydoc`](../pydoc/), from Python's docstrings,
 [`jsdoc`](../jsdoc/), from JavaScript's and TypeScript's. Each reads its
 language's code into what a page documents, in `src/model.rs`, and this
 writes the page's Markdown, in `src/markdown.rs`, so their pages look alike.
+It also reads the settings they have alike, like `title` and `url`, in
+`src/settings.rs`, and holds the pages each adds, with their paths and the
+links between them, in `src/pages.rs`.
 Why they share it is in
 [ADR 0031](../../docs/decisions/0031-a-plugin-for-pythons-docstrings.md), and
 how it grew for Rust in
