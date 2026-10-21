@@ -9,7 +9,7 @@
 //! theme's files are written once, for the version at the root, and the
 //! others link to them there.
 
-use anyhow::{Context, Result, anyhow, bail};
+use anyhow::{Context, Result, bail};
 use minijinja::{Value as MjValue, context};
 use serde::{Deserialize, Serialize};
 use serde_yaml::{Mapping, Value};
@@ -17,7 +17,6 @@ use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::env;
 use std::ffi::OsString;
-use std::fmt;
 use std::fs;
 use std::io::ErrorKind;
 use std::iter::Peekable;
@@ -30,7 +29,7 @@ use walkdir::WalkDir;
 use crate::config::{Config, Repo, Shared, SiteUrl};
 use crate::plugin::{Plugins, Warned};
 use crate::theme::{PageType, StaticFile, Theme, ThemeFiles};
-use crate::{config, git, math, mermaid, notebook, plugin, render, search};
+use crate::{config, git, notebook, render, search};
 
 /// Where a site's 404 page is written: the root of the destination, which is
 /// where static hosts look for it.
@@ -65,12 +64,10 @@ struct Page {
     page_type: PageType,
     /// The links and images in its Markdown, as they're written.
     links: Vec<render::WrittenLink>,
-    /// The formulas in its Markdown that couldn't be rendered.
-    unrendered_math: Vec<math::Unrendered>,
-    /// The diagrams in its Markdown that couldn't be drawn.
-    unrendered_diagrams: Vec<mermaid::Unrendered>,
-    /// The code blocks in its Markdown that plugins couldn't render.
-    unrendered_blocks: Vec<plugin::Unrendered>,
+    /// Each formula in its Markdown that couldn't be rendered, then each
+    /// diagram that couldn't be drawn, and each code block plugins couldn't
+    /// render.
+    warnings: Vec<Warning>,
 }
 
 impl Page {
@@ -148,7 +145,7 @@ impl<'a> From<&'a NavItem> for Breadcrumb<'a> {
 /// One node in the site-wide navigation tree (see `build_nav`), in a `nav`
 /// that the config sets instead, or in a page's table of contents (see
 /// `nest_headings`).
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 struct NavItem {
     title: String,
     /// A page's path, a heading's `#fragment`, or in a config's `nav`, any
@@ -195,103 +192,28 @@ pub struct Built {
     /// The repository the site's source is in, if it says, whose links
     /// aren't checked.
     pub repo: Option<Repo>,
-    /// Each formula in its pages that couldn't be rendered, so is shown as
-    /// its TeX, in the order of the pages, to warn of.
-    pub unrendered_math: Vec<UnrenderedMath>,
-    /// Each diagram in its pages that couldn't be drawn, so is shown as
-    /// code, in the order of the pages, to warn of.
-    pub unrendered_diagrams: Vec<UnrenderedDiagram>,
-    /// Each code block in its pages that a plugin couldn't render, so is
-    /// left as it was, in the order of the pages, to warn of.
-    pub unrendered_blocks: Vec<UnrenderedBlock>,
-    /// What each plugin warned of, and each of its hooks that failed, so
-    /// the build went on without its change, in the order of the versions,
-    /// then as they happened.
-    pub plugin_warnings: Vec<PluginWarning>,
+    /// What it warns of, as it happened: each formula in its pages that
+    /// couldn't be rendered, so is shown as its TeX, each diagram that
+    /// couldn't be drawn, so is shown as code, each code block a plugin
+    /// couldn't render, so is left as it was, and what each plugin warned
+    /// of, and each of its hooks that failed, so the build went on without
+    /// its change.
+    pub warnings: Vec<Warning>,
     /// The path in the destination of each file written for a version of
     /// the site from a git ref, whose links to other sites aren't checked,
     /// as a tag can't be fixed.
     pub from_refs: HashSet<PathBuf>,
 }
 
-/// Something a plugin warned of, or a hook of its that failed, and the git
-/// ref of the version of the site it was building, if it's from one.
+/// Something a build warns of.
 #[derive(Clone, Debug)]
-pub struct PluginWarning {
-    /// The ref, like `v1.4`.
-    pub git_ref: Option<String>,
-    pub warning: plugin::Warning,
-}
-
-impl fmt::Display for PluginWarning {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // A hook that failed names what it failed on, which names the ref.
-        match (&self.git_ref, &self.warning.warned) {
-            (Some(git_ref), Warned::Message(message)) => {
-                let plugin = &self.warning.plugin;
-                write!(f, "plugin `{plugin}` at {git_ref}: {message}")
-            }
-            _ => self.warning.fmt(f),
-        }
-    }
-}
-
-/// A formula in a page that couldn't be rendered, and the file it's in.
-#[derive(Clone, Debug)]
-pub struct UnrenderedMath {
-    /// What it's in, like `docs/intro.md`.
-    pub origin: String,
-    pub formula: math::Unrendered,
-}
-
-impl fmt::Display for UnrenderedMath {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let math::Unrendered { written, reason } = &self.formula;
-        write!(f, "can't render {written} in {}: {reason}", self.origin)
-    }
-}
-
-/// A diagram in a page that couldn't be drawn, and the file it's in.
-#[derive(Clone, Debug)]
-pub struct UnrenderedDiagram {
-    /// What it's in, like `docs/intro.md`.
-    pub origin: String,
-    pub diagram: mermaid::Unrendered,
-}
-
-impl fmt::Display for UnrenderedDiagram {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let Self { origin, diagram } = self;
-        match diagram.line {
-            Some(line) => write!(f, "can't draw the diagram on line {line} of {origin}"),
-            None => write!(f, "can't draw a diagram in {origin}"),
-        }?;
-        write!(f, ": {}", diagram.reason)
-    }
-}
-
-/// A code block in a page that a plugin couldn't render, and the file it's
-/// in.
-#[derive(Clone, Debug)]
-pub struct UnrenderedBlock {
-    /// What it's in, like `docs/intro.md`.
-    pub origin: String,
-    pub block: plugin::Unrendered,
-}
-
-impl fmt::Display for UnrenderedBlock {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let Self { origin, block } = self;
-        let plugin = &block.plugin;
-        match block.line {
-            Some(line) => write!(
-                f,
-                "plugin `{plugin}` can't render the block on line {line} of {origin}"
-            ),
-            None => write!(f, "plugin `{plugin}` can't render a block in {origin}"),
-        }?;
-        write!(f, ": {}", block.reason)
-    }
+pub struct Warning {
+    /// What it is, as `little build --strict` counts it, like
+    /// `formula(s) that can't be rendered`.
+    pub kind: &'static str,
+    /// What it says, naming where it is, like `can't draw a diagram in
+    /// docs/intro.ipynb: No diagram type detected`.
+    pub message: String,
 }
 
 /// Where a version of a site is built: the folder of the destination it's
@@ -536,28 +458,19 @@ pub fn build(site_dir: &Path) -> Result<Built> {
         urls: HashMap::new(),
         links: HashMap::new(),
         repo: config.repo.clone(),
-        unrendered_math: Vec::new(),
-        unrendered_diagrams: Vec::new(),
-        unrendered_blocks: Vec::new(),
-        plugin_warnings: Vec::new(),
+        warnings: Vec::new(),
         from_refs: HashSet::new(),
     };
     // When every version is from a git ref, the site's plugins build none,
     // but may have warned as they started.
     if let Some(mut plugins) = site_plugins {
-        built.plugin_warnings.extend(warned(&mut plugins, None));
+        built.warnings.extend(warned(&mut plugins, None));
     }
     let mut ready = Vec::new();
     for (source, &version) in sources.into_iter().zip(&versions) {
         let finished = finish(source, every.as_ref(), &theme_files, now, &mut built);
         ready.push(in_version(finished, version)?);
     }
-    // The version at `/`, which config checks there's one of, has the
-    // others in its folders.
-    let root = (versions.iter())
-        .position(|version| version.is_none_or(|version| version.path.is_empty()))
-        .unwrap_or_default();
-    check_versions(&ready[root], &config.versions, &config.destination_dir)?;
 
     let pages: usize = ready.iter().map(|version| version.pages).sum();
     let destination = &config.destination_dir;
@@ -590,11 +503,17 @@ fn in_version<T>(result: Result<T>, version: Option<&config::Version>) -> Result
 
 /// What `plugins` have warned of since they were last asked, as warnings of
 /// the version of the site from `git_ref`, if it's from one.
-fn warned(plugins: &mut Plugins, git_ref: Option<&str>) -> Vec<PluginWarning> {
+fn warned(plugins: &mut Plugins, git_ref: Option<&str>) -> Vec<Warning> {
     (plugins.take_warnings().into_iter())
-        .map(|warning| PluginWarning {
-            git_ref: git_ref.map(str::to_string),
-            warning,
+        .map(|warning| Warning {
+            kind: "warning(s) from plugins",
+            // A hook that failed names what it failed on, which names the ref.
+            message: match (git_ref, &warning.warned) {
+                (Some(git_ref), Warned::Message(message)) => {
+                    format!("plugin `{}` at {git_ref}: {message}", warning.plugin)
+                }
+                _ => warning.to_string(),
+            },
         })
         .collect()
 }
@@ -930,28 +849,7 @@ fn finish(
                 searched.push((&page.url, title, content, search::lang(&html)));
             }
             let origin = page.origin.clone();
-            built
-                .unrendered_math
-                .extend(page.unrendered_math.iter().map(|formula| UnrenderedMath {
-                    origin: origin.clone(),
-                    formula: formula.clone(),
-                }));
-            built
-                .unrendered_diagrams
-                .extend(
-                    page.unrendered_diagrams
-                        .iter()
-                        .map(|diagram| UnrenderedDiagram {
-                            origin: origin.clone(),
-                            diagram: diagram.clone(),
-                        }),
-                );
-            built
-                .unrendered_blocks
-                .extend(page.unrendered_blocks.iter().map(|block| UnrenderedBlock {
-                    origin: origin.clone(),
-                    block: block.clone(),
-                }));
+            built.warnings.extend_from_slice(&page.warnings);
             outputs.push(Output {
                 path: page.out_path.clone(),
                 url: format!("{}{}", place.prefix, page.url),
@@ -1051,11 +949,29 @@ fn finish(
             origin,
         });
     }
-    check_static_files(&static_files, &place.destination, &outputs)?;
-    check_search_files(&search_files, &static_files, &place.destination, &outputs)?;
+    let for_search = format!("/{}/, where little writes files for search", search::DIR);
+    let mut written: Vec<(&Path, String)> = (search_files.iter())
+        .map(|file| (file.path.as_path(), for_search.clone()))
+        .collect();
+    // The version at the root of the site has the others in its folders.
+    for version in versions.iter().flat_map(|versions| &versions.each) {
+        if let Some(folder) = version.prefix.strip_prefix('/').filter(|_| place.is_root()) {
+            let title = (version.entry.get("title").and_then(Value::as_str)).unwrap_or_default();
+            let name = format!("version `{title}`, built at {}/", version.prefix);
+            written.push((Path::new(folder), name));
+        }
+    }
+    for output in &outputs {
+        let path = output.path.strip_prefix(&place.destination)?;
+        written.push((path, output.name.clone()));
+    }
+    for file in &static_files {
+        written.push((file.path.as_path(), file.origin.clone()));
+    }
+    check_written(written)?;
 
     built
-        .plugin_warnings
+        .warnings
         .extend(warned(&mut plugins, git_ref.as_deref()));
     Ok(Ready {
         destination: place.destination,
@@ -1065,47 +981,6 @@ fn finish(
         static_files,
         search_files,
     })
-}
-
-/// Fail if a page or a file of the version of a site at its root, `root`, is
-/// in the folder of the destination, `destination`, another of its
-/// `versions` is built into, as `docs/1.4.md` would be for a version at
-/// `/1.4`, or one of them is where little writes files for search.
-fn check_versions(root: &Ready, versions: &[config::Version], destination: &Path) -> Result<()> {
-    let folders: Vec<(PathBuf, &config::Version)> = (versions.iter())
-        .filter(|version| !version.path.is_empty())
-        .map(|version| (version.folders().collect(), version))
-        .collect();
-    let version_at = |path: &Path| {
-        (folders.iter())
-            .find(|(folder, _)| path.starts_with(folder))
-            .map(|&(_, version)| version)
-    };
-    let clash = |name: &str, version: &config::Version| {
-        anyhow!(
-            "{name} clashes with version `{}`, built at {}/: rename or move one",
-            version.title,
-            version.path
-        )
-    };
-    for page in &root.outputs {
-        if let Some(version) = version_at(page.path.strip_prefix(destination)?) {
-            return Err(clash(&page.name, version));
-        }
-    }
-    for file in &root.static_files {
-        if let Some(version) = version_at(&file.path) {
-            return Err(clash(&file.origin, version));
-        }
-    }
-    if let Some(version) = (root.search_files.iter()).find_map(|file| version_at(&file.path)) {
-        bail!(
-            "version `{}` is built at {}/, where little writes files for search: change its `url`",
-            version.title,
-            version.path
-        );
-    }
-    Ok(())
 }
 
 /// Write `version` of a site into the destination, `root`, noting what each
@@ -1176,6 +1051,37 @@ fn page_from(
     let out_path = out_path_for_url(destination, &url);
     let page_type = page_type(&rel);
 
+    // A diagram or block in a notebook has no line of the file.
+    let at = |thing: &str, line: Option<usize>| match line {
+        Some(line) => format!("the {thing} on line {line} of {origin}"),
+        None => format!("a {thing} in {origin}"),
+    };
+    let math = (rendered.unrendered_math.into_iter()).map(|formula| Warning {
+        kind: "formula(s) that can't be rendered",
+        message: format!(
+            "can't render {} in {origin}: {}",
+            formula.written, formula.reason
+        ),
+    });
+    let diagrams = (rendered.unrendered_diagrams.into_iter()).map(|diagram| Warning {
+        kind: "diagram(s) that can't be drawn",
+        message: format!(
+            "can't draw {}: {}",
+            at("diagram", diagram.line),
+            diagram.reason
+        ),
+    });
+    let blocks = (rendered.unrendered_blocks.into_iter()).map(|block| Warning {
+        kind: "code block(s) that plugins can't render",
+        message: format!(
+            "plugin `{}` can't render {}: {}",
+            block.plugin,
+            at("block", block.line),
+            block.reason
+        ),
+    });
+    let warnings = math.chain(diagrams).chain(blocks).collect();
+
     Page {
         rel,
         origin,
@@ -1188,9 +1094,7 @@ fn page_from(
         toc: nest_headings(&rendered.toc),
         page_type,
         links: rendered.links,
-        unrendered_math: rendered.unrendered_math,
-        unrendered_diagrams: rendered.unrendered_diagrams,
-        unrendered_blocks: rendered.unrendered_blocks,
+        warnings,
     }
 }
 
@@ -1361,53 +1265,20 @@ fn check_clashes(pages: &[Page]) -> Result<()> {
     Ok(())
 }
 
-/// Fail if a static file, a theme's or one from the source, would land on a
-/// page in the destination: on the page itself, or on the folder it's in.
-fn check_static_files(files: &[StaticFile], destination: &Path, outputs: &[Output]) -> Result<()> {
-    for file in files {
-        let target = destination.join(&file.path);
-        if let Some(page) = outputs.iter().find(|page| page.path.starts_with(&target)) {
-            bail!("{} clashes with {}", file.origin, page.name);
-        }
-    }
-    Ok(())
-}
-
-/// Fail if a static file or a page would land on one of the files little
-/// writes for search, or on a folder they're in, or one of them would land on
-/// it, as a static file named `pagefind` would.
-fn check_search_files(
-    search_files: &[search::File],
-    static_files: &[StaticFile],
-    destination: &Path,
-    outputs: &[Output],
-) -> Result<()> {
-    let taken: BTreeSet<&Path> = search_files
-        .iter()
-        .map(|file| file.path.as_path())
-        .collect();
-    let mut written: Vec<(&Path, &str)> = (static_files.iter())
-        .map(|file| (file.path.as_path(), file.origin.as_str()))
-        .collect();
-    for page in outputs {
-        written.push((page.path.strip_prefix(destination)?, &page.name));
-    }
-    let url = |path: &Path| path.to_string_lossy().replace('\\', "/");
-    for (path, name) in written {
-        if let Some(file) = path.ancestors().find(|path| taken.contains(path)) {
-            bail!(
-                "{name} clashes with /{}, which little writes for search: rename or move it",
-                url(file)
-            );
-        }
+/// Fail if one of the files a version of a site writes, `files`, each its
+/// path in the version's folder and what it's called, is on another, or
+/// where another's folder goes, or in it, so one would overwrite the other.
+fn check_written(files: Vec<(&Path, String)>) -> Result<()> {
+    let mut written: BTreeMap<&Path, String> = BTreeMap::new();
+    for (path, name) in files {
         // Paths sort by their parts, so the files in a folder sort just after it.
-        if (taken.range(path..).next()).is_some_and(|file| file.starts_with(path)) {
-            bail!(
-                "{name} clashes with /{}/, where little writes files for search: \
-                 rename or move it",
-                url(path)
-            );
+        let under = (written.range(path..).next()).filter(|(file, _)| file.starts_with(path));
+        let other = (path.ancestors().find_map(|folder| written.get(folder)))
+            .or(under.map(|(_, other)| other));
+        if let Some(other) = other {
+            bail!("{name} clashes with {other}");
         }
+        written.insert(path, name);
     }
     Ok(())
 }
@@ -1562,19 +1433,13 @@ fn humanize(slug: &str) -> String {
         .join(" ")
 }
 
-/// A leaf page collected while assembling the nav tree.
-struct NavLeaf {
-    title: String,
-    url: String,
-}
-
 /// A folder in the docs tree: its own `README.md` (if any), leaf pages, and
 /// subfolders.
 #[derive(Default)]
 struct DirNode {
     dirs: BTreeMap<String, DirNode>,
-    pages: Vec<NavLeaf>,
-    index: Option<NavLeaf>,
+    pages: Vec<NavItem>,
+    index: Option<NavItem>,
 }
 
 /// Arrange the pages in their folders in the source.
@@ -1589,14 +1454,7 @@ fn build_tree(pages: &[Page]) -> DirNode {
 /// Build the site-wide navigation tree from the source's folder structure.
 fn build_nav(root: &DirNode) -> Vec<NavItem> {
     // Top-level: the site home (root README) first, then pages/sections.
-    let mut items = Vec::new();
-    if let Some(home) = &root.index {
-        items.push(NavItem {
-            title: home.title.clone(),
-            url: Some(home.url.clone()),
-            children: Vec::new(),
-        });
-    }
+    let mut items: Vec<NavItem> = root.index.iter().cloned().collect();
     items.extend(child_items(root));
     items
 }
@@ -1607,14 +1465,15 @@ fn insert_into_tree(root: &mut DirNode, page: &Page) {
         node = node.dirs.entry(folder.to_string()).or_default();
     }
 
-    let leaf = NavLeaf {
+    let item = NavItem {
         title: page.title.clone(),
-        url: page.url.clone(),
+        url: Some(page.url.clone()),
+        children: Vec::new(),
     };
     if page.is_index() {
-        node.index = Some(leaf);
+        node.index = Some(item);
     } else {
-        node.pages.push(leaf);
+        node.pages.push(item);
     }
 }
 
@@ -1636,14 +1495,7 @@ fn children_of(root: &DirNode, rel: &Path) -> Vec<NavItem> {
 /// before "10.". A folder's own README is rendered by its parent as the
 /// section link, so it's excluded here.
 fn child_items(node: &DirNode) -> Vec<NavItem> {
-    let mut items: Vec<NavItem> = Vec::new();
-    for leaf in &node.pages {
-        items.push(NavItem {
-            title: leaf.title.clone(),
-            url: Some(leaf.url.clone()),
-            children: Vec::new(),
-        });
-    }
+    let mut items = node.pages.clone();
     for (name, sub) in &node.dirs {
         items.push(section_item(name, sub));
     }
@@ -1657,7 +1509,7 @@ fn child_items(node: &DirNode) -> Vec<NavItem> {
 /// `README.md`; without one it's a plain label (`url: None`).
 fn section_item(name: &str, node: &DirNode) -> NavItem {
     let (title, url) = match &node.index {
-        Some(index) => (index.title.clone(), Some(index.url.clone())),
+        Some(index) => (index.title.clone(), index.url.clone()),
         None => (humanize(name), None),
     };
     NavItem {
@@ -1783,10 +1635,13 @@ mod tests {
             toc: Vec::new(),
             page_type,
             links: Vec::new(),
-            unrendered_math: Vec::new(),
-            unrendered_diagrams: Vec::new(),
-            unrendered_blocks: Vec::new(),
+            warnings: Vec::new(),
         }
+    }
+
+    /// What `built` warns of, as it says it.
+    fn warnings_of(built: &Built) -> Vec<String> {
+        built.warnings.iter().map(|w| w.message.clone()).collect()
     }
 
     /// `path`, written with `/`, with the system's separators, as little
@@ -2854,11 +2709,7 @@ mod tests {
         // Each formula that isn't is noted, with the file it's in, in the
         // order of the pages.
         let docs = site.join("docs");
-        let warnings: Vec<_> = built
-            .unrendered_math
-            .iter()
-            .map(|f| f.to_string())
-            .collect();
+        let warnings = warnings_of(&built);
         let expected = [
             format!(
                 "can't render $$\\qty{{1}}{{m}}$$ in {}: Unknown command \"\\qty\".",
@@ -2901,9 +2752,7 @@ mod tests {
         // Each that isn't is noted, with the file it's in, and the line its
         // block starts on in a Markdown file, in the order of the pages.
         let docs = site.join("docs");
-        let warnings: Vec<_> = (built.unrendered_diagrams.iter())
-            .map(|d| d.to_string())
-            .collect();
+        let warnings = warnings_of(&built);
         let expected = [
             format!(
                 "can't draw the diagram on line 9 of {}: No diagram type detected",
@@ -2954,9 +2803,7 @@ mod tests {
         // Each block it can't render is noted, with the file it's in, and the
         // line it starts on in a Markdown file, in the order of the pages.
         let docs = site.join("docs");
-        let warnings: Vec<_> = (built.unrendered_blocks.iter())
-            .map(|b| b.to_string())
-            .collect();
+        let warnings = warnings_of(&built);
         let expected = [
             format!(
                 "plugin `test` can't render the block on line 8 of {}: it is broken",
@@ -3058,9 +2905,7 @@ mod tests {
         );
 
         // What it warns of is noted, and its links are checked, naming it.
-        let warnings: Vec<_> = (built.plugin_warnings.iter())
-            .map(|w| w.to_string())
-            .collect();
+        let warnings = warnings_of(&built);
         assert_eq!(warnings, ["plugin `api`: can't read pkg/broken.py"]);
         let broken: Vec<_> = (crate::links::check(&built, crate::links::Scope::Internal))
             .unwrap()
@@ -3208,11 +3053,7 @@ mod tests {
             broken[0].starts_with("broken link /docs/gone in plugin `test`'s added.md: "),
             "{broken:?}"
         );
-        assert!(
-            built.plugin_warnings.is_empty(),
-            "{:?}",
-            built.plugin_warnings
-        );
+        assert!(built.warnings.is_empty(), "{:?}", built.warnings);
         let _ = fs::remove_dir_all(&site);
     }
 
@@ -3241,9 +3082,7 @@ mod tests {
         .unwrap();
         let home = fs::read_to_string(site.join("dist/index.html")).unwrap();
         assert!(home.contains("Hello, world."), "{home}");
-        let warnings: Vec<_> = (built.plugin_warnings.iter())
-            .map(|w| w.to_string())
-            .collect();
+        let warnings = warnings_of(&built);
         let readme = site.join(native("docs/README.md"));
         assert_eq!(
             warnings,
@@ -4295,10 +4134,8 @@ mod tests {
             fs::create_dir_all(file.parent().unwrap()).unwrap();
             fs::write(file, "# Mine\n").unwrap();
             let message = format!("{:#}", build(&site).unwrap_err());
-            let expected = format!(
-                "{name} clashes with /pagefind/pagefind.js, which little writes for search: \
-                 rename or move it"
-            );
+            let expected =
+                format!("{name} clashes with /pagefind/, where little writes files for search");
             assert_eq!(message, expected);
             fs::remove_file(file).unwrap();
         }
@@ -4309,7 +4146,7 @@ mod tests {
         fs::write(docs.join("pagefind"), "a file, not a folder").unwrap();
         let message = format!("{:#}", build(&site).unwrap_err());
         let expected = format!(
-            "{} clashes with /pagefind/, where little writes files for search: rename or move it",
+            "{} clashes with /pagefind/, where little writes files for search",
             docs.join("pagefind").display()
         );
         assert_eq!(message, expected);
@@ -4655,7 +4492,7 @@ mod tests {
                 fs::write(&path, "# Mine\n").unwrap();
                 let message = format!("{:#}", build(&site).unwrap_err());
                 let expected = format!(
-                    "{name}{} clashes with version `1.4`, built at {url}/: rename or move one",
+                    "{name}{} clashes with version `1.4`, built at {url}/",
                     path.display()
                 );
                 assert_eq!(message, expected);
@@ -4695,8 +4532,8 @@ mod tests {
         let message = format!("{:#}", build(&site).unwrap_err());
         assert_eq!(
             message,
-            "version `1.4` is built at /pagefind/, where little writes files for search: change \
-             its `url`"
+            "version `1.4`, built at /pagefind/ clashes with /pagefind/, where little writes \
+             files for search"
         );
         let _ = fs::remove_dir_all(&site);
     }
@@ -4721,9 +4558,7 @@ mod tests {
         );
         // What's warned of in its files names each as git does.
         let built = build(&site).unwrap();
-        let warnings: Vec<_> = (built.unrendered_math.iter())
-            .map(|f| f.to_string())
-            .collect();
+        let warnings = warnings_of(&built);
         assert_eq!(
             warnings,
             ["can't render $\\qty{1}{m}$ in v1.4:docs/README.md: Unknown command \"\\qty\"."]
@@ -4799,9 +4634,7 @@ mod tests {
         assert!(hi.starts_with("<h1 id=\"hi\">Hi<"), "{hi}");
         // What it warns of, and the pages it adds, say which version they're
         // in.
-        let warnings: Vec<_> = (built.plugin_warnings.iter())
-            .map(|w| w.to_string())
-            .collect();
+        let warnings = warnings_of(&built);
         assert_eq!(
             warnings,
             [
@@ -4835,7 +4668,7 @@ mod tests {
         let built = build(&site).unwrap();
         let hi = read("1.4/reference/hello/index.html");
         assert!(hi.starts_with("<h1 id=\"hi\">Hi<"), "{hi}");
-        assert_eq!(built.plugin_warnings.len(), 2);
+        assert_eq!(built.warnings.len(), 2);
         // ...or turn it off, for that version alone.
         let off = "ref: v1.3, plugins: { api: false }";
         fs::write(site.join("little.yml"), site_cfg(off)).unwrap();
@@ -4843,9 +4676,7 @@ mod tests {
         assert!(!site.join("dist/1.4/reference").exists());
         assert!(site.join("dist/1.4/index.html").is_file());
         assert!(site.join("dist/reference/hello/index.html").is_file());
-        let warnings: Vec<_> = (built.plugin_warnings.iter())
-            .map(|w| w.to_string())
-            .collect();
+        let warnings = warnings_of(&built);
         assert_eq!(warnings, ["plugin `api`: can't read pkg/broken.py"]);
         let _ = fs::remove_dir_all(&site);
     }

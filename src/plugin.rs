@@ -402,8 +402,7 @@ impl Plugins {
     /// The theme's `files`, as each plugin's `theme` hook changes them, in
     /// turn, each plugin's checked with `check`, which is given its name.
     /// Stops at the first that fails, or gives back a file at a path that
-    /// isn't relative, two at one, or adds one where a folder is, or in a
-    /// file.
+    /// isn't relative, two at one, or one where a folder is, or in a file.
     pub fn theme(
         &mut self,
         mut files: Vec<HookedFile>,
@@ -430,20 +429,18 @@ impl Plugins {
             let before: HashMap<&str, usize> = (given.iter().enumerate())
                 .map(|(index, file)| (file.path.as_str(), index))
                 .collect();
-            let mut seen = HashSet::new();
+            let mut paths = BTreeSet::new();
             files = Vec::with_capacity(back.len());
             for wit::theme::File { path, contents } in back {
-                let fail = |why: &str| {
-                    anyhow!(
-                        "plugin `{name}`'s `theme` hook gives back a file at `{path}`, but {why}"
-                    )
+                let first_from = |from: &str| {
+                    (paths.range::<str, _>(paths_from(from)).next()).map(String::as_str)
                 };
-                if let Some(why) = bad_path(&path) {
-                    return Err(fail(why));
+                if let Some(why) = check_added(&path, "it gives back another there", first_from) {
+                    bail!(
+                        "plugin `{name}`'s `theme` hook gives back a file at `{path}`, but {why}"
+                    );
                 }
-                if !seen.insert(path.clone()) {
-                    return Err(fail("it gives back another there"));
-                }
+                paths.insert(path.clone());
                 // A file it gives back as it was is still the one before's.
                 let plugin = match before.get(path.as_str()) {
                     Some(&index) if given[index].contents == contents => by[index].clone(),
@@ -456,17 +453,6 @@ impl Plugins {
                 });
             }
             files.sort_by(|a, b| a.path.cmp(&b.path));
-            // A file it adds can't be where one's folder is, or in one.
-            let paths: BTreeSet<&str> = files.iter().map(|file| file.path.as_str()).collect();
-            let first_from = |from: &str| paths.range::<str, _>(paths_from(from)).next().copied();
-            for file in (files.iter()).filter(|file| !before.contains_key(file.path.as_str())) {
-                if let Some(why) = clash(&file.path, first_from) {
-                    bail!(
-                        "plugin `{name}`'s `theme` hook gives back a file at `{}`, but {why}",
-                        file.path
-                    );
-                }
-            }
             check(&name, &files)?;
         }
         Ok(files)
@@ -498,23 +484,16 @@ impl Plugins {
             }
             let mut seen = HashSet::new();
             for wit::files::File { path, contents } in add {
-                let fail = |why: &str| {
-                    anyhow!("plugin `{name}`'s `files` hook adds a file at `{path}`, but {why}")
+                let there = if seen.insert(path.clone()) {
+                    "there's one there, which it doesn't remove"
+                } else {
+                    "it adds another there"
                 };
-                if let Some(why) = bad_path(&path) {
-                    return Err(fail(why));
-                }
-                if !seen.insert(path.clone()) {
-                    return Err(fail("it adds another there"));
-                }
-                if files.contains_key(&path) {
-                    return Err(fail("there's one there, which it doesn't remove"));
-                }
                 let first_from = |from: &str| {
                     (files.range::<str, _>(paths_from(from)).next()).map(|(path, _)| path.as_str())
                 };
-                if let Some(why) = clash(&path, first_from) {
-                    return Err(fail(&why));
+                if let Some(why) = check_added(&path, there, first_from) {
+                    bail!("plugin `{name}`'s `files` hook adds a file at `{path}`, but {why}");
                 }
                 files.insert(path, added(&name, contents));
             }
@@ -638,22 +617,13 @@ impl Plugins {
             }))
             .map_err(|reason| anyhow!("plugin `{name}`'s `destination` hook failed: {reason}"))?;
             for wit::destination::File { path, contents } in files {
-                let fail = |why: &str| {
-                    anyhow!(
-                        "plugin `{name}`'s `destination` hook adds a file at `{path}`, but {why}"
-                    )
-                };
-                if let Some(why) = bad_path(&path) {
-                    return Err(fail(why));
-                }
-                if paths.contains(&path) {
-                    return Err(fail("there's one there"));
-                }
                 let first_from = |from: &str| {
                     (paths.range::<str, _>(paths_from(from)).next()).map(String::as_str)
                 };
-                if let Some(why) = clash(&path, first_from) {
-                    return Err(fail(&why));
+                if let Some(why) = check_added(&path, "there's one there", first_from) {
+                    bail!(
+                        "plugin `{name}`'s `destination` hook adds a file at `{path}`, but {why}"
+                    );
                 }
                 paths.insert(path.clone());
                 added.push(HookedFile {
@@ -720,12 +690,23 @@ fn bad_path(path: &str) -> Option<&'static str> {
     }
 }
 
-/// Why a file can't be at `path`, beside the files `first_from` finds, if
-/// it can't, as a disk couldn't have both: one is where a folder it's in
-/// would be, or one is in the folder that would be where it is.
-/// `first_from` gives the first of their paths, in order, from the one
-/// it's given.
-fn clash<'p>(path: &str, first_from: impl Fn(&str) -> Option<&'p str>) -> Option<String> {
+/// Why a hook can't add a file at `path`, beside the files `first_from`
+/// finds, if it can't: its path is bad, as [`bad_path`] says, or there's
+/// one there, which is `there`, or a disk couldn't have both, as one is
+/// where a folder it's in would be, or one is in the folder that would be
+/// where it is. `first_from` gives the first of their paths, in order, from
+/// the one it's given.
+fn check_added<'p>(
+    path: &str,
+    there: &str,
+    first_from: impl Fn(&str) -> Option<&'p str>,
+) -> Option<String> {
+    if let Some(why) = bad_path(path) {
+        return Some(why.to_string());
+    }
+    if first_from(path) == Some(path) {
+        return Some(there.to_string());
+    }
     for (end, _) in path.match_indices('/') {
         let folder = &path[..end];
         if first_from(folder) == Some(folder) {
@@ -999,8 +980,8 @@ fn list(items: &[String]) -> String {
 }
 
 /// A block's language: the first word of its info string, up to a comma, in
-/// lowercase, as for highlighting.
-fn language(info: &str) -> String {
+/// lowercase, as for highlighting, and as Mermaid's is found.
+pub(crate) fn language(info: &str) -> String {
     let word = info.split_ascii_whitespace().next().unwrap_or_default();
     word.split(',').next().unwrap_or_default().to_lowercase()
 }

@@ -18,7 +18,7 @@ use std::ops::RangeInclusive;
 use std::sync::LazyLock;
 use time::OffsetDateTime;
 
-use crate::config::{Markdown, SiteUrl};
+use crate::config::{self, Markdown, SiteUrl};
 use crate::mermaid;
 use crate::plugin::PagePlugins;
 use crate::render::{self, Rendered};
@@ -178,7 +178,8 @@ pub fn parse_notebook(
              version 4: open it in Jupyter, and save it, to upgrade it"
         );
     }
-    let frontmatter = render::parse_frontmatter(&take_frontmatter(&mut cells))?;
+    let frontmatter =
+        config::parse_config(&take_frontmatter(&mut cells)).context("parsing frontmatter")?;
 
     let options = render::render_options(markdown);
     let arena = Arena::new();

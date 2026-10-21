@@ -13,7 +13,7 @@ use std::mem;
 use std::ops::RangeInclusive;
 use time::OffsetDateTime;
 
-use crate::config::{Markdown, Math, SiteUrl};
+use crate::config::{self, Markdown, Math, SiteUrl};
 use crate::plugin::{self, PagePlugins};
 use crate::{highlight, math, mermaid};
 
@@ -83,7 +83,7 @@ pub fn parse_document(
     plugins: &mut PagePlugins<'_>,
 ) -> Result<Rendered> {
     let (frontmatter_src, body) = split_frontmatter(raw);
-    let frontmatter = parse_frontmatter(&frontmatter_src)?;
+    let frontmatter = config::parse_config(&frontmatter_src).context("parsing frontmatter")?;
     let options = render_options(markdown);
     let arena = Arena::new();
     let root = comrak::parse_document(&arena, &body, &options);
@@ -107,16 +107,6 @@ pub fn parse_document(
         unrendered_blocks,
         ..rendered
     })
-}
-
-/// The settings in frontmatter, as `split_frontmatter` finds it.
-pub(crate) fn parse_frontmatter(frontmatter: &str) -> Result<Mapping> {
-    // Frontmatter is settings, like a `little.yml`, as each one becomes a key
-    // of `page`. Anything else, like a list or plain text, is an error rather
-    // than silently dropped. Empty or comment-only frontmatter has none.
-    Ok(serde_yaml::from_str::<Option<Mapping>>(frontmatter)
-        .context("parsing frontmatter")?
-        .unwrap_or_default())
 }
 
 /// Render a document parsed with `options`, as `parse_document` does, from
@@ -361,41 +351,18 @@ fn heading_text<'a>(node: &'a AstNode<'a>) -> String {
     text
 }
 
-/// Split a `---` fenced YAML frontmatter block from the body.
+/// Split a `---` fenced YAML frontmatter block from the body. Without one, or
+/// with one that isn't closed, it's all body.
 pub(crate) fn split_frontmatter(raw: &str) -> (String, String) {
-    let first_line = raw.lines().next().map(str::trim);
-    if first_line != Some("---") {
-        return (String::new(), raw.to_string());
-    }
-
-    let mut frontmatter = String::new();
-    let mut body = String::new();
-    let mut in_frontmatter = true;
-    let mut closed = false;
-
-    for (i, line) in raw.lines().enumerate() {
-        if i == 0 {
-            continue; // skip the opening `---`
-        }
-        if in_frontmatter && line.trim() == "---" {
-            in_frontmatter = false;
-            closed = true;
-            continue;
-        }
-        if in_frontmatter {
-            frontmatter.push_str(line);
-            frontmatter.push('\n');
-        } else {
-            body.push_str(line);
-            body.push('\n');
+    let mut lines = raw.lines();
+    if lines.next().map(str::trim) == Some("---") {
+        let rest: Vec<&str> = lines.collect();
+        if let Some(end) = rest.iter().position(|line| line.trim() == "---") {
+            let joined = |lines: &[&str]| lines.iter().map(|line| format!("{line}\n")).collect();
+            return (joined(&rest[..end]), joined(&rest[end + 1..]));
         }
     }
-
-    if closed {
-        (frontmatter, body)
-    } else {
-        (String::new(), raw.to_string())
-    }
+    (String::new(), raw.to_string())
 }
 
 #[cfg(test)]

@@ -89,21 +89,10 @@ fn address(host: &str, port: u16) -> String {
     }
 }
 
-/// Warn of each warning from a plugin, each formula in the site `built`
-/// that can't be rendered, each diagram that can't be drawn, each code block
-/// a plugin can't render, and each broken link within it.
+/// Warn of what the site `built` warns of, and each broken link within it.
 fn warn(built: &Built) {
-    for warning in &built.plugin_warnings {
-        eprintln!("warning: {warning}");
-    }
-    for formula in &built.unrendered_math {
-        eprintln!("warning: {formula}");
-    }
-    for diagram in &built.unrendered_diagrams {
-        eprintln!("warning: {diagram}");
-    }
-    for block in &built.unrendered_blocks {
-        eprintln!("warning: {block}");
+    for warning in &built.warnings {
+        eprintln!("warning: {}", warning.message);
     }
     match links::check(built, Scope::Internal) {
         Ok(broken) => {
@@ -200,66 +189,53 @@ impl Sources {
             let watcher = watch_folder(&source.0, &source.1, true, self.tx.clone())?;
             self.source = Some((source, watcher));
         }
+        let tx = &self.tx;
+        let folder =
+            |(dir, destination): &Watched| watch_folder(dir, destination, false, tx.clone());
         // The built-in theme is in the binary, and a downloaded theme never
         // changes, so only the folders of the other themes are watched.
-        let themes: Vec<Watched> = cfg
-            .themes
-            .iter()
+        let themes = (cfg.themes.iter())
             .filter_map(|theme| match theme {
                 Location::Folder(dir) => Some((dir.clone(), cfg.destination_dir.clone())),
                 Location::BuiltIn | Location::Downloaded { .. } => None,
             })
             .collect();
-        if !themes
-            .iter()
-            .eq(self.themes.iter().map(|(watched, _)| watched))
-        {
-            let mut watchers = Vec::new();
-            for theme in themes {
-                let watcher = watch_folder(&theme.0, &theme.1, false, self.tx.clone())?;
-                watchers.push((theme, watcher));
-            }
-            self.themes = watchers;
-        }
+        rewatch(&mut self.themes, themes, folder)?;
         // Like a theme, a downloaded plugin never changes. A plugin's file,
         // or a folder it reads, that isn't there fails the build, which says
         // why; it's watched once it's there and something else changes.
-        let plugins: Vec<PathBuf> = (cfg.plugins.iter())
+        let plugins = (cfg.plugins.iter())
             .filter_map(|plugin| match &plugin.wasm {
                 Wasm::File(file) => Some(file.clone()),
                 Wasm::Url(_) => None,
             })
             .filter(|file| file.parent().is_some_and(Path::is_dir))
             .collect();
-        if !plugins
-            .iter()
-            .eq(self.plugins.iter().map(|(watched, _)| watched))
-        {
-            let mut watchers = Vec::new();
-            for plugin in plugins {
-                let watcher = watch_file(&plugin, self.tx.clone())?;
-                watchers.push((plugin, watcher));
-            }
-            self.plugins = watchers;
-        }
-        let reads: Vec<Watched> = (cfg.plugins.iter())
+        rewatch(&mut self.plugins, plugins, |file| {
+            watch_file(file, tx.clone())
+        })?;
+        let reads = (cfg.plugins.iter())
             .flat_map(|plugin| &plugin.read)
             .filter(|read| read.folder.is_dir())
             .map(|read| (read.folder.clone(), cfg.destination_dir.clone()))
             .collect();
-        if !reads
-            .iter()
-            .eq(self.reads.iter().map(|(watched, _)| watched))
-        {
-            let mut watchers = Vec::new();
-            for read in reads {
-                let watcher = watch_folder(&read.0, &read.1, false, self.tx.clone())?;
-                watchers.push((read, watcher));
-            }
-            self.reads = watchers;
-        }
-        Ok(())
+        rewatch(&mut self.reads, reads, folder)
     }
+}
+
+/// Watch each of `wanted` with `watch`, in place of what's `watched`, unless
+/// it's the same.
+fn rewatch<T: PartialEq>(
+    watched: &mut Vec<(T, RecommendedWatcher)>,
+    wanted: Vec<T>,
+    watch: impl Fn(&T) -> notify::Result<RecommendedWatcher>,
+) -> notify::Result<()> {
+    if !wanted.iter().eq(watched.iter().map(|(each, _)| each)) {
+        *watched = (wanted.into_iter())
+            .map(|each| watch(&each).map(|watcher| (each, watcher)))
+            .collect::<notify::Result<_>>()?;
+    }
+    Ok(())
 }
 
 /// Watch a file: the site's config, or a plugin's. A config is optional, and
@@ -303,8 +279,11 @@ fn watch_folder(
     let destination = real_path(destination)?;
     let root = dir.clone();
     let mut watcher = notify::recommended_watcher(move |res: notify::Result<Event>| {
+        // A read isn't a change: every build opens the files it uses, and
+        // some platforms report opens (Linux's inotify does), so counting
+        // them would trigger endless rebuilds.
         if !res.as_ref().is_ok_and(|event| {
-            is_read(event)
+            event.kind.is_access()
                 || is_output(event, &destination)
                 || (skip_hidden && is_hidden_in(event, &root))
         }) {
@@ -341,13 +320,6 @@ fn real_path(path: &Path) -> io::Result<PathBuf> {
     Ok(real)
 }
 
-/// Is this event just a read? Every build opens the files it uses, and some
-/// platforms report opens (Linux's inotify does), so a watcher that counted
-/// reads as changes would trigger endless rebuilds.
-fn is_read(event: &Event) -> bool {
-    event.kind.is_access()
-}
-
 /// Does this event only touch the build's own output: the destination, what's
 /// in it, or a folder that holds it? Each build removes the destination and
 /// makes it again, which Windows reports as a change to the folder it's in,
@@ -372,8 +344,9 @@ fn is_hidden_in(event: &Event, source: &Path) -> bool {
 }
 
 /// Does this event, in a watched file's folder, change the file named `name`?
+/// A read doesn't, as in `watch_folder`.
 fn changes(event: &Event, name: &OsStr) -> bool {
-    !is_read(event)
+    !event.kind.is_access()
         && event
             .paths
             .iter()
@@ -490,21 +463,12 @@ fn content_type(mime: &Mime) -> String {
     }
 }
 
-fn inject_livereload(html: String) -> String {
+fn inject_livereload(mut html: String) -> String {
     const SCRIPT: &str = r#"<script>
 (function(){let v=null;async function poll(){try{const r=await fetch('/__little/version',{cache:'no-store'});const t=await r.text();if(v===null){v=t;}else if(t!==v){location.reload();}}catch(e){}}setInterval(poll,400);})();
 </script>"#;
-
-    match html.rfind("</body>") {
-        Some(idx) => {
-            let mut out = String::with_capacity(html.len() + SCRIPT.len());
-            out.push_str(&html[..idx]);
-            out.push_str(SCRIPT);
-            out.push_str(&html[idx..]);
-            out
-        }
-        None => html + SCRIPT,
-    }
+    html.insert_str(html.rfind("</body>").unwrap_or(html.len()), SCRIPT);
+    html
 }
 
 #[cfg(test)]

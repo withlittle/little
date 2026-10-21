@@ -56,13 +56,13 @@ merman = { version = "0.7.0", features = ["render"] }
 mime_guess = { version = "2.0.5", default-features = false }
 minijinja = { version = "2.24.0", features = ["loader"] }
 notify = "8.2.0"
-notify-debouncer-mini = "0.7.0"
 pagefind = { version = "1.5.2", default-features = false }
 percent-encoding = "2.3.2"
 rand = { version = "0.10.3", default-features = false, features = ["std_rng"] }
 regex = "1.13.1"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
+serde_path_to_error = "0.1.20"
 serde_yaml = "0.9.34"
 tar = { version = "0.4.46", default-features = false }
 tempfile = "3.27.0"
