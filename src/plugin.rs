@@ -999,8 +999,8 @@ fn list(items: &[String]) -> String {
 }
 
 /// A block's language: the first word of its info string, up to a comma, in
-/// lowercase, as for highlighting.
-fn language(info: &str) -> String {
+/// lowercase, as for highlighting, and as Mermaid's is found.
+pub(crate) fn language(info: &str) -> String {
     let word = info.split_ascii_whitespace().next().unwrap_or_default();
     word.split(',').next().unwrap_or_default().to_lowercase()
 }

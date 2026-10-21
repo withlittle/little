@@ -303,8 +303,11 @@ fn watch_folder(
     let destination = real_path(destination)?;
     let root = dir.clone();
     let mut watcher = notify::recommended_watcher(move |res: notify::Result<Event>| {
+        // A read isn't a change: every build opens the files it uses, and
+        // some platforms report opens (Linux's inotify does), so counting
+        // them would trigger endless rebuilds.
         if !res.as_ref().is_ok_and(|event| {
-            is_read(event)
+            event.kind.is_access()
                 || is_output(event, &destination)
                 || (skip_hidden && is_hidden_in(event, &root))
         }) {
@@ -341,13 +344,6 @@ fn real_path(path: &Path) -> io::Result<PathBuf> {
     Ok(real)
 }
 
-/// Is this event just a read? Every build opens the files it uses, and some
-/// platforms report opens (Linux's inotify does), so a watcher that counted
-/// reads as changes would trigger endless rebuilds.
-fn is_read(event: &Event) -> bool {
-    event.kind.is_access()
-}
-
 /// Does this event only touch the build's own output: the destination, what's
 /// in it, or a folder that holds it? Each build removes the destination and
 /// makes it again, which Windows reports as a change to the folder it's in,
@@ -372,8 +368,9 @@ fn is_hidden_in(event: &Event, source: &Path) -> bool {
 }
 
 /// Does this event, in a watched file's folder, change the file named `name`?
+/// A read doesn't, as in `watch_folder`.
 fn changes(event: &Event, name: &OsStr) -> bool {
-    !is_read(event)
+    !event.kind.is_access()
         && event
             .paths
             .iter()

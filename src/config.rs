@@ -1211,10 +1211,11 @@ fn read_config(path: &Path, name: &str) -> Result<Mapping> {
     }
 }
 
-/// Parse a config file's settings. An empty or comment-only file has none.
-/// Anything but settings is an error: merged, it would replace every level
-/// beneath it.
-fn parse_config(raw: &str) -> serde_yaml::Result<Mapping> {
+/// Parse settings, from a config file or a page's frontmatter, whose keys
+/// become `page`'s. Empty or comment-only, there are none. Anything but
+/// settings, like a list or plain text, is an error, rather than dropped:
+/// merged, it would replace every level beneath it.
+pub(crate) fn parse_config(raw: &str) -> serde_yaml::Result<Mapping> {
     Ok(serde_yaml::from_str::<Option<Mapping>>(raw)?.unwrap_or_default())
 }
 

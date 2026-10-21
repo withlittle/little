@@ -148,7 +148,7 @@ impl<'a> From<&'a NavItem> for Breadcrumb<'a> {
 /// One node in the site-wide navigation tree (see `build_nav`), in a `nav`
 /// that the config sets instead, or in a page's table of contents (see
 /// `nest_headings`).
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 struct NavItem {
     title: String,
     /// A page's path, a heading's `#fragment`, or in a config's `nav`, any
@@ -1562,19 +1562,13 @@ fn humanize(slug: &str) -> String {
         .join(" ")
 }
 
-/// A leaf page collected while assembling the nav tree.
-struct NavLeaf {
-    title: String,
-    url: String,
-}
-
 /// A folder in the docs tree: its own `README.md` (if any), leaf pages, and
 /// subfolders.
 #[derive(Default)]
 struct DirNode {
     dirs: BTreeMap<String, DirNode>,
-    pages: Vec<NavLeaf>,
-    index: Option<NavLeaf>,
+    pages: Vec<NavItem>,
+    index: Option<NavItem>,
 }
 
 /// Arrange the pages in their folders in the source.
@@ -1589,14 +1583,7 @@ fn build_tree(pages: &[Page]) -> DirNode {
 /// Build the site-wide navigation tree from the source's folder structure.
 fn build_nav(root: &DirNode) -> Vec<NavItem> {
     // Top-level: the site home (root README) first, then pages/sections.
-    let mut items = Vec::new();
-    if let Some(home) = &root.index {
-        items.push(NavItem {
-            title: home.title.clone(),
-            url: Some(home.url.clone()),
-            children: Vec::new(),
-        });
-    }
+    let mut items: Vec<NavItem> = root.index.iter().cloned().collect();
     items.extend(child_items(root));
     items
 }
@@ -1607,14 +1594,15 @@ fn insert_into_tree(root: &mut DirNode, page: &Page) {
         node = node.dirs.entry(folder.to_string()).or_default();
     }
 
-    let leaf = NavLeaf {
+    let item = NavItem {
         title: page.title.clone(),
-        url: page.url.clone(),
+        url: Some(page.url.clone()),
+        children: Vec::new(),
     };
     if page.is_index() {
-        node.index = Some(leaf);
+        node.index = Some(item);
     } else {
-        node.pages.push(leaf);
+        node.pages.push(item);
     }
 }
 
@@ -1636,14 +1624,7 @@ fn children_of(root: &DirNode, rel: &Path) -> Vec<NavItem> {
 /// before "10.". A folder's own README is rendered by its parent as the
 /// section link, so it's excluded here.
 fn child_items(node: &DirNode) -> Vec<NavItem> {
-    let mut items: Vec<NavItem> = Vec::new();
-    for leaf in &node.pages {
-        items.push(NavItem {
-            title: leaf.title.clone(),
-            url: Some(leaf.url.clone()),
-            children: Vec::new(),
-        });
-    }
+    let mut items = node.pages.clone();
     for (name, sub) in &node.dirs {
         items.push(section_item(name, sub));
     }
@@ -1657,7 +1638,7 @@ fn child_items(node: &DirNode) -> Vec<NavItem> {
 /// `README.md`; without one it's a plain label (`url: None`).
 fn section_item(name: &str, node: &DirNode) -> NavItem {
     let (title, url) = match &node.index {
-        Some(index) => (index.title.clone(), Some(index.url.clone())),
+        Some(index) => (index.title.clone(), index.url.clone()),
         None => (humanize(name), None),
     };
     NavItem {

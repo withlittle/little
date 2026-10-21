@@ -12,6 +12,7 @@ use serde_json::json;
 use time::OffsetDateTime;
 
 use crate::config::Markdown;
+use crate::plugin;
 
 /// A diagram merman can't draw, which is written as code instead, as with
 /// `markdown.mermaid: false`.
@@ -48,7 +49,7 @@ pub fn draw<'a>(
         let NodeValue::CodeBlock(block) = &data.value else {
             continue;
         };
-        if !is_mermaid(&block.info) {
+        if plugin::language(&block.info) != "mermaid" {
             continue;
         }
         // One that can't be drawn keeps its number, so those after it keep
@@ -65,13 +66,6 @@ pub fn draw<'a>(
         }
     }
     unrendered
-}
-
-/// Whether a block is Mermaid by its language, the first word after its
-/// fence, up to a comma, in any case, as for highlighting.
-fn is_mermaid(info: &str) -> bool {
-    let word = info.split_ascii_whitespace().next().unwrap_or_default();
-    (word.split(',').next()).is_some_and(|lang| lang.eq_ignore_ascii_case("mermaid"))
 }
 
 /// A renderer that draws a diagram the same in each build: with Mermaid's

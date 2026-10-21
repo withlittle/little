@@ -13,7 +13,7 @@ use std::mem;
 use std::ops::RangeInclusive;
 use time::OffsetDateTime;
 
-use crate::config::{Markdown, Math, SiteUrl};
+use crate::config::{self, Markdown, Math, SiteUrl};
 use crate::plugin::{self, PagePlugins};
 use crate::{highlight, math, mermaid};
 
@@ -83,7 +83,7 @@ pub fn parse_document(
     plugins: &mut PagePlugins<'_>,
 ) -> Result<Rendered> {
     let (frontmatter_src, body) = split_frontmatter(raw);
-    let frontmatter = parse_frontmatter(&frontmatter_src)?;
+    let frontmatter = config::parse_config(&frontmatter_src).context("parsing frontmatter")?;
     let options = render_options(markdown);
     let arena = Arena::new();
     let root = comrak::parse_document(&arena, &body, &options);
@@ -107,16 +107,6 @@ pub fn parse_document(
         unrendered_blocks,
         ..rendered
     })
-}
-
-/// The settings in frontmatter, as `split_frontmatter` finds it.
-pub(crate) fn parse_frontmatter(frontmatter: &str) -> Result<Mapping> {
-    // Frontmatter is settings, like a `little.yml`, as each one becomes a key
-    // of `page`. Anything else, like a list or plain text, is an error rather
-    // than silently dropped. Empty or comment-only frontmatter has none.
-    Ok(serde_yaml::from_str::<Option<Mapping>>(frontmatter)
-        .context("parsing frontmatter")?
-        .unwrap_or_default())
 }
 
 /// Render a document parsed with `options`, as `parse_document` does, from

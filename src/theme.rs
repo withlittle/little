@@ -97,14 +97,9 @@ impl PageType {
         }
     }
 
-    /// The type's own template.
-    pub fn template(self) -> &'static str {
-        match self {
-            Self::Home => "home.html",
-            Self::Section => "section.html",
-            Self::Page => "page.html",
-            Self::NotFound => "404.html",
-        }
+    /// The type's own template, named after it, like `home.html`.
+    pub fn template(self) -> String {
+        format!("{}.html", self.name())
     }
 }
 
@@ -395,7 +390,7 @@ pub struct Theme {
     env: Environment<'static>,
     /// The template each type of page is rendered with. A type that isn't
     /// here isn't rendered at all.
-    templates: HashMap<PageType, &'static str>,
+    templates: HashMap<PageType, String>,
 }
 
 impl Theme {
@@ -444,13 +439,14 @@ impl Theme {
         }
         let mut templates = HashMap::new();
         for page_type in PageType::ALL {
-            if has_template(page_type.template())? {
-                templates.insert(page_type, page_type.template());
+            let template = page_type.template();
+            if has_template(&template)? {
+                templates.insert(page_type, template);
             } else if page_type != PageType::NotFound {
                 // A 404 page has no content for default.html to show, so
                 // without a 404.html the site gets none, and its host shows
                 // its own.
-                templates.insert(page_type, DEFAULT_TEMPLATE);
+                templates.insert(page_type, DEFAULT_TEMPLATE.to_string());
             }
         }
 
