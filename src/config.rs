@@ -280,13 +280,10 @@ impl Repo {
     /// `docs/guide/install.md`, on its branch. little knows only GitHub's and
     /// GitLab's addresses, so a repository anywhere else has none.
     pub fn file_urls(&self, path: &Path) -> Option<FileUrls> {
-        let host = self.url.split_once("://")?.1.split('/').next()?;
-        let (source, edit) = if host.eq_ignore_ascii_case("github.com") {
-            ("blob", "edit")
-        } else if host.eq_ignore_ascii_case("gitlab.com") {
-            ("-/blob", "-/edit")
-        } else {
-            return None;
+        let (source, edit) = match url::Url::parse(&self.url).ok()?.host_str()? {
+            "github.com" => ("blob", "edit"),
+            "gitlab.com" => ("-/blob", "-/edit"),
+            _ => return None,
         };
         let branch = self.branch.split('/').map(Cow::Borrowed);
         let file = path
@@ -652,22 +649,21 @@ fn site_url(values: &Mapping) -> Result<SiteUrl> {
              or http://, like https://example.github.io/my-project"
         )
     };
-    let url = value.as_str().ok_or_else(error)?;
-    let rest = (url.strip_prefix("https://"))
-        .or_else(|| url.strip_prefix("http://"))
-        .ok_or_else(error)?;
-    if rest.contains(['?', '#']) || rest.contains(char::is_whitespace) {
-        return Err(error());
-    }
-    let (host, path) = rest.split_at(rest.find('/').unwrap_or(rest.len()));
-    if host.is_empty() {
-        return Err(error());
-    }
+    let url = value.as_str().and_then(web_address).ok_or_else(error)?;
     Ok(SiteUrl {
-        origin: url[..url.len() - path.len()].to_string(),
-        path: path.trim_end_matches('/').to_string(),
+        origin: url.origin().ascii_serialization(),
+        path: url.path().trim_end_matches('/').to_string(),
         shared: None,
     })
+}
+
+/// `url`, if it's a whole address on the web: `https://` or `http://`, a
+/// host, and a path, with no `?`, `#`, or spaces. `Url` alone would read
+/// `https:///docs` as the host `docs`, and encode a space.
+fn web_address(url: &str) -> Option<url::Url> {
+    let rest = (url.strip_prefix("https://")).or_else(|| url.strip_prefix("http://"))?;
+    let bad = |c: char| c == '?' || c == '#' || c.is_whitespace();
+    (!rest.starts_with('/') && !rest.contains(bad)).then(|| url::Url::parse(url).ok())?
 }
 
 /// The repository the site's source is in, from `repo`, and the branch its
@@ -691,24 +687,14 @@ fn repo(values: &Mapping) -> Result<Option<Repo>> {
         )
     };
     let url = value.as_str().ok_or_else(error)?.trim_end_matches('/');
-    let rest = (url.strip_prefix("https://"))
-        .or_else(|| url.strip_prefix("http://"))
-        .ok_or_else(error)?;
-    let (host, path) = rest.split_at(rest.find('/').unwrap_or(rest.len()));
     // Not the address it's cloned from, which ends in `.git`.
-    if host.is_empty()
-        || path.is_empty()
-        || url.ends_with(".git")
-        || rest.contains(['?', '#'])
-        || rest.contains(char::is_whitespace)
-        || url::Url::parse(url).is_err()
-    {
-        return Err(error());
+    match web_address(url) {
+        Some(parsed) if parsed.path() != "/" && !url.ends_with(".git") => Ok(Some(Repo {
+            url: url.to_string(),
+            branch,
+        })),
+        _ => Err(error()),
     }
-    Ok(Some(Repo {
-        url: url.to_string(),
-        branch,
-    }))
 }
 
 /// Whether a build indexes the site for search. YAML reads `yes` and `"true"`
