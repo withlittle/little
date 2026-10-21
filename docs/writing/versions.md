@@ -180,8 +180,10 @@ reading:
 - On each version but the one at `/`, a note above the page says which
   version it's for, and links to the one at `/`, at the same page if it has
   one.
-- It's a `<details>`, so it works without a script. With the theme's, a
-  click elsewhere, or Escape, closes it.
+- It's a popover, so it works without a script, and a click elsewhere, or
+  Escape, closes it. It opens below the version you're reading, or, in a
+  browser without CSS anchor positioning, which every major one has had
+  since January 2026, in the middle of the window.
 
 A theme of your own can have one too: see [A menu of
 versions](../themes/making-a-theme.md#a-menu-of-versions).

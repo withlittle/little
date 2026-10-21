@@ -729,3 +729,11 @@ manual, and list each in its `README.md`. Locked so far:
   plugins built for 0.2.0 still load. `little init` makes little 0.2.0 —
   see
   [`docs/decisions/0058-features-raise-the-minor-version.md`](./docs/decisions/0058-features-raise-the-minor-version.md).
+- **The menu of versions as a popover:** the built-in theme's menu of
+  versions is a `<button popovertarget>` and a `<ul popover>`, as the
+  drawer is, so the browser closes it on a click elsewhere, or Escape,
+  without a script, and the script no longer does. Where the browser has
+  CSS anchor positioning, Baseline since January 2026, the list is
+  anchored below its button; where it hasn't, it opens in the middle of
+  the window — see
+  [`docs/decisions/0059-the-menu-of-versions-as-a-popover.md`](./docs/decisions/0059-the-menu-of-versions-as-a-popover.md).
