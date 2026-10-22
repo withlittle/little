@@ -1,12 +1,13 @@
 # Releasing
 
-How little, and its plugins, `pydoc`, `rustdoc`, and `jsdoc`, are released.
-Each is released on its own, from a tag of its version: `v0.2.0` for
-little, and one that names the plugin too, like `pydoc-v0.2.0`, for a
-plugin. Pushing the tag to GitHub runs a workflow, which checks the tag,
-builds what it releases, and publishes it in a release of little's
-repository, with its [third-party notices](#third-party-notices), and notes
-that list what changed since its last release:
+How little, and its plugins, `pydoc`, `rustdoc`, `jsdoc`, and `jupyter`,
+are released. Each is released on its own, from a tag of its version:
+`v0.2.0` for little, and one that names the plugin too, like
+`pydoc-v0.2.0`, for a plugin. Pushing the tag to GitHub runs a workflow,
+which checks the tag, builds what it releases, and publishes it in a
+release of little's repository, with its
+[third-party notices](#third-party-notices), and notes that list what
+changed since its last release:
 
 - [`release.yml`](./.github/workflows/release.yml), for little: its binary
   for Linux, macOS, and Windows, on x64 and arm64, each in an archive, then
@@ -52,9 +53,9 @@ once, by hand:
 
 [git-cliff](https://git-cliff.org) lists a plugin's changes since its last
 release, as the release's notes will: the commits that changed its folder,
-`plugins/<plugin>/`, or the library the plugins share,
-`plugins/api_reference/`, of a type that's released, `feat`, `fix`, or
-`perf`, with those that break something first. Install it, with
+`plugins/<plugin>/`, or, for `pydoc`, `rustdoc`, or `jsdoc`, the library
+they share, `plugins/api_reference/`, of a type that's released, `feat`,
+`fix`, or `perf`, with those that break something first. Install it, with
 `cargo install --locked git-cliff` or `brew install git-cliff`, then, in the
 repository's root:
 
@@ -64,13 +65,15 @@ PLUGIN=$plugin git cliff --unreleased --tag-pattern "^$plugin-v" \
   --include-path "plugins/$plugin/**" --include-path "plugins/api_reference/**"
 ```
 
-It warns of the commits it skips, like merges, which aren't Conventional
-Commits; that's expected. With `--bumped-version` added, the same command
-prints the tag to release next: after a feature or a breaking change, it
-raises the minor version, from `pydoc-v0.1.4` to `pydoc-v0.2.0`, and after
-anything else, the patch, to `pydoc-v0.1.5`. With nothing to list, there's
-nothing to release, so it says so, and prints the last tag. Keep
-`--unreleased`: without it, it raises the patch even then.
+For `jupyter`, which doesn't use the library, leave out its
+`--include-path`. It warns of the commits it skips, like merges, which
+aren't Conventional Commits; that's expected. With `--bumped-version`
+added, the same command prints the tag to release next: after a feature or
+a breaking change, it raises the minor version, from `pydoc-v0.1.4` to
+`pydoc-v0.2.0`, and after anything else, the patch, to `pydoc-v0.1.5`.
+With nothing to list, there's nothing to release, so it says so, and
+prints the last tag. Keep `--unreleased`: without it, it raises the patch
+even then.
 
 ### 2. Raise its version, in a pull request
 
@@ -82,9 +85,10 @@ On a branch from `main`:
    `--locked`, as the release does, so if `Cargo.lock` isn't committed with
    `Cargo.toml`, the pull request fails, before the release can.
 3. Change the URLs in its page in the manual,
-   `docs/plugins/python-api-reference.md`, `rust-api-reference.md`, or
-   `javascript-api-reference.md`, to the new version, so the manual gives
-   it. `git grep -n "download/$plugin-v" docs/` finds them.
+   `docs/plugins/python-api-reference.md`, `rust-api-reference.md`,
+   `javascript-api-reference.md`, or `jupyter-notebooks.ipynb`, to the new
+   version, so the manual gives it.
+   `git grep -n "download/$plugin-v" docs/` finds them.
 4. Commit them as `chore(<plugin>): release <version>`, like
    `chore(pydoc): release 0.2.0`, open a pull request, and merge it once CI
    passes.
@@ -249,7 +253,7 @@ there. To write them yourself, install cargo-about 0.9.2, with
 `cargo install --locked cargo-about@0.9.2`, then, in the repository's root:
 
 ```sh
-scripts/notices.sh pydoc target/notices/pydoc.md   # or little, rustdoc, or jsdoc
+scripts/notices.sh pydoc target/notices/pydoc.md   # or little, rustdoc, jsdoc, or jupyter
 ```
 
 Each one's `about.toml`, beside its `Cargo.toml`, accepts the licences its

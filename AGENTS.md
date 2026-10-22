@@ -42,7 +42,7 @@ cargo clippy --manifest-path plugins/jupyter/Cargo.toml --all-targets --target w
 
 # the third-party notices releases carry, with cargo-about 0.9.2
 # (cargo install --locked cargo-about@0.9.2)
-scripts/notices.sh little target/notices/little.md # or pydoc, rustdoc, jsdoc
+scripts/notices.sh little target/notices/little.md # or pydoc, rustdoc, jsdoc, jupyter
 ```
 
 ## Architecture (keep the core small)
@@ -228,7 +228,7 @@ Content and theme live outside `src/`:
   the tag, builds the plugin's `.wasm` file, and publishes it, beside its
   third-party notices, in a GitHub release, with notes that git-cliff
   writes, from `cliff.toml`, from the commits that changed the plugin's
-  folder or `plugins/api_reference/`.
+  folder, or, for one that adds an API reference, `plugins/api_reference/`.
 - `.github/workflows/release.yml` — releases little when a tag of its
   version, like `v0.1.0`, is pushed: checks the tag, builds little for
   Linux, macOS, and Windows, on x64 and arm64, Linux's static, against
