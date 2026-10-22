@@ -35,6 +35,11 @@ cargo clippy --manifest-path plugins/jsdoc/Cargo.toml --all-targets --target was
 cargo test --manifest-path plugins/api_reference/Cargo.toml
 cargo clippy --manifest-path plugins/api_reference/Cargo.toml --all-targets
 
+# the jupyter plugin, in its own workspace
+cargo build --release --target wasm32-wasip2 --manifest-path plugins/jupyter/Cargo.toml
+cargo test --manifest-path plugins/jupyter/Cargo.toml
+cargo clippy --manifest-path plugins/jupyter/Cargo.toml --all-targets --target wasm32-wasip2
+
 # the third-party notices releases carry, with cargo-about 0.9.2
 # (cargo install --locked cargo-about@0.9.2)
 scripts/notices.sh little target/notices/little.md # or pydoc, rustdoc, jsdoc
@@ -195,6 +200,13 @@ Content and theme live outside `src/`:
   their doc comments, with JSDoc's and TSDoc's tags, parsed with oxc's
   parser, in ES modules, CommonJS, and scripts. Its tests run natively, as
   pydoc's do.
+- `plugins/jupyter/` — the `jupyter` plugin, a crate in its own
+  workspace, built for `wasm32-wasip2`, that reads Jupyter notebooks
+  (`.ipynb`, format 4), with serde, with the `formats` hook: each into the
+  parts of its page, its frontmatter, from a raw or Markdown cell at the
+  top, its Markdown cells, its code cells, in the notebook's language, and
+  their outputs, as `output` code, HTML, or images with `data:` URLs. Its
+  tests run natively, as pydoc's do.
 - `plugins/api_reference/` — a library, in its own workspace, not a plugin,
   that the plugins that add an API reference share: what a page documents,
   in no language in particular, and the Markdown of the page; and the

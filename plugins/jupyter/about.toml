@@ -1,0 +1,11 @@
+# How cargo-about writes jupyter's third-party notices, which its releases
+# include: see docs/decisions/0054-third-party-notices.md.
+
+# The licences jupyter's crates may use, in order of preference: where a crate
+# offers a choice, the first listed wins.
+accepted = ["MIT", "Unicode-3.0", "Zlib"]
+targets = ["wasm32-wasip2"]
+ignore-build-dependencies = true
+ignore-dev-dependencies = true
+# Leaves out jupyter, which isn't published.
+private = { ignore = true }
