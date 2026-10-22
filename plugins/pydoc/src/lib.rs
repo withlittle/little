@@ -258,9 +258,9 @@ mod plugin {
             package little:pydoc;
 
             world pydoc {
-                import little:plugin/warnings@0.2.0;
-                export little:plugin/setup@0.2.0;
-                export little:plugin/files@0.2.0;
+                import little:plugin/warnings@0.2.1;
+                export little:plugin/setup@0.2.1;
+                export little:plugin/files@0.2.1;
             }
         ",
         world: "little:pydoc/pydoc",
