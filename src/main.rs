@@ -16,6 +16,7 @@ mod links;
 mod math;
 mod mermaid;
 mod notebook;
+mod parts;
 mod plugin;
 mod render;
 mod sass;

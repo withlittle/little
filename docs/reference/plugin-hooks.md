@@ -8,7 +8,7 @@ description: Each hook a plugin can export, when little calls it, what it's give
 A [plugin](../plugins/using-plugins.md) exports the hooks it needs, from
 little's
 [`wit/plugin.wit`](https://github.com/withlittle/little/blob/main/wit/plugin.wit),
-`little:plugin@0.2.0`, and little calls each as the build reaches its step,
+`little:plugin@0.2.1`, and little calls each as the build reaches its step,
 with what the build has made so far. What the hook gives back is what the
 build goes on with. [Writing a plugin](../plugins/writing-a-plugin.md) shows
 how to export one.
@@ -20,7 +20,8 @@ flowchart TD
     setup --> config --> theme --> files
     files --> read
     subgraph read [For each page]
-        source --> blocks[code-blocks] --> content
+        source --> formats --> blocks[code-blocks] --> content
+        source --> blocks
     end
     read --> site
     site --> write
@@ -37,6 +38,7 @@ flowchart TD
 | [`theme`](#theme) | once | the theme's files | the files | the build stops |
 | [`files`](#files) | once | the paths of the source's files | files to add, and to leave out | the build stops |
 | [`source`](#source) | for each page | its file and text | the text | it's warned of, and the text kept |
+| [`formats`](#formats) | for each page in its extensions | its file and text | the page's parts | the build stops |
 | [`code-blocks`](#code-blocks) | for each block in its languages | the block | Markdown or HTML | it's warned of, and the block kept |
 | [`content`](#content) | for each page | its file and HTML | the HTML | it's warned of, and the HTML kept |
 | [`site`](#site) | once | `site` | `site` | the build stops |
@@ -131,8 +133,9 @@ files: func(paths: list<string>) -> result<changes, string>;
   source folder, but [hidden](../writing/pages-and-files.md#hidden-files) ones, from
   there, like `guide/install.md`, sorted.
 - Gives back files to `add`, each built as if it were in the source folder
-  at its path, so a Markdown file or a notebook is a page, and any other
-  file is copied, and the paths of files to `remove`, which are left out.
+  at its path, so a Markdown file, or a file a [`formats`](#formats) hook
+  reads, is a page, and any other file is copied, and the paths of files to
+  `remove`, which are left out.
   That's how an [API reference](../plugins/python-api-reference.md) adds a
   page for each module.
 - A path is relative, with `/` between its parts, none of them empty, `.`,
@@ -158,10 +161,69 @@ source: func(page: string, text: string) -> result<string, string>;
 
 - Called for each page as it's read, with its file, from the site's folder,
   like `docs/guide/install.md`, and its text: Markdown, with its
-  frontmatter, or a notebook's JSON.
+  frontmatter, or the text of a file a [`formats`](#formats) hook reads,
+  like a notebook's JSON.
 - Gives back the text the page is built from, so it can change the page's
   frontmatter, too.
 - An error is warned of, and the page is built from its text as it was.
+
+## formats
+
+```wit
+record code { language: string, text: string }
+variant part { markdown(string), html(string), code(code) }
+extensions: func() -> list<string>;
+read: func(page: string, text: string, markdown: string) -> result<list<part>, string>;
+```
+
+- `extensions` is called once, after `setup`, for the extensions of the
+  files the plugin reads, each without its `.`, like `ipynb`. A file is the
+  plugin's by its extension, as it's written, so `ipynb` doesn't read
+  `.IPYNB` files. Two plugins that read one extension stop the build, as
+  does `md`, which little reads itself, or one that isn't a word, like
+  `.ipynb` or `tar.gz`.
+- A file in one of them, in the source or [added](#files), is a page, as a
+  Markdown file is: `analysis.ipynb` is the page at `/analysis`,
+  `README.ipynb` is its folder's page, a link to `analysis.ipynb#results`
+  leads to the page, and the file isn't copied. One that would be the same
+  page as another, like `analysis.md`, stops the build, naming both. A file
+  in an extension no plugin reads is copied, as it is.
+- `read` is called for each, in place of reading it as Markdown, as its
+  page is read, after `source`, with:
+  - `page`, its file, as for `source`;
+  - `text`, its text, as `source` hooks give it back;
+  - `markdown`, the site's
+    [`markdown` settings](../writing/markdown.md#choosing-markdowns-extensions),
+    as `little config` prints them, as a JSON object, like
+    `{"raw_html":true,…}`, so it can write what they allow.
+- It gives back the page's parts, in order, which little writes as if they
+  were one Markdown file:
+  - `markdown`, read on its own, so a code block it leaves open doesn't
+    swallow the next part, and written as if the page's author had: its
+    headings join the page's table of contents, its links are checked, its
+    math is rendered, its diagrams drawn, its code highlighted, and its code
+    blocks go to [`code-blocks`](#code-blocks) hooks. Its footnotes are
+    numbered on from those before, and listed at the page's end, and
+    frontmatter, between `---` lines at the top of the first part, is the
+    page's.
+  - `html`, which little writes as it is, whole, though raw HTML in
+    Markdown would end at a blank line, and which stops the build with
+    [`raw_html: false`](../writing/markdown.md#choosing-markdowns-extensions).
+  - `code`, with its `language`, like `python`, or none, and its `text`,
+    which little writes as a code block, highlighted in its language, as a
+    notebook's code cell is. No `code-blocks` hook renders it, but one in
+    `mermaid` is still drawn, and one in `math` written as math.
+- An error stops the build, naming the file:
+
+  ```text
+  Error: rendering ./docs/analysis.ipynb
+
+  Caused by:
+      plugin `jupyter`'s `formats` hook failed: reading the notebook: …
+  ```
+
+- A block a plugin can't render, or a diagram or formula little can't, in
+  one of its parts, is warned of without a line.
 
 ## code-blocks
 
@@ -177,7 +239,7 @@ render: func(block: block) -> result<output, string>;
   by its language, the first word after its fence, up to a comma, in any
   case. Two plugins that render one language stop the build.
 - `render` is called for each block in one of them, as its page is read,
-  after `source`, before its diagrams are drawn, with:
+  after `source` and `formats`, before its diagrams are drawn, with:
   - `language`, in lowercase, like `bob`;
   - `info`, all that's after its fence, like `bob {width=10}`;
   - `text`, which ends in a newline unless the block is empty;
@@ -195,9 +257,10 @@ render: func(block: block) -> result<output, string>;
   warning: plugin `csv` can't render the block on line 9 of ./docs/sizes.md: the table is empty
   ```
 
-- In a [notebook](../writing/notebooks.ipynb), the blocks in its Markdown
-  cells, and in Markdown its cells showed, go to plugins too, and are
-  warned of without a line. Its code cells don't.
+- In a page a [`formats`](#formats) hook reads, like a
+  [notebook](../writing/notebooks.ipynb), the blocks in its `markdown`
+  parts go to plugins too, and are warned of without a line. Its `code`
+  parts don't.
 
 ## content
 
@@ -296,7 +359,7 @@ warning: plugin `pydoc` at v1.4: can't parse `mypackage/broken.py`: …
   `source` hooks give back.
 - Headings a `content` hook adds aren't in `page.toc`.
 - An `.html` file in the source isn't a page, but a file that's copied, so
-  only `files` sees it.
+  only `files` sees it, unless a `formats` hook reads it.
 - `files` gives a plugin the paths of the source's files, not what's in
   them: to read one, it needs its folder in `read`.
 - A hook has no time limit, so one that never returns holds the build up

@@ -71,9 +71,9 @@ it to read.
   back HTML, which little writes as it is, so it needs
   [`raw_html`](../writing/markdown.md#choosing-markdowns-extensions): with
   `raw_html: false`, the build stops.
-- In a [notebook](../writing/notebooks.ipynb), the blocks in Markdown cells,
-  and in Markdown a cell showed, go to plugins too, and are warned of without
-  a line. Its code cells don't.
+- In a page in [another format](#pages-in-other-formats), like a
+  [notebook](../writing/notebooks.ipynb), the blocks in its Markdown go to
+  plugins too, and are warned of without a line. Its code doesn't.
 - A block a plugin can't render is left as it was, as code, and warned of,
   with the file and line it's on:
 
@@ -97,6 +97,20 @@ nav and search, its links are checked, and its code blocks go to plugins.
 - `little serve` adds them again in each build, which a change in a folder
   the plugin reads starts.
 
+## Pages in other formats
+
+A plugin can read files in a format of its own, by their extension, like
+`.ipynb`, as pages, with its
+[`formats`](../reference/plugin-hooks.md#formats) hook. Each is a page as a
+Markdown file is: `analysis.ipynb` is the page at `/analysis`,
+`README.ipynb` is its folder's page, a link to `analysis.ipynb` leads to
+the page, and the file isn't copied.
+
+- Two plugins that read the same extension stop the build, and a plugin
+  can't read `.md` files, which little reads itself.
+- A file in an extension no plugin reads is copied, as it is.
+- A file the plugin can't read stops the build, naming it.
+
 ## When a plugin fails
 
 A hook fails when it gives back an error, or its plugin crashes, as a Rust
@@ -104,9 +118,10 @@ plugin does when it panics. After a crash, little starts the plugin again,
 for the next hook.
 
 - A plugin that can't start, as its settings are wrong, say, stops the
-  build, as does a hook that little calls once, like `files`, that fails.
-- A hook that little calls for each page, or block, that fails is warned
-  of, and the page is built as if the hook hadn't run:
+  build, as does a hook that little calls once, like `files`, that fails,
+  or a `formats` hook that can't read a page.
+- Any other hook that little calls for each page, or block, that fails is
+  warned of, and the page is built as if the hook hadn't run:
 
   ```text
   warning: plugin `links`'s `content` hook failed on ./docs/guide.md: …

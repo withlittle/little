@@ -15,6 +15,11 @@
 //!
 //! - `source`, `content`, and `html` replace the first of `replace`, a pair,
 //!   with the second, then add `append`, with `{arg}`, too;
+//! - `formats` reads the files with the extensions the settings list in
+//!   `extensions`, or none, each a JSON list of parts, `{ "markdown": … }`,
+//!   `{ "html": … }`, or `{ "code": { "language": …, "text": … } }`, and
+//!   warns of the page's file and the `markdown` settings it's given for
+//!   `"given"`;
 //! - `config`, `site`, and `page` give back `give`, as it is, if it's
 //!   there, else set the key `echo` names to the JSON they're given, then
 //!   set each key in `merge`;
@@ -34,8 +39,10 @@ use serde_json::{Map, Value};
 wit_bindgen::generate!({ path: "../../wit/plugin.wit", world: "hooks" });
 
 use exports::little::plugin::code_blocks::{Block, Output};
+use exports::little::plugin::formats::{Code, Part};
 use exports::little::plugin::{
-    code_blocks, config, content, destination, files, html, page, setup, site, source, theme,
+    code_blocks, config, content, destination, files, formats, html, page, setup, site, source,
+    theme,
 };
 use little::plugin::warnings::warn;
 
@@ -201,6 +208,42 @@ impl files::Guest for Plugin {
 impl source::Guest for Plugin {
     fn source(page: String, source: String) -> Result<String, String> {
         text("source", &page, source)
+    }
+}
+
+impl formats::Guest for Plugin {
+    fn extensions() -> Vec<String> {
+        match settings().get("extensions") {
+            Some(extensions) => {
+                serde_json::from_value(extensions.clone()).expect("`extensions` lists strings")
+            }
+            None => Vec::new(),
+        }
+    }
+
+    fn read(page: String, text: String, markdown: String) -> Result<Vec<Part>, String> {
+        begin("formats", &page)?;
+        let parts: Vec<Value> = serde_json::from_str(&text).map_err(|e| e.to_string())?;
+        let mut read = Vec::new();
+        for part in parts {
+            let field = |key: &str| part.get(key).and_then(Value::as_str).map(str::to_string);
+            if part.as_str() == Some("given") {
+                warn(&format!("{page} {markdown}"));
+            } else if let Some(markdown) = field("markdown") {
+                read.push(Part::Markdown(markdown));
+            } else if let Some(html) = field("html") {
+                read.push(Part::Html(html));
+            } else if let Some(code) = part.get("code") {
+                let field = |key: &str| code.get(key).and_then(Value::as_str).unwrap_or_default();
+                read.push(Part::Code(Code {
+                    language: field("language").to_string(),
+                    text: field("text").to_string(),
+                }));
+            } else {
+                return Err(format!("there's no part like {part}"));
+            }
+        }
+        Ok(read)
     }
 }
 

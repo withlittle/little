@@ -201,16 +201,9 @@ pub fn parse_notebook(
     // file's.
     let unrendered_blocks = plugins.render(&arena, markdown_blocks, &options, None)?;
     let unrendered_diagrams = mermaid::draw(root, markdown, now, None);
-    let rendered = render::render_tree(
-        root,
-        frontmatter,
-        folder,
-        toc_depths,
-        url,
-        markdown,
-        &options,
-    )?;
+    let rendered = render::render_tree(root, folder, toc_depths, url, markdown, &options, plugins)?;
     Ok(Rendered {
+        frontmatter,
         unrendered_diagrams,
         unrendered_blocks,
         ..rendered

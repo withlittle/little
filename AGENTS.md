@@ -68,10 +68,11 @@ scripts/notices.sh little target/notices/little.md # or pydoc, rustdoc, jsdoc
 - `src/little.yml` — little's own defaults (level 1), compiled into the binary.
 - `src/render.rs` — Markdown (comrak, with the extensions the site turns on) +
   YAML frontmatter → HTML fragment, with each relative link led from the
-  folder of the file it's in, and each link to a page's `.md` or `.ipynb`
-  file led to the page, noting each link as it's written. A notebook's tree
-  is written the same way, once plugins have rendered its blocks and its
-  diagrams are drawn.
+  folder of the file it's in, and each link to a page's file, `.md`,
+  `.ipynb`, or in an extension a plugin reads, led to the page, noting each
+  link as it's written. A notebook's tree, and the tree of the parts a
+  plugin reads a page into, is written the same way, once plugins have
+  rendered its blocks and its diagrams are drawn.
 - `src/plugin.rs` — plugins: WebAssembly components, run with wasmtime, built
   in, that export hooks from `wit/plugin.wit`. Starts each a build uses
   once, in a sandbox that reaches only the folders it reads, and calls each
@@ -82,6 +83,11 @@ scripts/notices.sh little target/notices/little.md # or pydoc, rustdoc, jsdoc
   each plugin each fenced code block in its languages, before diagrams are
   drawn, putting the Markdown or HTML it gives back in the block's place;
   one it can't render stays code, and is noted, with its line, to warn of.
+  Gives the plugin whose `formats` hook reads a file's extension the file,
+  for the parts of its page.
+- `src/parts.rs` — the parts a plugin's `formats` hook reads a page into,
+  Markdown, HTML, and code, joined into comrak's tree of its page, each
+  Markdown part read on its own, its footnotes numbered through the page.
 - `src/math.rs` — writes each formula as MathML as comrak writes the page,
   with math-core, each read on its own; one it can't read is written as its
   TeX, and noted, as it's written, to warn of.
@@ -98,8 +104,8 @@ scripts/notices.sh little target/notices/little.md # or pydoc, rustdoc, jsdoc
   GitHub's class around each token, for the theme to colour.
 - `src/site.rs` — build pipeline: start the site's plugins, and call their
   hooks at each step: walk the source (`docs/`), with the files plugins add
-  and leave out, render its Markdown and notebooks, stopping on two that
-  would be the same page, copy its other files, apply theme, index it for
+  and leave out, render its Markdown, its notebooks, and the files plugins
+  read, stopping on two that would be the same page, copy its other files, apply theme, index it for
   search, add the files plugins add, write the destination (`dist/`),
   noting the source file and URL of each file it writes. Finds where the
   source is in its repository, so each page can
@@ -162,7 +168,7 @@ Content and theme live outside `src/`:
   orders its pages by hand, and the `rustdoc` plugin, which documents
   `src/` at `/api/`, from where Cargo builds its `.wasm` file. It sets
   `theme: ./theme`, so edits to the built-in theme live-reload.
-- `wit/plugin.wit` — `little:plugin@0.2.0`: an interface for each hook a
+- `wit/plugin.wit` — `little:plugin@0.2.1`: an interface for each hook a
   plugin can export, and `warnings`, which it imports. Plugin authors copy
   it, and write a world that exports the hooks they need; little's
   bindings are generated from `world hooks`, which exports every one.

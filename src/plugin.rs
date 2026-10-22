@@ -3,10 +3,10 @@
 //! each plugin the site names once, then, as it reaches each step, calls the
 //! hook for it of each plugin that exports one, in the order the site names
 //! them, with what the step made: the config, the theme's files, the
-//! source's files, each page's text, its code blocks, and its HTML, `site`,
-//! each `page`, each page as the theme writes it, and the files the site is
-//! written with. What each hook gives back is what the next plugin, then the
-//! build, goes on with.
+//! source's files, each page's text, which a plugin can read in a format of
+//! its own, its code blocks, and its HTML, `site`, each `page`, each page as
+//! the theme writes it, and the files the site is written with. What each
+//! hook gives back is what the next plugin, then the build, goes on with.
 //!
 //! Each runs in wasmtime's sandbox, which reaches nothing little doesn't give
 //! it: no network, no environment variables, and no files but the folders
@@ -37,15 +37,21 @@ use crate::download;
 /// little's side of the hooks in `wit/plugin.wit`, which wasmtime generates
 /// as little is compiled.
 mod bindings {
-    wasmtime::component::bindgen!({ path: "wit/plugin.wit", world: "hooks" });
+    wasmtime::component::bindgen!({
+        path: "wit/plugin.wit",
+        world: "hooks",
+        additional_derives: [PartialEq],
+    });
 }
 
 use bindings::exports::little::plugin as wit;
 use wit::code_blocks::{Block, Output};
+pub(crate) use wit::formats::{Code, Part};
 
 /// The package of `wit/plugin.wit`, with its version, whose hooks little
-/// calls.
-const PACKAGE: &str = "little:plugin@0.2.0";
+/// calls. A plugin built for an earlier version with the same minor version,
+/// like 0.2.0, exports hooks wasmtime finds as this version's.
+const PACKAGE: &str = "little:plugin@0.2.1";
 
 /// One engine compiles and runs every plugin.
 static ENGINE: LazyLock<Engine> = LazyLock::new(Engine::default);
@@ -92,7 +98,8 @@ macro_rules! hooks {
                 Ok(Exports {
                     $($hook: {
                         let hook = stringify!($hook).replace('_', "-");
-                        let name = format!("little:plugin/{hook}@0.2.0");
+                        let (package, version) = PACKAGE.split_once('@').expect("it has a version");
+                        let name = format!("{package}/{hook}@{version}");
                         match instance.component().get_export_index(None, &name) {
                             None => None,
                             Some(_) => Some(
@@ -136,6 +143,7 @@ hooks!(
     theme,
     files,
     source,
+    formats,
     code_blocks,
     content,
     site,
@@ -206,8 +214,8 @@ impl fmt::Display for Warning {
 pub struct Unrendered {
     /// The plugin's name, like `bob`.
     pub plugin: String,
-    /// The line of its file the block starts on, if its file is Markdown: a
-    /// notebook's lines are its cells'.
+    /// The line of its file the block starts on, if its file is Markdown:
+    /// a block in a part a `formats` hook gives back has none.
     pub line: Option<usize>,
     /// Why, as the plugin says, or that it crashed.
     pub reason: String,
@@ -224,13 +232,15 @@ pub struct HookedFile {
     pub plugin: Option<String>,
 }
 
-/// The plugins a build has started, the languages each renders, and what
-/// they've warned of.
+/// The plugins a build has started, the languages each renders, the
+/// extensions of the files each reads, and what they've warned of.
 #[derive(Default)]
 pub struct Plugins {
     plugins: Vec<Running>,
     /// Each language a plugin renders, in lowercase, and which plugin.
     languages: HashMap<String, usize>,
+    /// Each extension a plugin reads, without its `.`, and which plugin.
+    extensions: HashMap<String, usize>,
     /// What they've warned of, and which hooks failed, since
     /// [`Plugins::take_warnings`].
     warnings: Vec<Warning>,
@@ -295,7 +305,7 @@ impl Plugins {
     /// Start each of `plugins`, which the site at `site_dir` names, in turn,
     /// downloading and compiling it first if need be, with its clock at
     /// `now`, and set it up. Stops at the first that can't start, or that
-    /// renders a language one before it does.
+    /// renders a language, or reads an extension, one before it does.
     pub fn start(
         plugins: &[config::Plugin],
         site_dir: &Path,
@@ -362,6 +372,33 @@ impl Plugins {
                             started.plugins[other].name
                         ),
                         _ => started.languages.insert(language, index),
+                    };
+                }
+            }
+            if plugin.pre.exports.formats.is_some() {
+                let extensions = (plugin.call(&mut started.warnings, |store, hooks| {
+                    hook(&hooks.formats).call_extensions(store).map(Ok)
+                }))
+                .map_err(cant_start)?;
+                let index = started.plugins.len();
+                for extension in extensions {
+                    if extension.is_empty()
+                        || extension.contains(|c: char| c.is_whitespace() || "./\\".contains(c))
+                    {
+                        bail!(
+                            "plugin `{name}` reads `{extension}`, but an extension must be one \
+                             word, without its `.`, like `ipynb`"
+                        );
+                    }
+                    if extension == "md" {
+                        bail!("plugin `{name}` reads `md`, but little reads Markdown itself");
+                    }
+                    match started.extensions.get(&extension) {
+                        Some(&other) if other != index => bail!(
+                            "plugins `{}` and `{name}` both read `{extension}`",
+                            started.plugins[other].name
+                        ),
+                        _ => started.extensions.insert(extension, index),
                     };
                 }
             }
@@ -521,6 +558,40 @@ impl Plugins {
             plugins: Some(self),
             page,
         }
+    }
+
+    /// Whether a plugin's `formats` hook reads files with `extension`, like
+    /// `ipynb`.
+    pub fn reads(&self, extension: &str) -> bool {
+        self.extensions.contains_key(extension)
+    }
+
+    /// The parts of `page`, its file from the site's folder, like
+    /// `docs/analysis.ipynb`, as the `formats` hook of the plugin that reads
+    /// its extension reads them from its `text`, with the site's `markdown`
+    /// settings. Fails if no plugin reads it, the hook fails, or it gives
+    /// back HTML, but the settings don't let raw HTML in.
+    pub fn read(&mut self, page: &str, text: &str, markdown: &Mapping) -> Result<Vec<Part>> {
+        let extension = Path::new(page).extension().and_then(|e| e.to_str());
+        let Some(&index) = extension.and_then(|extension| self.extensions.get(extension)) else {
+            bail!("no plugin reads {page}");
+        };
+        let plugin = &mut self.plugins[index];
+        let name = plugin.name.clone();
+        let parts = (to_json(markdown, "the `markdown` settings"))
+            .and_then(|json| {
+                plugin.call(&mut self.warnings, |store, hooks| {
+                    hook(&hooks.formats).call_read(store, page, text, &json)
+                })
+            })
+            .map_err(|reason| anyhow!("plugin `{name}`'s `formats` hook failed: {reason}"))?;
+        let raw_html = markdown
+            .get("raw_html")
+            .and_then(serde_yaml::Value::as_bool);
+        if raw_html != Some(true) && parts.iter().any(|part| matches!(part, Part::Html(_))) {
+            bail!("plugin `{name}` gave back HTML, which needs `markdown.raw_html` to be `true`");
+        }
+        Ok(parts)
     }
 
     /// The `html` of `page`, as for [`Plugins::source`], as each plugin's
@@ -743,12 +814,19 @@ impl PagePlugins<'_> {
         }
     }
 
+    /// Whether a file with `extension`, like `md`, is a page: a Markdown
+    /// file, a notebook, or a file a plugin's `formats` hook reads.
+    pub fn is_page(&self, extension: &str) -> bool {
+        matches!(extension, "md" | "ipynb")
+            || (self.plugins.as_deref()).is_some_and(|plugins| plugins.reads(extension))
+    }
+
     /// Give each fenced code block in `blocks` whose language is a plugin's
     /// to that plugin, in turn, and put what it gives back in the block's
     /// place: Markdown, read with `options` into `arena`, or HTML. A block's
     /// line in its file is `lines_before` after its line in the document,
-    /// or `None` for a notebook's. Returns each block a plugin couldn't
-    /// render, which is left as it was.
+    /// or `None` for one in a part a `formats` hook gives back. Returns each
+    /// block a plugin couldn't render, which is left as it was.
     pub fn render<'a>(
         &mut self,
         arena: &'a Arena<'a>,
@@ -760,6 +838,7 @@ impl PagePlugins<'_> {
             plugins,
             languages,
             warnings,
+            ..
         }) = self.plugins.as_deref_mut()
         else {
             return Ok(Vec::new());
@@ -991,6 +1070,7 @@ pub(crate) mod tests {
     use super::*;
     use crate::config::{Markdown, SiteUrl};
     use crate::notebook::parse_notebook;
+    use crate::parts::parse_parts;
     use crate::render::{Rendered, parse_document};
     use serde_json::json;
     use std::process::Command;
@@ -1327,6 +1407,148 @@ pub(crate) mod tests {
             error(&[twice, named("second", r#"{"languages":["Test"]}"#, &[])]),
             "plugins `first` and `second` both render `test`"
         );
+        for extension in ["", ".ipynb", "two words", "notebooks/ipynb", "tar.gz"] {
+            let settings = json!({ "extensions": [extension] }).to_string();
+            assert_eq!(
+                error(&[named("test", &settings, &[])]),
+                format!(
+                    "plugin `test` reads `{extension}`, but an extension must be one word, \
+                     without its `.`, like `ipynb`"
+                )
+            );
+        }
+        assert_eq!(
+            error(&[named("test", r#"{"extensions":["md"]}"#, &[])]),
+            "plugin `test` reads `md`, but little reads Markdown itself"
+        );
+        // An extension is a plugin's alone, as it's written, but it can say
+        // it twice.
+        let reads = |name, extensions: &[&str]| {
+            let settings = json!({ "languages": [], "extensions": extensions });
+            named(name, &settings.to_string(), &[])
+        };
+        let twice = reads("first", &["test", "test"]);
+        assert!(start(&[twice.clone(), reads("second", &["TEST"])]).is_ok());
+        assert_eq!(
+            error(&[twice, reads("second", &["test"])]),
+            "plugins `first` and `second` both read `test`"
+        );
+    }
+
+    #[test]
+    fn a_plugin_reads_the_files_of_its_extensions() {
+        let settings = json!({
+            "extensions": ["test"],
+            "formats": { "only": "docs/bad.test", "error": "can't read {arg}" },
+        });
+        let mut plugins = started(&settings.to_string());
+        assert!(plugins.reads("test"));
+        assert!(!plugins.reads("TEST"));
+        assert!(!plugins.reads("md"));
+        assert!(plugins.on("docs/a.md").is_page("test"));
+        assert!(!plugins.on("docs/a.md").is_page("txt"));
+        let markdown: Mapping = serde_yaml::from_str("raw_html: true\nautolink: true").unwrap();
+        let text = json!([
+            { "markdown": "# A" },
+            { "html": "<p>B</p>" },
+            { "code": { "language": "python", "text": "c" } },
+            "given",
+        ]);
+        let parts = plugins
+            .read("docs/a.test", &text.to_string(), &markdown)
+            .unwrap();
+        assert_eq!(
+            parts,
+            [
+                Part::Markdown("# A".to_string()),
+                Part::Html("<p>B</p>".to_string()),
+                Part::Code(Code {
+                    language: "python".to_string(),
+                    text: "c".to_string(),
+                }),
+            ]
+        );
+        // It's given the page's file, and the `markdown` settings, as JSON.
+        assert_eq!(
+            warnings(&mut plugins),
+            [r#"plugin `test`: docs/a.test {"raw_html":true,"autolink":true}"#]
+        );
+
+        let error = |plugins: &mut Plugins, page: &str, text: &str, markdown: &Mapping| {
+            format!("{:#}", plugins.read(page, text, markdown).unwrap_err())
+        };
+        assert_eq!(
+            error(&mut plugins, "docs/bad.test", "[]", &markdown),
+            "plugin `test`'s `formats` hook failed: can't read docs/bad.test"
+        );
+        assert_eq!(
+            error(&mut plugins, "docs/a.test", "[", &markdown),
+            "plugin `test`'s `formats` hook failed: EOF while parsing a list at line 1 column 1"
+        );
+        assert_eq!(
+            error(&mut plugins, "docs/a.txt", "[]", &markdown),
+            "no plugin reads docs/a.txt"
+        );
+        let html = json!([{ "html": "<p>B</p>" }]).to_string();
+        let no_html: Mapping = serde_yaml::from_str("raw_html: false").unwrap();
+        assert_eq!(
+            error(&mut plugins, "docs/a.test", &html, &no_html),
+            "plugin `test` gave back HTML, which needs `markdown.raw_html` to be `true`"
+        );
+        // Without HTML, it needs nothing.
+        let text = json!([{ "markdown": "A" }]).to_string();
+        assert!(plugins.read("docs/a.test", &text, &no_html).is_ok());
+
+        let settings = json!({ "extensions": ["test"], "formats": { "panic": "{arg}" } });
+        let mut plugins = started(&settings.to_string());
+        let message = error(&mut plugins, "docs/a.test", "[]", &markdown);
+        assert!(
+            message.starts_with("plugin `test`'s `formats` hook failed: it crashed: "),
+            "{message}"
+        );
+    }
+
+    #[test]
+    fn markdown_parts_are_given_to_plugins_but_not_code_parts() {
+        let mut plugins = started("{}");
+        let markdown = |text: &str| Part::Markdown(text.to_string());
+        let parts = vec![
+            markdown("```test\ncount\n```"),
+            Part::Code(Code {
+                language: "test".to_string(),
+                text: "count".to_string(),
+            }),
+            markdown("```test\nerror in a part\n```"),
+        ];
+        let options = Markdown {
+            highlight: None,
+            ..Markdown::default()
+        };
+        let now = OffsetDateTime::from_unix_timestamp(NOW).unwrap();
+        let r = parse_parts(
+            parts,
+            "/",
+            &(2..=6),
+            &SiteUrl::default(),
+            &options,
+            now,
+            &mut plugins.on("docs/analysis.test"),
+        )
+        .unwrap();
+        assert_eq!(
+            r.html,
+            "<p>1</p>\n<pre><code class=\"language-test\">count\n</code></pre>\n\
+             <pre><code class=\"language-test\">error in a part\n</code></pre>\n"
+        );
+        // A block's line would be its part's.
+        assert_eq!(
+            r.unrendered_blocks,
+            [Unrendered {
+                plugin: "test".to_string(),
+                line: None,
+                reason: "in a part".to_string(),
+            }]
+        );
     }
 
     #[test]
@@ -1371,7 +1593,7 @@ pub(crate) mod tests {
             error(plugin("empty.wasm", &[])),
             format!(
                 "loading plugin `test` from {}: it exports nothing, but a plugin exports \
-                 little's hooks, from `little:plugin@0.2.0`",
+                 little's hooks, from `little:plugin@0.2.1`",
                 file("empty.wasm")
             )
         );
@@ -1389,10 +1611,11 @@ pub(crate) mod tests {
             format!(
                 "loading plugin `test` from {}: it exports `little:plugin/code-blocks@0.1.0` \
                  and `little:plugin/pages@0.1.0`, but none of little's hooks, from \
-                 `little:plugin@0.2.0`",
+                 `little:plugin@0.2.1`",
                 file("old.wasm")
             )
         );
+        // One built for 0.2.0 is read as 0.2.1's, which only adds to it.
         std::fs::write(
             site.join("wrong.wasm"),
             exporting(&["little:plugin/source@0.2.0"]),
@@ -1400,7 +1623,7 @@ pub(crate) mod tests {
         .unwrap();
         let message = error(plugin("wrong.wasm", &[]));
         let expected = format!(
-            "loading plugin `test` from {}: its `source` hook isn't little:plugin@0.2.0's: ",
+            "loading plugin `test` from {}: its `source` hook isn't little:plugin@0.2.1's: ",
             file("wrong.wasm")
         );
         assert!(message.starts_with(&expected), "{message}");
