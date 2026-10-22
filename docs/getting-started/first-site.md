@@ -37,13 +37,12 @@ folder's `README.md` is the folder's own page, as on GitHub:
 my-docs/
 ├── .gitignore              # keeps dist/ out of git
 ├── little.yml              # the site's config (optional)
-├── docs/                   # the source: each .md and .ipynb file is a page
+├── docs/                   # the source: each .md file is a page
 │   ├── README.md           # → /
 │   ├── getting-started.md  # → /getting-started
 │   └── guide/
 │       ├── README.md       # → /guide/
 │       ├── install.md      # → /guide/install
-│       ├── analysis.ipynb  # → /guide/analysis
 │       └── images/
 │           └── setup.png   # → /guide/images/setup.png, copied as it is
 └── dist/                   # the destination: the built site

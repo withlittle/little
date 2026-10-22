@@ -1,7 +1,7 @@
 //! Turn a raw Markdown file (with optional YAML frontmatter) into
-//! frontmatter data, an HTML fragment, and an in-page table of contents. A
-//! notebook's cells are made into the same tree, in `notebook`, and rendered
-//! here as Markdown's is.
+//! frontmatter data, an HTML fragment, and an in-page table of contents. The
+//! parts a plugin reads a file in another format into, like a notebook, are
+//! made into the same tree, in `parts`, and rendered here as Markdown's is.
 
 use anyhow::{Context, Result};
 use comrak::nodes::{AstNode, NodeValue};
@@ -29,7 +29,8 @@ pub struct TocItem {
     pub depth: u8,
 }
 
-/// The result of rendering one document: a Markdown file, or a notebook.
+/// The result of rendering one document: a Markdown file, or a file a
+/// plugin reads.
 pub struct Rendered {
     /// The frontmatter's settings: none when a page has no frontmatter.
     pub frontmatter: Mapping,
@@ -93,16 +94,9 @@ pub fn parse_document(
     let unrendered_blocks =
         plugins.render(&arena, root.descendants(), &options, Some(lines_before))?;
     let unrendered_diagrams = mermaid::draw(root, markdown, now, Some(lines_before));
-    let rendered = render_tree(
-        root,
-        frontmatter,
-        folder,
-        toc_depths,
-        url,
-        markdown,
-        &options,
-    )?;
+    let rendered = render_tree(root, folder, toc_depths, url, markdown, &options, plugins)?;
     Ok(Rendered {
+        frontmatter,
         unrendered_diagrams,
         unrendered_blocks,
         ..rendered
@@ -111,17 +105,20 @@ pub fn parse_document(
 
 /// Render a document parsed with `options`, as `parse_document` does, from
 /// its tree in comrak's arena, whose diagrams the caller has drawn: its
-/// links led within the site, its outline, and its HTML.
+/// links led within the site, with those to the files `plugins` read led to
+/// their pages, its outline, and its HTML. Its frontmatter is the caller's.
 pub(crate) fn render_tree<'a>(
     root: &'a AstNode<'a>,
-    frontmatter: Mapping,
     folder: &str,
     toc_depths: &RangeInclusive<u8>,
     url: &SiteUrl,
     markdown: &Markdown,
     options: &Options,
+    plugins: &PagePlugins<'_>,
 ) -> Result<Rendered> {
-    let links = link_within_site(root, folder, url, options);
+    let links = link_within_site(root, folder, url, options, |extension| {
+        plugins.is_page(extension)
+    });
     let (toc, first_h1) = outline(root, toc_depths);
 
     let mut plugins = Plugins::default();
@@ -135,7 +132,7 @@ pub(crate) fn render_tree<'a>(
     .context("rendering markdown to HTML")?;
 
     Ok(Rendered {
-        frontmatter,
+        frontmatter: Mapping::new(),
         html,
         toc,
         first_h1,
@@ -182,11 +179,12 @@ pub(crate) fn render_options(markdown: &Markdown) -> Options<'static> {
 /// Point each link and image where it leads in the built site. One relative
 /// to the document leads from its `folder`, as where Markdown is read as
 /// files, like on GitHub, whatever URL its page is served at: with or without
-/// a `/` at the end, as hosts differ. A link to a page's file, Markdown or a
-/// notebook, leads to the page, as it leads to the file on GitHub. Then one
-/// from the root of the site gets the site's path, so an author can write
-/// `/guide/` wherever the site is published. Links in raw HTML are left as
-/// they're written, for the browser to follow.
+/// a `/` at the end, as hosts differ. A link to a page's file, a file with an
+/// extension `is_page` says is a page's, like `md`, leads to the page, as it
+/// leads to the file on GitHub. Then one from the root of the site gets the
+/// site's path, so an author can write `/guide/` wherever the site is
+/// published. Links in raw HTML are left as they're written, for the browser
+/// to follow.
 ///
 /// Returns each link and image as it's written, and as it's read from the
 /// HTML.
@@ -195,6 +193,7 @@ fn link_within_site<'a>(
     folder: &str,
     url: &SiteUrl,
     options: &Options,
+    is_page: impl Fn(&str) -> bool,
 ) -> Vec<WrittenLink> {
     let mut links = Vec::new();
     for node in root.descendants() {
@@ -206,7 +205,7 @@ fn link_within_site<'a>(
         };
         let mut within = from_the_folder(folder, &link.url);
         // An image can't be a page.
-        if !is_image && let Some(page) = page_of(&within) {
+        if !is_image && let Some(page) = page_of(&within, &is_page) {
             within = Cow::Owned(page);
         }
         let href = url.link(&within).into_owned();
@@ -218,24 +217,24 @@ fn link_within_site<'a>(
     links
 }
 
-/// The page built from the Markdown file or notebook at `url`, from the root
-/// of the site, which a link to the file leads to, as on GitHub:
-/// `/guide/install` for `/guide/install.md`, or `/guide/install.ipynb`, and
-/// the folder's page, `/guide/`, for `/guide/README.md`. The `?query` and
-/// `#fragment` follow as they are. `None` for any other URL, like
-/// `/logo.png`, or `https://…/README.md`.
-fn page_of(url: &str) -> Option<String> {
+/// The page built from the file at `url`, from the root of the site, if it's
+/// a page's, as `is_page` says of its extension, which a link to the file
+/// leads to, as on GitHub: `/guide/install` for `/guide/install.md`, or
+/// `/guide/install.ipynb`, and the folder's page, `/guide/`, for
+/// `/guide/README.md`. The `?query` and `#fragment` follow as they are.
+/// `None` for any other URL, like `/logo.png`, or `https://…/README.md`.
+fn page_of(url: &str, is_page: impl Fn(&str) -> bool) -> Option<String> {
     if !url.starts_with('/') || url.starts_with("//") {
         return None;
     }
     let (path, rest) = url.split_at(url.find(['?', '#']).unwrap_or(url.len()));
     let (folder, file) = path.rsplit_once('/')?;
-    // Only a `.md` or `.ipynb` file is a page: not `.MD`, nor `.md` alone,
-    // which is hidden.
-    let name = [".md", ".ipynb"]
-        .iter()
-        .find_map(|extension| file.strip_suffix(extension))
-        .filter(|name| !name.is_empty())?;
+    // An extension is matched as it's written, so `.MD` isn't a page's;
+    // nor is `.md` alone, which is hidden.
+    let (name, extension) = file.rsplit_once('.')?;
+    if name.is_empty() || !is_page(extension) {
+        return None;
+    }
     // As in the build, a `README` in any case is its folder's page.
     let page = if name.eq_ignore_ascii_case("readme") {
         ""
@@ -852,7 +851,9 @@ mod tests {
 
     #[test]
     fn links_to_a_pages_file_lead_to_the_page() {
-        // As the build makes a page of each `.md` file, and each notebook.
+        // As the build makes a page of each `.md` file, and each a plugin
+        // reads, like a notebook.
+        let is_page = |extension: &str| matches!(extension, "md" | "ipynb");
         for (url, page) in [
             ("/guide/install.md", Some("/guide/install")),
             ("/guide/install.md#usage", Some("/guide/install#usage")),
@@ -876,6 +877,7 @@ mod tests {
             ("/guide/.md", None),
             ("/guide/.ipynb", None),
             ("/guide/analysis.IPYNB", None),
+            ("/guide/data.csv", None),
             ("/guide/install.md/", None),
             ("/guide/", None),
             ("/logo.png", None),
@@ -884,7 +886,7 @@ mod tests {
             ("https://example.com/README.md", None),
             ("#install.md", None),
         ] {
-            assert_eq!(page_of(url).as_deref(), page, "{url}");
+            assert_eq!(page_of(url, is_page).as_deref(), page, "{url}");
         }
 
         // In Markdown, from the document's folder, and with the site's path,

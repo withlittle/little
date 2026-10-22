@@ -37,8 +37,8 @@ does:
   `align` on each of its cells, like `<td align="center">`, which any
   `text-align` overrides, so the built-in theme aligns only cells without
   one, with `:is(th, td):not([align])`.
-- A [notebook](../writing/notebooks.ipynb)'s output, like what its code
-  printed, is a code block in `output`,
+- A [notebook](../plugins/jupyter-notebooks.ipynb)'s output, like what its
+  code printed, is a code block in `output`,
   `<pre class="highlight"><code class="language-output">`, which the built-in
   theme sets apart from code with a dashed border, with
   `pre:has(> code.language-output)`. A

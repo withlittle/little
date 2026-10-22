@@ -29,7 +29,7 @@ use walkdir::WalkDir;
 use crate::config::{Config, Repo, Shared, SiteUrl};
 use crate::plugin::{Plugins, Warned};
 use crate::theme::{PageType, StaticFile, Theme, ThemeFiles};
-use crate::{config, git, notebook, render, search};
+use crate::{config, git, parts, render, search};
 
 /// Where a site's 404 page is written: the root of the destination, which is
 /// where static hosts look for it.
@@ -211,8 +211,8 @@ pub struct Warning {
     /// What it is, as `little build --strict` counts it, like
     /// `formula(s) that can't be rendered`.
     pub kind: &'static str,
-    /// What it says, naming where it is, like `can't draw a diagram in
-    /// docs/intro.ipynb: No diagram type detected`.
+    /// What it says, naming where it is, like `can't draw the diagram on
+    /// line 3 of docs/intro.md: No diagram type detected`.
     pub message: String,
 }
 
@@ -573,6 +573,15 @@ enum Found {
     Added { plugin: String, contents: Vec<u8> },
 }
 
+/// How a page's file is read.
+#[derive(Clone, Copy)]
+enum Format {
+    /// As Markdown, by little.
+    Markdown,
+    /// By the plugin whose `formats` hook reads its extension.
+    Plugin,
+}
+
 /// Read the version of the site at `site_dir` that `config` configures, to
 /// build at `place`, in `theme`, with `plugins`: its files from `checkout`,
 /// if it's from a git ref, or else as they are, and those its plugins add.
@@ -627,8 +636,9 @@ fn read_source(
         contents,
     })?;
 
-    // Each Markdown file and notebook is rendered into a page, and every
-    // other file, like an image, is copied as it is.
+    // Each Markdown file, and each file a plugin reads, like a notebook, is
+    // rendered into a page, and every other file, like an image, is copied
+    // as it is.
     let mut documents = Vec::new();
     let mut files = Vec::new();
     for (path, found) in found {
@@ -647,9 +657,9 @@ fn read_source(
                 (PathBuf::from(path), origin, contents, true)
             }
         };
-        let parse = match rel.extension().and_then(|s| s.to_str()) {
-            Some("md") => render::parse_document,
-            Some("ipynb") => notebook::parse_notebook,
+        let format = match rel.extension().and_then(|s| s.to_str()) {
+            Some("md") => Format::Markdown,
+            Some(extension) if plugins.reads(extension) => Format::Plugin,
             _ => {
                 files.push(StaticFile {
                     path: rel,
@@ -660,7 +670,7 @@ fn read_source(
             }
         };
         let text = String::from_utf8(contents).with_context(|| format!("reading {origin}"))?;
-        documents.push((rel, origin, added, text, parse));
+        documents.push((rel, origin, added, text, format));
     }
     // The version's own file at the path of one of the theme's is the one
     // it links to, as the root's own file is.
@@ -692,20 +702,39 @@ fn read_source(
     let version_dir = checkout.as_ref().map_or(site_dir, git::Checkout::site_dir);
     let source_in_site = source_dir.strip_prefix(version_dir).unwrap_or(source_dir);
 
+    // The settings as the site writes them, for the plugins that read pages.
+    let markdown = (config.values.get("markdown").and_then(Value::as_mapping))
+        .cloned()
+        .unwrap_or_default();
     let mut pages = Vec::new();
-    for (rel, origin, added, text, parse) in documents {
+    for (rel, origin, added, text, format) in documents {
         let file = slashed(&source_in_site.join(&rel));
         let text = plugins.source(&file, &origin, text);
-        let mut rendered = parse(
-            &text,
-            &folder_url(&rel),
-            &config.toc_depths,
-            &place.url,
-            &config.markdown,
-            now,
-            &mut plugins.on(&file),
-        )
-        .with_context(|| format!("rendering {origin}"))?;
+        let folder = folder_url(&rel);
+        let toc_depths = &config.toc_depths;
+        let rendered = match format {
+            Format::Markdown => render::parse_document(
+                &text,
+                &folder,
+                toc_depths,
+                &place.url,
+                &config.markdown,
+                now,
+                &mut plugins.on(&file),
+            ),
+            Format::Plugin => plugins.read(&file, &text, &markdown).and_then(|parts| {
+                parts::parse_parts(
+                    parts,
+                    &folder,
+                    toc_depths,
+                    &place.url,
+                    &config.markdown,
+                    now,
+                    &mut plugins.on(&file),
+                )
+            }),
+        };
+        let mut rendered = rendered.with_context(|| format!("rendering {origin}"))?;
         rendered.html = plugins.content(&file, &origin, mem::take(&mut rendered.html));
         pages.push(page_from(rel, origin, added, rendered, &place.destination));
     }
@@ -1051,7 +1080,7 @@ fn page_from(
     let out_path = out_path_for_url(destination, &url);
     let page_type = page_type(&rel);
 
-    // A diagram or block in a notebook has no line of the file.
+    // A diagram or block in a file a plugin reads has no line of the file.
     let at = |thing: &str, line: Option<usize>| match line {
         Some(line) => format!("the {thing} on line {line} of {origin}"),
         None => format!("a {thing} in {origin}"),
@@ -1303,8 +1332,9 @@ pub fn is_hidden(rel: &Path) -> bool {
 }
 
 /// Is this file a directory's home page? `README.md` is the documentation
-/// convention (mirroring how GitHub renders READMEs), as is `README.ipynb`
-/// for a notebook; little maps it to the web's `index.html`.
+/// convention (mirroring how GitHub renders READMEs), as is a `README` in
+/// a format a plugin reads, like `README.ipynb`; little maps it to the web's
+/// `index.html`.
 pub fn is_readme(rel: &Path) -> bool {
     rel.file_stem()
         .and_then(|s| s.to_str())
@@ -1312,7 +1342,8 @@ pub fn is_readme(rel: &Path) -> bool {
         .unwrap_or(false)
 }
 
-/// What type of page the Markdown file or notebook at `rel` makes.
+/// What type of page the file at `rel` makes, in Markdown or a format a
+/// plugin reads.
 fn page_type(rel: &Path) -> PageType {
     if !is_readme(rel) {
         PageType::Page
@@ -1362,7 +1393,7 @@ fn slashed(path: &Path) -> String {
 }
 
 /// Derive a page's pretty, extensionless URL: its folder's, then its name,
-/// unless it's the folder's `README.md` or `README.ipynb`.
+/// unless it's the folder's `README`, like `README.md`.
 ///
 /// - `README.md`           -> `/`
 /// - `getting-started.md`  -> `/getting-started`
@@ -2609,75 +2640,100 @@ mod tests {
         let _ = fs::remove_dir_all(&site);
     }
 
+    /// A site's config that has the test plugin, as `test`, reading the
+    /// files with the extension `test`.
+    fn reading_tests() -> String {
+        format!(
+            "theme: ./theme\nplugins:\n  test:\n    wasm: {}\n    extensions: [test]\n",
+            crate::plugin::tests::test_plugin().display()
+        )
+    }
+
     #[test]
-    fn notebooks_are_pages() {
-        let notebook = |cells: serde_json::Value| {
-            let notebook = serde_json::json!({
-                "cells": cells,
-                "metadata": { "language_info": { "name": "python" } },
-                "nbformat": 4,
-                "nbformat_minor": 5
-            });
-            notebook.to_string()
-        };
-        let markdown = |source: &str| serde_json::json!({ "cell_type": "markdown", "metadata": {}, "source": source });
-        let analysis = notebook(serde_json::json!([
-            markdown("# Analysis\n\n## Results\n\n[Home](../README.md)"),
+    fn the_files_a_plugin_reads_are_pages() {
+        let parts = |parts: serde_json::Value| parts.to_string();
+        let analysis = parts(serde_json::json!([
             {
-                "cell_type": "code",
-                "execution_count": 1,
-                "metadata": {},
-                "outputs": [{ "output_type": "stream", "name": "stdout", "text": "42\n" }],
-                "source": "print(6 * 7)"
-            }
+                "markdown": "---\ntitle: The analysis\n---\n# Analysis\n\n## Results\n\n\
+                             [Home](../README.md)",
+            },
+            { "code": { "language": "python", "text": "print(6 * 7)" } },
+            { "html": "<p class=\"table\">A table</p>" },
+            "given",
         ]));
-        let data = notebook(serde_json::json!([markdown("What we have.")]));
+        let data = parts(serde_json::json!([{ "markdown": "What we have." }]));
         let site = scratch_site(
-            "notebooks",
+            "formats",
             &[
-                ("little.yml", "theme: ./theme\n"),
+                ("little.yml", &reading_tests()),
                 (
                     "docs/README.md",
-                    "[Analysis](guide/analysis.ipynb#results)\n",
+                    "[Analysis](guide/analysis.test#results)\n",
                 ),
-                ("docs/guide/analysis.ipynb", &analysis),
-                ("docs/data/README.ipynb", &data),
+                ("docs/guide/analysis.test", &analysis),
+                ("docs/data/README.test", &data),
+                // Its extension, as it's written, is the plugin's.
+                ("docs/data/notes.TEST", "Notes"),
                 (
                     "theme/_templates/default.html",
                     "{{ page.title }}\n{{ page.content | safe }}",
                 ),
             ],
         );
-        build(&site).unwrap();
+        let built = build(&site).unwrap();
 
         // Each is built into its page, as a Markdown file is, and isn't
         // copied.
         let dist = site.join("dist");
-        let built = [
+        let files = [
             MARKER_FILE,
             "data/index.html",
+            "data/notes.TEST",
             "guide/analysis/index.html",
             "index.html",
         ];
-        assert_eq!(files_in(&dist), built.map(PathBuf::from));
+        assert_eq!(files_in(&dist), files.map(PathBuf::from));
         let read = |path: &str| fs::read_to_string(dist.join(path)).unwrap();
         let analysis = read("guide/analysis/index.html");
-        assert!(analysis.starts_with("Analysis\n<h1"), "{analysis}");
+        assert!(analysis.starts_with("The analysis\n<h1"), "{analysis}");
         assert!(analysis.contains("<a href=\"/\">Home</a>"), "{analysis}");
-        let output = "<pre class=\"highlight\"><code class=\"language-output\">42\n</code></pre>";
-        assert!(analysis.contains(output), "{analysis}");
+        let code = "<pre class=\"highlight\"><code class=\"language-python\">";
+        assert!(analysis.contains(code), "{analysis}");
+        let html = "</code></pre>\n<p class=\"table\">A table</p>\n";
+        assert!(analysis.ends_with(html), "{analysis}");
         assert_eq!(read("data/index.html"), "Data\n<p>What we have.</p>\n");
-        // A link to a notebook leads to its page.
+        // A link to its file leads to its page.
         let home = read("index.html");
         let link = "<a href=\"/guide/analysis#results\">Analysis</a>";
         assert!(home.contains(link), "{home}");
+        // The plugin is given the page's file, and the site's `markdown`
+        // settings, as `little config` prints them.
+        let warnings = warnings_of(&built);
+        let given = warnings[0].strip_prefix("plugin `test`: docs/guide/analysis.test ");
+        let given: serde_json::Value = serde_json::from_str(given.unwrap()).unwrap();
+        assert_eq!(given["raw_html"], true);
+        assert_eq!(given["highlight"], "pygments");
+        assert_eq!(warnings.len(), 1, "{warnings:?}");
 
-        // A notebook little can't read stops the build, naming it.
-        let broken = site.join(native("docs/broken.ipynb"));
-        fs::write(&broken, "{").unwrap();
+        // It can be the same page as a Markdown file.
+        let markdown = site.join(native("docs/guide/analysis.md"));
+        fs::write(&markdown, "# Analysis\n").unwrap();
         let message = format!("{:#}", build(&site).unwrap_err());
         let expected = format!(
-            "rendering {}: reading the notebook: EOF while parsing an object at line 1 column 1",
+            "{} and {} would both be the page at /guide/analysis: rename or move one",
+            markdown.display(),
+            site.join(native("docs/guide/analysis.test")).display()
+        );
+        assert_eq!(message, expected);
+        fs::remove_file(&markdown).unwrap();
+
+        // One the plugin can't read stops the build, naming it.
+        let broken = site.join(native("docs/broken.test"));
+        fs::write(&broken, "[").unwrap();
+        let message = format!("{:#}", build(&site).unwrap_err());
+        let expected = format!(
+            "rendering {}: plugin `test`'s `formats` hook failed: EOF while parsing a list at \
+             line 1 column 1",
             broken.display()
         );
         assert_eq!(message, expected);
@@ -2686,24 +2742,20 @@ mod tests {
 
     #[test]
     fn each_formula_that_cant_be_rendered_is_noted() {
-        let notebook = serde_json::json!({
-            "cells": [{ "cell_type": "markdown", "metadata": {}, "source": "$x^2$ and $\\dv{f}{x}$" }],
-            "metadata": {},
-            "nbformat": 4,
-            "nbformat_minor": 5
-        });
+        let parts = serde_json::json!([{ "markdown": "$x^2$ and $\\dv{f}{x}$" }]);
         let site = scratch_site(
             "math",
             &[
-                ("little.yml", "theme: ./theme\n"),
+                ("little.yml", &reading_tests()),
                 ("docs/README.md", "$$\\qty{1}{m}$$\n"),
-                ("docs/analysis.ipynb", &notebook.to_string()),
+                ("docs/analysis.test", &parts.to_string()),
                 ("theme/_templates/default.html", "{{ page.content | safe }}"),
             ],
         );
         let built = build(&site).unwrap();
 
-        // A notebook's math is MathML, as a Markdown file's is.
+        // The math in a file a plugin reads is MathML, as a Markdown file's
+        // is.
         let analysis = fs::read_to_string(site.join("dist/analysis/index.html")).unwrap();
         assert!(analysis.starts_with("<p><math><msup>"), "{analysis}");
         // Each formula that isn't is noted, with the file it's in, in the
@@ -2717,7 +2769,7 @@ mod tests {
             ),
             format!(
                 "can't render $\\dv{{f}}{{x}}$ in {}: Unknown command \"\\dv\".",
-                docs.join("analysis.ipynb").display()
+                docs.join("analysis.test").display()
             ),
         ];
         assert_eq!(warnings, expected);
@@ -2726,22 +2778,17 @@ mod tests {
 
     #[test]
     fn each_diagram_that_cant_be_drawn_is_noted() {
-        let notebook = serde_json::json!({
-            "cells": [{ "cell_type": "markdown", "metadata": {}, "source": "```mermaid\nflowchat\n```" }],
-            "metadata": {},
-            "nbformat": 4,
-            "nbformat_minor": 5
-        });
+        let parts = serde_json::json!([{ "markdown": "```mermaid\nflowchat\n```" }]);
         let site = scratch_site(
             "diagrams",
             &[
-                ("little.yml", "theme: ./theme\n"),
+                ("little.yml", &reading_tests()),
                 (
                     "docs/README.md",
                     "---\ntitle: Home\n---\n```mermaid\nflowchart LR\n  A --> B\n```\n\n\
                      ```mermaid\nflowchat LR\n```\n",
                 ),
-                ("docs/analysis.ipynb", &notebook.to_string()),
+                ("docs/analysis.test", &parts.to_string()),
                 ("theme/_templates/default.html", "{{ page.content | safe }}"),
             ],
         );
@@ -2760,7 +2807,7 @@ mod tests {
             ),
             format!(
                 "can't draw a diagram in {}: No diagram type detected",
-                docs.join("analysis.ipynb").display()
+                docs.join("analysis.test").display()
             ),
         ];
         assert_eq!(warnings, expected);
@@ -2769,25 +2816,16 @@ mod tests {
 
     #[test]
     fn each_block_a_plugin_cant_render_is_noted() {
-        let notebook = serde_json::json!({
-            "cells": [{ "cell_type": "markdown", "metadata": {}, "source": "```test\nerror it is lost\n```" }],
-            "metadata": {},
-            "nbformat": 4,
-            "nbformat_minor": 5
-        });
-        let site_cfg = format!(
-            "theme: ./theme\nplugins:\n  test: {}\n",
-            crate::plugin::tests::test_plugin().display()
-        );
+        let parts = serde_json::json!([{ "markdown": "```test\nerror it is lost\n```" }]);
         let site = scratch_site(
             "plugins",
             &[
-                ("little.yml", &site_cfg),
+                ("little.yml", &reading_tests()),
                 (
                     "docs/README.md",
                     "---\ntitle: Home\n---\n```test\nblock\n```\n\n```test\nerror it is broken\n```\n",
                 ),
-                ("docs/analysis.ipynb", &notebook.to_string()),
+                ("docs/analysis.test", &parts.to_string()),
                 ("theme/_templates/default.html", "{{ page.content | safe }}"),
             ],
         );
@@ -2811,7 +2849,7 @@ mod tests {
             ),
             format!(
                 "plugin `test` can't render a block in {}: it is lost",
-                docs.join("analysis.ipynb").display()
+                docs.join("analysis.test").display()
             ),
         ];
         assert_eq!(warnings, expected);

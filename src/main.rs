@@ -1,8 +1,8 @@
 //! little, a static documentation site generator: the `little` command.
 //! `little init` starts a site, as [`init`] does; `little build` builds a
-//! site, its Markdown and notebooks, with its theme, into HTML, as [`site`]
-//! does; `little serve` serves it, building it again as it changes, with
-//! [`server`]; and `little config` prints its [`config`].
+//! site, its Markdown and the files its plugins read, with its theme, into
+//! HTML, as [`site`] does; `little serve` serves it, building it again as it
+//! changes, with [`server`]; and `little config` prints its [`config`].
 //!
 //! It's a command, not a library, so its modules are for each other, and
 //! for those who work on little, not for other crates.
@@ -15,7 +15,7 @@ mod init;
 mod links;
 mod math;
 mod mermaid;
-mod notebook;
+mod parts;
 mod plugin;
 mod render;
 mod sass;

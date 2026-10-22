@@ -1,6 +1,8 @@
 # 0046 — Plugin hooks
 
-- Status: accepted
+- Status: accepted; amended by [0060](./0060-other-formats-in-plugins.md),
+  which adds a hook, `formats`, after `source`, in `little:plugin@0.2.1`,
+  for files in other formats, whose errors stop the build
 - Date: 2026-10-15
 - Amends: [0019](./0019-site-search.md),
   [0029](./0029-plugins-that-render-code-blocks.md),

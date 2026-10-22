@@ -20,10 +20,11 @@ is shown so.
 
 Link to another page by its file, as on GitHub, and the link leads to the
 page: `[Usage](usage.md#options)` to `usage#options`, and
-`[Guide](guide/README.md)` to `guide/`. A link to a notebook, like
-`[Analysis](analysis.ipynb#results)`, leads to its page too. This manual's
-pages link to each other so, which is why their links work on GitHub as
-well.
+`[Guide](guide/README.md)` to `guide/`. A link to a file a
+[plugin](../plugins/using-plugins.md#pages-in-other-formats) reads, like a
+notebook, `[Analysis](analysis.ipynb#results)`, leads to its page too. This
+manual's pages link to each other so, which is why their links work on
+GitHub as well.
 
 - A link to a page's URL, like `[Usage](usage)`, works too, but only in the
   site.

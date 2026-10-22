@@ -69,7 +69,7 @@ wit_bindgen::generate!({
         package my:links;
 
         world links {
-            export little:plugin/content@0.2.0;
+            export little:plugin/content@0.2.1;
         }
     ",
 });
@@ -97,7 +97,7 @@ export!(Links);
 ```
 
 - The plugin's world, `links`, names the hooks it exports, from
-  `little:plugin`, at version 0.2.0: here, only `content`. `generate!`
+  `little:plugin`, at version 0.2.1: here, only `content`. `generate!`
   writes a trait, `Guest`, for each, and `export!` exports the struct that
   implements them.
 - [`content`](../reference/plugin-hooks.md#content) is given each page's
@@ -149,7 +149,7 @@ now has
 the site's repository in the built-in theme's header. For those too, export
 the [`html`](../reference/plugin-hooks.md#html) hook instead, which is given
 each page as it's written, theme and all: in `src/lib.rs`, export
-`little:plugin/html@0.2.0`, `use exports::little::plugin::html::Guest`,
+`little:plugin/html@0.2.1`, `use exports::little::plugin::html::Guest`,
 and name the function `html`. Its first argument is the page's URL, like
 `/guide`, rather than its file.
 
@@ -171,8 +171,8 @@ and name the function `html`. Its first argument is the page's URL, like
           package my:links;
 
           world links {
-              import little:plugin/warnings@0.2.0;
-              export little:plugin/content@0.2.0;
+              import little:plugin/warnings@0.2.1;
+              export little:plugin/content@0.2.1;
           }
       ",
       generate_all,
@@ -197,7 +197,7 @@ hook:
 package my:links;
 
 world links {
-    export little:plugin/content@0.2.0;
+    export little:plugin/content@0.2.1;
 }
 ```
 
@@ -236,9 +236,11 @@ componentize-py -d plugin.wit -d links.wit -w my:links/links componentize app -o
 - little's own `pydoc`, `rustdoc`, and `jsdoc` plugins, in its
   [`plugins/`](https://github.com/withlittle/little/tree/main/plugins), add
   an API reference with the [`files`](../reference/plugin-hooks.md#files)
-  hook.
-- The version of little's hooks, `little:plugin@0.2.0`, is numbered as
+  hook, and its `jupyter` plugin builds pages from Jupyter notebooks with
+  the [`formats`](../reference/plugin-hooks.md#formats) hook.
+- The version of little's hooks, `little:plugin@0.2.1`, is numbered as
   little's [versions](../getting-started/install.md#update-it) are. A hook
-  little adds makes it 0.2.1, and a plugin built for 0.2.0 keeps working;
-  a change that would break plugins makes it 0.3.0, and each must be built
-  again, for 0.3.0, to load.
+  little adds, like [`formats`](../reference/plugin-hooks.md#formats) in
+  0.2.1, raises its last number, and a plugin built for 0.2.0 keeps
+  working; a change that would break plugins makes it 0.3.0, and each must
+  be built again, for 0.3.0, to load.

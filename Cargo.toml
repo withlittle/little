@@ -42,7 +42,6 @@ pkg-fmt = "zip"
 [dependencies]
 alphanumeric-sort = "1.5.8"
 anyhow = "1.0.104"
-base64 = "0.23.1"
 chrono = { version = "0.4.45", default-features = false }
 clap = { version = "4.6.7", features = ["derive"] }
 codemap = "0.1.3"

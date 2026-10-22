@@ -130,15 +130,13 @@ pub fn init(dir: &Path) -> Result<Started> {
 }
 
 /// Writes a home page in `source`, unless it has one already, as a build
-/// finds it: a Markdown file or notebook called `README`, in any case.
+/// finds it: a Markdown file called `README`, in any case. A new site has no
+/// plugins, so a `README` in a format one reads isn't one yet.
 fn home_page(source: &Path) -> Result<Action> {
     let reading = || format!("reading {}", shown(source).display());
     for entry in fs::read_dir(source).with_context(reading)? {
         let path = entry.with_context(reading)?.path();
-        let is_page = matches!(
-            path.extension().and_then(|extension| extension.to_str()),
-            Some("md" | "ipynb")
-        );
+        let is_page = path.extension().is_some_and(|extension| extension == "md");
         if is_page && site::is_readme(&path) && path.is_file() {
             return Ok(Action::Kept(path));
         }
@@ -307,6 +305,27 @@ mod tests {
         names.sort();
         assert_eq!(names, ["README.txt", "readme.md"]);
         site::build(&dir).unwrap();
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_notebook_isnt_a_home_page_without_a_plugin() {
+        let dir = scratch("notebook");
+        let docs = dir.join("docs");
+        fs::create_dir_all(&docs).unwrap();
+        let notebook = r#"{"cells": [], "metadata": {}, "nbformat": 4, "nbformat_minor": 5}"#;
+        fs::write(docs.join("README.ipynb"), notebook).unwrap();
+
+        let started = init(&dir).unwrap();
+
+        // A new site has no plugin to read it.
+        let home = docs.join("README.md");
+        assert_eq!(started.files[1], Action::Created(home.clone()));
+        assert_eq!(fs::read_to_string(&home).unwrap(), HOME_PAGE);
+        // So it's copied, as any other file is.
+        site::build(&dir).unwrap();
+        let copied = dir.join("dist").join("README.ipynb");
+        assert_eq!(fs::read_to_string(copied).unwrap(), notebook);
         let _ = fs::remove_dir_all(&dir);
     }
 

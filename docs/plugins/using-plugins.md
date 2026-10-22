@@ -8,7 +8,8 @@ description: Add to what little does as it builds a site, with plugins, each one
 A plugin adds to what little does as it builds a site: an API reference,
 from [Python's docstrings](python-api-reference.md),
 [Rust's doc comments](rust-api-reference.md), or
-[JavaScript's](javascript-api-reference.md), say, links to other sites that
+[JavaScript's](javascript-api-reference.md), say, pages from
+[Jupyter notebooks](jupyter-notebooks.ipynb), links to other sites that
 open in a new tab, or a table from a ```` ```csv ```` block. It's one
 `.wasm` file, which runs wherever little does, in a sandbox, and little
 calls its [hooks](../reference/plugin-hooks.md) as the build reaches each
@@ -71,9 +72,9 @@ it to read.
   back HTML, which little writes as it is, so it needs
   [`raw_html`](../writing/markdown.md#choosing-markdowns-extensions): with
   `raw_html: false`, the build stops.
-- In a [notebook](../writing/notebooks.ipynb), the blocks in Markdown cells,
-  and in Markdown a cell showed, go to plugins too, and are warned of without
-  a line. Its code cells don't.
+- In a page in [another format](#pages-in-other-formats), like a
+  [notebook](jupyter-notebooks.ipynb), the blocks in its Markdown go to
+  plugins too, and are warned of without a line. Its code doesn't.
 - A block a plugin can't render is left as it was, as code, and warned of,
   with the file and line it's on:
 
@@ -97,6 +98,21 @@ nav and search, its links are checked, and its code blocks go to plugins.
 - `little serve` adds them again in each build, which a change in a folder
   the plugin reads starts.
 
+## Pages in other formats
+
+A plugin can read files in a format of its own, by their extension, as
+pages, with its [`formats`](../reference/plugin-hooks.md#formats) hook, as
+[`jupyter`](jupyter-notebooks.ipynb) reads Jupyter notebooks, `.ipynb`
+files. Each is a page as a
+Markdown file is: `analysis.ipynb` is the page at `/analysis`,
+`README.ipynb` is its folder's page, a link to `analysis.ipynb` leads to
+the page, and the file isn't copied.
+
+- Two plugins that read the same extension stop the build, and a plugin
+  can't read `.md` files, which little reads itself.
+- A file in an extension no plugin reads is copied, as it is.
+- A file the plugin can't read stops the build, naming it.
+
 ## When a plugin fails
 
 A hook fails when it gives back an error, or its plugin crashes, as a Rust
@@ -104,9 +120,10 @@ plugin does when it panics. After a crash, little starts the plugin again,
 for the next hook.
 
 - A plugin that can't start, as its settings are wrong, say, stops the
-  build, as does a hook that little calls once, like `files`, that fails.
-- A hook that little calls for each page, or block, that fails is warned
-  of, and the page is built as if the hook hadn't run:
+  build, as does a hook that little calls once, like `files`, that fails,
+  or a `formats` hook that can't read a page.
+- Any other hook that little calls for each page, or block, that fails is
+  warned of, and the page is built as if the hook hadn't run:
 
   ```text
   warning: plugin `links`'s `content` hook failed on ./docs/guide.md: …
@@ -135,8 +152,9 @@ builds the same each time.
 
 ## Limits, for now
 
-- A plugin's Markdown can't use the page's link references, or have
-  footnotes.
+- The Markdown a plugin renders a code block as can't use the page's link
+  references, or have footnotes, and each part of a page in [another
+  format](#pages-in-other-formats) has only its own.
 - A plugin's pages are all added again in each build, even for a change to
   one.
 - A plugin has no time limit, so one that never returns holds the build up

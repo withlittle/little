@@ -7,7 +7,7 @@
 /// build has made so far, and gives back what the build goes on with. A
 /// site's plugins are called in the order its `plugins` names them, each
 /// with what the one before it gave back.
-package little:plugin@0.2.0;
+package little:plugin@0.2.1;
 
 /// What a plugin can tell little, from any hook.
 interface warnings {
@@ -66,8 +66,8 @@ interface files {
     /// What to change.
     record changes {
         /// Files to build as if they were in the source folder: each
-        /// Markdown file and notebook is a page, and any other file is
-        /// copied.
+        /// Markdown file, and each file a `formats` hook reads, is a page,
+        /// and any other file is copied.
         add: list<file>,
         /// The paths of files to leave out.
         remove: list<string>,
@@ -84,10 +84,57 @@ interface files {
 interface source {
     /// Called for each page as it's read, with its file, from the site's
     /// folder, like `docs/guide/install.md`, and its text: Markdown, with
-    /// its frontmatter, or a notebook's JSON. Gives back the text the page
-    /// is built from. An error is warned of, and the page is built from the
-    /// text as it was.
+    /// its frontmatter, or the text of a file a `formats` hook reads, like a
+    /// notebook's JSON. Gives back the text the page is built from. An error
+    /// is warned of, and the page is built from the text as it was.
     source: func(page: string, text: string) -> result<string, string>;
+}
+
+/// Reads files in the formats the plugin chooses, like Jupyter's notebooks,
+/// as pages.
+interface formats {
+    /// Code, shown as it is.
+    record code {
+        /// Its language, which it's highlighted in, like `python`, or empty,
+        /// for none.
+        language: string,
+        /// Its text.
+        text: string,
+    }
+
+    /// A part of a page.
+    variant part {
+        /// Markdown, read on its own, with the site's extensions to it, so
+        /// a code block it leaves open doesn't swallow the next part. little
+        /// writes it as if the page's author had: its headings join the
+        /// page's table of contents, its links are checked, its code blocks
+        /// go to `code-blocks` hooks, and its footnotes are numbered on from
+        /// those before. Frontmatter, between `---` lines at the top of the
+        /// first part, is the page's.
+        markdown(string),
+        /// HTML, which little writes as it is. It needs `markdown.raw_html`
+        /// to be `true`, or the build stops.
+        html(string),
+        /// Code, which little writes as a code block in its language, like a
+        /// notebook's code cell: no `code-blocks` hook renders it, though one
+        /// in `mermaid` is still drawn, and one in `math` written as math.
+        code(code),
+    }
+
+    /// Called once, after `setup`, for the extensions of the files the
+    /// plugin reads, each without its `.`, like `ipynb`, and matched as it's
+    /// written, so `ipynb` doesn't read `.IPYNB` files. An extension is one
+    /// plugin's alone, and can't be `md`, which little reads.
+    extensions: func() -> list<string>;
+
+    /// Called for each file in one of the plugin's extensions, in place of
+    /// reading it as Markdown, after `source`, with its file, from the
+    /// site's folder, like `docs/analysis.ipynb`, its text, and the site's
+    /// `markdown` settings, as `little config` prints them, as a JSON
+    /// object. Gives back the page's parts, in order, which little writes as
+    /// it writes Markdown's: its file is a page as a Markdown file is, at
+    /// the URL of its name. An error stops the build.
+    read: func(page: string, text: string, markdown: string) -> result<list<part>, string>;
 }
 
 /// Renders fenced code blocks in the languages the plugin chooses.
@@ -121,10 +168,10 @@ interface code-blocks {
     /// each one word, like `bob`. A language is one plugin's alone.
     languages: func() -> list<string>;
 
-    /// Called for each fenced block in one of the plugin's languages, as
-    /// its page is read, after `source`, before its diagrams are drawn.
-    /// Gives back what takes the block's place, or an error, which is warned
-    /// of, leaving the block as it was.
+    /// Called for each fenced block in one of the plugin's languages, in a
+    /// page's Markdown, as it's read, after `source` and `formats`, before
+    /// its diagrams are drawn. Gives back what takes the block's place, or
+    /// an error, which is warned of, leaving the block as it was.
     render: func(block: block) -> result<output, string>;
 }
 
@@ -189,7 +236,7 @@ interface destination {
 
 /// Every hook, which little's own bindings are generated from. A plugin's
 /// world exports only those it needs, like `world links { export
-/// little:plugin/content@0.2.0; }`.
+/// little:plugin/content@0.2.1; }`.
 world hooks {
     import warnings;
     export setup;
@@ -197,6 +244,7 @@ world hooks {
     export theme;
     export files;
     export source;
+    export formats;
     export code-blocks;
     export content;
     export site;

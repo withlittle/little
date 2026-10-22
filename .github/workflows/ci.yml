@@ -30,7 +30,7 @@ jobs:
         with:
           components: rustfmt, clippy
           # For the plugins: tests/plugin, which the tests build, plugins/pydoc,
-          # plugins/rustdoc, and plugins/jsdoc.
+          # plugins/rustdoc, plugins/jsdoc, and plugins/jupyter.
           targets: wasm32-wasip2
 
       - name: Cache cargo build artifacts
@@ -44,11 +44,12 @@ jobs:
           cargo fmt --check --manifest-path plugins/pydoc/Cargo.toml
           cargo fmt --check --manifest-path plugins/rustdoc/Cargo.toml
           cargo fmt --check --manifest-path plugins/jsdoc/Cargo.toml
+          cargo fmt --check --manifest-path plugins/jupyter/Cargo.toml
 
-      # pydoc, rustdoc, and jsdoc are linted, tested, and built with --locked,
-      # as their releases are, so a pull request that raises one's version
-      # without its Cargo.lock fails here. Each command needs it, or cargo
-      # would update Cargo.lock for those after it.
+      # pydoc, rustdoc, jsdoc, and jupyter are linted, tested, and built with
+      # --locked, as their releases are, so a pull request that raises one's
+      # version without its Cargo.lock fails here. Each command needs it, or
+      # cargo would update Cargo.lock for those after it.
       - name: Lint (clippy, warnings are errors)
         run: |
           cargo clippy --all-targets -- -D warnings
@@ -57,6 +58,7 @@ jobs:
           cargo clippy --locked --manifest-path plugins/pydoc/Cargo.toml --all-targets --target wasm32-wasip2 --target-dir target/pydoc -- -D warnings
           cargo clippy --locked --manifest-path plugins/rustdoc/Cargo.toml --all-targets --target wasm32-wasip2 --target-dir target/rustdoc -- -D warnings
           cargo clippy --locked --manifest-path plugins/jsdoc/Cargo.toml --all-targets --target wasm32-wasip2 --target-dir target/jsdoc -- -D warnings
+          cargo clippy --locked --manifest-path plugins/jupyter/Cargo.toml --all-targets --target wasm32-wasip2 --target-dir target/jupyter -- -D warnings
 
       - name: Test
         run: |
@@ -65,6 +67,7 @@ jobs:
           cargo test --locked --manifest-path plugins/pydoc/Cargo.toml --target-dir target/pydoc
           cargo test --locked --manifest-path plugins/rustdoc/Cargo.toml --target-dir target/rustdoc
           cargo test --locked --manifest-path plugins/jsdoc/Cargo.toml --target-dir target/jsdoc
+          cargo test --locked --manifest-path plugins/jupyter/Cargo.toml --target-dir target/jupyter
 
       - name: Install cargo-about
         uses: taiki-e/install-action@v2
@@ -81,6 +84,7 @@ jobs:
           scripts/notices.sh pydoc target/notices/pydoc.md
           scripts/notices.sh rustdoc target/notices/rustdoc.md
           scripts/notices.sh jsdoc target/notices/jsdoc.md
+          scripts/notices.sh jupyter target/notices/jupyter.md
 
       # The crate a release publishes to crates.io, built as crates.io would
       # build it, so a pull request that leaves a file little needs out of
@@ -94,6 +98,7 @@ jobs:
           cargo build --release --locked --target wasm32-wasip2 --manifest-path plugins/pydoc/Cargo.toml --target-dir target/pydoc
           cargo build --release --locked --target wasm32-wasip2 --manifest-path plugins/rustdoc/Cargo.toml --target-dir target/rustdoc
           cargo build --release --locked --target wasm32-wasip2 --manifest-path plugins/jsdoc/Cargo.toml --target-dir target/jsdoc
+          cargo build --release --locked --target wasm32-wasip2 --manifest-path plugins/jupyter/Cargo.toml --target-dir target/jupyter
 
   # The job above tests on Linux x64. This one tests on each other platform
   # little could be released for, on its own runner. Formatting, lints, and

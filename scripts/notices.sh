@@ -2,12 +2,12 @@
 # Writes the third-party notices of little, or of one of its plugins, as its
 # releases include them: see docs/decisions/0054-third-party-notices.md.
 #
-#   scripts/notices.sh little|pydoc|rustdoc|jsdoc FILE
+#   scripts/notices.sh little|pydoc|rustdoc|jsdoc|jupyter FILE
 #
 # It needs cargo-about 0.9.2: cargo install --locked cargo-about@0.9.2.
 set -euo pipefail
 
-usage="usage: $0 little|pydoc|rustdoc|jsdoc FILE"
+usage="usage: $0 little|pydoc|rustdoc|jsdoc|jupyter FILE"
 if [[ $# -ne 2 ]]; then
   echo "$usage" >&2
   exit 2
@@ -17,7 +17,7 @@ out=$2
 root=$(cd "$(dirname "$0")/.." && pwd)
 case $component in
   little) manifest=$root/Cargo.toml ;;
-  pydoc | rustdoc | jsdoc) manifest=$root/plugins/$component/Cargo.toml ;;
+  pydoc | rustdoc | jsdoc | jupyter) manifest=$root/plugins/$component/Cargo.toml ;;
   *)
     echo "$usage" >&2
     exit 2

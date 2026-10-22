@@ -3008,7 +3008,6 @@ version = "0.2.0"
 dependencies = [
  "alphanumeric-sort",
  "anyhow",
- "base64 0.23.1",
  "chrono",
  "clap",
  "codemap",

@@ -66,7 +66,9 @@ markdown:
   ```
 
   `little build --strict` fails on one, and `little serve` warns of each
-  after each build. One in a notebook is warned of without a line.
+  after each build. One in a page a
+  [plugin](../plugins/using-plugins.md#pages-in-other-formats) reads, like a
+  notebook, is warned of without a line.
 - A diagram is drawn the same in each build. A gantt chart is drawn 800
   pixels wide, unless [`mermaid`](#choosing-how-diagrams-look) says
   otherwise, and its line at today's date is at the day the site was

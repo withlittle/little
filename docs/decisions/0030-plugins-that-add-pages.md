@@ -2,7 +2,9 @@
 
 - Status: accepted; amended by [0046](./0046-plugin-hooks.md), which adds
   pages, and other files, with the `files` hook, in place of `pages`, and
-  warnings with `warn`, so a plugin's page can be a notebook
+  warnings with `warn`, so a plugin's page can be a notebook, and by
+  [0060](./0060-other-formats-in-plugins.md), under which it can be in any
+  format a plugin reads, and a notebook only with `jupyter`
 - Date: 2026-10-08
 - Amends: [0013](./0013-pages-that-clash.md),
   [0029](./0029-plugins-that-render-code-blocks.md)

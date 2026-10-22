@@ -47,8 +47,9 @@ and a rejection of their worst friction.
   page is built (syntect, with bat's grammars, built in), math rendered as
   MathML, and Mermaid diagrams drawn as SVG, which browsers show without a
   script (math-core and merman, built in).
-- **Notebooks:** Jupyter's `.ipynb`, outputs and all, built into comrak's
-  tree, so a notebook is a page as Markdown is, without Python.
+- **Other formats:** Markdown is the one format built in; a plugin reads
+  others as pages, like Jupyter's `.ipynb`, outputs and all, without Python,
+  and little writes them as it writes Markdown.
 - **Theming:** `minijinja` templates; structured data in, any HTML out.
 - **Config:** cascading YAML.
 - **Plugins:** sandboxed **WASM** components (wasmtime, built in), so
