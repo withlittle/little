@@ -1,6 +1,8 @@
 # 0057 — Starting a site with `little init`
 
-- Status: accepted
+- Status: accepted; amended by [0060](./0060-other-formats-in-plugins.md),
+  under which a `README.ipynb` isn't a new site's home page, as no plugin
+  reads it yet
 - Date: 2026-10-19
 
 ## Context

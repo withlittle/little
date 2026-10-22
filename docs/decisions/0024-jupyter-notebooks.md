@@ -7,7 +7,9 @@
   [0029](./0029-plugins-that-render-code-blocks.md), which gives the code
   blocks in their Markdown, but not their code cells, to plugins, and by
   [0033](./0033-the-built-in-themes-design.md), whose built-in theme sets
-  `output` blocks apart from code with a dashed border
+  `output` blocks apart from code with a dashed border, and by
+  [0060](./0060-other-formats-in-plugins.md), which moves notebooks out of
+  little, into a plugin, `jupyter`, that reads them with the `formats` hook
 - Date: 2026-10-04
 
 ## Context

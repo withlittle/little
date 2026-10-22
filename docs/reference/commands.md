@@ -43,7 +43,9 @@ next: cd my-docs && little serve
 - `little.yml` names the site after its folder, here `my-docs`, and has
   what a site sets next, like its `url` and `repo`, ready to uncomment.
 - `docs/README.md` is the site's home page. If `docs/` has one already, a
-  `README.md` or `README.ipynb` in any case, it's kept.
+  `README.md` in any case, it's kept. A new site has no
+  [plugins](../plugins/using-plugins.md), so a `README.ipynb` isn't one:
+  once a plugin reads it, delete the `README.md`.
 - `.gitignore` keeps the built site, in `dist/`, out of git. If there's one
   already, `/dist/` is added to its end, unless it ignores `dist/` already.
 - It won't start a site where there's a `little.yml`, and stops, writing

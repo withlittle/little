@@ -815,9 +815,9 @@ impl PagePlugins<'_> {
     }
 
     /// Whether a file with `extension`, like `md`, is a page: a Markdown
-    /// file, a notebook, or a file a plugin's `formats` hook reads.
+    /// file, or a file a plugin's `formats` hook reads.
     pub fn is_page(&self, extension: &str) -> bool {
-        matches!(extension, "md" | "ipynb")
+        extension == "md"
             || (self.plugins.as_deref()).is_some_and(|plugins| plugins.reads(extension))
     }
 
@@ -1069,7 +1069,6 @@ pub(crate) fn language(info: &str) -> String {
 pub(crate) mod tests {
     use super::*;
     use crate::config::{Markdown, SiteUrl};
-    use crate::notebook::parse_notebook;
     use crate::parts::parse_parts;
     use crate::render::{Rendered, parse_document};
     use serde_json::json;
@@ -1639,59 +1638,6 @@ pub(crate) mod tests {
             )
         );
         let _ = std::fs::remove_dir_all(&site);
-    }
-
-    #[test]
-    fn a_notebooks_markdown_is_given_to_plugins_but_not_its_code() {
-        let mut plugins = started("{}");
-        let notebook = serde_json::json!({
-            "cells": [
-                { "cell_type": "markdown", "metadata": {}, "source": "```test\ncount\n```" },
-                {
-                    "cell_type": "code",
-                    "execution_count": 1,
-                    "metadata": {},
-                    "source": "count",
-                    "outputs": [{
-                        "output_type": "display_data",
-                        "metadata": {},
-                        "data": { "text/markdown": "```test\nerror in an output\n```" }
-                    }]
-                }
-            ],
-            "metadata": { "kernelspec": { "language": "test", "name": "test" } },
-            "nbformat": 4,
-            "nbformat_minor": 5
-        });
-        let markdown = Markdown {
-            highlight: None,
-            ..Markdown::default()
-        };
-        let now = OffsetDateTime::from_unix_timestamp(NOW).unwrap();
-        let r = parse_notebook(
-            &notebook.to_string(),
-            "/",
-            &(2..=6),
-            &SiteUrl::default(),
-            &markdown,
-            now,
-            &mut plugins.on("docs/analysis.ipynb"),
-        )
-        .unwrap();
-        assert_eq!(
-            r.html,
-            "<p>1</p>\n<pre><code class=\"language-test\">count\n</code></pre>\n\
-             <pre><code class=\"language-test\">error in an output\n</code></pre>\n"
-        );
-        // A block's line would be its cell's.
-        assert_eq!(
-            r.unrendered_blocks,
-            [Unrendered {
-                plugin: "test".to_string(),
-                line: None,
-                reason: "in an output".to_string(),
-            }]
-        );
     }
 
     #[test]

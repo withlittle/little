@@ -36,7 +36,8 @@ jobs:
       - name: Install stable Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
-          # For the rustdoc plugin, which documents src/ at /api/.
+          # For the rustdoc plugin, which documents src/ at /api/, and the
+          # jupyter plugin, which reads the page on notebooks.
           targets: wasm32-wasip2
 
       - name: Cache cargo build artifacts
@@ -45,10 +46,14 @@ jobs:
           workspaces: |
             .
             plugins/rustdoc
+            plugins/jupyter
 
-      # Into the plugin's own target/, where little.yml looks for it.
+      # Each into its own target/, where little.yml looks for it.
       - name: Build the rustdoc plugin
         run: cargo build --release --locked --target wasm32-wasip2 --manifest-path plugins/rustdoc/Cargo.toml
+
+      - name: Build the jupyter plugin
+        run: cargo build --release --locked --target wasm32-wasip2 --manifest-path plugins/jupyter/Cargo.toml
 
       # --strict fails on a broken link, within the manual or to another
       # site, and on anything else little warns of, as the manual's

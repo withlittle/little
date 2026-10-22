@@ -236,7 +236,8 @@ componentize-py -d plugin.wit -d links.wit -w my:links/links componentize app -o
 - little's own `pydoc`, `rustdoc`, and `jsdoc` plugins, in its
   [`plugins/`](https://github.com/withlittle/little/tree/main/plugins), add
   an API reference with the [`files`](../reference/plugin-hooks.md#files)
-  hook.
+  hook, and its `jupyter` plugin builds pages from Jupyter notebooks with
+  the [`formats`](../reference/plugin-hooks.md#formats) hook.
 - The version of little's hooks, `little:plugin@0.2.1`, is numbered as
   little's [versions](../getting-started/install.md#update-it) are. A hook
   little adds, like [`formats`](../reference/plugin-hooks.md#formats) in

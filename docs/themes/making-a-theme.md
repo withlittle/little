@@ -32,10 +32,14 @@ the theme doesn't have that template:
 
 | Page type | Pages | Template |
 | --------- | ----- | -------- |
-| `home` | `docs/README.md`, or `docs/README.ipynb` | `home.html`, else `default.html` |
-| `section` | a folder's `README.md` or `README.ipynb`, like `docs/guide/README.md` | `section.html`, else `default.html` |
-| `page` | every other `.md` or `.ipynb` file | `page.html`, else `default.html` |
+| `home` | `docs/README.md` | `home.html`, else `default.html` |
+| `section` | a folder's `README.md`, like `docs/guide/README.md` | `section.html`, else `default.html` |
+| `page` | every other `.md` file | `page.html`, else `default.html` |
 | `404` | the page a host shows for a URL with no page | `404.html`, else none |
+
+A file a [plugin](../plugins/using-plugins.md#pages-in-other-formats) reads
+as a page, like a notebook, has the type a `.md` file in its place would:
+`docs/README.ipynb` is the home page.
 
 Each template gets the site's config as `site`, with its nav as `site.nav`,
 and the page as `page`, with its HTML as `page.content`: [Template

@@ -51,4 +51,4 @@ so:
 ## In a notebook
 
 A notebook's frontmatter is in a raw or Markdown cell at its top, as Quarto
-and MyST put it: see [Notebooks](notebooks.ipynb).
+and MyST put it: see [Jupyter notebooks](../plugins/jupyter-notebooks.ipynb).

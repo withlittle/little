@@ -52,7 +52,7 @@ A site is built from its `source` folder into its `destination` folder:
 
 | Key | Default | The folder… |
 | --- | ------- | ----------- |
-| `source` | `./docs` | whose `.md` and `.ipynb` files become the site's pages, and whose other files are copied into it |
+| `source` | `./docs` | whose `.md` files, and those in a format a [plugin](../plugins/using-plugins.md#pages-in-other-formats) reads, become the site's pages, and whose other files are copied into it |
 | `destination` | `./dist` | the site is built into |
 
 To use others, set them in `little.yml`:

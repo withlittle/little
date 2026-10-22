@@ -258,7 +258,7 @@ render: func(block: block) -> result<output, string>;
   ```
 
 - In a page a [`formats`](#formats) hook reads, like a
-  [notebook](../writing/notebooks.ipynb), the blocks in its `markdown`
+  [notebook](../plugins/jupyter-notebooks.ipynb), the blocks in its `markdown`
   parts go to plugins too, and are warned of without a line. Its `code`
   parts don't.
 

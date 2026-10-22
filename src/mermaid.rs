@@ -18,8 +18,8 @@ use crate::plugin;
 /// `markdown.mermaid: false`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Unrendered {
-    /// The line of its file its block starts on, if its file is Markdown: a
-    /// notebook's lines are its cells'.
+    /// The line of its file its block starts on, if its file is Markdown,
+    /// not one a plugin's `formats` hook reads.
     pub line: Option<usize>,
     /// Why, as merman says, on one line, like
     /// `Diagram parse error (flowchart-v2): …`.
@@ -29,8 +29,8 @@ pub struct Unrendered {
 /// Draw each Mermaid block in the document at `root` as SVG, if `markdown`
 /// says to, with `now` as Mermaid's today. A block's line in its file is
 /// `lines_before` after its line in the document, for the frontmatter comrak
-/// didn't read, or `None` for a notebook's. Returns each diagram that
-/// couldn't be drawn.
+/// didn't read, or `None` for one in a part a `formats` hook gives back.
+/// Returns each diagram that couldn't be drawn.
 pub fn draw<'a>(
     root: &'a AstNode<'a>,
     markdown: &Markdown,

@@ -5,8 +5,8 @@ description: How the files in docs/ become a site's pages, at clean URLs, and it
 
 # Pages and files
 
-Every `.md` file in `docs/`, and every Jupyter notebook (`.ipynb`), becomes a
-page, at a clean URL, without its extension:
+Every `.md` file in `docs/` becomes a page, at a clean URL, without its
+extension:
 
 ![docs/guide/install.md becomes the page at /guide/install](images/pretty-urls.svg)
 
@@ -19,15 +19,17 @@ docs/
 └── guide/
     ├── README.md       # → /guide/
     ├── install.md      # → /guide/install
-    ├── analysis.ipynb  # → /guide/analysis
     └── images/
         └── setup.png   # → /guide/images/setup.png, copied as it is
 ```
 
 - As on GitHub, a folder's `README.md` is its landing page, at the folder's
   URL, which ends in `/`, and `docs/README.md` is the site's home page.
-- A notebook is a page as a Markdown file is: see
-  [Notebooks](notebooks.ipynb).
+- A file in another format, like a Jupyter notebook (`.ipynb`), is a page
+  as a Markdown file is, with a
+  [plugin](../plugins/using-plugins.md#pages-in-other-formats) that reads
+  it, like [`jupyter`](../plugins/jupyter-notebooks.ipynb). Without one,
+  it's copied, as any other file is.
 - A page's title is its frontmatter's `title`, else its first `#` heading,
   else its file's or folder's name: see [Frontmatter](frontmatter.md).
 - The source is `docs/` unless the site [chooses another
@@ -43,8 +45,8 @@ source count, so the source can be a hidden folder itself, like `./.github`.
 ## Pages that clash
 
 Two files that would be the same page, like `guide.md` and
-`guide/README.md`, or `analysis.md` and `analysis.ipynb`, stop the build
-with an error that names both:
+`guide/README.md`, or `analysis.md` and an `analysis.ipynb` that a plugin
+reads, stop the build with an error that names both:
 
 ```text
 Error: docs/guide.md and docs/guide/README.md would both be the page at /guide/: rename or move one

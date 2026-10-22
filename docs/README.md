@@ -1,13 +1,14 @@
 ---
 title: Home
-description: little turns a folder of Markdown, or Jupyter notebooks, into a documentation site, with one binary and no config.
+description: little turns a folder of Markdown into a documentation site, with one binary and no config.
 ---
 
 # little
 
-A little static site generator for documentation: drop Markdown, or Jupyter
-notebooks, into `docs/` and get a site. One self-contained binary, a
-three-level cascading config, and themes that own 100% of the markup.
+A little static site generator for documentation: drop Markdown into
+`docs/` and get a site. One self-contained binary, a three-level cascading
+config, themes that own 100% of the markup, and plugins for the rest, like
+Jupyter notebooks.
 
 > [!WARNING]
 > little is in early development, at v0.1, so expect breaking changes. This
@@ -44,7 +45,8 @@ itself. [Your first site](getting-started/first-site.md) goes on from there.
   Python, or another language, that hooks into each step of a build, to add
   an API reference from [Python's docstrings](plugins/python-api-reference.md),
   [Rust's doc comments](plugins/rust-api-reference.md), or
-  [JavaScript's](plugins/javascript-api-reference.md), say, or change each
+  [JavaScript's](plugins/javascript-api-reference.md), build pages from
+  [Jupyter notebooks](plugins/jupyter-notebooks.ipynb), say, or change each
   page as it's written.
 
 ## This manual
@@ -52,14 +54,15 @@ itself. [Your first site](getting-started/first-site.md) goes on from there.
 | Section | Read it to… |
 | ------- | ----------- |
 | [Getting started](getting-started/install.md) | install little, start a site, configure it, and publish it |
-| [Writing](writing/pages-and-files.md) | write pages, with links, code, math, diagrams, notebooks, and navigation, and keep a version for each release |
+| [Writing](writing/pages-and-files.md) | write pages, with links, code, math, diagrams, and navigation, and keep a version for each release |
 | [Themes](themes/choosing-a-theme.md) | choose a theme for a site, or make one |
-| [Plugins](plugins/using-plugins.md) | use plugins, add an API reference, or write a plugin |
+| [Plugins](plugins/using-plugins.md) | use plugins, build pages from Jupyter notebooks, add an API reference, or write a plugin |
 | [Reference](reference/commands.md) | look up a command, a setting, what a theme's templates get, a plugin's hooks, or [why little works as it does](decisions/README.md) |
 
 > [!TIP]
 > This manual is a little site, in the `docs/` folder of little's
 > [repository](https://github.com/withlittle/little), and each page uses what
 > it describes: the page on [math](writing/math.md) has math in it, and the
-> page on [notebooks](writing/notebooks.ipynb) is a notebook. To read it
-> offline, run `little serve` in a clone of the repository.
+> page on [Jupyter notebooks](plugins/jupyter-notebooks.ipynb) is a
+> notebook. To read it offline, run `little serve` in a clone of the
+> repository.

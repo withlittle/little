@@ -73,12 +73,11 @@ pub mod builtin {
 /// template, named after the type.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum PageType {
-    /// The source folder's `README.md`, or `README.ipynb`: the site's home
-    /// page.
+    /// The source folder's `README`, like `README.md`: the site's home page.
     Home,
-    /// A subfolder's `README.md`, or `README.ipynb`: that folder's home page.
+    /// A subfolder's `README`, like `README.md`: that folder's home page.
     Section,
-    /// Any other Markdown file or notebook.
+    /// Any other Markdown file, or file a plugin's `formats` hook reads.
     Page,
     /// The page a host shows for a URL that has no page.
     NotFound,

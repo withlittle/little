@@ -74,3 +74,4 @@ made, and link to each other.
 - [0057 — Starting a site with `little init`](0057-starting-a-site-with-little-init.md)
 - [0058 — Features raise the minor version](0058-features-raise-the-minor-version.md)
 - [0059 — The menu of versions as a popover](0059-the-menu-of-versions-as-a-popover.md)
+- [0060 — Other formats in plugins](0060-other-formats-in-plugins.md)

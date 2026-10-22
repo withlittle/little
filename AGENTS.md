@@ -21,6 +21,11 @@ cargo build --release --target wasm32-wasip2 --manifest-path plugins/rustdoc/Car
 cargo test --manifest-path plugins/rustdoc/Cargo.toml
 cargo clippy --manifest-path plugins/rustdoc/Cargo.toml --all-targets --target wasm32-wasip2
 
+# the jupyter plugin, which the manual uses too: build it before the manual
+cargo build --release --target wasm32-wasip2 --manifest-path plugins/jupyter/Cargo.toml
+cargo test --manifest-path plugins/jupyter/Cargo.toml
+cargo clippy --manifest-path plugins/jupyter/Cargo.toml --all-targets --target wasm32-wasip2
+
 # the pydoc plugin, in its own workspace
 cargo build --release --target wasm32-wasip2 --manifest-path plugins/pydoc/Cargo.toml
 cargo test --manifest-path plugins/pydoc/Cargo.toml
@@ -35,11 +40,6 @@ cargo clippy --manifest-path plugins/jsdoc/Cargo.toml --all-targets --target was
 cargo test --manifest-path plugins/api_reference/Cargo.toml
 cargo clippy --manifest-path plugins/api_reference/Cargo.toml --all-targets
 
-# the jupyter plugin, in its own workspace
-cargo build --release --target wasm32-wasip2 --manifest-path plugins/jupyter/Cargo.toml
-cargo test --manifest-path plugins/jupyter/Cargo.toml
-cargo clippy --manifest-path plugins/jupyter/Cargo.toml --all-targets --target wasm32-wasip2
-
 # the third-party notices releases carry, with cargo-about 0.9.2
 # (cargo install --locked cargo-about@0.9.2)
 scripts/notices.sh little target/notices/little.md # or pydoc, rustdoc, jsdoc, jupyter
@@ -53,8 +53,8 @@ scripts/notices.sh little target/notices/little.md # or pydoc, rustdoc, jsdoc, j
   allocator.
 - `src/init.rs` — `little init`: starts a site in a folder, with a
   `little.yml` that names it after the folder, a home page in `docs/`,
-  unless it has one, and `/dist/` in its `.gitignore`; stops where there's
-  a `little.yml`, and writes its own last.
+  unless it has one in Markdown, and `/dist/` in its `.gitignore`; stops
+  where there's a `little.yml`, and writes its own last.
 - `src/config.rs` — the 3-level cascading config (little → theme → site): the
   chain of themes a site uses, its source and destination folders, the levels
   of heading its tables of contents list, the host and port
@@ -73,11 +73,11 @@ scripts/notices.sh little target/notices/little.md # or pydoc, rustdoc, jsdoc, j
 - `src/little.yml` — little's own defaults (level 1), compiled into the binary.
 - `src/render.rs` — Markdown (comrak, with the extensions the site turns on) +
   YAML frontmatter → HTML fragment, with each relative link led from the
-  folder of the file it's in, and each link to a page's file, `.md`,
-  `.ipynb`, or in an extension a plugin reads, led to the page, noting each
-  link as it's written. A notebook's tree, and the tree of the parts a
-  plugin reads a page into, is written the same way, once plugins have
-  rendered its blocks and its diagrams are drawn.
+  folder of the file it's in, and each link to a page's file, `.md`, or in
+  an extension a plugin reads, like `.ipynb`, led to the page, noting each
+  link as it's written. The tree of the parts a plugin reads a page into is
+  written the same way, once plugins have rendered its blocks and its
+  diagrams are drawn.
 - `src/plugin.rs` — plugins: WebAssembly components, run with wasmtime, built
   in, that export hooks from `wit/plugin.wit`. Starts each a build uses
   once, in a sandbox that reaches only the folders it reads, and calls each
@@ -100,20 +100,16 @@ scripts/notices.sh little target/notices/little.md # or pydoc, rustdoc, jsdoc, j
   merman, before comrak writes the page, from the site's Mermaid config, over
   little's own, with the id `mermaid-1`, and so on, the same in each build;
   one it can't draw stays code, and is noted, with its line, to warn of.
-- `src/notebook.rs` — a Jupyter notebook (`.ipynb`, format 4), read with
-  serde into comrak's tree of its page: Markdown cells as Markdown, code
-  cells as code blocks in the notebook's language, and their outputs as
-  `output` code blocks, HTML, or images with `data:` URLs.
 - `src/highlight.rs` — highlights each code block as comrak writes it, with
   bat's grammars, through two-face and syntect: a `<span>` with Pygments' or
   GitHub's class around each token, for the theme to colour.
 - `src/site.rs` — build pipeline: start the site's plugins, and call their
   hooks at each step: walk the source (`docs/`), with the files plugins add
-  and leave out, render its Markdown, its notebooks, and the files plugins
-  read, stopping on two that would be the same page, copy its other files, apply theme, index it for
-  search, add the files plugins add, write the destination (`dist/`),
-  noting the source file and URL of each file it writes. Finds where the
-  source is in its repository, so each page can
+  and leave out, render its Markdown, and the files plugins read, stopping
+  on two that would be the same page, copy its other files, apply theme,
+  index it for search, add the files plugins add, write the destination
+  (`dist/`), noting the source file and URL of each file it writes. Finds
+  where the source is in its repository, so each page can
   link to its file there, and works out when it's built, for `site.year`,
   its diagrams' today, and its plugins' clocks. Builds each of the site's
   versions this way, with the site's config and theme, each in the folder
@@ -160,7 +156,8 @@ Content and theme live outside `src/`:
   little's ADRs are in `docs/decisions/`, listed in its `README.md`, which alone
   is in `nav`; other meta docs don't go here. little's own API, which the
   `rustdoc` plugin adds from `src/`'s doc comments, is at `/api/`, with
-  no file in `docs/`.
+  no file in `docs/`, and its page on notebooks is a notebook, which the
+  `jupyter` plugin reads.
 - `theme/` — little's built-in theme, compiled into the binary: `_templates/`
   (MiniJinja; `default.html` is required) + `_static/` (copied to the site's
   root) + an optional `little.yml`. It's plain CSS, in cascade layers, with
@@ -170,9 +167,10 @@ Content and theme live outside `src/`:
   writes. Its header has a menu of a site's versions, when it has two or
   more.
 - `little.yml` — the manual's config: its `url`, `repo`, and `nav`, which
-  orders its pages by hand, and the `rustdoc` plugin, which documents
-  `src/` at `/api/`, from where Cargo builds its `.wasm` file. It sets
-  `theme: ./theme`, so edits to the built-in theme live-reload.
+  orders its pages by hand, the `rustdoc` plugin, which documents `src/`
+  at `/api/`, and the `jupyter` plugin, which reads its page on notebooks,
+  each from where Cargo builds its `.wasm` file. It sets `theme: ./theme`,
+  so edits to the built-in theme live-reload.
 - `wit/plugin.wit` — `little:plugin@0.2.1`: an interface for each hook a
   plugin can export, and `warnings`, which it imports. Plugin authors copy
   it, and write a world that exports the hooks they need; little's
@@ -220,9 +218,9 @@ Content and theme live outside `src/`:
   syntax definitions two-face bundles to little's. CI writes them all, and
   fails on any warning.
 - `.github/workflows/docs.yml` — builds the manual with little from the
-  same commit, and the `rustdoc` plugin it uses, with `--strict`, for each
-  pull request and push to `main`, and publishes each push's on GitHub
-  Pages, at <https://withlittle.github.io/little>.
+  same commit, and the `rustdoc` and `jupyter` plugins it uses, with
+  `--strict`, for each pull request and push to `main`, and publishes each
+  push's on GitHub Pages, at <https://withlittle.github.io/little>.
 - `.github/workflows/release-plugin.yml` — releases a plugin when a tag
   that names it and its version, like `pydoc-v0.1.0`, is pushed: checks
   the tag, builds the plugin's `.wasm` file, and publishes it, beside its
@@ -434,11 +432,12 @@ manual, and list each in its `README.md`. Locked so far:
   stays plain — see
   [`docs/decisions/0023-highlighting-code.md`](./docs/decisions/0023-highlighting-code.md).
 - **Jupyter notebooks:** each `.ipynb` file in the source is a page, as a
-  `.md` file is, read in format 4 with little's own serde types, not the
-  stricter `nbformat` crate, and built into comrak's tree, so it's written as
-  Markdown is. Outputs are code blocks in `output`, HTML and SVG when
-  `raw_html` is on, or images with `data:` URLs; frontmatter is in a raw or
-  Markdown cell at the top — see
+  `.md` file is, read in format 4 with serde types of its own, not the
+  stricter `nbformat` crate, by the `jupyter` plugin, since 0060, into
+  parts that little builds comrak's tree from, so it's written as Markdown
+  is. Outputs are code blocks in `output`, HTML and SVG when `raw_html` is
+  on, or images with `data:` URLs; frontmatter is in a raw or Markdown cell
+  at the top — see
   [`docs/decisions/0024-jupyter-notebooks.md`](./docs/decisions/0024-jupyter-notebooks.md).
 - **Rendering math:** `markdown.math` writes math as `mathml`, little's
   default, rendered with math-core, built in, as each page is built; `tex`,
@@ -482,7 +481,7 @@ manual, and list each in its `README.md`. Locked so far:
   [`docs/decisions/0029-plugins-that-render-code-blocks.md`](./docs/decisions/0029-plugins-that-render-code-blocks.md).
 - **Plugins that add pages:** a plugin's `files` hook, in place of 0030's
   `pages`, adds files, each built as if it were in the source at its path,
-  so a Markdown file or a notebook is a page, but has no file in the
+  so a Markdown file, or one a plugin reads, is a page, but has no file in the
   repository; one that would be the same page as a file or another
   plugin's page stops the build, as does an error from `files`, or a crash.
   What a plugin warns of is warned of, and `--strict` fails on it — see
@@ -614,12 +613,13 @@ manual, and list each in its `README.md`. Locked so far:
 - **Plugin hooks:** there's one kind of plugin, which exports the hooks it
   needs from `little:plugin@0.2.0`, each an interface in
   `wit/plugin.wit`: `setup`, `config`, `theme`, `files`, `source`,
-  `code-blocks`, `content`, `site`, `page`, `html`, and `destination`, in
-  the order the build reaches them. Each is given what the build has made,
-  and gives back what it goes on with, plugin after plugin, in the order
-  `plugins` names them, a theme's first. One called once that fails stops
-  the build; one called for each page or block is warned of, and the build
-  goes on with what it was given. `config` can't change the settings little
+  `formats`, since 0060, in 0.2.1, `code-blocks`, `content`, `site`,
+  `page`, `html`, and `destination`, in the order the build reaches them.
+  Each is given what the build has made, and gives back what it goes on
+  with, plugin after plugin, in the order `plugins` names them, a theme's
+  first. One called once that fails stops the build, as does `formats`;
+  one called for each page or block is warned of, and the build goes on
+  with what it was given. `config` can't change the settings little
   reads before plugins start; search indexes what `page` gives back, and
   links are checked in what `html` gives back. A plugin built for 0.1.0
   doesn't load — see
@@ -732,7 +732,7 @@ manual, and list each in its `README.md`. Locked so far:
   the folder `-C` names, or in that folder itself, asking nothing: a
   `little.yml` with the folder's name, as YAML, and `description`, `url`,
   and `repo` commented out; a home page in `docs/`, with no links within
-  the site, unless `docs/` has a `README` page already; and `/dist/` added
+  the site, unless `docs/` has a `README.md` already; and `/dist/` added
   to `.gitignore`, unless it ignores `dist/`. It stops, writing nothing,
   where there's a `little.yml`, and writes its own last; it doesn't start
   a git repository, or choose a theme — see
@@ -755,3 +755,13 @@ manual, and list each in its `README.md`. Locked so far:
   anchored below its button; where it hasn't, it opens in the middle of
   the window — see
   [`docs/decisions/0059-the-menu-of-versions-as-a-popover.md`](./docs/decisions/0059-the-menu-of-versions-as-a-popover.md).
+- **Other formats in plugins:** little reads only Markdown; a plugin's
+  `formats` hook, in `little:plugin@0.2.1`, claims extensions, like
+  `ipynb`, and reads each file in one, a page as a `.md` file is, into
+  parts, Markdown, HTML, and code, each read on its own, which little joins
+  into comrak's tree, so a code block left open doesn't swallow the next,
+  and HTML is placed whole. It's given the site's `markdown` settings;
+  `code` parts go to no `code-blocks` hook; and an error stops the build.
+  Notebooks are read by `plugins/jupyter/`; a file in an extension no
+  plugin reads is copied, and `little init` keeps only a `README.md` — see
+  [`docs/decisions/0060-other-formats-in-plugins.md`](./docs/decisions/0060-other-formats-in-plugins.md).

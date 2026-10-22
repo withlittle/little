@@ -9,7 +9,9 @@ It reads each notebook with little's
 [`formats` hook](../../docs/reference/plugin-hooks.md#formats), and gives
 little back the page's parts, which little writes as it writes Markdown.
 Why notebooks' pages are as they are is in
-[ADR 0024](../../docs/decisions/0024-jupyter-notebooks.md).
+[ADR 0024](../../docs/decisions/0024-jupyter-notebooks.md), and why a plugin
+reads them, not little, in
+[ADR 0060](../../docs/decisions/0060-other-formats-in-plugins.md).
 
 ## Building it
 
@@ -26,8 +28,9 @@ about 460 KB, which a site can name where it is, or copy.
 
 ## Using it
 
-[Notebooks](../../docs/writing/notebooks.ipynb), in little's manual, says
-what a notebook's page shows, and its limits.
+[Jupyter notebooks](../../docs/plugins/jupyter-notebooks.ipynb), in
+little's manual, says how a site names it in its `plugins`, what a
+notebook's page shows, and its limits.
 
 ## Developing it
 
