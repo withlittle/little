@@ -12,8 +12,9 @@ made, and link to each other.
 
 > [!NOTE]
 > A record says what was decided when it was made. One that a later record
-> changes says so in its status, at its top, and names it. The rest of this
-> manual describes little as it is now.
+> changes says so in its status, at its top, and names it. Search leaves the
+> records out, and finds the rest of this manual, which describes little as
+> it is now.
 
 - [0001 — Build little in Rust](0001-language-rust.md)
 - [0002 — Theme structure and template lookup](0002-theme-structure.md)

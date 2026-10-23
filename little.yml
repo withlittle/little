@@ -26,6 +26,12 @@ plugins:
     url: /api
   jupyter: ./plugins/jupyter/target/wasm32-wasip2/release/little_jupyter.wasm
 
+# Search leaves out the design decisions in docs/decisions/, and their list:
+# each says what was decided when it was made, not how little works now.
+search:
+  exclude:
+    - /decisions/
+
 # The manual's pages in the order to read them, rather than by title. A page
 # that isn't listed isn't in the nav, so list each new one, but for a design
 # decision: docs/decisions/README.md lists those, and alone is listed here.

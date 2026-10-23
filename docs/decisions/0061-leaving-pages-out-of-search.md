@@ -9,12 +9,14 @@
 Since [0019](./0019-site-search.md), search indexes every page but the 404
 page, and a page can't leave itself out. Some pages aren't ones a reader
 searches for, and crowd out those they are: a changelog, which names every
-feature; an archive of old posts; or a folder of a hundred pages written
-for another tool. Pagefind leaves out what a theme marks, with attributes
-like `data-pagefind-ignore`, or selectors in its config, but little indexes
-each page's own content, not the theme's markup around it
-([0019](./0019-site-search.md)), so a theme has nothing to mark, and a
-selector nothing to match.
+feature; an archive of old posts; a folder of a hundred pages written for
+another tool; or this manual's design decisions, 62 of its 110 pages, each
+of which says what was decided when it was made, though a later one may
+have changed it ([0053](./0053-decisions-in-the-manual.md)). Pagefind
+leaves out what a theme marks, with attributes like `data-pagefind-ignore`,
+or selectors in its config, but little indexes each page's own content, not
+the theme's markup around it ([0019](./0019-site-search.md)), so a theme
+has nothing to mark, and a selector nothing to match.
 
 ## Options considered
 - **Pagefind's settings in `little.yml`,** like `root_selector` and
@@ -70,6 +72,10 @@ selector nothing to match.
   `exclude` are truthy, so `{% if site.search %}` still shows the box.
 - A URL in `exclude` that doesn't start with `/`, like `other/notes.md`, or
   a setting `search` hasn't, stops the build, saying what it should be.
+- The manual leaves its records, and their list, out of search, with
+  `exclude: [/decisions/]`, so a search finds the pages that say how little
+  works now; the list is still in the nav, under Reference, and pages still
+  link to the records.
 
 ## Consequences
 - A site leaves out a folder of pages with a line in `little.yml`, and a
@@ -79,9 +85,9 @@ selector nothing to match.
   `site.search == true` hides its box on a site that leaves pages out; one
   that tests `{% if site.search %}`, as the manual shows, doesn't. Nothing
   the manual documents breaks.
-- A record whose decision a later one amends can leave itself out of
-  search now ([0053](./0053-decisions-in-the-manual.md)), though none does
-  yet.
+- Search in the manual no longer finds its records, amended or not, as
+  [0053](./0053-decisions-in-the-manual.md) had it: a reader reaches them
+  from their list, in the nav, or a page that links to one.
 - Limits, for now:
   - `exclude` has no globs, and can't leave out part of a page;
   - a site that leaves every page out still writes `pagefind/`, with no

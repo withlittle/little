@@ -157,7 +157,8 @@ Content and theme live outside `src/`:
   uses what it documents, where it can, and the README links to it. Pages
   link to each other by their files, and to little's own files on GitHub.
   little's ADRs are in `docs/decisions/`, listed in its `README.md`, which alone
-  is in `nav`; other meta docs don't go here. little's own API, which the
+  is in `nav`, and search leaves them all out; other meta docs don't go here.
+  little's own API, which the
   `rustdoc` plugin adds from `src/`'s doc comments, is at `/api/`, with
   no file in `docs/`, and its page on notebooks is a notebook, which the
   `jupyter` plugin reads.
@@ -172,8 +173,9 @@ Content and theme live outside `src/`:
 - `little.yml` — the manual's config: its `url`, `repo`, and `nav`, which
   orders its pages by hand, the `rustdoc` plugin, which documents `src/`
   at `/api/`, and the `jupyter` plugin, which reads its page on notebooks,
-  each from where Cargo builds its `.wasm` file. It sets `theme: ./theme`,
-  so edits to the built-in theme live-reload.
+  each from where Cargo builds its `.wasm` file, and `search.exclude`,
+  which leaves its decisions out of search. It sets `theme: ./theme`, so
+  edits to the built-in theme live-reload.
 - `wit/plugin.wit` — `little:plugin@0.2.1`: an interface for each hook a
   plugin can export, and `warnings`, which it imports. Plugin authors copy
   it, and write a world that exports the hooks they need; little's
@@ -689,12 +691,11 @@ manual, and list each in its `README.md`. Locked so far:
   plugin's URL with its version, and releases are immutable — see
   [`docs/decisions/0052-releasing-plugins-from-tags.md`](./docs/decisions/0052-releasing-plugins-from-tags.md).
 - **Decisions in the manual:** these ADRs are in `docs/decisions/`, each a
-  page of the manual, at `/decisions/`, built, searched, and checked like
-  any other, and still read on GitHub; `docs/decisions/README.md` lists
-  them, and alone is in `nav`, under Reference. A record links to little's
-  files outside `docs/`, like `VISION.md`, on GitHub. Records aren't left
-  out of search, though since 0061 a page can be, so search finds amended
-  records too — see
+  page of the manual, at `/decisions/`, built and checked like any other,
+  and still read on GitHub; `docs/decisions/README.md` lists them, and
+  alone is in `nav`, under Reference. A record links to little's files
+  outside `docs/`, like `VISION.md`, on GitHub. Since 0061, search leaves
+  them, and their list, out, so it finds only how little works now — see
   [`docs/decisions/0053-decisions-in-the-manual.md`](./docs/decisions/0053-decisions-in-the-manual.md).
 - **Third-party notices:** little's releases, and each plugin's, carry a
   `THIRD-PARTY-NOTICES.md`, written as the release is made, not committed,
@@ -779,5 +780,6 @@ manual, and list each in its `README.md`. Locked so far:
   left out is still built, and in the nav. A URL that matches no page in
   any version is warned of, and one that isn't from the root, or empty
   settings, stop the build. Pagefind's selectors would match nothing, as
-  little indexes each page's own content — see
+  little indexes each page's own content. The manual leaves out
+  `/decisions/`, its records and their list — see
   [`docs/decisions/0061-leaving-pages-out-of-search.md`](./docs/decisions/0061-leaving-pages-out-of-search.md).
