@@ -192,12 +192,12 @@ pub struct Built {
     /// The repository the site's source is in, if it says, whose links
     /// aren't checked.
     pub repo: Option<Repo>,
-    /// What it warns of, as it happened: each formula in its pages that
-    /// couldn't be rendered, so is shown as its TeX, each diagram that
-    /// couldn't be drawn, so is shown as code, each code block a plugin
-    /// couldn't render, so is left as it was, and what each plugin warned
-    /// of, and each of its hooks that failed, so the build went on without
-    /// its change.
+    /// What it warns of, as it happened: each URL in `search.exclude` that
+    /// matches no page, each formula in its pages that couldn't be rendered,
+    /// so is shown as its TeX, each diagram that couldn't be drawn, so is
+    /// shown as code, each code block a plugin couldn't render, so is left
+    /// as it was, and what each plugin warned of, and each of its hooks that
+    /// failed, so the build went on without its change.
     pub warnings: Vec<Warning>,
     /// The path in the destination of each file written for a version of
     /// the site from a git ref, whose links to other sites aren't checked,
@@ -278,8 +278,8 @@ struct Source {
     git_ref: Option<String>,
     /// Its config, merged, which the theme gets as `site`.
     values: Mapping,
-    /// Whether it's indexed for search.
-    searchable: bool,
+    /// What it indexes for search, if anything.
+    search: Option<config::Search>,
     /// Its theme, which writes URLs under the version's.
     theme: Theme,
     pages: Vec<Page>,
@@ -465,6 +465,22 @@ pub fn build(site_dir: &Path) -> Result<Built> {
     // but may have warned as they started.
     if let Some(mut plugins) = site_plugins {
         built.warnings.extend(warned(&mut plugins, None));
+    }
+    // A URL in `search.exclude` that leaves out no page, in any version, is
+    // likely a typo, or a page that's moved, as a broken link would be.
+    let urls: Vec<&str> = (sources.iter())
+        .flat_map(|source| &source.pages)
+        .map(|page| page.url.as_str())
+        .collect();
+    for entry in config.search.iter().flat_map(|search| &search.exclude) {
+        if !urls.iter().any(|url| config::leaves_out(entry, url)) {
+            built.warnings.push(Warning {
+                kind: "URL(s) in `search.exclude` that match no page",
+                message: format!(
+                    "`search.exclude` lists {entry}, but there's no page at that URL, or under it"
+                ),
+            });
+        }
     }
     let mut ready = Vec::new();
     for (source, &version) in sources.into_iter().zip(&versions) {
@@ -747,7 +763,7 @@ fn read_source(
         place,
         git_ref: checkout.as_ref().map(|checkout| checkout.git_ref.clone()),
         values: config.values.clone(),
-        searchable: config.search,
+        search: config.search.clone(),
         theme,
         pages,
         files,
@@ -773,7 +789,7 @@ fn finish(
         place,
         git_ref,
         values,
-        searchable,
+        search,
         theme,
         pages,
         files,
@@ -824,9 +840,17 @@ fn finish(
     let mut render = |page_type: PageType, page: Mapping, url: &str, on: &str| {
         let page = plugins.page(on, page);
         // Search indexes the page's own content and title, as plugins leave
-        // them, not the theme's markup around it.
+        // them, not the theme's markup around it; its own `search`, if it
+        // has one, says whether it's indexed at all.
         let text = |key: &str| page.get(key).and_then(Value::as_str).map(str::to_string);
-        let searched = (text("title"), text("content"));
+        let listed = match page.get("search") {
+            None | Some(Value::Null) => None,
+            Some(Value::Bool(listed)) => Some(*listed),
+            Some(_) => bail!(
+                "`search` must be `true`, to index the page for search, or `false`, to leave it out"
+            ),
+        };
+        let searched = (text("title"), text("content"), listed);
         let html = theme.render(
             page_type,
             context! { site => site_value.clone(), page => page },
@@ -869,10 +893,13 @@ fn finish(
         let rendered = page_value(&data, &page.frontmatter, &place.url)
             .and_then(|value| render(page.page_type, value, &url, &page.origin))
             .with_context(|| format!("rendering {}", page.origin))?;
-        if let Some((html, (title, content))) = rendered {
+        if let Some((html, (title, content, listed))) = rendered {
             // In the language the theme gives it, at its URL from the root
-            // of its version, beside its index.
-            if searchable {
+            // of its version, beside its index, unless it's left out: by its
+            // own `search`, else by the site's `exclude`.
+            let indexed = (search.as_ref())
+                .is_some_and(|search| listed.unwrap_or_else(|| !search.excludes(&page.url)));
+            if indexed {
                 let title = title.unwrap_or_else(|| page.title.clone());
                 let content = content.unwrap_or_else(|| page.html.clone());
                 searched.push((&page.url, title, content, search::lang(&html)));
@@ -943,8 +970,8 @@ fn finish(
     let mut static_files: Vec<_> = static_files.into_values().collect();
 
     // Every page the theme rendered is searchable, but the 404 page, which
-    // isn't one to find.
-    let search_files = if searchable {
+    // isn't one to find, and those left out.
+    let search_files = if search.is_some() {
         let pages: Vec<_> = (searched.iter())
             .map(|(url, title, content, lang)| search::Page {
                 url,
@@ -1710,6 +1737,17 @@ mod tests {
             .collect();
         pages.sort();
         pages
+    }
+
+    /// The URL of each page search found in the site built into `dist`.
+    fn indexed_urls(dist: &Path) -> Vec<String> {
+        let pages = indexed(dist).into_iter().map(|page| {
+            let page: serde_json::Value = serde_json::from_str(&page).unwrap();
+            page["url"].as_str().unwrap().to_string()
+        });
+        let mut urls: Vec<String> = pages.collect();
+        urls.sort();
+        urls
     }
 
     /// The titles (or "label") and URLs of `items`, nested like the nav.
@@ -4135,6 +4173,73 @@ mod tests {
     }
 
     #[test]
+    fn a_site_or_a_page_can_leave_pages_out_of_search() {
+        let site_cfg = |exclude: &str| format!("theme: ./theme\nsearch:\n  exclude: {exclude}\n");
+        let site = scratch_site(
+            "search-exclude",
+            &[
+                ("little.yml", &site_cfg("[/other/, /this/old, /typo/]")),
+                ("docs/README.md", "# Home\n"),
+                ("docs/this/old.md", "# Old\n"),
+                ("docs/this/new.md", "# New\n"),
+                ("docs/this/secret.md", "---\nsearch: false\n---\n# Secret\n"),
+                ("docs/other/README.md", "# Other\n"),
+                ("docs/other/a.md", "# A\n"),
+                ("docs/other/deep/b.md", "---\nsearch: true\n---\n# B\n"),
+                ("docs/others.md", "# Others\n"),
+                ("theme/_templates/default.html", "{{ page.content }}"),
+            ],
+        );
+        let built = build(&site).unwrap();
+        let dist = site.join("dist");
+
+        // Each page is built, but search leaves out the page at each URL in
+        // `exclude`, and those under it, but not one that only starts with
+        // the same letters, and a page's own `search` has the last word.
+        assert!(dist.join("other/a/index.html").is_file());
+        let urls = indexed_urls(&dist);
+        assert_eq!(urls, ["/", "/other/deep/b", "/others", "/this/new"]);
+
+        // A URL that leaves out no page is warned of, as it may be a typo.
+        assert_eq!(
+            warnings_of(&built),
+            ["`search.exclude` lists /typo/, but there's no page at that URL, or under it"]
+        );
+
+        // `/` leaves out every page, but one whose own `search` is `true`...
+        fs::write(site.join("little.yml"), site_cfg("[/]")).unwrap();
+        let built = build(&site).unwrap();
+        assert_eq!(warnings_of(&built), Vec::<String>::new());
+        assert_eq!(indexed_urls(&dist), ["/other/deep/b"]);
+
+        // ...and with none left, search's files are still written, for the
+        // theme's search box, but with no index in any language.
+        fs::write(site.join("docs/other/deep/b.md"), "# B\n").unwrap();
+        build(&site).unwrap();
+        let entry = fs::read_to_string(dist.join("pagefind/pagefind-entry.json")).unwrap();
+        assert!(entry.contains(r#""languages":{}"#), "{entry}");
+        assert!(dist.join("pagefind/pagefind.js").is_file());
+
+        // A page's `search` must be `true` or `false`, even with search off...
+        fs::write(site.join("little.yml"), "theme: ./theme\n").unwrap();
+        let page = site.join(native("docs/this/new.md"));
+        fs::write(&page, "---\nsearch: no\n---\n# New\n").unwrap();
+        let message = format!("{:#}", build(&site).unwrap_err());
+        let expected = format!(
+            "rendering {}: `search` must be `true`, to index the page for search, or `false`, \
+             to leave it out",
+            page.display()
+        );
+        assert_eq!(message, expected);
+
+        // ...and can't turn it on for a site that has it off.
+        fs::write(&page, "---\nsearch: true\n---\n# New\n").unwrap();
+        build(&site).unwrap();
+        assert!(!dist.join("pagefind").exists());
+        let _ = fs::remove_dir_all(&site);
+    }
+
+    #[test]
     fn nothing_can_take_the_place_of_search_files() {
         let site = scratch_site(
             "search-clash",
@@ -4499,6 +4604,36 @@ mod tests {
         let home = fs::read_to_string(site.join("dist/index.html")).unwrap();
         // MiniJinja writes a boolean as Jinja2 does.
         assert_eq!(home, "Latest | / | / | True");
+        let _ = fs::remove_dir_all(&site);
+    }
+
+    #[test]
+    fn each_version_leaves_out_the_pages_search_excludes() {
+        let site = versioned_site(
+            "versions-search",
+            &[("docs/README.md", "# Home\n"), ("docs/old.md", "# Old\n")],
+            &[
+                (
+                    "little.yml",
+                    "theme: ./theme\nsearch:\n  exclude: [/old, /new, /gone/]\nversions:\n  \
+                     - { title: \"2.0\", url: / }\n  - { title: \"1.4\", url: /1.4, ref: v1.4 }\n",
+                ),
+                ("docs/README.md", "# Home\n"),
+                ("docs/new.md", "# New\n"),
+                ("theme/_templates/default.html", "{{ page.content }}"),
+            ],
+        );
+        let built = build(&site).unwrap();
+
+        // Each URL is from the root of each version, and is warned of only
+        // if no version has a page there.
+        let dist = site.join("dist");
+        assert_eq!(indexed_urls(&dist), ["/"]);
+        assert_eq!(indexed_urls(&dist.join("1.4")), ["/"]);
+        assert_eq!(
+            warnings_of(&built),
+            ["`search.exclude` lists /gone/, but there's no page at that URL, or under it"]
+        );
         let _ = fs::remove_dir_all(&site);
     }
 

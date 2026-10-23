@@ -1,6 +1,8 @@
 # 0053 — little's decisions are in its manual
 
-- Status: accepted
+- Status: accepted; amended by
+  [0061](./0061-leaving-pages-out-of-search.md), with which a page can leave
+  itself out of search
 - Date: 2026-10-18
 - Amends: [0032](./0032-docs-are-the-manual.md)
 

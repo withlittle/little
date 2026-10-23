@@ -16,8 +16,9 @@ headings within them, as a reader types. Try it on this manual.
   else to install.
 - What's indexed is each page's own content, from its Markdown or notebook,
   under its title, so nothing the theme puts around it, like its header or
-  nav, fills the results. The 404 page isn't indexed, nor is an HTML file
-  copied from `docs/`, or the words in a [diagram](diagrams.md).
+  nav, fills the results. The 404 page isn't indexed, nor is a page you
+  [leave out](#leaving-pages-out), an HTML file copied from `docs/`, or the
+  words in a [diagram](diagrams.md).
 - Words are matched by their stem in the site's
   [`lang`](../getting-started/configuring.md#the-built-in-themes-settings),
   so "installing" finds "install".
@@ -38,8 +39,47 @@ headings within them, as a reader types. Try it on this manual.
   one of 450. A reader downloads only the parts of it a search needs.
   Pagefind keeps each page's first image for its result, so the first image
   in a notebook is in `pagefind/` too, whole.
-- A page can't leave itself out of search yet. Chinese, Japanese, and Thai,
-  which don't put spaces between words, search poorly.
+- Chinese, Japanese, and Thai, which don't put spaces between words, search
+  poorly.
 
 A theme without a search box leaves search off: see [A search
 box](../themes/making-a-theme.md#a-search-box) to add one.
+
+## Leaving pages out
+
+To leave pages out of search, list their URLs in `search.exclude`, from the
+root of the site, as [`nav`](navigation.md#writing-the-nav-yourself) writes
+them. Each leaves out its page, and every page under it:
+
+```yaml
+# little.yml
+search:
+  exclude:
+    - /changelog   # the page from changelog.md
+    - /archive/    # archive/README.md, and every page in archive/
+```
+
+- A page left out is still built, and in the nav: search just doesn't find
+  it.
+- `/archive` and `/archive/` are the same, and leave out `/archive/2019`,
+  but not `/archived`.
+- Settings turn search on, as `search: true` does.
+- A URL that matches no page is warned of, as a broken link is, so a typo
+  doesn't go unnoticed, and `little build --strict` fails on it.
+- On a site with [versions](versions.md), it leaves out the pages at its
+  URLs in each one, and is warned of only if none has a page there.
+
+A page's own `search`, in its [frontmatter](frontmatter.md#leaving-a-page-out-of-search),
+has the last word: `search: false` leaves it out, and `search: true` keeps
+it in, even under a URL in `exclude`, though it doesn't turn search on for a
+site that has it off. To index only a few pages, exclude `/`, and give each
+of them `search: true`:
+
+```markdown
+---
+search: true
+---
+```
+
+A site that leaves every page out still has its search box, which shows an
+error: set `search: false` instead.

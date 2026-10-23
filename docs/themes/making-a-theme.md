@@ -148,8 +148,10 @@ from a stylesheet relative to it, like `url(fonts/inter.woff2)`.
 A theme with a search box sets `search: true` in its `little.yml`, so little
 [indexes](../writing/search.md) each site built with it into `pagefind/`. It
 shows the box only when `site.search` is on, since a site can turn search
-off. The quickest box is [Pagefind](https://pagefind.app/)'s own, which the
-built-in theme uses:
+off. On a site that [leaves pages out](../writing/search.md#leaving-pages-out),
+`site.search` is its settings, not `true`, so test it with
+`{% if site.search %}`, as below, not `== true`. The quickest box is
+[Pagefind](https://pagefind.app/)'s own, which the built-in theme uses:
 
 ```html
 <!-- In <head>, before the theme's stylesheet -->

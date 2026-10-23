@@ -75,7 +75,9 @@ built 12 page(s) -> ./dist
   render](../writing/math.md#choosing-how-math-is-written), of each diagram
   it [couldn't draw](../writing/diagrams.md#choosing-how-diagrams-are-drawn),
   of each code block a [plugin](../plugins/using-plugins.md) couldn't
-  render, and of each warning from a plugin, or
+  render, of each URL in
+  [`search.exclude`](../writing/search.md#leaving-pages-out) that matches no
+  page, and of each warning from a plugin, or
   [hook](../reference/plugin-hooks.md) of one that failed on a page.
 - On a site with [versions](../writing/versions.md), it builds and checks
   every one, and says how many: `built 36 page(s), in 3 version(s) -> ./dist`.
@@ -105,8 +107,9 @@ save.
   build.
 - After each build, it warns of broken links within the site, but not those
   to other sites, of math it couldn't render, of diagrams it couldn't draw,
-  of code blocks plugins couldn't render, and of plugins' warnings, and
-  their hooks that failed on a page.
+  of code blocks plugins couldn't render, of URLs in `search.exclude` that
+  match no page, and of plugins' warnings, and their hooks that failed on a
+  page.
 - It serves the site under the path of its
   [`url`](../getting-started/publishing.md#choosing-the-sites-url), if it
   has one, as it'll be published, like <http://127.0.0.1:8080/little/> for

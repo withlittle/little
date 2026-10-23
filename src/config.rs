@@ -28,6 +28,9 @@
 //!
 //! `search` is whether each build indexes the site for a search box (see
 //! `search`): little leaves it off, and a theme with a search box turns it on.
+//! Its settings turn it on too, with `exclude`, the URLs of the pages it
+//! leaves out, each with the pages under it, unless a page's own `search`
+//! says otherwise.
 //!
 //! `markdown` holds a setting for each extension to CommonMark, like
 //! `tables`, that turns it on or off: little turns on GitHub's, and a theme
@@ -95,8 +98,8 @@ pub struct Config {
     /// The repository the site's source is in, from `repo` and `branch`, if
     /// it sets `repo`.
     pub repo: Option<Repo>,
-    /// Whether a build indexes the site for search, from `search`.
-    pub search: bool,
+    /// What a build indexes for search, from `search`, if it's on.
+    pub search: Option<Search>,
     /// The extensions to CommonMark each page is written with, from
     /// `markdown`.
     pub markdown: Markdown,
@@ -300,6 +303,32 @@ impl Repo {
             edit: format!("{}/{edit}/{rest}", self.url),
         })
     }
+}
+
+/// What a build indexes for search, from `search`, when it's on: every page
+/// but those `exclude` leaves out, unless a page's own `search` says
+/// otherwise.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Search {
+    /// The URLs of the pages it leaves out, each with the pages under it, as
+    /// they're written, from the root of each version, like `/changelog/`.
+    pub exclude: Vec<String>,
+}
+
+impl Search {
+    /// Whether `exclude` leaves out the page at `url`, from the root of its
+    /// version, like `/guide/install`.
+    pub fn excludes(&self, url: &str) -> bool {
+        self.exclude.iter().any(|entry| leaves_out(entry, url))
+    }
+}
+
+/// Whether `entry`, a URL in `search.exclude`, leaves out the page at `url`:
+/// the page at its URL, with or without the `/` at its end, as `guide.md`
+/// and `guide/README.md` would be the same page, and every page under it.
+pub fn leaves_out(entry: &str, url: &str) -> bool {
+    let (entry, url) = (entry.trim_end_matches('/'), url.trim_end_matches('/'));
+    (url.strip_prefix(entry)).is_some_and(|rest| rest.is_empty() || rest.starts_with('/'))
 }
 
 /// Which extensions to CommonMark each page is written with, how its math is
@@ -726,13 +755,57 @@ fn repo(values: &Mapping) -> Result<Option<Repo>> {
     }
 }
 
-/// Whether a build indexes the site for search. YAML reads `yes` and `"true"`
-/// as text, not `true`, so they're errors rather than a guess.
-fn search(values: &Mapping) -> Result<bool> {
-    match values.get("search") {
-        Some(Value::Bool(on)) => Ok(*on),
-        _ => bail!("`search` must be `true` or `false`"),
+/// What a build indexes for search, if anything: every page, for `true`, or
+/// every page but those its settings leave out, which turn it on. YAML reads
+/// `yes` and `"true"` as text, not `true`, so they're errors rather than a
+/// guess, as are settings left empty, which a theme would read as `false`.
+fn search(values: &Mapping) -> Result<Option<Search>> {
+    let settings = match values.get("search") {
+        Some(Value::Bool(on)) => return Ok(on.then(Search::default)),
+        Some(Value::Mapping(settings)) if !settings.is_empty() => settings,
+        _ => bail!(
+            "`search` must be `true`, `false`, or its settings, like `exclude: [/changelog/]`, \
+             which turn it on"
+        ),
+    };
+    let mut search = Search::default();
+    for (key, value) in settings {
+        match key.as_str() {
+            Some("exclude") => search.exclude = left_out(value)?,
+            _ => bail!(
+                "`search` has no setting `{}`: its one setting is `exclude`",
+                written(key)
+            ),
+        }
     }
+    Ok(Some(search))
+}
+
+/// The URLs `search.exclude` lists, as they're written, or none, if it's
+/// left empty. Each must be a URL, not a file's path, as a page a plugin
+/// adds has no file.
+fn left_out(value: &Value) -> Result<Vec<String>> {
+    let urls = match value {
+        Value::Null => return Ok(Vec::new()),
+        Value::Sequence(urls) => urls,
+        _ => bail!("`search.exclude` must be a list of URLs, like `[/changelog/, /guide/old]`"),
+    };
+    (urls.iter())
+        .map(|url| match url {
+            Value::String(url) if url.starts_with('/') => Ok(url.clone()),
+            _ => bail!(
+                "`search.exclude` lists `{}`, but each must be a page's URL from the root of the \
+                 site, as `nav` writes it, like `/guide/` or `/guide/install`",
+                written(url)
+            ),
+        })
+        .collect()
+}
+
+/// `value` as YAML writes it, to name it in an error.
+fn written(value: &Value) -> String {
+    let yaml = serde_yaml::to_string(value).unwrap_or_default();
+    yaml.trim_end().to_string()
 }
 
 /// The extensions to CommonMark each page is written with, each `true` or
@@ -1631,19 +1704,45 @@ mod tests {
 
     #[test]
     fn search_cascades() {
-        let site = scratch("search", &[("theme/_templates/default.html", "")]);
+        let site = scratch(
+            "search",
+            &[
+                ("theme/_templates/default.html", ""),
+                ("drafty/_templates/default.html", ""),
+                ("drafty/little.yml", "search:\n  exclude: [/drafts/]\n"),
+            ],
+        );
         let search = |site_cfg: &str| {
             std::fs::write(site.join(CONFIG_FILE), site_cfg).unwrap();
             load(&site).unwrap().search
         };
+        let on = |exclude: &[&str]| {
+            let exclude = exclude.iter().map(|url| url.to_string()).collect();
+            Some(Search { exclude })
+        };
 
         // little leaves search off, the built-in theme, with its search box,
         // turns it on, and a site has the last word.
-        assert!(!search("theme: ./theme\n"));
-        assert!(!search("theme: false\n"));
-        assert!(search(""));
-        assert!(!search("search: false\n"));
-        assert!(search("theme: ./theme\nsearch: true\n"));
+        assert_eq!(search("theme: ./theme\n"), None);
+        assert_eq!(search("theme: false\n"), None);
+        assert_eq!(search(""), on(&[]));
+        assert_eq!(search("search: false\n"), None);
+        assert_eq!(search("theme: ./theme\nsearch: true\n"), on(&[]));
+
+        // Its settings turn it on too, with the URLs `exclude` lists, as
+        // they're written, or none, if it's left empty.
+        let site_cfg = "theme: ./theme\nsearch:\n  exclude: [/changelog/, /guide/old]\n";
+        assert_eq!(search(site_cfg), on(&["/changelog/", "/guide/old"]));
+        assert_eq!(search("search:\n  exclude: []\n"), on(&[]));
+        assert_eq!(search("search:\n  exclude:\n"), on(&[]));
+
+        // A site's `exclude` replaces its theme's, as any list does, and its
+        // `true` or `false` replaces its theme's settings.
+        assert_eq!(search("theme: ./drafty\n"), on(&["/drafts/"]));
+        let site_cfg = "theme: ./drafty\nsearch:\n  exclude: [/old/]\n";
+        assert_eq!(search(site_cfg), on(&["/old/"]));
+        assert_eq!(search("theme: ./drafty\nsearch: true\n"), on(&[]));
+        assert_eq!(search("theme: ./drafty\nsearch: false\n"), None);
 
         let _ = std::fs::remove_dir_all(&site);
     }
@@ -1651,13 +1750,72 @@ mod tests {
     #[test]
     fn bad_searches_explain_themselves() {
         let site = scratch("bad-search", &[]);
-        // YAML reads `yes` and a quoted `"true"` as text, not `true`.
-        for value in [" yes", " \"true\"", " 1", ""] {
+        // YAML reads `yes` and a quoted `"true"` as text, not `true`, and a
+        // theme would read settings left empty as `false`.
+        for value in [" yes", " \"true\"", " 1", "", " {}"] {
             let message = error(&site, &format!("search:{value}\n"));
-            assert_eq!(message, "`search` must be `true` or `false`");
+            assert_eq!(
+                message,
+                "`search` must be `true`, `false`, or its settings, like \
+                 `exclude: [/changelog/]`, which turn it on"
+            );
+        }
+
+        // Its one setting is `exclude`...
+        assert_eq!(
+            error(&site, "search:\n  excludes: [/changelog/]\n"),
+            "`search` has no setting `excludes`: its one setting is `exclude`"
+        );
+        // ...a list...
+        for value in [" /changelog/", " { url: /changelog/ }"] {
+            let message = error(&site, &format!("search:\n  exclude:{value}\n"));
+            assert_eq!(
+                message,
+                "`search.exclude` must be a list of URLs, like `[/changelog/, /guide/old]`"
+            );
+        }
+        // ...of pages' URLs, not their files' paths.
+        for entry in ["other", "other/notes.md", "1.4"] {
+            let message = error(&site, &format!("search:\n  exclude:\n    - {entry}\n"));
+            assert_eq!(
+                message,
+                format!(
+                    "`search.exclude` lists `{entry}`, but each must be a page's URL from the \
+                     root of the site, as `nav` writes it, like `/guide/` or `/guide/install`"
+                )
+            );
         }
 
         let _ = std::fs::remove_dir_all(&site);
+    }
+
+    #[test]
+    fn an_excluded_url_leaves_out_its_page_and_those_under_it() {
+        let search = Search {
+            exclude: vec!["/guide/".into(), "/changelog".into()],
+        };
+        // The page at its URL, with or without the `/` at its end, and each
+        // page under it...
+        for url in [
+            "/guide/",
+            "/guide",
+            "/guide/install",
+            "/guide/a/b/",
+            "/changelog",
+        ] {
+            assert!(search.excludes(url), "{url}");
+        }
+        assert!(search.excludes("/changelog/"));
+        assert!(search.excludes("/changelog/2.0"));
+        // ...but not one that only starts with the same letters, or above it.
+        for url in ["/", "/guides", "/guide-old/", "/changelogs/", "/about"] {
+            assert!(!search.excludes(url), "{url}");
+        }
+
+        // `/` leaves out every page, and no `exclude`, none.
+        assert!(leaves_out("/", "/"));
+        assert!(leaves_out("/", "/guide/install"));
+        assert!(!Search::default().excludes("/"));
     }
 
     #[test]

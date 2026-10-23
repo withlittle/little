@@ -27,6 +27,13 @@ Without one, a page's title is its first `#` heading, then its file's or
 folder's name. A [nav written in `little.yml`](navigation.md#writing-the-nav-yourself)
 gives each page its own title there.
 
+## Leaving a page out of search
+
+little reads `search` too: `search: false` leaves the page out of
+[search](search.md#leaving-pages-out), though it's still built, and in the
+nav, and `search: true` keeps it in, even under a URL the site's
+`search.exclude` lists.
+
 ## Frontmatter wins
 
 A page's frontmatter has the last word on `page`, even over what little works
