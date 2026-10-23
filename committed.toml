@@ -2,8 +2,11 @@
 # docs/decisions/0051-semantic-versioning-and-conventional-commits.md.
 style = "conventional"
 allowed_types = ["feat", "fix", "perf", "docs", "refactor", "test", "style", "build", "ci", "chore", "revert"]
-# A plugin's name, or no scope, for little.
-allowed_scopes = ["pydoc", "rustdoc", "jsdoc", "jupyter", "api_reference"]
+# A plugin's or a library's name, or no scope, for little.
+allowed_scopes = [
+  "pydoc", "rustdoc", "jsdoc", "jupyter",
+  "api_reference", "markup",
+]
 # Descriptions are lowercase, as the spec's examples are.
 subject_capitalized = false
 subject_length = 100
