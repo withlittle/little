@@ -48,9 +48,9 @@ scripts/notices.sh little target/notices/little.md # or pydoc, rustdoc, jsdoc, j
 ## Architecture (keep the core small)
 - `src/main.rs` — CLI (clap): `init`, `build` (`--strict` fails on a
   broken link, a formula that isn't rendered, a diagram that isn't drawn,
-  a code block a plugin can't render, a plugin's warning, or a hook of one
-  that failed on a page), `serve`, `config`; and, on musl, jemalloc as the
-  allocator.
+  a code block a plugin can't render, a plugin's warning, a hook of one
+  that failed on a page, or a URL in `search.exclude` that matches no
+  page), `serve`, `config`; and, on musl, jemalloc as the allocator.
 - `src/init.rs` — `little init`: starts a site in a folder, with a
   `little.yml` that names it after the folder, a home page in `docs/`,
   unless it has one in Markdown, and `/dist/` in its `.gitignore`; stops
@@ -59,7 +59,8 @@ scripts/notices.sh little target/notices/little.md # or pydoc, rustdoc, jsdoc, j
   chain of themes a site uses, its source and destination folders, the levels
   of heading its tables of contents list, the host and port
   `little serve` serves it at, the `url` it's published at, the `repo` and
-  `branch` its source is in, whether it's indexed for search, the extensions
+  `branch` its source is in, whether it's indexed for search, and the URLs
+  of the pages it leaves out, the extensions
   to Markdown its pages are written with, how their math is written, how
   their diagrams are drawn, and look, with Mermaid's own config, the
   classes their code is highlighted with, and the plugins whose hooks a
@@ -107,7 +108,9 @@ scripts/notices.sh little target/notices/little.md # or pydoc, rustdoc, jsdoc, j
   hooks at each step: walk the source (`docs/`), with the files plugins add
   and leave out, render its Markdown, and the files plugins read, stopping
   on two that would be the same page, copy its other files, apply theme,
-  index it for search, add the files plugins add, write the destination
+  index it for search, but the pages its `search.exclude` or their own
+  `search` leaves out, warning of a URL there that matches no page, add the
+  files plugins add, write the destination
   (`dist/`), noting the source file and URL of each file it writes. Finds
   where the source is in its repository, so each page can
   link to its file there, and works out when it's built, for `site.year`,
@@ -154,7 +157,8 @@ Content and theme live outside `src/`:
   uses what it documents, where it can, and the README links to it. Pages
   link to each other by their files, and to little's own files on GitHub.
   little's ADRs are in `docs/decisions/`, listed in its `README.md`, which alone
-  is in `nav`; other meta docs don't go here. little's own API, which the
+  is in `nav`, and search leaves them all out; other meta docs don't go here.
+  little's own API, which the
   `rustdoc` plugin adds from `src/`'s doc comments, is at `/api/`, with
   no file in `docs/`, and its page on notebooks is a notebook, which the
   `jupyter` plugin reads.
@@ -169,8 +173,9 @@ Content and theme live outside `src/`:
 - `little.yml` — the manual's config: its `url`, `repo`, and `nav`, which
   orders its pages by hand, the `rustdoc` plugin, which documents `src/`
   at `/api/`, and the `jupyter` plugin, which reads its page on notebooks,
-  each from where Cargo builds its `.wasm` file. It sets `theme: ./theme`,
-  so edits to the built-in theme live-reload.
+  each from where Cargo builds its `.wasm` file, and `search.exclude`,
+  which leaves its decisions out of search. It sets `theme: ./theme`, so
+  edits to the built-in theme live-reload.
 - `wit/plugin.wit` — `little:plugin@0.2.1`: an interface for each hook a
   plugin can export, and `warnings`, which it imports. Plugin authors copy
   it, and write a world that exports the hooks they need; little's
@@ -686,11 +691,11 @@ manual, and list each in its `README.md`. Locked so far:
   plugin's URL with its version, and releases are immutable — see
   [`docs/decisions/0052-releasing-plugins-from-tags.md`](./docs/decisions/0052-releasing-plugins-from-tags.md).
 - **Decisions in the manual:** these ADRs are in `docs/decisions/`, each a
-  page of the manual, at `/decisions/`, built, searched, and checked like
-  any other, and still read on GitHub; `docs/decisions/README.md` lists
-  them, and alone is in `nav`, under Reference. A record links to little's
-  files outside `docs/`, like `VISION.md`, on GitHub. A page can't leave
-  itself out of search yet, so search finds amended records too — see
+  page of the manual, at `/decisions/`, built and checked like any other,
+  and still read on GitHub; `docs/decisions/README.md` lists them, and
+  alone is in `nav`, under Reference. A record links to little's files
+  outside `docs/`, like `VISION.md`, on GitHub. Since 0061, search leaves
+  them, and their list, out, so it finds only how little works now — see
   [`docs/decisions/0053-decisions-in-the-manual.md`](./docs/decisions/0053-decisions-in-the-manual.md).
 - **Third-party notices:** little's releases, and each plugin's, carry a
   `THIRD-PARTY-NOTICES.md`, written as the release is made, not committed,
@@ -765,3 +770,16 @@ manual, and list each in its `README.md`. Locked so far:
   Notebooks are read by `plugins/jupyter/`; a file in an extension no
   plugin reads is copied, and `little init` keeps only a `README.md` — see
   [`docs/decisions/0060-other-formats-in-plugins.md`](./docs/decisions/0060-other-formats-in-plugins.md).
+- **Leaving pages out of search:** `search` is `true`, `false`, or its
+  settings, which turn it on: `exclude`, a list of URLs from the root of
+  the site, as `nav` writes them, each leaving out its page and every page
+  under it, so `/archive` and `/archive/` leave out `/archive/2019`, and `/`
+  every page. A page's own `search`, `true` or `false`, in frontmatter or
+  from a `page` hook, has the last word, so `exclude: [/]` and
+  `search: true` index only a few pages; it doesn't turn search on. A page
+  left out is still built, and in the nav. A URL that matches no page in
+  any version is warned of, and one that isn't from the root, or empty
+  settings, stop the build. Pagefind's selectors would match nothing, as
+  little indexes each page's own content. The manual leaves out
+  `/decisions/`, its records and their list — see
+  [`docs/decisions/0061-leaving-pages-out-of-search.md`](./docs/decisions/0061-leaving-pages-out-of-search.md).

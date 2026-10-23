@@ -305,7 +305,9 @@ page: func(page: string) -> result<string, string>;
   in `site`.
 - Gives back the `page` the theme gets, like one with a `reading_time` for
   the theme to show. [Search](../writing/search.md) indexes the `title` and
-  `content` it gives back.
+  `content` it gives back, and its `search`, if it has one, [leaves the page
+  out or keeps it in](../writing/search.md#leaving-pages-out), as a page's
+  frontmatter does.
 - An error is warned of, and the theme gets `page` as it was.
 
 ## html

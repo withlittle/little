@@ -26,7 +26,8 @@ or works them out, and a theme or a site can change any of them:
 | `nav` | the source's pages and folders, [sorted by title](../writing/navigation.md#the-nav) | the site's [nav](../writing/navigation.md#writing-the-nav-yourself) |
 | `toc_min_depth` | `2`, for `##` | the level of heading a page's [table of contents](../writing/navigation.md#tables-of-contents) lists from |
 | `toc_max_depth` | `6`, for `######` | the level it lists down to |
-| `search` | `false` | whether the site's [indexed for search](../writing/search.md) |
+| `search` | `false` | whether the site's [indexed for search](../writing/search.md): `true`, `false`, or its settings, which turn it on |
+| `search.exclude` | none | the URLs of the pages [left out of search](../writing/search.md#leaving-pages-out), each with those under it |
 | `markdown` | GitHub's extensions | the [extensions to Markdown](../writing/markdown.md#choosing-markdowns-extensions) pages are written with |
 | `markdown.highlight` | `pygments` | the classes [code is highlighted](../writing/code.md#choosing-how-code-is-highlighted) with |
 | `markdown.math` | `mathml` | how [math is written](../writing/math.md#choosing-how-math-is-written) |

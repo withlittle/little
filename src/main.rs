@@ -61,11 +61,13 @@ enum Commands {
     /// Build the site into its destination folder (dist/ by default), and
     /// warn of each formula it can't render, each diagram it can't draw,
     /// each code block a plugin can't render, each warning from a plugin,
-    /// and each broken link
+    /// each URL in search.exclude that matches no page, and each broken
+    /// link
     Build {
         /// Fail on a formula that can't be rendered, a diagram that can't be
         /// drawn, a code block a plugin can't render, a warning from a
-        /// plugin, or a broken link, rather than warn of it, as for CI
+        /// plugin, a URL in search.exclude that matches no page, or a broken
+        /// link, rather than warn of it, as for CI
         #[arg(long)]
         strict: bool,
     },

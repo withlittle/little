@@ -37,7 +37,9 @@ branch: main
 
 # Whether each build indexes the site into the destination's `pagefind/` folder,
 # so readers can search it. It's off unless the theme has a search box to use
-# the index, and a site can still turn it off.
+# the index, and a site can still turn it off. Its settings turn it on too:
+# `search: { exclude: [/changelog] }` leaves out the page at each URL, and
+# those under it.
 search: false
 
 # The extensions to CommonMark each page is written with: GitHub's are on, as
