@@ -4,7 +4,7 @@ style = "conventional"
 allowed_types = ["feat", "fix", "perf", "docs", "refactor", "test", "style", "build", "ci", "chore", "revert"]
 # A plugin's or a library's name, or no scope, for little.
 allowed_scopes = [
-  "pydoc", "rustdoc", "jsdoc", "jupyter",
+  "pydoc", "rustdoc", "jsdoc", "jupyter", "asciidoc",
   "api_reference", "markup",
 ]
 # Descriptions are lowercase, as the spec's examples are.
