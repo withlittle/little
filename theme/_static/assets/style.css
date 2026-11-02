@@ -910,6 +910,10 @@
     font-weight: 600;
   }
   .content dd { margin: 0.25rem 0 0.75rem 1.5rem; }
+  /* A term or its definition can hold paragraphs, as a plugin for another
+     format writes them, in HTML, whose margins would part the two. */
+  .content :is(dt, dd) > :first-child { margin-top: 0; }
+  .content :is(dt, dd) > :last-child { margin-bottom: 0; }
 
   .content blockquote {
     margin-inline: 0;
@@ -1067,6 +1071,9 @@
     font-weight: 600;
   }
   .content tbody tr:last-child > * { border-bottom: 0; }
+  /* A table without headings, which Markdown can't write, has a row of
+     empty ones, as a plugin for another format writes it: it's not shown. */
+  .content thead tr:not(:has(th:not(:empty))) { display: none; }
   /* pandas' tables, as Jupyter shows them, aligned right, as pandas' own
      `<style>` aligns their headings. */
   .content .dataframe :is(th, td) { text-align: right; }
