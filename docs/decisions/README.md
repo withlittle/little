@@ -77,3 +77,4 @@ made, and link to each other.
 - [0059 — The menu of versions as a popover](0059-the-menu-of-versions-as-a-popover.md)
 - [0060 — Other formats in plugins](0060-other-formats-in-plugins.md)
 - [0061 — Leaving pages out of search](0061-leaving-pages-out-of-search.md)
+- [0062 — Plugins for AsciiDoc and Org mode](0062-plugins-for-asciidoc-and-orgmode.md)

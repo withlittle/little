@@ -46,6 +46,13 @@ does:
   pandas shows is its `<div>`, `<style>`, and `<table class="dataframe">`,
   which the built-in theme shows as Jupyter does: as wide as its columns, and
   aligned right, scrolling itself, not in a `.table-scroll`.
+- A page in [AsciiDoc](../plugins/asciidoc.adoc) or
+  [Org mode](../plugins/org-mode.org) is written as Markdown, so it's
+  styled as Markdown is, but for what Markdown can't write. A table
+  without headings has a `<thead>` of empty `<th>`s, which the built-in
+  theme hides, with `thead tr:not(:has(th:not(:empty)))`, and a term or its
+  definition, in a `<dl>`, can hold paragraphs, whose outer margins it
+  takes off, with `:is(dt, dd) > :first-child`, and `:last-child`.
 - [Math](../writing/math.md#choosing-how-math-is-written) is MathML: a
   `<math>` in a line, and a `<math display="block">` on its own, inside a
   `<p>` for `$$…$$`. The built-in theme scrolls a wide one with

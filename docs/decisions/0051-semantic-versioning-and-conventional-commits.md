@@ -3,7 +3,9 @@
 - Status: accepted; amended by
   [0058](./0058-features-raise-the-minor-version.md), which raises the
   minor version, not the patch, for a feature until 1.0, but for
-  `little:plugin`'s
+  `little:plugin`'s, and by
+  [0062](./0062-plugins-for-asciidoc-and-orgmode.md), which adds the
+  scopes `asciidoc`, `orgmode`, and `markup`, the library they share
 - Date: 2026-10-17
 
 ## Context

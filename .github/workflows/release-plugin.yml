@@ -11,6 +11,8 @@ on:
       - "rustdoc-v*"
       - "jsdoc-v*"
       - "jupyter-v*"
+      - "asciidoc-v*"
+      - "orgmode-v*"
 
 env:
   CARGO_TERM_COLOR: always
@@ -33,7 +35,7 @@ jobs:
 
       - name: Read the plugin and version from the tag
         run: |
-          pattern='^(pydoc|rustdoc|jsdoc|jupyter)-v((0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*))$'
+          pattern='^(pydoc|rustdoc|jsdoc|jupyter|asciidoc|orgmode)-v((0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*))$'
           if [[ ! $GITHUB_REF_NAME =~ $pattern ]]; then
             echo "::error::$GITHUB_REF_NAME isn't a plugin's name and version, like pydoc-v0.1.0"
             exit 1
@@ -88,14 +90,18 @@ jobs:
             rustdoc) page=rust-api-reference.md ;;
             jsdoc) page=javascript-api-reference.md ;;
             jupyter) page=jupyter-notebooks.ipynb ;;
+            asciidoc) page=asciidoc.adoc ;;
+            orgmode) page=org-mode.org ;;
           esac
           # The plugin's tag before this one, if it has one. Its changes are
-          # those in its own folder, and, for a plugin that adds an API
-          # reference, in the library those share, as cliff.toml lists them.
+          # those in its own folder, and in the library it shares with others
+          # like it: api_reference, for a plugin that adds an API reference,
+          # or markup, for one that reads a format as Markdown.
           paths=(--include-path "plugins/$PLUGIN/**")
-          if [[ $PLUGIN != jupyter ]]; then
-            paths+=(--include-path "plugins/api_reference/**")
-          fi
+          case $PLUGIN in
+            pydoc | rustdoc | jsdoc) paths+=(--include-path "plugins/api_reference/**") ;;
+            asciidoc | orgmode) paths+=(--include-path "plugins/markup/**") ;;
+          esac
           previous=$(git describe --tags --abbrev=0 --match "$PLUGIN-v*" HEAD^ 2>/dev/null || true)
           if [[ -n $previous ]]; then
             changes=$(git cliff --tag-pattern "^$PLUGIN-v" "${paths[@]}" "$previous..HEAD")

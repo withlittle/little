@@ -52,8 +52,8 @@ this repository, and open <http://127.0.0.1:8080/little/>.
   code, math, diagrams, frontmatter, navigation, search, and versions.
 - [Themes](./docs/themes/choosing-a-theme.md): choose a theme, or make one.
 - [Plugins](./docs/plugins/using-plugins.md): use plugins, build pages
-  from Jupyter notebooks, add an API reference for Python or Rust, or write
-  a plugin.
+  from Jupyter notebooks, AsciiDoc, or Org mode, add an API reference for
+  Python or Rust, or write a plugin.
 - [Reference](./docs/reference/commands.md): commands, settings, and the
   data a theme's templates get.
 
@@ -70,13 +70,17 @@ The tests build a [plugin](./docs/plugins/writing-a-plugin.md),
 [`tests/plugin/`](./tests/plugin/), with Rust's `wasm32-wasip2` target, which
 [`rust-toolchain.toml`](./rust-toolchain.toml) has rustup install.
 The [`pydoc`](./plugins/pydoc/), [`rustdoc`](./plugins/rustdoc/),
-[`jsdoc`](./plugins/jsdoc/), and [`jupyter`](./plugins/jupyter/) plugins are
-crates of their own, with their own tests, which their READMEs say how to
-run, as is the [library](./plugins/api_reference/) the first three share.
-The manual documents little's own code with `rustdoc`, and has a notebook
-that `jupyter` reads, so build
-[`rustdoc`](./plugins/rustdoc/README.md#building-it) and
-[`jupyter`](./plugins/jupyter/README.md#building-it) before you build the
+[`jsdoc`](./plugins/jsdoc/), [`jupyter`](./plugins/jupyter/),
+[`asciidoc`](./plugins/asciidoc/), and [`orgmode`](./plugins/orgmode/)
+plugins are crates of their own, with their own tests, which their READMEs
+say how to run, as are the [library](./plugins/api_reference/) the first
+three share, and the [one](./plugins/markup/) the last two share. The
+manual documents little's own code with `rustdoc`, and has a page in the
+format each of the last three reads, so build
+[`rustdoc`](./plugins/rustdoc/README.md#building-it),
+[`jupyter`](./plugins/jupyter/README.md#building-it),
+[`asciidoc`](./plugins/asciidoc/README.md#building-it), and
+[`orgmode`](./plugins/orgmode/README.md#building-it) before you build the
 manual.
 
 See [`AGENTS.md`](./AGENTS.md) for architecture and conventions,

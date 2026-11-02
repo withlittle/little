@@ -25,8 +25,10 @@ docs/
 
 - As on GitHub, a folder's `README.md` is its landing page, at the folder's
   URL, which ends in `/`, and `docs/README.md` is the site's home page.
-- A file in another format, like a Jupyter notebook (`.ipynb`), is a page
-  as a Markdown file is, with a
+- A file in another format, like a Jupyter notebook (`.ipynb`), or one in
+  [AsciiDoc](../plugins/asciidoc.adoc) (`.adoc`) or
+  [Org mode](../plugins/org-mode.org) (`.org`), is a page as a Markdown
+  file is, with a
   [plugin](../plugins/using-plugins.md#pages-in-other-formats) that reads
   it, like [`jupyter`](../plugins/jupyter-notebooks.ipynb). Without one,
   it's copied, as any other file is.

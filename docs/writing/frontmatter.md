@@ -59,3 +59,11 @@ so:
 
 A notebook's frontmatter is in a raw or Markdown cell at its top, as Quarto
 and MyST put it: see [Jupyter notebooks](../plugins/jupyter-notebooks.ipynb).
+
+## In another format
+
+A page in [AsciiDoc](../plugins/asciidoc.adoc) or
+[Org mode](../plugins/org-mode.org) takes its `title` and `description`
+from its format's own header, like AsciiDoc's `= Title`. It can start with
+frontmatter between `---` lines too, as a Markdown file can, which goes
+over them, for any key, like `search: false`.

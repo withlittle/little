@@ -37,7 +37,8 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           # For the rustdoc plugin, which documents src/ at /api/, and the
-          # jupyter plugin, which reads the page on notebooks.
+          # jupyter, asciidoc, and orgmode plugins, which read the pages
+          # written in their formats.
           targets: wasm32-wasip2
 
       - name: Cache cargo build artifacts
@@ -47,6 +48,8 @@ jobs:
             .
             plugins/rustdoc
             plugins/jupyter
+            plugins/asciidoc
+            plugins/orgmode
 
       # Each into its own target/, where little.yml looks for it.
       - name: Build the rustdoc plugin
@@ -54,6 +57,12 @@ jobs:
 
       - name: Build the jupyter plugin
         run: cargo build --release --locked --target wasm32-wasip2 --manifest-path plugins/jupyter/Cargo.toml
+
+      - name: Build the asciidoc plugin
+        run: cargo build --release --locked --target wasm32-wasip2 --manifest-path plugins/asciidoc/Cargo.toml
+
+      - name: Build the orgmode plugin
+        run: cargo build --release --locked --target wasm32-wasip2 --manifest-path plugins/orgmode/Cargo.toml
 
       # --strict fails on a broken link, within the manual or to another
       # site, and on anything else little warns of, as the manual's

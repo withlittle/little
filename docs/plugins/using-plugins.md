@@ -9,12 +9,13 @@ A plugin adds to what little does as it builds a site: an API reference,
 from [Python's docstrings](python-api-reference.md),
 [Rust's doc comments](rust-api-reference.md), or
 [JavaScript's](javascript-api-reference.md), say, pages from
-[Jupyter notebooks](jupyter-notebooks.ipynb), links to other sites that
-open in a new tab, or a table from a ```` ```csv ```` block. It's one
-`.wasm` file, which runs wherever little does, in a sandbox, and little
-calls its [hooks](../reference/plugin-hooks.md) as the build reaches each
-step: as it reads the site's config, its theme, its files, and each page,
-and as it writes them.
+[Jupyter notebooks](jupyter-notebooks.ipynb), [AsciiDoc](asciidoc.adoc),
+or [Org mode](org-mode.org), links to other sites that open in a new tab,
+or a table from a ```` ```csv ```` block. It's one `.wasm` file, which
+runs wherever little does, in a sandbox, and little calls its
+[hooks](../reference/plugin-hooks.md) as the build reaches each step: as
+it reads the site's config, its theme, its files, and each page, and as it
+writes them.
 
 ## Naming a plugin
 
@@ -103,10 +104,11 @@ nav and search, its links are checked, and its code blocks go to plugins.
 A plugin can read files in a format of its own, by their extension, as
 pages, with its [`formats`](../reference/plugin-hooks.md#formats) hook, as
 [`jupyter`](jupyter-notebooks.ipynb) reads Jupyter notebooks, `.ipynb`
-files. Each is a page as a
-Markdown file is: `analysis.ipynb` is the page at `/analysis`,
-`README.ipynb` is its folder's page, a link to `analysis.ipynb` leads to
-the page, and the file isn't copied.
+files, and [`asciidoc`](asciidoc.adoc) and [`orgmode`](org-mode.org)
+read `.adoc` and `.org` files. Each is a page as a Markdown file is:
+`analysis.ipynb` is the page at `/analysis`, `README.ipynb` is its
+folder's page, a link to `analysis.ipynb` leads to the page, and the file
+isn't copied.
 
 - Two plugins that read the same extension stop the build, and a plugin
   can't read `.md` files, which little reads itself.
