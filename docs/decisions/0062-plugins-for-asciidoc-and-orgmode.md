@@ -1,6 +1,9 @@
 # 0062 — Plugins for AsciiDoc and Org mode
 
-- Status: accepted
+- Status: accepted; amended by
+  [0063](./0063-a-plugin-for-restructuredtext.md), which adds
+  `restructuredtext`, a plugin for reStructuredText, which this record
+  left for later, that shares `markup` too
 - Date: 2026-10-24
 - Amends: [0051](./0051-semantic-versioning-and-conventional-commits.md),
   [0052](./0052-releasing-plugins-from-tags.md)
