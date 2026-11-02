@@ -26,6 +26,15 @@ cargo build --release --target wasm32-wasip2 --manifest-path plugins/jupyter/Car
 cargo test --manifest-path plugins/jupyter/Cargo.toml
 cargo clippy --manifest-path plugins/jupyter/Cargo.toml --all-targets --target wasm32-wasip2
 
+# the asciidoc and orgmode plugins, which the manual uses too, each in its
+# own workspace: build them before the manual
+cargo build --release --target wasm32-wasip2 --manifest-path plugins/asciidoc/Cargo.toml
+cargo test --manifest-path plugins/asciidoc/Cargo.toml
+cargo clippy --manifest-path plugins/asciidoc/Cargo.toml --all-targets --target wasm32-wasip2
+cargo build --release --target wasm32-wasip2 --manifest-path plugins/orgmode/Cargo.toml
+cargo test --manifest-path plugins/orgmode/Cargo.toml
+cargo clippy --manifest-path plugins/orgmode/Cargo.toml --all-targets --target wasm32-wasip2
+
 # the pydoc plugin, in its own workspace
 cargo build --release --target wasm32-wasip2 --manifest-path plugins/pydoc/Cargo.toml
 cargo test --manifest-path plugins/pydoc/Cargo.toml
@@ -36,13 +45,17 @@ cargo build --release --target wasm32-wasip2 --manifest-path plugins/jsdoc/Cargo
 cargo test --manifest-path plugins/jsdoc/Cargo.toml
 cargo clippy --manifest-path plugins/jsdoc/Cargo.toml --all-targets --target wasm32-wasip2
 
-# the library they share, in its own workspace
+# the library the API reference plugins share, in its own workspace
 cargo test --manifest-path plugins/api_reference/Cargo.toml
 cargo clippy --manifest-path plugins/api_reference/Cargo.toml --all-targets
 
+# the library the asciidoc and orgmode plugins share
+cargo test --manifest-path plugins/markup/Cargo.toml
+cargo clippy --manifest-path plugins/markup/Cargo.toml --all-targets
+
 # the third-party notices releases carry, with cargo-about 0.9.2
 # (cargo install --locked cargo-about@0.9.2)
-scripts/notices.sh little target/notices/little.md # or pydoc, rustdoc, jsdoc, jupyter
+scripts/notices.sh little target/notices/little.md # or any plugin, like pydoc
 ```
 
 ## Architecture (keep the core small)
