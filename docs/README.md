@@ -47,8 +47,9 @@ itself. [Your first site](getting-started/first-site.md) goes on from there.
   [Rust's doc comments](plugins/rust-api-reference.md), or
   [JavaScript's](plugins/javascript-api-reference.md), build pages from
   [Jupyter notebooks](plugins/jupyter-notebooks.ipynb),
-  [AsciiDoc](plugins/asciidoc.adoc), or [Org mode](plugins/org-mode.org),
-  say, or change each page as it's written.
+  [AsciiDoc](plugins/asciidoc.adoc), [Org mode](plugins/org-mode.org), or
+  [reStructuredText](plugins/restructuredtext.rst), say, or change each
+  page as it's written.
 
 ## This manual
 
@@ -57,7 +58,7 @@ itself. [Your first site](getting-started/first-site.md) goes on from there.
 | [Getting started](getting-started/install.md) | install little, start a site, configure it, and publish it |
 | [Writing](writing/pages-and-files.md) | write pages, with links, code, math, diagrams, and navigation, and keep a version for each release |
 | [Themes](themes/choosing-a-theme.md) | choose a theme for a site, or make one |
-| [Plugins](plugins/using-plugins.md) | use plugins, build pages from Jupyter notebooks, AsciiDoc, or Org mode, add an API reference, or write a plugin |
+| [Plugins](plugins/using-plugins.md) | use plugins, build pages from Jupyter notebooks, AsciiDoc, Org mode, or reStructuredText, add an API reference, or write a plugin |
 | [Reference](reference/commands.md) | look up a command, a setting, what a theme's templates get, a plugin's hooks, or [why little works as it does](decisions/README.md) |
 
 > [!TIP]

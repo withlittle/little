@@ -5,7 +5,9 @@
   minor version, not the patch, for a feature until 1.0, but for
   `little:plugin`'s, and by
   [0062](./0062-plugins-for-asciidoc-and-orgmode.md), which adds the
-  scopes `asciidoc`, `orgmode`, and `markup`, the library they share
+  scopes `asciidoc`, `orgmode`, and `markup`, the library they share, and
+  by [0063](./0063-a-plugin-for-restructuredtext.md), which adds
+  `restructuredtext`
 - Date: 2026-10-17
 
 ## Context

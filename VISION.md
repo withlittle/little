@@ -49,8 +49,8 @@ and a rejection of their worst friction.
   script (math-core and merman, built in).
 - **Other formats:** Markdown is the one format built in; a plugin reads
   others as pages, like Jupyter's `.ipynb`, outputs and all, without Python,
-  or AsciiDoc and Org mode, without their own tools, and little writes them
-  as it writes Markdown.
+  or AsciiDoc, Org mode, and reStructuredText, without their own tools, and
+  little writes them as it writes Markdown.
 - **Theming:** `minijinja` templates; structured data in, any HTML out.
 - **Config:** cascading YAML.
 - **Plugins:** sandboxed **WASM** components (wasmtime, built in), so

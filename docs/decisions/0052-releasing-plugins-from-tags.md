@@ -5,7 +5,8 @@
   file, and by
   [0062](./0062-plugins-for-asciidoc-and-orgmode.md), whose plugins'
   notes list the commits to `plugins/markup/`, in place of
-  `plugins/api_reference/`
+  `plugins/api_reference/`, and by
+  [0063](./0063-a-plugin-for-restructuredtext.md), whose plugin's do too
 - Date: 2026-10-17
 
 ## Context

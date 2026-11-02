@@ -177,8 +177,9 @@ Content and theme live outside `src/`:
   little's own API, which the
   `rustdoc` plugin adds from `src/`'s doc comments, is at `/api/`, with
   no file in `docs/`. Its page on notebooks is a notebook, which the
-  `jupyter` plugin reads, and its pages on AsciiDoc and Org mode are
-  written in them, which the `asciidoc` and `orgmode` plugins read.
+  `jupyter` plugin reads, and its pages on AsciiDoc, Org mode, and
+  reStructuredText are written in them, which the `asciidoc`, `orgmode`,
+  and `restructuredtext` plugins read.
 - `theme/` — little's built-in theme, compiled into the binary: `_templates/`
   (MiniJinja; `default.html` is required) + `_static/` (copied to the site's
   root) + an optional `little.yml`. It's plain CSS, in cascade layers, with
@@ -190,9 +191,9 @@ Content and theme live outside `src/`:
 - `little.yml` — the manual's config: its `url`, `repo`, and `nav`, which
   orders its pages by hand, the `rustdoc` plugin, which documents `src/`
   at `/api/`, the `jupyter` plugin, which reads its page on notebooks, and
-  the `asciidoc` and `orgmode` plugins, which read its pages in their
-  formats, each from where Cargo builds its `.wasm` file, and
-  `search.exclude`,
+  the `asciidoc`, `orgmode`, and `restructuredtext` plugins, which read its
+  pages in their formats, each from where Cargo builds its `.wasm` file,
+  and `search.exclude`,
   which leaves its decisions out of search. It sets `theme: ./theme`, so
   edits to the built-in theme live-reload.
 - `wit/plugin.wit` — `little:plugin@0.2.1`: an interface for each hook a
@@ -237,6 +238,11 @@ Content and theme live outside `src/`:
 - `plugins/orgmode/` — the `orgmode` plugin, a crate in its own workspace,
   built for `wasm32-wasip2`, that reads Org mode (`.org`), parsed with
   orgize, with the `formats` hook, as `asciidoc` does, and runs no code.
+- `plugins/restructuredtext/` — the `restructuredtext` plugin, a crate in
+  its own workspace, built for `wasm32-wasip2`, that reads
+  reStructuredText (`.rst`), with a parser of its own, as docutils reads
+  it, without Sphinx's additions, with the `formats` hook, as `asciidoc`
+  does.
 - `plugins/api_reference/` — a library, in its own workspace, not a plugin,
   that the plugins that add an API reference share: what a page documents,
   in no language in particular, and the Markdown of the page; and the
@@ -257,8 +263,8 @@ Content and theme live outside `src/`:
   fails on any warning.
 - `.github/workflows/docs.yml` — builds the manual with little from the
   same commit, and the plugins it uses, `rustdoc`, `jupyter`, `asciidoc`,
-  and `orgmode`, with `--strict`, for each pull request and push to
-  `main`, and publishes each push's on GitHub Pages, at
+  `orgmode`, and `restructuredtext`, with `--strict`, for each pull request
+  and push to `main`, and publishes each push's on GitHub Pages, at
   <https://withlittle.github.io/little>.
 - `.github/workflows/release-plugin.yml` — releases a plugin when a tag
   that names it and its version, like `pydoc-v0.1.0`, is pushed: checks
@@ -350,9 +356,9 @@ Content and theme live outside `src/`:
     is released; `docs`, `refactor`, `test`, `style`, `build`, `ci`, or
     `chore` for any other; `revert`, with a `Refs:` footer, to undo one.
   - Scope: the plugin or library a commit is about, `pydoc`, `rustdoc`,
-    `jsdoc`, `jupyter`, `asciidoc`, `orgmode`, `api_reference`, or
-    `markup`; none for little, its theme, `wit/`, or more than one
-    component.
+    `jsdoc`, `jupyter`, `asciidoc`, `orgmode`, `restructuredtext`,
+    `api_reference`, or `markup`; none for little, its theme, `wit/`, or
+    more than one component.
   - Breaking: `!` before the `:`, and a footer,
     `BREAKING-CHANGE: <what to change>`, beside the co-author trailer;
     written `BREAKING CHANGE:`, with a space, git misses the trailer.
@@ -837,3 +843,23 @@ manual, and list each in its `README.md`. Locked so far:
   in its format, and `markup` is a scope, whose commits each one's notes
   list — see
   [`docs/decisions/0062-plugins-for-asciidoc-and-orgmode.md`](./docs/decisions/0062-plugins-for-asciidoc-and-orgmode.md).
+- **A plugin for reStructuredText:** `restructuredtext`, in `plugins/`, in
+  its own workspace, named for its format, as 0062's plugins are, reads
+  `.rst` files with the `formats` hook into `markup`'s model, and has no
+  settings. Its parser is its own, after docutils 0.23's, state by state,
+  since `docutils-core` took over 20 seconds on docutils' demo page, and
+  `rst_parser` reads no tables. It reads docutils' directives and roles,
+  by their English names, but none of Sphinx's: a directive it doesn't
+  read, or one docutils rejects, is kept as code, and a role it doesn't
+  read keeps its text, each warned of. A page is written as docutils'
+  `rst2html5` would show it: its title is the page's `#` heading, and
+  `meta`'s `description` and the `title` directive go in its frontmatter;
+  references lead where docutils' transforms lead them, and a citation is
+  a numbered footnote; with `raw_html`, an `<a id>` gives a heading
+  docutils' id too; admonitions are GitHub's alerts; a doctest block is
+  code in `pycon`; an `include`, or a `:file:` or `:url:`, isn't followed;
+  `contents` is left out, as the theme has its own table of contents; and
+  `sectnum`, `header`, `footer`, and `target-notes` are warned of. The
+  manual has a page in reStructuredText, `restructuredtext` is a scope, and
+  it needs no new crate — see
+  [`docs/decisions/0063-a-plugin-for-restructuredtext.md`](./docs/decisions/0063-a-plugin-for-restructuredtext.md).
