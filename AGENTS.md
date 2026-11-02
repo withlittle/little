@@ -173,8 +173,9 @@ Content and theme live outside `src/`:
   is in `nav`, and search leaves them all out; other meta docs don't go here.
   little's own API, which the
   `rustdoc` plugin adds from `src/`'s doc comments, is at `/api/`, with
-  no file in `docs/`, and its page on notebooks is a notebook, which the
-  `jupyter` plugin reads.
+  no file in `docs/`. Its page on notebooks is a notebook, which the
+  `jupyter` plugin reads, and its pages on AsciiDoc and Org mode are
+  written in them, which the `asciidoc` and `orgmode` plugins read.
 - `theme/` — little's built-in theme, compiled into the binary: `_templates/`
   (MiniJinja; `default.html` is required) + `_static/` (copied to the site's
   root) + an optional `little.yml`. It's plain CSS, in cascade layers, with
@@ -185,8 +186,10 @@ Content and theme live outside `src/`:
   more.
 - `little.yml` — the manual's config: its `url`, `repo`, and `nav`, which
   orders its pages by hand, the `rustdoc` plugin, which documents `src/`
-  at `/api/`, and the `jupyter` plugin, which reads its page on notebooks,
-  each from where Cargo builds its `.wasm` file, and `search.exclude`,
+  at `/api/`, the `jupyter` plugin, which reads its page on notebooks, and
+  the `asciidoc` and `orgmode` plugins, which read its pages in their
+  formats, each from where Cargo builds its `.wasm` file, and
+  `search.exclude`,
   which leaves its decisions out of search. It sets `theme: ./theme`, so
   edits to the built-in theme live-reload.
 - `wit/plugin.wit` — `little:plugin@0.2.1`: an interface for each hook a
@@ -223,10 +226,24 @@ Content and theme live outside `src/`:
   top, its Markdown cells, its code cells, in the notebook's language, and
   their outputs, as `output` code, HTML, or images with `data:` URLs. Its
   tests run natively, as pydoc's do.
+- `plugins/asciidoc/` — the `asciidoc` plugin, a crate in its own
+  workspace, built for `wasm32-wasip2`, that reads AsciiDoc (`.adoc`,
+  `.asciidoc`), parsed with asciidoc-parser, with the `formats` hook: each
+  file into the model `plugins/markup/` writes as Markdown. Its tests run
+  natively, as pydoc's do.
+- `plugins/orgmode/` — the `orgmode` plugin, a crate in its own workspace,
+  built for `wasm32-wasip2`, that reads Org mode (`.org`), parsed with
+  orgize, with the `formats` hook, as `asciidoc` does, and runs no code.
 - `plugins/api_reference/` — a library, in its own workspace, not a plugin,
   that the plugins that add an API reference share: what a page documents,
   in no language in particular, and the Markdown of the page; and the
   settings, and the pages, paths, and links between them, they have alike.
+- `plugins/markup/` — a library, in its own workspace, not a plugin, that
+  the plugins that read a markup format share: a model of a page, in no
+  format in particular, and the Markdown it's written as, escaped, with
+  only the extensions to Markdown the site turns on, else HTML or plainer
+  Markdown, warned of; its links led to headings and anchors; and its
+  frontmatter.
 - `about.toml`, `about.hbs`, `scripts/notices.sh` — the third-party notices
   that little's and the plugins' releases carry, which cargo-about writes,
   through `about.hbs`, from the `about.toml` beside each one's
@@ -236,15 +253,17 @@ Content and theme live outside `src/`:
   syntax definitions two-face bundles to little's. CI writes them all, and
   fails on any warning.
 - `.github/workflows/docs.yml` — builds the manual with little from the
-  same commit, and the `rustdoc` and `jupyter` plugins it uses, with
-  `--strict`, for each pull request and push to `main`, and publishes each
-  push's on GitHub Pages, at <https://withlittle.github.io/little>.
+  same commit, and the plugins it uses, `rustdoc`, `jupyter`, `asciidoc`,
+  and `orgmode`, with `--strict`, for each pull request and push to
+  `main`, and publishes each push's on GitHub Pages, at
+  <https://withlittle.github.io/little>.
 - `.github/workflows/release-plugin.yml` — releases a plugin when a tag
   that names it and its version, like `pydoc-v0.1.0`, is pushed: checks
   the tag, builds the plugin's `.wasm` file, and publishes it, beside its
   third-party notices, in a GitHub release, with notes that git-cliff
   writes, from `cliff.toml`, from the commits that changed the plugin's
-  folder, or, for one that adds an API reference, `plugins/api_reference/`.
+  folder, or the library it shares with others like it,
+  `plugins/api_reference/` or `plugins/markup/`.
 - `.github/workflows/release.yml` — releases little when a tag of its
   version, like `v0.1.0`, is pushed: checks the tag, builds little for
   Linux, macOS, and Windows, on x64 and arm64, Linux's static, against
@@ -327,8 +346,9 @@ Content and theme live outside `src/`:
   - Type: `feat`, `fix`, or `perf` for a change to what people use, which
     is released; `docs`, `refactor`, `test`, `style`, `build`, `ci`, or
     `chore` for any other; `revert`, with a `Refs:` footer, to undo one.
-  - Scope: the plugin a commit is about, `pydoc`, `rustdoc`, `jsdoc`, or
-    `api_reference`; none for little, its theme, `wit/`, or more than one
+  - Scope: the plugin or library a commit is about, `pydoc`, `rustdoc`,
+    `jsdoc`, `jupyter`, `asciidoc`, `orgmode`, `api_reference`, or
+    `markup`; none for little, its theme, `wit/`, or more than one
     component.
   - Breaking: `!` before the `:`, and a footer,
     `BREAKING-CHANGE: <what to change>`, beside the co-author trailer;
@@ -796,3 +816,21 @@ manual, and list each in its `README.md`. Locked so far:
   little indexes each page's own content. The manual leaves out
   `/decisions/`, its records and their list — see
   [`docs/decisions/0061-leaving-pages-out-of-search.md`](./docs/decisions/0061-leaving-pages-out-of-search.md).
+- **Plugins for AsciiDoc and Org mode:** `asciidoc` and `orgmode`, each in
+  `plugins/`, in its own workspace, named for its format, read `.adoc` and
+  `.asciidoc` files, with asciidoc-parser, and `.org` files, with orgize
+  0.10, pinned to its alpha, with the `formats` hook, and no settings. They
+  share `plugins/markup/`, a library, as `api_reference` is shared: each
+  reads its format into its model of a document, which it writes as
+  Markdown, with HTML for raw HTML, escaping text, so it shows as it's
+  written, using only the extensions the site turns on, and leading links
+  to headings to little's `#fragment`s. A page's title and description
+  come from its format's header, under YAML frontmatter; links to pages'
+  files are kept; includes aren't followed; admonitions are GitHub's
+  alerts; merged cells, and blocks in cells, are flattened; raw HTML needs
+  `raw_html`, and other raw output is left out; math is TeX, and AsciiMath
+  stays code; what an export leaves out stays out; and what a plugin
+  doesn't read is warned of, its text kept. The manual has a page on each,
+  in its format, and `markup` is a scope, whose commits each one's notes
+  list — see
+  [`docs/decisions/0062-plugins-for-asciidoc-and-orgmode.md`](./docs/decisions/0062-plugins-for-asciidoc-and-orgmode.md).

@@ -12,11 +12,12 @@ theme: ./theme
 
 # little's own code, documented from its doc comments, at /api/, as the
 # example of the Rust API reference. Its pages are reached from /api/, which
-# alone is in the nav. And the jupyter plugin, which reads the page on
-# notebooks, docs/plugins/jupyter-notebooks.ipynb. Build both before the
-# manual, with:
+# alone is in the nav. And the plugins that read the pages in other formats,
+# each written in the format it describes: jupyter, for
+# docs/plugins/jupyter-notebooks.ipynb, asciidoc, for asciidoc.adoc, and
+# orgmode, for org-mode.org. Build each before the manual, with:
 #   cargo build --release --target wasm32-wasip2 --manifest-path plugins/rustdoc/Cargo.toml
-#   cargo build --release --target wasm32-wasip2 --manifest-path plugins/jupyter/Cargo.toml
+# and the same for plugins/jupyter, plugins/asciidoc, and plugins/orgmode.
 plugins:
   rustdoc:
     wasm: ./plugins/rustdoc/target/wasm32-wasip2/release/little_rustdoc.wasm
@@ -25,6 +26,8 @@ plugins:
     title: little's API
     url: /api
   jupyter: ./plugins/jupyter/target/wasm32-wasip2/release/little_jupyter.wasm
+  asciidoc: ./plugins/asciidoc/target/wasm32-wasip2/release/little_asciidoc.wasm
+  orgmode: ./plugins/orgmode/target/wasm32-wasip2/release/little_orgmode.wasm
 
 # Search leaves out the design decisions in docs/decisions/, and their list:
 # each says what was decided when it was made, not how little works now.
@@ -65,6 +68,8 @@ nav:
     children:
       - { title: Using plugins, url: /plugins/using-plugins }
       - { title: Jupyter notebooks, url: /plugins/jupyter-notebooks }
+      - { title: AsciiDoc, url: /plugins/asciidoc }
+      - { title: Org mode, url: /plugins/org-mode }
       - { title: Python API reference, url: /plugins/python-api-reference }
       - title: Rust API reference
         url: /plugins/rust-api-reference

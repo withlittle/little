@@ -2,7 +2,10 @@
 
 - Status: accepted; amended by [0054](./0054-third-party-notices.md),
   whose releases publish a plugin's third-party notices beside its `.wasm`
-  file
+  file, and by
+  [0062](./0062-plugins-for-asciidoc-and-orgmode.md), whose plugins'
+  notes list the commits to `plugins/markup/`, in place of
+  `plugins/api_reference/`
 - Date: 2026-10-17
 
 ## Context
