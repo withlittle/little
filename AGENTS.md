@@ -26,14 +26,17 @@ cargo build --release --target wasm32-wasip2 --manifest-path plugins/jupyter/Car
 cargo test --manifest-path plugins/jupyter/Cargo.toml
 cargo clippy --manifest-path plugins/jupyter/Cargo.toml --all-targets --target wasm32-wasip2
 
-# the asciidoc and orgmode plugins, which the manual uses too, each in its
-# own workspace: build them before the manual
+# the asciidoc, orgmode, and restructuredtext plugins, which the manual uses
+# too, each in its own workspace: build them before the manual
 cargo build --release --target wasm32-wasip2 --manifest-path plugins/asciidoc/Cargo.toml
 cargo test --manifest-path plugins/asciidoc/Cargo.toml
 cargo clippy --manifest-path plugins/asciidoc/Cargo.toml --all-targets --target wasm32-wasip2
 cargo build --release --target wasm32-wasip2 --manifest-path plugins/orgmode/Cargo.toml
 cargo test --manifest-path plugins/orgmode/Cargo.toml
 cargo clippy --manifest-path plugins/orgmode/Cargo.toml --all-targets --target wasm32-wasip2
+cargo build --release --target wasm32-wasip2 --manifest-path plugins/restructuredtext/Cargo.toml
+cargo test --manifest-path plugins/restructuredtext/Cargo.toml
+cargo clippy --manifest-path plugins/restructuredtext/Cargo.toml --all-targets --target wasm32-wasip2
 
 # the pydoc plugin, in its own workspace
 cargo build --release --target wasm32-wasip2 --manifest-path plugins/pydoc/Cargo.toml
@@ -49,7 +52,7 @@ cargo clippy --manifest-path plugins/jsdoc/Cargo.toml --all-targets --target was
 cargo test --manifest-path plugins/api_reference/Cargo.toml
 cargo clippy --manifest-path plugins/api_reference/Cargo.toml --all-targets
 
-# the library the asciidoc and orgmode plugins share
+# the library the asciidoc, orgmode, and restructuredtext plugins share
 cargo test --manifest-path plugins/markup/Cargo.toml
 cargo clippy --manifest-path plugins/markup/Cargo.toml --all-targets
 

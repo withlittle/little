@@ -13,6 +13,7 @@ on:
       - "jupyter-v*"
       - "asciidoc-v*"
       - "orgmode-v*"
+      - "restructuredtext-v*"
 
 env:
   CARGO_TERM_COLOR: always
@@ -35,7 +36,7 @@ jobs:
 
       - name: Read the plugin and version from the tag
         run: |
-          pattern='^(pydoc|rustdoc|jsdoc|jupyter|asciidoc|orgmode)-v((0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*))$'
+          pattern='^(pydoc|rustdoc|jsdoc|jupyter|asciidoc|orgmode|restructuredtext)-v((0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*))$'
           if [[ ! $GITHUB_REF_NAME =~ $pattern ]]; then
             echo "::error::$GITHUB_REF_NAME isn't a plugin's name and version, like pydoc-v0.1.0"
             exit 1
@@ -92,6 +93,7 @@ jobs:
             jupyter) page=jupyter-notebooks.ipynb ;;
             asciidoc) page=asciidoc.adoc ;;
             orgmode) page=org-mode.org ;;
+            restructuredtext) page=restructuredtext.rst ;;
           esac
           # The plugin's tag before this one, if it has one. Its changes are
           # those in its own folder, and in the library it shares with others
@@ -100,7 +102,7 @@ jobs:
           paths=(--include-path "plugins/$PLUGIN/**")
           case $PLUGIN in
             pydoc | rustdoc | jsdoc) paths+=(--include-path "plugins/api_reference/**") ;;
-            asciidoc | orgmode) paths+=(--include-path "plugins/markup/**") ;;
+            asciidoc | orgmode | restructuredtext) paths+=(--include-path "plugins/markup/**") ;;
           esac
           previous=$(git describe --tags --abbrev=0 --match "$PLUGIN-v*" HEAD^ 2>/dev/null || true)
           if [[ -n $previous ]]; then
