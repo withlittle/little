@@ -309,6 +309,15 @@ fn inlines_read_back_as_they_were() {
             "<a href=\"https://example.com/a%20b\" title=\"t &quot;q&quot;\">x</a>",
         ),
         (
+            vec![Link {
+                target: url("?a&b&amp;c&#35;d\\&copy;"),
+                title: "&copy; \\&amp;".into(),
+                content: vec![text("x")],
+            }],
+            "<a href=\"?a&amp;b&amp;amp;c&amp;#35;d%5C&amp;copy;\" \
+             title=\"&amp;copy; \\&amp;amp;\">x</a>",
+        ),
+        (
             vec![link(url("a.adoc#x"), vec![text("y")])],
             "<a href=\"a.adoc#x\">y</a>",
         ),

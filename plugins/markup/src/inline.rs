@@ -329,14 +329,16 @@ fn code_span(out: &mut String, code: &str, context: Context) {
 }
 
 /// Writes a link's or image's destination, between `<` and `>`, and its
-/// title, if it has one, each with its `\`, `&`, and what would end it
-/// escaped.
+/// title, if it has one, each with its `\` and what would end it escaped,
+/// and its `&` as `&amp;`, since comrak reads character references in them
+/// before backslash escapes, so `\&copy;` would be `\©`.
 fn destination(out: &mut String, url: &str, title: &str, context: Context) {
     let mut written = String::from("<");
     for c in url.chars() {
         match c {
             '\n' | '\r' => {}
-            '\\' | '<' | '>' | '&' => {
+            '&' => written.push_str("&amp;"),
+            '\\' | '<' | '>' => {
                 written.push('\\');
                 written.push(c);
             }
@@ -347,10 +349,14 @@ fn destination(out: &mut String, url: &str, title: &str, context: Context) {
     if !title.is_empty() {
         written.push_str(" \"");
         for c in title.chars() {
-            if matches!(c, '"' | '\\' | '&') {
-                written.push('\\');
+            match c {
+                '&' => written.push_str("&amp;"),
+                '"' | '\\' => {
+                    written.push('\\');
+                    written.push(c);
+                }
+                _ => written.push(c),
             }
-            written.push(c);
         }
         written.push('"');
     }

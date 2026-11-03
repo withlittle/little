@@ -652,7 +652,7 @@ fn finds_images_in_the_imagesdir() {
                   image:https://example.com/x.png[X]\n";
     assert_eq!(
         md(source),
-        "![A \\& B](<images/a\\&b.png>)\n\n![Root](</root.png>)\n\n\
+        "![A \\& B](<images/a&amp;b.png>)\n\n![Root](</root.png>)\n\n\
          ![X](<https://example.com/x.png>)\n"
     );
 }
