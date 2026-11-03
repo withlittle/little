@@ -7,8 +7,9 @@ description: Add to what little does as it builds a site, with plugins, each one
 
 A plugin adds to what little does as it builds a site: an API reference,
 from [Python's docstrings](python-api-reference.md),
-[Rust's doc comments](rust-api-reference.md), or
-[JavaScript's](javascript-api-reference.md), say, pages from
+[Rust's doc comments](rust-api-reference.md),
+[JavaScript's](javascript-api-reference.md), or
+[Go's](go-api-reference.md), say, pages from
 [Jupyter notebooks](jupyter-notebooks.ipynb), [AsciiDoc](asciidoc.adoc),
 [Org mode](org-mode.org), or [reStructuredText](restructuredtext.rst),
 links to other sites that open in a new tab, or a table from a

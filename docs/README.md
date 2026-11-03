@@ -44,8 +44,9 @@ itself. [Your first site](getting-started/first-site.md) goes on from there.
 - **Plugins in a sandbox.** A plugin is one WebAssembly file, written in Rust,
   Python, or another language, that hooks into each step of a build, to add
   an API reference from [Python's docstrings](plugins/python-api-reference.md),
-  [Rust's doc comments](plugins/rust-api-reference.md), or
-  [JavaScript's](plugins/javascript-api-reference.md), build pages from
+  [Rust's doc comments](plugins/rust-api-reference.md),
+  [JavaScript's](plugins/javascript-api-reference.md), or
+  [Go's](plugins/go-api-reference.md), build pages from
   [Jupyter notebooks](plugins/jupyter-notebooks.ipynb),
   [AsciiDoc](plugins/asciidoc.adoc), [Org mode](plugins/org-mode.org), or
   [reStructuredText](plugins/restructuredtext.rst), say, or change each

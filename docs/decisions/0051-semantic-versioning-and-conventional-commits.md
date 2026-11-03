@@ -7,7 +7,8 @@
   [0062](./0062-plugins-for-asciidoc-and-orgmode.md), which adds the
   scopes `asciidoc`, `orgmode`, and `markup`, the library they share, and
   by [0063](./0063-a-plugin-for-restructuredtext.md), which adds
-  `restructuredtext`
+  `restructuredtext`, and by
+  [0064](./0064-a-plugin-for-gos-doc-comments.md), which adds `godoc`
 - Date: 2026-10-17
 
 ## Context
