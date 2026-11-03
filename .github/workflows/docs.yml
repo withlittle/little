@@ -2,7 +2,7 @@ name: Docs
 
 # little's manual, docs/, built by little from the same commit, and
 # published on GitHub Pages, at https://withlittle.github.io/little, from
-# each push to main (docs/decisions/0056). A pull request's run only builds
+# each push to main (decisions/0056). A pull request's run only builds
 # it, so a page or link the pull request breaks fails there.
 on:
   push:

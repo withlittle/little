@@ -93,8 +93,7 @@ publishes only its `.wasm` file
 - A pull request that adds a crate under a licence an `about.toml` doesn't
   accept, or changes a clarified crate's licence file, fails CI until the
   licence is read, and accepted, or the checksum is updated, as
-  [`RELEASING.md`](https://github.com/withlittle/little/blob/main/RELEASING.md)
-  says.
+  [`RELEASING.md`](../RELEASING.md) says.
 - A clarification names a crate, not a version, so it holds for a new
   version whose files have the same checksums.
 - A crate that bundles code under another licence, and doesn't say so,

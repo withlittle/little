@@ -13,10 +13,7 @@ modules, built from their doc comments, as Rust's own
 rustdoc, but doesn't run it: it reads the crate's code with
 [syn](https://github.com/dtolnay/syn)'s parser, without compiling it, so it
 needs neither Cargo nor the crate's dependencies, and a site builds the same
-each time, offline. Why it works as it does is in
-[ADR 0044](../decisions/0044-a-plugin-for-rusts-doc-comments.md),
-and why it's named so, in
-[ADR 0047](../decisions/0047-naming-api-reference-plugins.md).
+each time, offline.
 
 This manual uses it on little's own code: [little's API](../api/README.md)
 is a page for each of little's modules, for those who work on little.

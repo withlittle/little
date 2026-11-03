@@ -1,7 +1,7 @@
 name: Release little
 
 # A tag of little's version, like v0.1.0, releases little, as RELEASING.md
-# and docs/decisions/0055 describe: its binary for Linux, macOS, and Windows,
+# and decisions/0055 describe: its binary for Linux, macOS, and Windows,
 # on x64 and arm64, each in an archive with its licence and third-party
 # notices, on GitHub, then its crate, little-docs, on crates.io. A plugin's
 # tag, like pydoc-v0.1.0, doesn't match. A pull request that changes this

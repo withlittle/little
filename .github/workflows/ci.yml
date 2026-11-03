@@ -91,7 +91,7 @@ jobs:
           tool: cargo-about@0.9.2
 
       # The notices little's and the plugins' releases carry
-      # (docs/decisions/0054), so a pull request that changes a crate's
+      # (decisions/0054), so a pull request that changes a crate's
       # licence fails here, not a release. For little's, the script runs the
       # example `cargo test` built.
       - name: Write the third-party notices
@@ -108,7 +108,7 @@ jobs:
 
       # The crate a release publishes to crates.io, built as crates.io would
       # build it, so a pull request that leaves a file little needs out of
-      # Cargo.toml's include fails here, not a release (docs/decisions/0055).
+      # Cargo.toml's include fails here, not a release (decisions/0055).
       - name: Package little-docs
         run: cargo package --locked
 

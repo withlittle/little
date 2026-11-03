@@ -5,9 +5,6 @@ little's repository has a plugin,
 https://github.com/withlittle/little/tree/main/plugins/asciidoc[`asciidoc`],
 that makes each https://asciidoc.org[AsciiDoc] file (`.adoc` or `.asciidoc`) in `docs/` a page, reading AsciiDoc itself, without Asciidoctor or Ruby, or converting it first.
 This page is one, `docs/plugins/asciidoc.adoc`, and a link to it from Markdown, like `+[AsciiDoc](asciidoc.adoc)+`, leads to its page.
-link:../decisions/0060-other-formats-in-plugins.md[ADR 0060] says why a plugin reads it, and
-link:../decisions/0062-plugins-for-asciidoc-and-orgmode.md[ADR 0062]
-how its page is written.
 
 == Getting it
 

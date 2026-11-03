@@ -1,6 +1,8 @@
 # 0061 — Leaving pages out of search
 
-- Status: accepted
+- Status: accepted; amended by [0065](./0065-decisions-at-the-root.md),
+  which moves the records out of the manual, so the manual leaves nothing
+  out of search
 - Date: 2026-10-23
 - Amends: [0019](./0019-site-search.md),
   [0053](./0053-decisions-in-the-manual.md)

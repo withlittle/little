@@ -88,7 +88,7 @@ before you build the manual.
 
 See [`AGENTS.md`](./AGENTS.md) for architecture and conventions,
 [`VISION.md`](./VISION.md) for where little is headed,
-[`docs/decisions/`](./docs/decisions/) for design records, and
+[`decisions/`](./decisions/) for design records, and
 [`RELEASING.md`](./RELEASING.md) for how little and its plugins are
 released.
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Writes the third-party notices of little, or of one of its plugins, as its
-# releases include them: see docs/decisions/0054-third-party-notices.md.
+# releases include them: see decisions/0054-third-party-notices.md.
 #
 #   scripts/notices.sh little|pydoc|rustdoc|jsdoc|godoc|jupyter|asciidoc|orgmode|restructuredtext FILE
 #

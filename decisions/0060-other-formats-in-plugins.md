@@ -15,8 +15,7 @@ many authors write docs, and there was no plugin API. Authors write docs in
 other formats too: AsciiDoc, reStructuredText, and Org-mode each have sites
 written in them. Built in, each would be a parser in every site's binary,
 and rules in little's core, which keeps itself small, and leaves what only
-some sites need to plugins
-([VISION.md](https://github.com/withlittle/little/blob/main/VISION.md)).
+some sites need to plugins ([VISION.md](../VISION.md)).
 
 Since [0046](./0046-plugin-hooks.md), plugins hook into each step of the
 build, but none can read a format: little reads each page's text as

@@ -12,13 +12,13 @@ that list what changed since its last release:
 - [`release.yml`](./.github/workflows/release.yml), for little: its binary
   for Linux, macOS, and Windows, on x64 and arm64, each in an archive, then
   its crate, `little-docs`, on crates.io, as
-  [ADR 0055](./docs/decisions/0055-releasing-little.md) says.
+  [ADR 0055](./decisions/0055-releasing-little.md) says.
 - [`release-plugin.yml`](./.github/workflows/release-plugin.yml), for a
   plugin: its `.wasm` file, as
-  [ADR 0052](./docs/decisions/0052-releasing-plugins-from-tags.md) says.
+  [ADR 0052](./decisions/0052-releasing-plugins-from-tags.md) says.
 
 How versions are numbered is in
-[ADR 0051](./docs/decisions/0051-semantic-versioning-and-conventional-commits.md).
+[ADR 0051](./decisions/0051-semantic-versioning-and-conventional-commits.md).
 
 A release can't be undone, so only the maintainer pushes a tag.
 
@@ -249,7 +249,7 @@ version on crates.io: one that's wrong there can only be yanked, with
 A plugin's release carries a `THIRD-PARTY-NOTICES.md`, with the licences of
 the crates it's built from, which
 [cargo-about](https://github.com/EmbarkStudios/cargo-about) writes, as
-[ADR 0054](./docs/decisions/0054-third-party-notices.md) says, and each of
+[ADR 0054](./decisions/0054-third-party-notices.md) says, and each of
 little's archives carries its own. CI writes them all for each pull
 request, as a release would, so one that changes a crate's licence fails
 there. To write them yourself, install cargo-about 0.9.2, with

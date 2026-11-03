@@ -9,9 +9,6 @@ little's repository has a plugin,
 `restructuredtext <https://github.com/withlittle/little/tree/main/plugins/restructuredtext>`__,
 that makes each `reStructuredText <https://docutils.sourceforge.io/rst.html>`__ file (``.rst``) in ``docs/`` a page, reading reStructuredText itself, as docutils does, without docutils, Sphinx, or Python, or converting it first.
 This page is one, ``docs/plugins/restructuredtext.rst``, and a link to it from Markdown, like ``[reStructuredText](restructuredtext.rst)``, leads to its page.
-`ADR 0060 <../decisions/0060-other-formats-in-plugins.md>`__ says why a plugin reads it,
-`ADR 0062 <../decisions/0062-plugins-for-asciidoc-and-orgmode.md>`__ how its page is written, and
-`ADR 0063 <../decisions/0063-a-plugin-for-restructuredtext.md>`__ why it has a parser of its own.
 
 Getting it
 ==========

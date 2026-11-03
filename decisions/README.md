@@ -1,8 +1,3 @@
----
-title: Design decisions
-description: Why little works as it does, in a record of each notable choice in its design, as it was made.
----
-
 # Design decisions
 
 Each notable choice in little's design has a record here, an architecture
@@ -12,9 +7,8 @@ made, and link to each other.
 
 > [!NOTE]
 > A record says what was decided when it was made. One that a later record
-> changes says so in its status, at its top, and names it. Search leaves the
-> records out, and finds the rest of this manual, which describes little as
-> it is now.
+> changes says so in its status, at its top, and names it. The
+> [manual](../docs/README.md) describes little as it is now.
 
 - [0001 — Build little in Rust](0001-language-rust.md)
 - [0002 — Theme structure and template lookup](0002-theme-structure.md)
@@ -80,3 +74,4 @@ made, and link to each other.
 - [0062 — Plugins for AsciiDoc and Org mode](0062-plugins-for-asciidoc-and-orgmode.md)
 - [0063 — A plugin for reStructuredText](0063-a-plugin-for-restructuredtext.md)
 - [0064 — A plugin for Go's doc comments](0064-a-plugin-for-gos-doc-comments.md)
+- [0065 — little's decisions are at the root of its repository](0065-decisions-at-the-root.md)

@@ -1,7 +1,9 @@
 # 0032 — little's docs are its manual
 
 - Status: accepted; amended by [0053](./0053-decisions-in-the-manual.md),
-  which moves these records into the manual, in `docs/decisions/`
+  which moved these records into the manual, in `docs/decisions/`, and by
+  [0065](./0065-decisions-at-the-root.md), which moves them back to the root
+  of the repository
 - Date: 2026-10-09
 
 ## Context
