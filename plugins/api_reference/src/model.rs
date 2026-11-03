@@ -3,7 +3,8 @@
 //! writes it.
 
 /// What an object is, which a page labels it with, and groups it by: a
-/// kind of Python's, of Rust's, of JavaScript's, or of more than one.
+/// kind of Python's, of Rust's, of JavaScript's, of Go's, or of more than
+/// one.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Kind {
     Package,
@@ -30,6 +31,13 @@ pub enum Kind {
     /// JavaScript or TypeScript: labelled `property`, as they call it, but
     /// listed under Properties, not under Attributes, as Python's are.
     Field,
+    /// A type of Go's, of any kind, a struct, interface, alias, or one like
+    /// `type Weekday int`, labelled `type`, and listed under Types, after
+    /// the functions, as Go's own docs list them.
+    Type,
+    /// A folder of Go's with no package shown in it, but packages below
+    /// it, labelled `directory`, as Go's own docs call it.
+    Directory,
 }
 
 impl Kind {
@@ -57,6 +65,8 @@ impl Kind {
             Kind::Interface => "interface",
             Kind::Variable => "variable",
             Kind::Field => "property",
+            Kind::Type => "type",
+            Kind::Directory => "directory",
         }
     }
 }
