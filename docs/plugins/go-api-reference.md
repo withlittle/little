@@ -13,11 +13,7 @@ module, built from their doc comments, as `go doc` and
 documentation server, but doesn't run it, nor `go doc`, nor Go: it reads
 the module's code with [gosyn](https://github.com/chikaku/gosyn)'s parser,
 without compiling it, so it needs neither Go nor the module's
-dependencies, and a site builds the same each time, offline. Why it works
-as it does is in
-[ADR 0064](../decisions/0064-a-plugin-for-gos-doc-comments.md),
-and why it's named so, in
-[ADR 0047](../decisions/0047-naming-api-reference-plugins.md).
+dependencies, and a site builds the same each time, offline.
 
 ## Getting it
 

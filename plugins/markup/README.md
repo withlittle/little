@@ -10,7 +10,7 @@ escaped, so it shows as it's written; what Markdown can't hold is written
 as HTML, where `raw_html` is on, or as near as Markdown comes; and each
 heading's `#fragment` is worked out as little's, so links to it work.
 Why they share it is in
-[ADR 0062](../../docs/decisions/0062-plugins-for-asciidoc-and-orgmode.md).
+[ADR 0062](../../decisions/0062-plugins-for-asciidoc-and-orgmode.md).
 
 ## Developing it
 

@@ -10,9 +10,8 @@ A site needs only a `docs/` folder with a page in it, so the manual started
 one with two commands for Unix's shells, `mkdir -p` and `echo`. That leaves
 a site without a name, a `little.yml` to give it one in, or `dist/` kept
 out of git, which each reader adds next, from the manual.
-[VISION.md](https://github.com/withlittle/little/blob/main/VISION.md)'s
-roadmap has had `little init`, to start a site in one command, as its third
-slice, from the start.
+[VISION.md](../VISION.md)'s roadmap has had `little init`, to start a site
+in one command, as its third slice, from the start.
 
 Other tools start a project in different ways. Zola's `zola init` and
 mdBook's `mdbook init` ask questions, and Zola's refuses a folder that
@@ -43,7 +42,7 @@ and adds `/target` to its `.gitignore`.
   - `little.yml`, with `name`, the folder's name, written as YAML, so a
     name like `yes` or `123` is read back as it is, and `description`,
     `url`, and `repo` commented out, under a link to the manual's
-    [Configuring](../getting-started/configuring.md) page;
+    [Configuring](../docs/getting-started/configuring.md) page;
   - `docs/README.md`, a home page that says how to add pages, and links to
     the manual, but to no page of the site, so a new site builds with
     `--strict`; unless `docs/` has a home page, a Markdown file or notebook
@@ -73,4 +72,4 @@ and adds `/target` to its `.gitignore`.
 - `/dist/` in `.gitignore` doesn't follow a `destination` set later.
 - To publish a site on GitHub Pages, its `url` and `repo` still need
   uncommenting and filling in, and it needs the workflow on the
-  [Publishing](../getting-started/publishing.md) page.
+  [Publishing](../docs/getting-started/publishing.md) page.

@@ -60,7 +60,7 @@ itself. [Your first site](getting-started/first-site.md) goes on from there.
 | [Writing](writing/pages-and-files.md) | write pages, with links, code, math, diagrams, and navigation, and keep a version for each release |
 | [Themes](themes/choosing-a-theme.md) | choose a theme for a site, or make one |
 | [Plugins](plugins/using-plugins.md) | use plugins, build pages from Jupyter notebooks, AsciiDoc, Org mode, or reStructuredText, add an API reference, or write a plugin |
-| [Reference](reference/commands.md) | look up a command, a setting, what a theme's templates get, a plugin's hooks, or [why little works as it does](decisions/README.md) |
+| [Reference](reference/commands.md) | look up a command, a setting, what a theme's templates get, or a plugin's hooks |
 
 > [!TIP]
 > This manual is a little site, in the `docs/` folder of little's

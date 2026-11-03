@@ -127,8 +127,7 @@ little's builds for musl, unused.
   for Linux on x64, rather than build it. A release's pull request,
   `chore: release <version>`, raises that version, with `Cargo.toml`'s and
   `Cargo.lock`'s.
-- [`RELEASING.md`](https://github.com/withlittle/little/blob/main/RELEASING.md)
-  lists the steps.
+- [`RELEASING.md`](../RELEASING.md) lists the steps.
 
 ## Consequences
 - little can be installed without Rust: downloaded, by a script, from a URL

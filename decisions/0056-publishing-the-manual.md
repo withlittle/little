@@ -10,17 +10,15 @@ little's manual, in `docs/`, is a little site
 on crates.io, send readers. Nothing publishes it there: 0032 left that to
 a change of its own, so it's read in `docs/` on GitHub, or with
 `little serve`. Nor does CI build it, so a broken link in it is found only
-by building it by hand, as
-[AGENTS.md](https://github.com/withlittle/little/blob/main/AGENTS.md) asks
-of each change.
+by building it by hand, as [AGENTS.md](../AGENTS.md) asks of each change.
 
-The manual's [Publishing](../getting-started/publishing.md) page gives a
-site a workflow for GitHub Pages that downloads a release of little, by its
-version, and builds the site with `--strict`. The manual isn't quite such a
-site: it documents `main`, which can have what no release does yet; its
-theme is `./theme`, the built-in theme's files as they are on `main`; and
-the `rustdoc` plugin, which adds its `/api/`, is built from the repository
-too, for the `little:plugin` that `main`'s little calls.
+The manual's [Publishing](../docs/getting-started/publishing.md) page gives
+a site a workflow for GitHub Pages that downloads a release of little, by
+its version, and builds the site with `--strict`. The manual isn't quite
+such a site: it documents `main`, which can have what no release does yet;
+its theme is `./theme`, the built-in theme's files as they are on `main`;
+and the `rustdoc` plugin, which adds its `/api/`, is built from the
+repository too, for the `little:plugin` that `main`'s little calls.
 
 ## Options considered
 - **Which little builds it:**

@@ -48,8 +48,7 @@ and 0.3.0 as not, as Cargo reads crates' versions.
 - From 1.0.0, SemVer's own rules apply, as 0051 says, and the rest of 0051
   stands: what's public, what breaks, and how commits are written.
 - git-cliff's `--bumped-version` follows it, with
-  `features_always_bump_minor` in
-  [`cliff.toml`](https://github.com/withlittle/little/blob/main/cliff.toml).
+  `features_always_bump_minor` in [`cliff.toml`](../cliff.toml).
 - `little init` makes little 0.2.0.
 
 ## Consequences

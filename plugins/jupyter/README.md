@@ -9,9 +9,9 @@ It reads each notebook with little's
 [`formats` hook](../../docs/reference/plugin-hooks.md#formats), and gives
 little back the page's parts, which little writes as it writes Markdown.
 Why notebooks' pages are as they are is in
-[ADR 0024](../../docs/decisions/0024-jupyter-notebooks.md), and why a plugin
+[ADR 0024](../../decisions/0024-jupyter-notebooks.md), and why a plugin
 reads them, not little, in
-[ADR 0060](../../docs/decisions/0060-other-formats-in-plugins.md).
+[ADR 0060](../../decisions/0060-other-formats-in-plugins.md).
 
 ## Building it
 

@@ -1,5 +1,5 @@
 # How cargo-about writes godoc's third-party notices, which its releases
-# include: see docs/decisions/0054-third-party-notices.md.
+# include: see decisions/0054-third-party-notices.md.
 
 # The licences godoc's crates may use, in order of preference: where a crate
 # offers a choice, the first listed wins.

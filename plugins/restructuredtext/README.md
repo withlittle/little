@@ -11,11 +11,11 @@ little back the page's parts, which [`plugins/markup/`](../markup/), the
 library little's plugins for other formats share, writes as Markdown, with
 the extensions to it the site turns on, so little writes them as it writes
 Markdown. Why a plugin reads it, not little, is in
-[ADR 0060](../../docs/decisions/0060-other-formats-in-plugins.md), why its
+[ADR 0060](../../decisions/0060-other-formats-in-plugins.md), why its
 parser is its own in
-[ADR 0063](../../docs/decisions/0063-a-plugin-for-restructuredtext.md), and
+[ADR 0063](../../decisions/0063-a-plugin-for-restructuredtext.md), and
 how the library writes its page in
-[ADR 0062](../../docs/decisions/0062-plugins-for-asciidoc-and-orgmode.md).
+[ADR 0062](../../decisions/0062-plugins-for-asciidoc-and-orgmode.md).
 
 ## Building it
 

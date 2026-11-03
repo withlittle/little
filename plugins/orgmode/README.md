@@ -10,9 +10,9 @@ the page's parts, as Org's own HTML export shows it, which
 formats share, writes as Markdown, with the extensions to it the site turns
 on, so little writes them as it writes Markdown. Why a plugin reads it, not
 little, is in
-[ADR 0060](../../docs/decisions/0060-other-formats-in-plugins.md), and how
+[ADR 0060](../../decisions/0060-other-formats-in-plugins.md), and how
 its page is written in
-[ADR 0062](../../docs/decisions/0062-plugins-for-asciidoc-and-orgmode.md).
+[ADR 0062](../../decisions/0062-plugins-for-asciidoc-and-orgmode.md).
 
 ## Building it
 

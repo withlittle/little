@@ -23,7 +23,7 @@ name = "little"
 path = "src/main.rs"
 
 # For `cargo binstall little-docs`, which downloads the binary for its
-# platform from little's release, as docs/decisions/0055 says, or else
+# platform from little's release, as decisions/0055 says, or else
 # builds it, but never uses a third party's.
 [package.metadata.binstall]
 pkg-url = "{ repo }/releases/download/v{ version }/little-{ target }.tar.gz"

@@ -1,7 +1,7 @@
 //! Prints, in Markdown, the notices of the syntax definitions little
 //! highlights code with, which two-face bundles from bat, for the end of
 //! little's third-party notices: see
-//! `docs/decisions/0054-third-party-notices.md`.
+//! `decisions/0054-third-party-notices.md`.
 
 use std::collections::BTreeMap;
 
