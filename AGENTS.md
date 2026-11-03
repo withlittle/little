@@ -48,6 +48,11 @@ cargo build --release --target wasm32-wasip2 --manifest-path plugins/jsdoc/Cargo
 cargo test --manifest-path plugins/jsdoc/Cargo.toml
 cargo clippy --manifest-path plugins/jsdoc/Cargo.toml --all-targets --target wasm32-wasip2
 
+# the godoc plugin, in its own workspace
+cargo build --release --target wasm32-wasip2 --manifest-path plugins/godoc/Cargo.toml
+cargo test --manifest-path plugins/godoc/Cargo.toml
+cargo clippy --manifest-path plugins/godoc/Cargo.toml --all-targets --target wasm32-wasip2
+
 # the library the API reference plugins share, in its own workspace
 cargo test --manifest-path plugins/api_reference/Cargo.toml
 cargo clippy --manifest-path plugins/api_reference/Cargo.toml --all-targets

@@ -1,13 +1,13 @@
 # Releasing
 
-How little, and its plugins, `pydoc`, `rustdoc`, `jsdoc`, `jupyter`,
-`asciidoc`, `orgmode`, and `restructuredtext`, are released. Each is
-released on its own, from a tag of its version: `v0.2.0` for little, and
-one that names the plugin too, like `pydoc-v0.2.0`, for a plugin. Pushing
-the tag to GitHub runs a workflow, which checks the tag, builds what it
-releases, and publishes it in a release of little's repository, with its
-[third-party notices](#third-party-notices), and notes that list what
-changed since its last release:
+How little, and its plugins, `pydoc`, `rustdoc`, `jsdoc`, `godoc`,
+`jupyter`, `asciidoc`, `orgmode`, and `restructuredtext`, are released.
+Each is released on its own, from a tag of its version: `v0.2.0` for
+little, and one that names the plugin too, like `pydoc-v0.2.0`, for a
+plugin. Pushing the tag to GitHub runs a workflow, which checks the tag,
+builds what it releases, and publishes it in a release of little's
+repository, with its [third-party notices](#third-party-notices), and notes
+that list what changed since its last release:
 
 - [`release.yml`](./.github/workflows/release.yml), for little: its binary
   for Linux, macOS, and Windows, on x64 and arm64, each in an archive, then
@@ -54,7 +54,7 @@ once, by hand:
 [git-cliff](https://git-cliff.org) lists a plugin's changes since its last
 release, as the release's notes will: the commits that changed its folder,
 `plugins/<plugin>/`, or the library it shares with others like it,
-`plugins/api_reference/`, for `pydoc`, `rustdoc`, and `jsdoc`, or
+`plugins/api_reference/`, for `pydoc`, `rustdoc`, `jsdoc`, and `godoc`, or
 `plugins/markup/`, for `asciidoc`, `orgmode`, and `restructuredtext`, of a
 type that's released, `feat`, `fix`, or `perf`, with those that break
 something first. Install it, with `cargo install --locked git-cliff` or
@@ -256,7 +256,7 @@ there. To write them yourself, install cargo-about 0.9.2, with
 `cargo install --locked cargo-about@0.9.2`, then, in the repository's root:
 
 ```sh
-scripts/notices.sh pydoc target/notices/pydoc.md   # or little, rustdoc, jsdoc, jupyter, asciidoc, orgmode, or restructuredtext
+scripts/notices.sh pydoc target/notices/pydoc.md   # or little, rustdoc, jsdoc, godoc, jupyter, asciidoc, orgmode, or restructuredtext
 ```
 
 Each one's `about.toml`, beside its `Cargo.toml`, accepts the licences its
