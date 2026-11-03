@@ -2,8 +2,9 @@
 
 A library, not a plugin, that little's plugins that build an API reference
 share: [`pydoc`](../pydoc/), from Python's docstrings,
-[`rustdoc`](../rustdoc/), from Rust's doc comments, and
-[`jsdoc`](../jsdoc/), from JavaScript's and TypeScript's. Each reads its
+[`rustdoc`](../rustdoc/), from Rust's doc comments,
+[`jsdoc`](../jsdoc/), from JavaScript's and TypeScript's, and
+[`godoc`](../godoc/), from Go's. Each reads its
 language's code into what a page documents, in `src/model.rs`, and this
 writes the page's Markdown, in `src/markdown.rs`, so their pages look alike.
 It also reads the settings they have alike, like `title` and `url`, in
@@ -14,7 +15,9 @@ Why they share it is in
 how it grew for Rust in
 [ADR 0044](../../docs/decisions/0044-a-plugin-for-rusts-doc-comments.md), and
 for JavaScript in
-[ADR 0048](../../docs/decisions/0048-a-plugin-for-javascripts-doc-comments.md).
+[ADR 0048](../../docs/decisions/0048-a-plugin-for-javascripts-doc-comments.md),
+and for Go in
+[ADR 0064](../../docs/decisions/0064-a-plugin-for-gos-doc-comments.md).
 
 ## Developing it
 

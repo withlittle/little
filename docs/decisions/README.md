@@ -79,3 +79,4 @@ made, and link to each other.
 - [0061 — Leaving pages out of search](0061-leaving-pages-out-of-search.md)
 - [0062 — Plugins for AsciiDoc and Org mode](0062-plugins-for-asciidoc-and-orgmode.md)
 - [0063 — A plugin for reStructuredText](0063-a-plugin-for-restructuredtext.md)
+- [0064 — A plugin for Go's doc comments](0064-a-plugin-for-gos-doc-comments.md)

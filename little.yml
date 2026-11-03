@@ -80,6 +80,7 @@ nav:
         children:
           - { title: little's API, url: /api/ }
       - { title: JavaScript API reference, url: /plugins/javascript-api-reference }
+      - { title: Go API reference, url: /plugins/go-api-reference }
       - { title: Writing a plugin, url: /plugins/writing-a-plugin }
   - title: Reference
     children:

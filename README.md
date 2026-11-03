@@ -70,11 +70,12 @@ The tests build a [plugin](./docs/plugins/writing-a-plugin.md),
 [`tests/plugin/`](./tests/plugin/), with Rust's `wasm32-wasip2` target, which
 [`rust-toolchain.toml`](./rust-toolchain.toml) has rustup install.
 The [`pydoc`](./plugins/pydoc/), [`rustdoc`](./plugins/rustdoc/),
-[`jsdoc`](./plugins/jsdoc/), [`jupyter`](./plugins/jupyter/),
-[`asciidoc`](./plugins/asciidoc/), [`orgmode`](./plugins/orgmode/), and
+[`jsdoc`](./plugins/jsdoc/), [`godoc`](./plugins/godoc/),
+[`jupyter`](./plugins/jupyter/), [`asciidoc`](./plugins/asciidoc/),
+[`orgmode`](./plugins/orgmode/), and
 [`restructuredtext`](./plugins/restructuredtext/) plugins are crates of
 their own, with their own tests, which their READMEs say how to run, as
-are the [library](./plugins/api_reference/) the first three share, and the
+are the [library](./plugins/api_reference/) the first four share, and the
 [one](./plugins/markup/) the last three share. The manual documents
 little's own code with `rustdoc`, and has a page in the format each of the
 last four reads, so build

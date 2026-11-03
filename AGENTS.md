@@ -48,6 +48,11 @@ cargo build --release --target wasm32-wasip2 --manifest-path plugins/jsdoc/Cargo
 cargo test --manifest-path plugins/jsdoc/Cargo.toml
 cargo clippy --manifest-path plugins/jsdoc/Cargo.toml --all-targets --target wasm32-wasip2
 
+# the godoc plugin, in its own workspace
+cargo build --release --target wasm32-wasip2 --manifest-path plugins/godoc/Cargo.toml
+cargo test --manifest-path plugins/godoc/Cargo.toml
+cargo clippy --manifest-path plugins/godoc/Cargo.toml --all-targets --target wasm32-wasip2
+
 # the library the API reference plugins share, in its own workspace
 cargo test --manifest-path plugins/api_reference/Cargo.toml
 cargo clippy --manifest-path plugins/api_reference/Cargo.toml --all-targets
@@ -223,6 +228,12 @@ Content and theme live outside `src/`:
   their doc comments, with JSDoc's and TSDoc's tags, parsed with oxc's
   parser, in ES modules, CommonJS, and scripts. Its tests run natively, as
   pydoc's do.
+- `plugins/godoc/` — the `godoc` plugin, a crate in its own
+  workspace, built for `wasm32-wasip2`, that adds an API reference, with the
+  `files` hook: a page
+  for each package of a Go module, from its doc comments, parsed with
+  gosyn, as Go's own go/doc reads them, with doc links led to their items.
+  Its tests run natively, as pydoc's do.
 - `plugins/jupyter/` — the `jupyter` plugin, a crate in its own
   workspace, built for `wasm32-wasip2`, that reads Jupyter notebooks
   (`.ipynb`, format 4), with serde, with the `formats` hook: each into the
@@ -356,7 +367,7 @@ Content and theme live outside `src/`:
     is released; `docs`, `refactor`, `test`, `style`, `build`, `ci`, or
     `chore` for any other; `revert`, with a `Refs:` footer, to undo one.
   - Scope: the plugin or library a commit is about, `pydoc`, `rustdoc`,
-    `jsdoc`, `jupyter`, `asciidoc`, `orgmode`, `restructuredtext`,
+    `jsdoc`, `godoc`, `jupyter`, `asciidoc`, `orgmode`, `restructuredtext`,
     `api_reference`, or `markup`; none for little, its theme, `wit/`, or
     more than one component.
   - Breaking: `!` before the `:`, and a footer,
@@ -863,3 +874,20 @@ manual, and list each in its `README.md`. Locked so far:
   manual has a page in reStructuredText, `restructuredtext` is a scope, and
   it needs no new crate — see
   [`docs/decisions/0063-a-plugin-for-restructuredtext.md`](./docs/decisions/0063-a-plugin-for-restructuredtext.md).
+- **A plugin for Go's doc comments:** `plugins/godoc/`, in its own
+  workspace, adds a page for each package of a Go module, at its folder's
+  `README.md`, under `url`, `/<name>` by default, the last element of the
+  module's path, or the one before a major version, like `v2`, parsing Go
+  with gosyn, without running it, or Go, from the one folder it reads,
+  with the module's `go.mod`, whose `module` line names its path. It
+  reads files as the go
+  command finds packages, but not build constraints, other than `ignore`;
+  documents what each package exports that has docs, put together from its
+  files, as go/doc does, each `const` and `var` name an item of its own;
+  finds doc and line comments as go/parser does, from gosyn's tokens; reads
+  doc comments as go/doc/comment does, not as Markdown, with doc links led
+  to their items; gives `package main` a page of its doc comment, labelled
+  `command`, and a folder with packages below it, but none of its own, a
+  `directory` page; and adds `type` and `directory` to
+  `plugins/api_reference/`. `godoc` is a scope — see
+  [`docs/decisions/0064-a-plugin-for-gos-doc-comments.md`](./docs/decisions/0064-a-plugin-for-gos-doc-comments.md).

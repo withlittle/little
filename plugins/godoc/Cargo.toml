@@ -1,0 +1,28 @@
+[package]
+name = "little-godoc"
+version = "0.1.0"
+edition = "2024"
+description = "A plugin for little that builds an API reference from Go's doc comments"
+license = "MIT"
+publish = false
+
+# A WebAssembly component, built for wasm32-wasip2.
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+gosyn = "0.2.15"
+little-api-reference = { path = "../api_reference" }
+unic-ucd-category = "0.9"
+wit-bindgen = "0.62"
+
+[dev-dependencies]
+comrak = { version = "0.55", default-features = false, features = ["shortcodes"] }
+
+[profile.release]
+opt-level = "s"
+lto = true
+strip = true
+
+# Its own workspace, apart from little's.
+[workspace]

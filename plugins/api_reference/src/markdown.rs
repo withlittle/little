@@ -302,6 +302,7 @@ enum Group {
     AssociatedTypes,
     AssociatedConstants,
     Functions,
+    Types,
     TypeAliases,
     Unions,
     Modules,
@@ -313,7 +314,7 @@ impl Group {
             Kind::Attribute | Kind::Property => Group::Attributes,
             Kind::Class => Group::Classes,
             Kind::Function | Kind::Method => Group::Functions,
-            Kind::Package | Kind::Module | Kind::Crate => Group::Modules,
+            Kind::Package | Kind::Module | Kind::Crate | Kind::Directory => Group::Modules,
             Kind::Struct => Group::Structs,
             Kind::Enum => Group::Enums,
             Kind::Union => Group::Unions,
@@ -327,6 +328,7 @@ impl Group {
             Kind::Interface => Group::Interfaces,
             Kind::Variable => Group::Variables,
             Kind::Field => Group::Properties,
+            Kind::Type => Group::Types,
         }
     }
 
@@ -353,9 +355,11 @@ impl Group {
                 | Kind::Enum
                 | Kind::Union
                 | Kind::Trait
-                | Kind::Interface => "Methods",
+                | Kind::Interface
+                | Kind::Type => "Methods",
                 _ => "Functions",
             },
+            Group::Types => "Types",
             Group::TypeAliases => "Type Aliases",
             Group::Unions => "Unions",
             Group::Modules => "Modules",
@@ -915,6 +919,73 @@ What it is.
             ]
         );
         assert!(page.contains("`property`\n\nIts sides."));
+    }
+
+    #[test]
+    fn a_go_package_lists_its_types_last_each_with_its_methods() {
+        const GO: Language = Language {
+            name: "go",
+            separator: ".",
+        };
+        let mut weekday = object("Weekday", Kind::Type, "A day of the week.");
+        weekday.members = vec![object("String", Kind::Method, "Its name.")];
+        let mut package = object("time", Kind::Package, "");
+        package.members = vec![
+            weekday,
+            object("Duration", Kind::Type, "A span of time."),
+            object("Now", Kind::Function, "The time now."),
+            object("UTC", Kind::Variable, "Universal time."),
+            object("Sunday", Kind::Constant, "The first day."),
+        ];
+        let page = page(&package, "time.go", &GO, &[]);
+        let order: Vec<&str> = (page.lines())
+            .filter(|line| line.starts_with("**") || line.starts_with('#'))
+            .collect();
+        assert_eq!(
+            order,
+            [
+                "# time",
+                "**Constants:**",
+                "**Variables:**",
+                "**Functions:**",
+                "**Types:**",
+                "## `Sunday`",
+                "## `UTC`",
+                "## `Now`",
+                "## `Duration`",
+                "## `Weekday`",
+                "**Methods:**",
+                "### `Weekday.String`",
+            ]
+        );
+        assert!(page.contains("## `Weekday`\n\n`type`\n\nA day of the week."));
+    }
+
+    #[test]
+    fn a_go_directory_lists_the_packages_in_it() {
+        const GO: Language = Language {
+            name: "go",
+            separator: ".",
+        };
+        let listed = [Listed {
+            name: "json".to_string(),
+            link: Some("json/README.md".to_string()),
+            summary: "Encodes JSON.".to_string(),
+        }];
+        let directory = Object::new("encoding", Kind::Directory);
+        assert_eq!(
+            page(&directory, "encoding", &GO, &[("Packages", &listed)]),
+            "# encoding
+
+`directory`
+
+**Packages:**
+
+| Name | Description |
+| --- | --- |
+| [`json`](json/README.md) | Encodes JSON. |
+"
+        );
     }
 
     #[test]

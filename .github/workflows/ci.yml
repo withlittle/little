@@ -30,8 +30,8 @@ jobs:
         with:
           components: rustfmt, clippy
           # For the plugins: tests/plugin, which the tests build, plugins/pydoc,
-          # plugins/rustdoc, plugins/jsdoc, plugins/jupyter, plugins/asciidoc,
-          # plugins/orgmode, and plugins/restructuredtext.
+          # plugins/rustdoc, plugins/jsdoc, plugins/godoc, plugins/jupyter,
+          # plugins/asciidoc, plugins/orgmode, and plugins/restructuredtext.
           targets: wasm32-wasip2
 
       - name: Cache cargo build artifacts
@@ -45,6 +45,7 @@ jobs:
           cargo fmt --check --manifest-path plugins/pydoc/Cargo.toml
           cargo fmt --check --manifest-path plugins/rustdoc/Cargo.toml
           cargo fmt --check --manifest-path plugins/jsdoc/Cargo.toml
+          cargo fmt --check --manifest-path plugins/godoc/Cargo.toml
           cargo fmt --check --manifest-path plugins/jupyter/Cargo.toml
           cargo fmt --check --manifest-path plugins/markup/Cargo.toml
           cargo fmt --check --manifest-path plugins/asciidoc/Cargo.toml
@@ -63,6 +64,7 @@ jobs:
           cargo clippy --locked --manifest-path plugins/pydoc/Cargo.toml --all-targets --target wasm32-wasip2 --target-dir target/pydoc -- -D warnings
           cargo clippy --locked --manifest-path plugins/rustdoc/Cargo.toml --all-targets --target wasm32-wasip2 --target-dir target/rustdoc -- -D warnings
           cargo clippy --locked --manifest-path plugins/jsdoc/Cargo.toml --all-targets --target wasm32-wasip2 --target-dir target/jsdoc -- -D warnings
+          cargo clippy --locked --manifest-path plugins/godoc/Cargo.toml --all-targets --target wasm32-wasip2 --target-dir target/godoc -- -D warnings
           cargo clippy --locked --manifest-path plugins/jupyter/Cargo.toml --all-targets --target wasm32-wasip2 --target-dir target/jupyter -- -D warnings
           cargo clippy --manifest-path plugins/markup/Cargo.toml --all-targets --target-dir target/markup -- -D warnings
           cargo clippy --locked --manifest-path plugins/asciidoc/Cargo.toml --all-targets --target wasm32-wasip2 --target-dir target/asciidoc -- -D warnings
@@ -76,6 +78,7 @@ jobs:
           cargo test --locked --manifest-path plugins/pydoc/Cargo.toml --target-dir target/pydoc
           cargo test --locked --manifest-path plugins/rustdoc/Cargo.toml --target-dir target/rustdoc
           cargo test --locked --manifest-path plugins/jsdoc/Cargo.toml --target-dir target/jsdoc
+          cargo test --locked --manifest-path plugins/godoc/Cargo.toml --target-dir target/godoc
           cargo test --locked --manifest-path plugins/jupyter/Cargo.toml --target-dir target/jupyter
           cargo test --manifest-path plugins/markup/Cargo.toml --target-dir target/markup
           cargo test --locked --manifest-path plugins/asciidoc/Cargo.toml --target-dir target/asciidoc
@@ -97,6 +100,7 @@ jobs:
           scripts/notices.sh pydoc target/notices/pydoc.md
           scripts/notices.sh rustdoc target/notices/rustdoc.md
           scripts/notices.sh jsdoc target/notices/jsdoc.md
+          scripts/notices.sh godoc target/notices/godoc.md
           scripts/notices.sh jupyter target/notices/jupyter.md
           scripts/notices.sh asciidoc target/notices/asciidoc.md
           scripts/notices.sh orgmode target/notices/orgmode.md
@@ -114,6 +118,7 @@ jobs:
           cargo build --release --locked --target wasm32-wasip2 --manifest-path plugins/pydoc/Cargo.toml --target-dir target/pydoc
           cargo build --release --locked --target wasm32-wasip2 --manifest-path plugins/rustdoc/Cargo.toml --target-dir target/rustdoc
           cargo build --release --locked --target wasm32-wasip2 --manifest-path plugins/jsdoc/Cargo.toml --target-dir target/jsdoc
+          cargo build --release --locked --target wasm32-wasip2 --manifest-path plugins/godoc/Cargo.toml --target-dir target/godoc
           cargo build --release --locked --target wasm32-wasip2 --manifest-path plugins/jupyter/Cargo.toml --target-dir target/jupyter
           cargo build --release --locked --target wasm32-wasip2 --manifest-path plugins/asciidoc/Cargo.toml --target-dir target/asciidoc
           cargo build --release --locked --target wasm32-wasip2 --manifest-path plugins/orgmode/Cargo.toml --target-dir target/orgmode
