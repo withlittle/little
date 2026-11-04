@@ -917,3 +917,9 @@ Record notable choices as short ADRs in `decisions/`, list each in its
   follow it as they change, review checks it, and these records and
   AGENTS.md aren't rewritten — see
   [`decisions/0066-the-manuals-plain-style.md`](./decisions/0066-the-manuals-plain-style.md).
+- **little's API in the manual's nav:** `/api/`, little's API, is a link of
+  its own at the end of the manual's `nav`, after Reference, not under the
+  page "Rust API reference", where 0044 put it, as it's for those who work
+  on little, and Plugins is for finding plugins, and writing one. That page
+  still links to it, as its example, and its URLs don't change — see
+  [`decisions/0067-littles-api-at-the-end-of-the-manuals-nav.md`](./decisions/0067-littles-api-at-the-end-of-the-manuals-nav.md).

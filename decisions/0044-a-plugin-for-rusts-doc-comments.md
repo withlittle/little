@@ -7,7 +7,10 @@
   `rustdoc`, in `plugins/rustdoc/`, after Rust's own tool, which it
   doesn't run, and by [0049](./0049-an-api-references-url-and-title.md),
   which puts its pages in `/<crate>`, not `/reference/<crate>`, unless
-  `url` is set, and titles the crate's page with `title`
+  `url` is set, and titles the crate's page with `title`, and by
+  [0067](./0067-littles-api-at-the-end-of-the-manuals-nav.md), which
+  lists little's API at the end of the manual's `nav`, not under the page
+  "Rust API reference"
 - Date: 2026-10-14
 - Amends: [0032](./0032-docs-are-the-manual.md)
 

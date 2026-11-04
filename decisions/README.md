@@ -76,3 +76,4 @@ made, and link to each other.
 - [0064 — A plugin for Go's doc comments](0064-a-plugin-for-gos-doc-comments.md)
 - [0065 — little's decisions are at the root of its repository](0065-decisions-at-the-root.md)
 - [0066 — The manual's plain style](0066-the-manuals-plain-style.md)
+- [0067 — little's API at the end of the manual's nav](0067-littles-api-at-the-end-of-the-manuals-nav.md)
