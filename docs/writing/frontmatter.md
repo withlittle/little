@@ -1,44 +1,46 @@
 ---
 title: Frontmatter
-description: A page's own settings, in YAML at its top, which reach the theme as page, and have the last word on it.
+description: A page's own settings, in YAML at its top.
 ---
 
 # Frontmatter
 
-Frontmatter is an optional block of YAML settings at the very top of a page,
-between two `---` lines. This page's is:
+Frontmatter is a block of YAML at the very top of a page, between two
+`---` lines. It's optional. This page's is:
 
 ```markdown
 ---
 title: Frontmatter
-description: A page's own settings, in YAML at its top, which reach the theme as page, and have the last word on it.
+description: A page's own settings, in YAML at its top.
 ---
 ```
 
-Every setting reaches the theme as `page.<key>`, like `description`, which
-the built-in theme gives the page as its meta description, for search
-engines and link previews. You can add your own, for a theme that shows
-them.
+The built-in theme uses `description` as the page's meta description, for
+search engines and link previews. You can add keys of your own, too. Each
+reaches the theme as `page.<key>`, for a theme that shows it.
 
 ## A page's title
 
-little itself reads `title`, for the page's title, which the nav lists it by.
-Without one, a page's title is its first `#` heading, then its file's or
-folder's name. A [nav written in `little.yml`](navigation.md#writing-the-nav-yourself)
-gives each page its own title there.
+`title` sets the page's title, which the sidebar lists it by. Without one,
+the title is the page's first `#` heading. Without that, it's the name of
+the page's file or folder.
+
+A [nav in `little.yml`](navigation.md#writing-the-nav-yourself) gives each
+page the title it lists there.
 
 ## Leaving a page out of search
 
-little reads `search` too: `search: false` leaves the page out of
-[search](search.md#leaving-pages-out), though it's still built, and in the
-nav, and `search: true` keeps it in, even under a URL the site's
-`search.exclude` lists.
+`search: false` leaves the page out of [search](search.md#leaving-pages-out).
+It's still built, and still in the sidebar.
+
+`search: true` keeps the page in search, even under a URL that the site's
+`search.exclude` leaves out.
 
 ## Frontmatter wins
 
-A page's frontmatter has the last word on `page`, even over what little works
-out: it merges over it the way a `little.yml` merges over the level beneath,
-so:
+Frontmatter has the last word on what the theme gets as `page`, even over
+what little works out itself. So you can change, or remove, what the theme
+shows around a page:
 
 | Frontmatter | Does |
 | ----------- | ---- |
@@ -48,23 +50,26 @@ so:
 | `breadcrumbs: false` | removes the [breadcrumbs](navigation.md#breadcrumbs) |
 | `edit_url: false` | removes the link to [edit the page](../getting-started/configuring.md#choosing-the-sites-repository) |
 
-- It changes only what the theme sees: `url` doesn't move the page, and
+- Frontmatter merges key by key, as a `little.yml` does. So
+  `prev: { title: Start here }` keeps the link's URL.
+- It changes only what the theme sees. So `url` doesn't move the page, and
   `type` doesn't choose its template.
 - A key left blank, like `description:`, is ignored.
 - A page can't change the site's settings, like its
-  [Markdown](markdown.md#choosing-markdowns-extensions), or the levels of
-  heading its table of contents lists.
+  [Markdown](markdown.md#choosing-markdowns-extensions), or which headings
+  its table of contents lists.
 
 ## In a notebook
 
-A notebook's frontmatter is in a raw or Markdown cell at its top, as Quarto
-and MyST put it: see [Jupyter notebooks](../plugins/jupyter-notebooks.ipynb).
+A notebook's frontmatter goes in a raw or Markdown cell at its top, as in
+Quarto and MyST. See [Jupyter notebooks](../plugins/jupyter-notebooks.ipynb).
 
 ## In another format
 
 A page in [AsciiDoc](../plugins/asciidoc.adoc),
 [Org mode](../plugins/org-mode.org), or
 [reStructuredText](../plugins/restructuredtext.rst) takes its `title` and
-`description` from its format's own header, like AsciiDoc's `= Title`. It
-can start with frontmatter between `---` lines too, as a Markdown file can,
-which goes over them, for any key, like `search: false`.
+`description` from its format's own header, like AsciiDoc's `= Title`.
+
+It can also start with frontmatter between `---` lines, as a Markdown file
+can. That goes over the header, and can set any key, like `search: false`.
