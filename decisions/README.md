@@ -75,3 +75,4 @@ made, and link to each other.
 - [0063 — A plugin for reStructuredText](0063-a-plugin-for-restructuredtext.md)
 - [0064 — A plugin for Go's doc comments](0064-a-plugin-for-gos-doc-comments.md)
 - [0065 — little's decisions are at the root of its repository](0065-decisions-at-the-root.md)
+- [0066 — The manual's plain style](0066-the-manuals-plain-style.md)

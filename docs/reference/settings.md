@@ -9,17 +9,21 @@ Every setting goes in a `little.yml`: little's own, compiled into it, then
 the theme's, then the site's, each over the last, as [Configuring](../getting-started/configuring.md)
 explains. `little config` prints them, merged.
 
+Each `little.yml` merges over the one before key by key. So
+`markdown: { math: tex }` changes only `math`, and keeps the rest of
+`markdown`. Any other value, like a list, replaces the one beneath it.
+
 ## little's settings
 
 little sets these in its own
 [`little.yml`](https://github.com/withlittle/little/blob/main/src/little.yml),
-or works them out, and a theme or a site can change any of them:
+or works them out. A theme or a site can change any of them:
 
 | Key | Default | Chooses… |
 | --- | ------- | -------- |
 | `source` | `./docs` | the folder a site is [built from](../getting-started/configuring.md#choosing-folders) |
 | `destination` | `./dist` | the folder a site is [built into](../getting-started/configuring.md#choosing-folders) |
-| `theme` | `true`, the built-in theme | the [theme](../themes/choosing-a-theme.md) a site is built with, or, in a theme's `little.yml`, the one it [builds on](../themes/choosing-a-theme.md#building-on-another-theme) |
+| `theme` | `true`, the built-in theme | the [theme](../themes/choosing-a-theme.md) a site is built with, or the one a theme [builds on](../themes/choosing-a-theme.md#building-on-another-theme) |
 | `url` | none | where the site's [published](../getting-started/publishing.md#choosing-the-sites-url), like `https://withlittle.github.io/little` |
 | `repo` | none | the [repository](../getting-started/configuring.md#choosing-the-sites-repository) its source is in |
 | `branch` | `main` | the branch its pages' files are [linked to](../getting-started/configuring.md#choosing-the-sites-repository) on |
@@ -34,7 +38,7 @@ or works them out, and a theme or a site can change any of them:
 | `markdown.mermaid` | `svg` | how [diagrams are drawn](../writing/diagrams.md#choosing-how-diagrams-are-drawn) |
 | `mermaid` | none | how [diagrams look](../writing/diagrams.md#choosing-how-diagrams-look), in Mermaid's own config |
 | `plugins` | none | the [plugins](../plugins/using-plugins.md) a site uses, their files, and their settings |
-| `versions` | none | the site's [versions](../writing/versions.md), each with its `title`, the `url` it's published at, the git tag, branch, or commit it's built from, and, if its pages have moved since, the `source` they were in there, and its [own `nav` and plugins' settings](../writing/versions.md#a-versions-own-nav-and-plugins) |
+| `versions` | none | the site's [versions](../writing/versions.md), each with its `title`, `url`, and git `ref` |
 | `host` | `127.0.0.1` | the host `little serve` [serves at](commands.md#choosing-where-to-serve) |
 | `port` | `8080` | the port it serves on |
 | `year` | the year the build starts in | the year a theme's [copyright notice](../themes/making-a-theme.md#a-copyright-notice) shows |
@@ -42,8 +46,33 @@ or works them out, and a theme or a site can change any of them:
 - A path in `theme` or `plugins` is relative to the folder of the
   `little.yml` that sets it, but `source` and `destination` are always
   relative to the site's folder.
+- With `source: .`, everything in the site's folder that isn't
+  [hidden](../writing/pages-and-files.md#hidden-files) is published,
+  `little.yml` included, but not the destination.
+- Each build wipes the destination first. little leaves a `.little-build`
+  file in each folder it builds, and wipes only a folder that has one, or
+  is empty. Pointed at any other folder, a build stops.
+- `url` and `repo` must start with `https://` or `http://`, with nothing
+  after the path, like a `?` or `#`. Otherwise, every command stops, and
+  says why.
+- `url` doesn't change where files are built. The home page is still
+  `dist/index.html`, and the host serves it under the path.
+- `repo` needs a path after its host. It isn't the address you clone from,
+  so it doesn't end in `.git`.
+- Only a `repo` on github.com or gitlab.com gets links to each page's file.
+  One anywhere else, like a GitLab or Gitea of your own, gets `site.repo`,
+  but no `page.source_url` or `page.edit_url`.
+- Those links' paths start at the root of the repository: the nearest
+  folder with a `.git`, from the source up, else the site's folder. So a
+  site in `website/` links to `website/docs/guide/install.md`. A source
+  outside the repository gets no links to its files.
 - In `plugins`, only the site can set a plugin's `read`, the folders it can
   read.
+- Each of the `versions` has a `title`, and the `url` it's published at. A
+  version built from git has a `ref`: the tag, branch, or commit it's built
+  from. If its pages have moved since, it can set the `source` they were in
+  there. It can set its [own `nav` and plugins'
+  settings](../writing/versions.md#a-versions-own-nav-and-plugins), too.
 - little works out `nav` and `year` as it builds, and, on a site with
   [versions](../writing/versions.md), `version`, the title of the one it's
   building, so `little config` doesn't print them, unless a `little.yml`
@@ -70,8 +99,9 @@ says more.
 
 ## Your own settings
 
-Any other key reaches the theme as `site.<key>`, like `site.announcement`
-for `announcement: "2.1 is out!"`, for a theme that shows it. A key in a
-page's frontmatter
-reaches the theme as `page.<key>` instead, and changes only that page: see
+Any other key reaches the theme as `site.<key>`, for a theme that shows it.
+So `announcement: "2.1 is out!"` is `site.announcement`.
+
+A key in a page's frontmatter reaches the theme as `page.<key>` instead,
+and changes only that page. See
 [Frontmatter](../writing/frontmatter.md#frontmatter-wins).

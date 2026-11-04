@@ -331,7 +331,8 @@ Content and theme live outside `src/`:
 - Comment the *why*, not the *what*; don't over-comment.
 - Doc comments in `src/` are published, as little's API at `/api/` in the
   manual: give each module a `//!`, and each `pub` item a `///`, in the
-  manual's plain style, and link to items by path, like ``[`Config`]``.
+  [manual's plain style](#writing-the-manual), and link to items by path,
+  like ``[`Config`]``.
 - Add unit tests for parsing/merging logic (frontmatter, config cascade).
 - A change people using little can see updates its page in the manual
   (`docs/`), and the reference pages, in the same PR; a new page goes in
@@ -370,6 +371,22 @@ Content and theme live outside `src/`:
     written `BREAKING CHANGE:`, with a space, git misses the trailer.
   - Include the Copilot co-author trailer. Rebase a branch on `main`,
     rather than merging `main` into it.
+
+## Writing the manual
+The manual is for people who use little, so it's written in a plain style,
+as [0066](./decisions/0066-the-manuals-plain-style.md) sets. The README
+follows it where it's for them, and so do doc comments in `src/`.
+- Lead each page with what most readers type or write: a command, a
+  setting, or some Markdown.
+- Write short sentences, one idea each. Split a chain of clauses with
+  "So", "Then", or "But".
+- Put the common case first, and edge cases last, in short bullets. Put
+  rules a reader looks up in Reference, and link to them.
+- List what's a list, like what stops a build, after a line like "These
+  stop the build:".
+- Keep table cells short. Put the detail in a note below the table.
+- When rewriting, keep every fact, heading, and anchor a link leads to.
+  Code, and what little prints, stay as they are.
 
 ## Decisions
 Record notable choices as short ADRs in `decisions/`, list each in its
@@ -890,3 +907,13 @@ Record notable choices as short ADRs in `decisions/`, list each in its
   people who use little: it doesn't link to the records, or list them, and
   leaves nothing out of search — see
   [`decisions/0065-decisions-at-the-root.md`](./decisions/0065-decisions-at-the-root.md).
+- **The manual's plain style:** the manual, and the README where it's for
+  people who use little, are written plainly. Each page leads with what
+  most readers type or write, like `cargo install --locked little-docs`
+  atop the Install page, in short sentences, one idea each. The common
+  case comes first, and edge cases last, in short bullets, or in
+  Reference. Lists are lists, and long table cells get notes. A rewrite
+  keeps every fact, heading, and linked anchor. Doc comments in `src/`
+  follow it as they change, review checks it, and these records and
+  AGENTS.md aren't rewritten — see
+  [`decisions/0066-the-manuals-plain-style.md`](./decisions/0066-the-manuals-plain-style.md).

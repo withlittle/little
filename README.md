@@ -1,32 +1,30 @@
 # little
 
-A little static site generator for documentation: drop Markdown into
-`docs/` and get a site. One self-contained binary, a three-level cascading
-config, themes that own 100% of the markup, and plugins for the rest, like
-Jupyter notebooks.
+A little static site generator for documentation: put Markdown in
+`docs/`, and get a site.
 
-> **Status:** early development (v0.1), versioned with
-> [Semantic Versioning](https://semver.org/). Expect breaking changes. See
-> the [roadmap](./VISION.md#roadmap-thin-vertical-slices).
+- **One binary.** No runtime, no `node_modules`, and no version managers.
+- **Config that cascades.** little has defaults, a theme sets its own, and
+  your site sets only what it changes.
+- **Themes own the markup.** little gives a theme its pages as data, and
+  writes no HTML of its own.
+- **Plugins for the rest.** They add pages from Jupyter notebooks, say, or
+  an API reference from your code.
+
+> **Status:** early development, versioned with
+> [Semantic Versioning](https://semver.org/). Expect breaking changes until
+> 1.0. See the [roadmap](./VISION.md#roadmap-thin-vertical-slices).
 
 ## Install
 
-Download little for your system from its
-[latest release](https://github.com/withlittle/little/releases/latest), and
-put it on your `PATH`, or install it with Cargo. It's `little-docs` on
-crates.io, where `little` is another crate's name, but the command is still
-`little`:
-
 ```sh
-cargo install --locked little-docs   # build it, with Rust 1.96 or later
-cargo binstall little-docs           # or download it, if you have cargo-binstall
+cargo install --locked little-docs
 ```
 
-[cargo-binstall](https://github.com/cargo-bins/cargo-binstall) isn't part of
-Cargo, but downloads little's release for your system in seconds, rather
-than build it. [Install](./docs/getting-started/install.md), in the manual,
-says which archive is for your system, how to check it, and how to build
-little from source.
+This needs [Rust](https://rustup.rs) 1.96 or later. The package is called
+`little-docs`, but the command is `little`. To install little without Rust,
+see [Install](./docs/getting-started/install.md#install-without-rust), in
+the manual.
 
 ## Quick start
 
@@ -53,7 +51,7 @@ this repository, and open <http://127.0.0.1:8080/little/>.
 - [Themes](./docs/themes/choosing-a-theme.md): choose a theme, or make one.
 - [Plugins](./docs/plugins/using-plugins.md): use plugins, build pages
   from Jupyter notebooks, AsciiDoc, Org mode, or reStructuredText, add an
-  API reference for Python or Rust, or write a plugin.
+  API reference for Python, Rust, JavaScript, or Go, or write a plugin.
 - [Reference](./docs/reference/commands.md): commands, settings, and the
   data a theme's templates get.
 
