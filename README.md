@@ -1,9 +1,15 @@
 # little
 
-A little static site generator for documentation: drop Markdown into
-`docs/` and get a site. One self-contained binary, a three-level cascading
-config, themes that own 100% of the markup, and plugins for the rest, like
-Jupyter notebooks.
+A little static site generator for documentation: put Markdown in
+`docs/`, and get a site.
+
+- **One binary.** No runtime, no `node_modules`, and no version managers.
+- **Config that cascades.** little has defaults, a theme sets its own, and
+  your site sets only what it changes.
+- **Themes own the markup.** little gives a theme its pages as data, and
+  writes no HTML of its own.
+- **Plugins for the rest.** They add pages from Jupyter notebooks, say, or
+  an API reference from your code.
 
 > **Status:** early development, versioned with
 > [Semantic Versioning](https://semver.org/). Expect breaking changes until
