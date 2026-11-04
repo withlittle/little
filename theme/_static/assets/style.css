@@ -546,7 +546,9 @@
     color: var(--accent);
     font-weight: 600;
   }
-  .nav > .nav-group { margin-top: 1.25rem; }
+  /* A group stands apart from what's above it, and so does a page at the
+     nav's top level after one, so it doesn't look like the group's last. */
+  .nav > :is(.nav-group, .nav-group + li) { margin-top: 1.25rem; }
   .nav > .nav-group > :is(a, .nav-label) {
     margin-bottom: 0.125rem;
     color: var(--heading);
