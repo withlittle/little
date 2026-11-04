@@ -5,9 +5,9 @@ A little static site generator for documentation: drop Markdown into
 config, themes that own 100% of the markup, and plugins for the rest, like
 Jupyter notebooks.
 
-> **Status:** early development (v0.1), versioned with
-> [Semantic Versioning](https://semver.org/). Expect breaking changes. See
-> the [roadmap](./VISION.md#roadmap-thin-vertical-slices).
+> **Status:** early development, versioned with
+> [Semantic Versioning](https://semver.org/). Expect breaking changes until
+> 1.0. See the [roadmap](./VISION.md#roadmap-thin-vertical-slices).
 
 ## Install
 
@@ -45,7 +45,7 @@ this repository, and open <http://127.0.0.1:8080/little/>.
 - [Themes](./docs/themes/choosing-a-theme.md): choose a theme, or make one.
 - [Plugins](./docs/plugins/using-plugins.md): use plugins, build pages
   from Jupyter notebooks, AsciiDoc, Org mode, or reStructuredText, add an
-  API reference for Python or Rust, or write a plugin.
+  API reference for Python, Rust, JavaScript, or Go, or write a plugin.
 - [Reference](./docs/reference/commands.md): commands, settings, and the
   data a theme's templates get.
 

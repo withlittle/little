@@ -5,14 +5,12 @@ description: little turns a folder of Markdown into a documentation site, with o
 
 # little
 
-A little static site generator for documentation: drop Markdown into
-`docs/` and get a site. One self-contained binary, a three-level cascading
-config, themes that own 100% of the markup, and plugins for the rest, like
-Jupyter notebooks.
+A little static site generator for documentation: put Markdown in
+`docs/`, and get a site.
 
 > [!WARNING]
-> little is in early development, at v0.1, so expect breaking changes. This
-> manual describes little as it is on its `main` branch.
+> little is in early development, before 1.0, so expect breaking changes.
+> This manual describes little as it is on its `main` branch.
 
 ## Start in a minute
 
@@ -33,26 +31,25 @@ To install little without Rust, see
 ## Why little
 
 - **Markdown that just works.** Write as you would on GitHub, with tables,
-  callouts, footnotes, emoji, math, and Mermaid diagrams, and link to a page
-  by its file. Code is highlighted, math rendered, and diagrams drawn as each
-  page is built, so readers' browsers show them without JavaScript.
-- **One binary.** No runtime, no `node_modules`, and no version managers:
-  search, link checking, Sass, math, and diagrams are built in.
+  callouts, footnotes, emoji, math, and Mermaid diagrams. Link to a page by
+  its file. little highlights code, renders math, and draws diagrams as it
+  builds, so pages need no JavaScript to show them.
+- **One binary.** No runtime, no `node_modules`, and no version managers.
+  Search, link checking, Sass, math, and diagrams are built in.
 - **Themes own the markup.** little gives a theme its pages as data, and
-  writes no HTML of its own, so a theme can be anything, with Bootstrap,
-  Tailwind, or CSS of your own.
-- **Config that cascades.** little's defaults, then the theme's, then the
-  site's: a site sets only what it changes.
-- **Plugins in a sandbox.** A plugin is one WebAssembly file, written in Rust,
-  Python, or another language, that hooks into each step of a build, to add
-  an API reference from [Python's docstrings](plugins/python-api-reference.md),
-  [Rust's doc comments](plugins/rust-api-reference.md),
-  [JavaScript's](plugins/javascript-api-reference.md), or
-  [Go's](plugins/go-api-reference.md), build pages from
+  writes no HTML of its own. So a theme can use Bootstrap, Tailwind, or
+  your own CSS.
+- **Config that cascades.** little has defaults, a theme sets its own, and
+  your site sets only what it changes.
+- **Plugins in a sandbox.** A plugin is one WebAssembly file, written in
+  Rust, Python, or another language, that hooks into each step of a build.
+  Plugins add API references for [Python](plugins/python-api-reference.md),
+  [Rust](plugins/rust-api-reference.md),
+  [JavaScript](plugins/javascript-api-reference.md), and
+  [Go](plugins/go-api-reference.md). They also read
   [Jupyter notebooks](plugins/jupyter-notebooks.ipynb),
-  [AsciiDoc](plugins/asciidoc.adoc), [Org mode](plugins/org-mode.org), or
-  [reStructuredText](plugins/restructuredtext.rst), say, or change each
-  page as it's written.
+  [AsciiDoc](plugins/asciidoc.adoc), [Org mode](plugins/org-mode.org), and
+  [reStructuredText](plugins/restructuredtext.rst).
 
 ## This manual
 
@@ -66,8 +63,7 @@ To install little without Rust, see
 
 > [!TIP]
 > This manual is a little site, in the `docs/` folder of little's
-> [repository](https://github.com/withlittle/little), and each page uses what
-> it describes: the page on [math](writing/math.md) has math in it, and the
+> [repository](https://github.com/withlittle/little). Each page uses what it
+> describes: the page on [math](writing/math.md) has math in it, and the
 > page on [Jupyter notebooks](plugins/jupyter-notebooks.ipynb) is a
-> notebook. To read it offline, run `little serve` in a clone of the
-> repository.
+> notebook.

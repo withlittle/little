@@ -9,6 +9,10 @@ Every setting goes in a `little.yml`: little's own, compiled into it, then
 the theme's, then the site's, each over the last, as [Configuring](../getting-started/configuring.md)
 explains. `little config` prints them, merged.
 
+Each `little.yml` merges over the one before key by key. So
+`markdown: { math: tex }` changes only `math`, and keeps the rest of
+`markdown`. Any other value, like a list, replaces the one beneath it.
+
 ## little's settings
 
 little sets these in its own
@@ -42,6 +46,26 @@ or works them out, and a theme or a site can change any of them:
 - A path in `theme` or `plugins` is relative to the folder of the
   `little.yml` that sets it, but `source` and `destination` are always
   relative to the site's folder.
+- With `source: .`, everything in the site's folder that isn't
+  [hidden](../writing/pages-and-files.md#hidden-files) is published,
+  `little.yml` included, but not the destination.
+- Each build wipes the destination first. little leaves a `.little-build`
+  file in each folder it builds, and wipes only a folder that has one, or
+  is empty. Pointed at any other folder, a build stops.
+- `url` and `repo` must start with `https://` or `http://`, with nothing
+  after the path, like a `?` or `#`. Otherwise, every command stops, and
+  says why.
+- `url` doesn't change where files are built. The home page is still
+  `dist/index.html`, and the host serves it under the path.
+- `repo` needs a path after its host. It isn't the address you clone from,
+  so it doesn't end in `.git`.
+- Only a `repo` on github.com or gitlab.com gets links to each page's file.
+  One anywhere else, like a GitLab or Gitea of your own, gets `site.repo`,
+  but no `page.source_url` or `page.edit_url`.
+- Those links' paths start at the root of the repository: the nearest
+  folder with a `.git`, from the source up, else the site's folder. So a
+  site in `website/` links to `website/docs/guide/install.md`. A source
+  outside the repository gets no links to its files.
 - In `plugins`, only the site can set a plugin's `read`, the folders it can
   read.
 - little works out `nav` and `year` as it builds, and, on a site with
