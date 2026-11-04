@@ -1,138 +1,123 @@
 ---
 title: Install
-description: Download little for your system, or install it with Cargo, and check it works.
+description: Install little with one command, and check it works.
 ---
 
 # Install
 
-little is a single binary, with no runtime, no `node_modules`, and no version
-managers. Download it for your system, or install it with Cargo.
+```sh
+cargo install --locked little-docs
+```
 
-## Download it
+This needs [Rust](https://rustup.rs) 1.96 or later. If yours is older, run
+`rustup update` first. The build takes a few minutes.
 
-Each of little's [releases](https://github.com/withlittle/little/releases)
-has it for Linux, macOS, and Windows, on x64 and arm64, each in an archive
-with its licence and third-party notices. These are the latest:
+The package is called [`little-docs`](https://crates.io/crates/little-docs),
+but the command is `little`. `--locked` uses the dependency versions little
+was tested with.
+
+Check it works:
+
+```sh
+little --version
+```
+
+It prints little's version, like `little 0.2.0`. Run `little --help` to list
+every [command](../reference/commands.md).
+
+Next, start [your first site](first-site.md).
+
+## Install without Rust
+
+Download the archive for your system, unpack it, and put `little`
+(`little.exe` on Windows) on your `PATH`.
 
 | System | Archive |
 | --- | --- |
-| Linux on x64 | [`little-x86_64-unknown-linux-musl.tar.gz`](https://github.com/withlittle/little/releases/latest/download/little-x86_64-unknown-linux-musl.tar.gz) |
-| Linux on arm64 | [`little-aarch64-unknown-linux-musl.tar.gz`](https://github.com/withlittle/little/releases/latest/download/little-aarch64-unknown-linux-musl.tar.gz) |
-| macOS on Apple silicon | [`little-aarch64-apple-darwin.tar.gz`](https://github.com/withlittle/little/releases/latest/download/little-aarch64-apple-darwin.tar.gz) |
-| macOS on Intel | [`little-x86_64-apple-darwin.tar.gz`](https://github.com/withlittle/little/releases/latest/download/little-x86_64-apple-darwin.tar.gz) |
-| Windows on x64 | [`little-x86_64-pc-windows-msvc.zip`](https://github.com/withlittle/little/releases/latest/download/little-x86_64-pc-windows-msvc.zip) |
-| Windows on arm64 | [`little-aarch64-pc-windows-msvc.zip`](https://github.com/withlittle/little/releases/latest/download/little-aarch64-pc-windows-msvc.zip) |
+| macOS, Apple silicon | [`little-aarch64-apple-darwin.tar.gz`](https://github.com/withlittle/little/releases/latest/download/little-aarch64-apple-darwin.tar.gz) |
+| macOS, Intel | [`little-x86_64-apple-darwin.tar.gz`](https://github.com/withlittle/little/releases/latest/download/little-x86_64-apple-darwin.tar.gz) |
+| Linux, x64 | [`little-x86_64-unknown-linux-musl.tar.gz`](https://github.com/withlittle/little/releases/latest/download/little-x86_64-unknown-linux-musl.tar.gz) |
+| Linux, arm64 | [`little-aarch64-unknown-linux-musl.tar.gz`](https://github.com/withlittle/little/releases/latest/download/little-aarch64-unknown-linux-musl.tar.gz) |
+| Windows, x64 | [`little-x86_64-pc-windows-msvc.zip`](https://github.com/withlittle/little/releases/latest/download/little-x86_64-pc-windows-msvc.zip) |
+| Windows, arm64 | [`little-aarch64-pc-windows-msvc.zip`](https://github.com/withlittle/little/releases/latest/download/little-aarch64-pc-windows-msvc.zip) |
 
-Linux's are static, so they run on any distribution, with glibc or musl.
-Unpack the archive, and put `little`, or `little.exe` on Windows, in a
-folder on your `PATH`. On a Mac with Apple silicon, this downloads the
-latest, and puts `little` in `/usr/local/bin`:
+On a Mac with Apple silicon, this downloads little and puts it in
+`/usr/local/bin`:
 
 ```sh
 curl -fsSL https://github.com/withlittle/little/releases/latest/download/little-aarch64-apple-darwin.tar.gz \
   | sudo tar -xz -C /usr/local/bin little
 ```
 
-On Linux, or a Mac with Intel, use the archive for your system instead; to
-put `little` in another folder, like `~/.local/bin`, use its path, without
-`sudo`.
+For another system, change the archive's name in the URL. To put little
+somewhere else, like `~/.local/bin`, change the folder after `-C`, and
+drop `sudo`. The Linux builds are static, so they run on any distribution.
 
-### If your system stops it
+If you use [cargo-binstall](https://github.com/cargo-bins/cargo-binstall),
+`cargo binstall little-docs` downloads the right archive for you.
 
-little isn't signed yet, so macOS and Windows may stop it, if it's
-downloaded with a browser:
+### If macOS or Windows blocks it
 
-- macOS says Apple can't check it for malware. Choose **Done**, then, in
-  **System Settings**, under **Privacy & Security**, **Open Anyway**, and
-  run it again. Or, before you run it, take off the quarantine the browser
-  put on it, with `xattr -d com.apple.quarantine little`. `curl`, as above,
-  doesn't quarantine it.
-- Windows says it protected your PC. Choose **More info**, then **Run
-  anyway**. Or, before you unpack the archive, unblock it, in PowerShell,
-  with `Unblock-File little-x86_64-pc-windows-msvc.zip`.
+little isn't signed yet, so your system may block a copy you downloaded in
+a browser. The `curl` command above avoids this on macOS.
 
-### Checking a download
+- **macOS** says Apple can't check it for malware. Choose **Done**, then
+  either run `xattr -d com.apple.quarantine little`, or choose
+  **Open Anyway** in **System Settings** > **Privacy & Security**. Then run
+  little again.
+- **Windows** says it protected your PC. Choose **More info**, then
+  **Run anyway**. Or, before you unpack the archive, unblock it in
+  PowerShell: `Unblock-File little-x86_64-pc-windows-msvc.zip`.
 
-Each release has a `SHA256SUMS` file, with each archive's SHA-256 checksum.
-Download it beside the archive, and check the archive with
-`sha256sum --check --ignore-missing SHA256SUMS` on Linux, or
-`shasum -a 256 --check --ignore-missing SHA256SUMS` on macOS. On Windows,
-`Get-FileHash`, in PowerShell, gives an archive's checksum, to compare with
-its line in `SHA256SUMS`.
+### Check a download
 
-With the [GitHub CLI](https://cli.github.com), you can check where an
-archive came from too: that little's release workflow built it, in little's
-repository, and that it's the file the latest release published, unchanged:
+Each release has a `SHA256SUMS` file. Download it next to the archive, and
+run:
+
+```sh
+sha256sum --check --ignore-missing SHA256SUMS      # Linux
+shasum -a 256 --check --ignore-missing SHA256SUMS  # macOS
+```
+
+On Windows, compare the output of `Get-FileHash`, in PowerShell, with the
+archive's line in `SHA256SUMS`.
+
+With the [GitHub CLI](https://cli.github.com), you can also check that
+little's release workflow built the archive, and that it hasn't changed
+since:
 
 ```sh
 gh attestation verify little-aarch64-apple-darwin.tar.gz --repo withlittle/little
 gh release verify-asset little-aarch64-apple-darwin.tar.gz --repo withlittle/little
 ```
 
-For an older release's archive, give `gh release verify-asset` its tag,
-like `v0.1.0`, before the archive's name.
+For an older release, add its tag, like `v0.1.0`, before the archive's
+name in `gh release verify-asset`.
 
-## Install it with Cargo
+## Update it
 
-little is on crates.io as [`little-docs`](https://crates.io/crates/little-docs),
-as `little` is another crate's name there, but the command is still
-`little`. Cargo builds it, with [Rust](https://rustup.rs) 1.96 or later,
-which takes a few minutes, and installs it in `~/.cargo/bin`:
+Run the command you installed little with again, or download the latest
+archive. Each release's [notes](https://github.com/withlittle/little/releases)
+list what's changed.
 
-```sh
-cargo install --locked little-docs
-```
+little follows [Semantic Versioning](https://semver.org/). Until 1.0, a
+minor release, like 0.3.0, adds features and can break your site, theme,
+or plugins. Its notes list what breaks first. A patch release, like 0.2.1,
+only fixes bugs or makes little faster, so it's safe to update to. Each of
+little's plugins has its own version, numbered the same way.
 
-Or, if you've installed
-[cargo-binstall](https://github.com/cargo-bins/cargo-binstall), which isn't
-part of Cargo, it downloads little's release for your system, as above, in
-seconds, into the same folder:
+## Build from source
 
-```sh
-cargo binstall little-docs
-```
-
-## Build it from source
-
-Cargo builds little's `main` branch, as it is now, with:
+To install the latest code from the `main` branch:
 
 ```sh
 cargo install --locked --git https://github.com/withlittle/little little-docs
 ```
 
-Or clone little's repository and install it from there, which gives you this
-manual to read offline, with `little serve` in the clone:
+Or clone the repository, and install it from there:
 
 ```sh
 git clone https://github.com/withlittle/little.git
 cd little
 cargo install --locked --path .
 ```
-
-In a clone, `cargo build --release` builds the same binary without
-installing it, at `target/release/little`, which you can copy anywhere.
-
-## Check it works
-
-```sh
-little --version
-```
-
-prints `little`, and its version, like `little 0.1.0`. `little --help` lists
-every [command](../reference/commands.md).
-
-## Update it
-
-Download the latest release's archive again, or run the same
-`cargo install` or `cargo binstall` again. Each release's notes, on
-[GitHub](https://github.com/withlittle/little/releases), list what's changed
-since the one before.
-
-little's releases follow [Semantic Versioning](https://semver.org/). Until
-1.0, a release that raises the minor version, like 0.2.0 after 0.1.4, adds
-features, and can break a site, a theme, or a plugin, which its notes list
-first. One that raises the patch version, like 0.1.5, only fixes bugs, or
-makes something faster, so it's safe to update to. little's plugins are
-numbered the same way, each on its own.
-
-Next, start [your first site](first-site.md).

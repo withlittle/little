@@ -11,22 +11,14 @@ Jupyter notebooks.
 
 ## Install
 
-Download little for your system from its
-[latest release](https://github.com/withlittle/little/releases/latest), and
-put it on your `PATH`, or install it with Cargo. It's `little-docs` on
-crates.io, where `little` is another crate's name, but the command is still
-`little`:
-
 ```sh
-cargo install --locked little-docs   # build it, with Rust 1.96 or later
-cargo binstall little-docs           # or download it, if you have cargo-binstall
+cargo install --locked little-docs
 ```
 
-[cargo-binstall](https://github.com/cargo-bins/cargo-binstall) isn't part of
-Cargo, but downloads little's release for your system in seconds, rather
-than build it. [Install](./docs/getting-started/install.md), in the manual,
-says which archive is for your system, how to check it, and how to build
-little from source.
+This needs [Rust](https://rustup.rs) 1.96 or later. The package is called
+`little-docs`, but the command is `little`. To install little without Rust,
+see [Install](./docs/getting-started/install.md#install-without-rust), in
+the manual.
 
 ## Quick start
 

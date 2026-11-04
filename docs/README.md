@@ -16,10 +16,10 @@ Jupyter notebooks.
 
 ## Start in a minute
 
-With little [installed](getting-started/install.md), start a site, and serve
-it:
+Install little, start a site, and serve it:
 
 ```sh
+cargo install --locked little-docs
 little init my-docs
 cd my-docs
 little serve
@@ -27,6 +27,8 @@ little serve
 
 Open <http://127.0.0.1:8080>, edit `docs/README.md`, and the page reloads
 itself. [Your first site](getting-started/first-site.md) goes on from there.
+To install little without Rust, see
+[Install](getting-started/install.md#install-without-rust).
 
 ## Why little
 
