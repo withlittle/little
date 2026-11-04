@@ -12,8 +12,8 @@ theme: ./theme
 
 # little's own code, documented from its doc comments, at /api/, as the
 # example of the Rust API reference. Its pages are reached from /api/, which
-# alone is in the nav. And the plugins that read the pages in other formats,
-# each written in the format it describes: jupyter, for
+# alone is in the nav, at its end. And the plugins that read the pages in
+# other formats, each written in the format it describes: jupyter, for
 # docs/plugins/jupyter-notebooks.ipynb, asciidoc, for asciidoc.adoc, orgmode,
 # for org-mode.org, and restructuredtext, for restructuredtext.rst. Build each
 # before the manual, with:
@@ -68,10 +68,7 @@ nav:
       - { title: Org mode, url: /plugins/org-mode }
       - { title: reStructuredText, url: /plugins/restructuredtext }
       - { title: Python API reference, url: /plugins/python-api-reference }
-      - title: Rust API reference
-        url: /plugins/rust-api-reference
-        children:
-          - { title: little's API, url: /api/ }
+      - { title: Rust API reference, url: /plugins/rust-api-reference }
       - { title: JavaScript API reference, url: /plugins/javascript-api-reference }
       - { title: Go API reference, url: /plugins/go-api-reference }
       - { title: Writing a plugin, url: /plugins/writing-a-plugin }
@@ -81,3 +78,6 @@ nav:
       - { title: Settings, url: /reference/settings }
       - { title: Template data, url: /reference/template-data }
       - { title: Plugin hooks, url: /reference/plugin-hooks }
+  # little's API is for those who work on little, so it's apart from the
+  # sections for those who use it.
+  - { title: little's API, url: /api/ }
