@@ -2,20 +2,11 @@
 #+DESCRIPTION: Build each Org mode file into a page, without Emacs, with the orgmode plugin.
 #+OPTIONS: ^:{}
 
-little's repository has a plugin, [[https://github.com/withlittle/little/tree/main/plugins/orgmode][=orgmode=]], that makes each [[https://orgmode.org][Org mode]] file (=.org=) in =docs/= a page, reading Org itself, without Emacs, or exporting it first.
-This page is one, =docs/plugins/org-mode.org=, and a link to it from Markdown, like =[Org mode](org-mode.org)=, leads to its page.
+[[https://github.com/withlittle/little/tree/main/plugins/orgmode][=orgmode=]], a plugin in little's repository, makes each [[https://orgmode.org][Org mode]] file (=.org=) in =docs/= a page.
+It reads Org itself, so it needs no Emacs, and you don't export it first.
 
-* Getting it
-
-Each version of =orgmode= is released in little's repository, as a =.wasm= file, about 0.6 MB, which a site names by its URL, with the version in it:
-
-#+BEGIN_SRC text
-https://github.com/withlittle/little/releases/download/orgmode-v0.1.0/little_orgmode.wasm
-#+END_SRC
-
-little downloads it in the site's first build, and uses that copy from then on, as for [[file:using-plugins.md::#naming-a-plugin][any plugin]], so to update it, change the URL to a later version's.
-Its releases, among [[https://github.com/withlittle/little/releases][little's]], list what changed in each version, and the version of little's [[file:../reference/plugin-hooks.md][hooks]] it's built for, and each carries a =THIRD-PARTY-NOTICES.md=, with the licences of the crates it's built from.
-To build it yourself, see its [[https://github.com/withlittle/little/tree/main/plugins/orgmode#building-it][README]].
+This page is one, =docs/plugins/org-mode.org=.
+A link to it from Markdown, like =[Org mode](org-mode.org)=, leads to its page.
 
 * Using it
 
@@ -31,13 +22,28 @@ It has no settings.
 Without it, an Org file is copied into the site as it is, as any other file is.
 A folder's =README.org= is its page, as a =README.md= is.
 
+* Getting it
+
+Each version of =orgmode= is released in little's repository, as a =.wasm= file, about 0.6 MB.
+A site names it by its URL, with the version in it, like =orgmode-v0.1.0= above.
+
+little downloads it in the site's first build, and uses that copy from then on, as for [[file:using-plugins.md::#naming-a-plugin][any plugin]].
+So to update it, change the URL to a later version's.
+
+- Its releases, among [[https://github.com/withlittle/little/releases][little's]], list what changed in each version, and the version of little's [[file:../reference/plugin-hooks.md][hooks]] it's built for.
+- Each release carries a =THIRD-PARTY-NOTICES.md=, with the licences of the crates it's built from.
+- To build it yourself, see its [[https://github.com/withlittle/little/tree/main/plugins/orgmode#building-it][README]].
+
 * The keywords
 
-The file's =#+TITLE:= is the page's title, and its =#= heading, and its =#+DESCRIPTION:= is the page's description.
+The file's =#+TITLE:= is the page's title, and its =#= heading.
+Its =#+DESCRIPTION:= is the page's description.
 Each can be anywhere in the file, as in Org, and two =#+TITLE:= lines are joined, with a space.
-Its =#+AUTHOR:=, =#+DATE:=, and =#+EMAIL:= are left out, as little's themes have no place for them, but a macro, like ={{{author}}}=, shows them.
+Its =#+AUTHOR:=, =#+DATE:=, and =#+EMAIL:= are left out, as little's themes have no place for them.
+But a macro, like ={{{author}}}=, shows them.
 
-A page can start with [[file:../writing/frontmatter.md::#in-another-format][frontmatter]] too, between =---= lines, above its keywords, as a Markdown page can, which goes over them, for any of little's keys, like =search: false=:
+A page can start with [[file:../writing/frontmatter.md::#in-another-format][frontmatter]] too, between =---= lines, above its keywords, as a Markdown page can.
+It goes over them, for any of little's keys, like =search: false=:
 
 #+BEGIN_SRC org
 ---
@@ -47,50 +53,66 @@ search: false
 #+DESCRIPTION: What changed in each version.
 #+END_SRC
 
-A macro that =#+MACRO:= defines, like =#+MACRO: kbd ~$1~=, is expanded, as Org expands it, as are =title=, =author=, =date=, =email=, =keyword=, and =results=.
-=#+TODO:=, and its kin, =#+SEQ_TODO:= and =#+TYP_TODO:=, set the file's TODO keywords, and =#+PROPERTY: header-args= the header arguments of its blocks of code.
+A macro that =#+MACRO:= defines, like =#+MACRO: kbd ~$1~=, is expanded, as Org expands it.
+So are =title=, =author=, =date=, =email=, =keyword=, and =results=.
+=#+TODO:=, and its kin, =#+SEQ_TODO:= and =#+TYP_TODO:=, set the file's TODO keywords.
+=#+PROPERTY: header-args= sets the header arguments of its blocks of code.
 Of =#+OPTIONS:=, only =^:= and =-:= are read, as [[*Text]] says.
 
 * Text
 
 Org's markup is Markdown's where Markdown has it: *bold*, /italic/, =verbatim= and ~code~, which are both code, and +struck through+.
 Where it hasn't, it's HTML: _underlined_ is =<u>=, and the 2 in x^{2} and H_{2}O is =<sup>= and =<sub>=.
-With the [[file:../writing/markdown.md::#choosing-markdowns-extensions][extensions]] for them on, =superscript= and =subscript=, the last two are Markdown, and with neither those nor [[file:../writing/markdown.md::#html][HTML]], all three are plain text, and warned of.
+With the [[file:../writing/markdown.md::#choosing-markdowns-extensions][extensions]] for them on, =superscript= and =subscript=, the last two are Markdown.
+With neither those nor [[file:../writing/markdown.md::#html][HTML]], all three are plain text, and warned of.
 
-Org's export reads =x^2= as a superscript too, and the =_case= of =snake_case= as a subscript, and so does the plugin, unless the file sets =#+OPTIONS: ^:{}=, as this page does, which reads only those in braces, like =x^{2}=, or =^:nil=, which reads none.
+Org's export reads =x^2= as a superscript too, and the =_case= of =snake_case= as a subscript, and so does the plugin.
+But a file can set =#+OPTIONS: ^:{}=, as this page does, to read only those in braces, like =x^{2}=.
+Or it can set =^:nil=, to read none.
 
 Text shows as Org's export shows it, even where Markdown would read it as markup, like the * in 2 * 3, or :smile:.
 So =--= is an en dash, --, =---= an em dash, ---, and =...= an ellipsis, ..., unless the file sets =#+OPTIONS: -:nil=.
-An entity, like =\alpha= or =\to=, is its character, \alpha or \to, and a line that ends in =\\= keeps its line break.
+An entity, like =\alpha= or =\to=, is its character, \alpha or \to.
+A line that ends in =\\= keeps its line break.
 
 * Headlines and links
 
-A headline, =* Title=, is a heading, with one more =#= than it has =*=, as the page's title is its =#=: =*= is =##=, and so on, to =######=.
+A headline, =* Title=, is a heading, with one more =#= than it has =*=, as the page's title is its =#=.
+So =*= is =##=, and so on, to =######=.
 Its =CUSTOM_ID= property, or a target, =<<name>>=, in its title, leads to it, beside the =#fragment= little gives it.
-Its TODO keyword, priority, and tags are left out, as are its planning lines, like =SCHEDULED:=, and its drawers, but a block's results.
+Its TODO keyword, priority, and tags are left out.
+So are its planning lines, like =SCHEDULED:=, and its drawers, except a block's results.
 A headline that starts with =COMMENT=, or is tagged =:noexport:=, is left out, with all that's under it, as in Org's export.
 
-A URL is a link, like https://orgmode.org, and so is =[[https://example.com][text]]=, =[[file:file.pdf][text]]=, or =<mailto:you@example.com>=.
-A link to a headline, =[[*Using it]]=, or to its =CUSTOM_ID=, =[[#id]]=, leads to it, and shows its title, as [[*Using it]] does.
-One to a target, =[[name]]=, leads to the target, =<<name>>=, or the table or block whose =#+NAME:= it is, and else to the headline of its title.
-One to another page's file, like =[[file:guide.org::#install]]= or =[[./guide.org]]=, leads to that page, as little leads a link to a page's file, and so does =[[file:../writing/markdown.md]]=, to a Markdown page.
+A URL, like https://orgmode.org, is a link.
+So is =[[https://example.com][text]]=, =[[file:file.pdf][text]]=, or =<mailto:you@example.com>=.
+
+A link to a headline, =[[*Using it]]=, or to its =CUSTOM_ID=, =[[#id]]=, leads to it.
+It shows its title, as [[*Using it]] does.
+One to a target, =[[name]]=, leads to the target, =<<name>>=, or the table or block whose =#+NAME:= it is.
+Else it leads to the headline of its title.
+One to another page's file, like =[[file:guide.org::#install]]= or =[[./guide.org]]=, leads to that page, as little leads a link to a page's file.
+So does =[[file:../writing/markdown.md]]=, to a Markdown page.
 
 * Lists
 
 Each of Org's lists is the Markdown list nearest it:
 
 - Bullets :: Items that start with =-= or =+=, or =*= indented, nested as they're indented, are a bulleted list.
-- Numbers :: Items that start with =1.= or =1)= are a numbered list, which starts at 1, or where its first item's counter, like =[@4]=, says.
-- Checkboxes :: =[X]= and =[ ]=, after an item's bullet, are GitHub's task lists, and =[-]=, for one partly done, is =[ ]=.
+- Numbers :: Items that start with =1.= or =1)= are a numbered list. It starts at 1, or where its first item's counter, like =[@4]=, says.
+- Checkboxes :: =[X]= and =[ ]=, after an item's bullet, are GitHub's task lists. =[-]=, for one partly done, is =[ ]=.
 - Terms :: A term and what it means, like these, are a description list, in HTML, unless the =description_lists= extension is on.
 
 * Code
 
-A block of code, =#+BEGIN_SRC lang=, is a code block, highlighted in its language, and an example block, =#+BEGIN_EXAMPLE=, or a run of lines that start with =:= and a space, is one with no language.
-Like a Markdown page's, a code block goes to [[file:using-plugins.md::#code-blocks][plugins]] that render its language, and a =mermaid= block is a [[file:../writing/diagrams.md][diagram]].
+A block of code, =#+BEGIN_SRC lang=, is a code block, highlighted in its language.
+An example block, =#+BEGIN_EXAMPLE=, or a run of lines that start with =:= and a space, is one with no language.
+Like a Markdown page's, a code block goes to [[file:using-plugins.md::#code-blocks][plugins]] that render its language.
+A =mermaid= block is a [[file:../writing/diagrams.md][diagram]].
 An inline block, like =src_python{print(1)}=, is code too.
 
-Nothing is run, so a block shows what its =:exports= header says, =code=, the default, =results=, =both=, or =none=, with the results saved with it, under =#+RESULTS:=, as this one's are:
+Nothing is run, so a block shows what its =:exports= header says: =code=, the default, =results=, =both=, or =none=.
+Its results are those saved with it, under =#+RESULTS:=, as this one's are:
 
 #+BEGIN_SRC python :exports both
 print("Hello from Org mode")
@@ -102,7 +124,9 @@ print("Hello from Org mode")
 * Admonitions
 
 #+BEGIN_NOTE
-A special block named for one of GitHub's five [[file:../writing/markdown.md::#callouts][alerts]], =NOTE=, =TIP=, =IMPORTANT=, =WARNING=, or =CAUTION=, like this note, is that alert, and so is =HINT=, a tip, or =DANGER= or =ERROR=, a caution.
+A special block named for one of GitHub's five [[file:../writing/markdown.md::#callouts][alerts]] is that alert, like this note.
+Those are =NOTE=, =TIP=, =IMPORTANT=, =WARNING=, and =CAUTION=.
+=HINT= is a tip too, and =DANGER= or =ERROR= a caution.
 #+END_NOTE
 
 An admonition can hold lists and code too.
@@ -121,13 +145,15 @@ Where your site turns the =alerts= extension off, an admonition is a quote that 
 | Horizontal rule, =-----=                           | A rule                                                                                      |
 | Comment, =# text=, or =#+BEGIN_COMMENT=            | Nothing                                                                                     |
 
-A caption, =#+CAPTION:=, is a paragraph in italics, above its table or block of code, as this table's is, or below its image.
+A caption, =#+CAPTION:=, is a paragraph in italics above its table or block of code, as this table's is.
+An image's caption is below it.
 
 * Tables
 
 A table is one of GitHub's tables, with its header row, above its first rule, =|---+---|=, if it has one.
 A table without a header row has an empty one, as Markdown's tables need one, which the built-in theme hides.
-Each column is aligned as its cookie, =<l>=, =<c>=, or =<r>=, says, or else to the right if at least half its cells are numbers, as Org's export aligns it:
+Each column is aligned as its cookie, =<l>=, =<c>=, or =<r>=, says.
+Else it's aligned to the right if at least half its cells are numbers, as Org's export aligns it:
 
 | Headline   | Heading     | Level |
 |------------+-------------+-------|
@@ -138,33 +164,43 @@ The special column and rows of a table that Org's spreadsheet reads, and its row
 
 * Images
 
-A link to an image, like =[[file:diagram.png]]=, with no description, is the image, with the name of its file as its alt text, or the =:alt= of an =#+ATTR_HTML:= above it.
+A link to an image, like =[[file:diagram.png]]=, with no description, is the image.
+Its alt text is the name of its file, or the =:alt= of an =#+ATTR_HTML:= above it.
 An image as a link's description, like =[[https://example.com][file:diagram.png]]=, is an image that's a link.
 
 * Footnotes and their definitions
 
 A footnote, =[fn:name]=, is numbered through the page, like this one.[fn:1]
-Its definition, a line that starts with =[fn:name]=, can be anywhere in the file, like under a headline named =Footnotes=, at its end, which is left out, with all that's under it, as in Org's export, and an inline one, =[fn::Its text.]=, is defined where it is.
+Its definition, a line that starts with =[fn:name]=, can be anywhere in the file.
+It can be under a headline named =Footnotes=, at the file's end.
+That headline is left out, with all that's under it, as in Org's export.
+An inline one, =[fn::Its text.]=, is defined where it is.
 
 * Math
 
-Math is TeX, written as [[file:../writing/math.md::#choosing-how-math-is-written][=markdown.math=]] says: =$…$= or =\(…\)= in a line, like $e^{i\pi} + 1 = 0$, and =$$…$$=, =\[…\]=, or a LaTeX environment, like =\begin{equation}=, on its own.
+Math is TeX, written as [[file:../writing/math.md::#choosing-how-math-is-written][=markdown.math=]] says.
+It's =$…$= or =\(…\)= in a line, like $e^{i\pi} + 1 = 0$.
+On its own, it's =$$…$$=, =\[…\]=, or a LaTeX environment, like =\begin{equation}=.
 A dollar sign that Org wouldn't read as math, like those in $5 and $10, stays a dollar sign.
 
 * What's different
 
-The plugin reads Org as Org's own HTML export does, and leaves out what it leaves out, like comments, but:
+The plugin reads Org as Org's own HTML export does, and leaves out what it leaves out, like comments.
+But:
 
-- it runs no code, so a block shows only the results saved with it, and one whose =:exports= shows results it doesn't have is warned of, as is a =#+CALL:= line or an inline =call_name()=, which are left out;
-- an include, =#+INCLUDE:=, isn't followed, as a plugin reads only the file it's given: it's warned of, and left out, and a setup file, =#+SETUPFILE:=, isn't read, so nothing it sets is set;
-- any other macro, like Org's ={{{time(%Y)}}}=, or one that runs code, with =(eval=, is kept as text, and warned of;
-- a headline's TODO keyword and tags, and its drawers, but a block's results, are left out, though Org's export shows them, as a page of docs has no use for them;
-- no headline is numbered, whatever =num:= says, and each is a heading, to =######=, whatever =H:= says, where Org's export lists those past the third level;
-- a link into Emacs, like =elisp:= or =info:=, or to a headline, target, or name the page doesn't have, keeps its text, and is warned of, and one to a search in another file, like =[[file:guide.org::*Install]]=, but a =#id=, leads only to its page, and is warned of;
-- a table.el table is code, and a table's header rows after the first are joined to its body, as Markdown's tables have one, and both are warned of;
-- a counter, =[@N]=, on an item after a list's first, that doesn't follow on from the item before, is left out, and warned of, as Markdown numbers a list only from its start.
+- It runs no code, so a block shows only the results saved with it. One whose =:exports= shows results it doesn't have is warned of. So is a =#+CALL:= line or an inline =call_name()=, which are left out.
+- An include, =#+INCLUDE:=, isn't followed, as a plugin reads only the file it's given. It's warned of, and left out. A setup file, =#+SETUPFILE:=, isn't read, so nothing it sets is set.
+- Any other macro, like Org's ={{{time(%Y)}}}=, or one that runs code, with =(eval=, is kept as text, and warned of.
+- A headline's TODO keyword and tags, and its drawers, except a block's results, are left out, though Org's export shows them. A page of docs has no use for them.
+- No headline is numbered, whatever =num:= says. Each is a heading, to =######=, whatever =H:= says, where Org's export lists those past the third level.
+- A link into Emacs, like =elisp:= or =info:=, keeps its text, and is warned of. So does one to a headline, target, or name the page doesn't have.
+- A link to a search in another file, like =[[file:guide.org::*Install]]=, except a =#id=, leads only to its page, and is warned of.
+- A table.el table is code, and is warned of.
+- A table's header rows after the first are joined to its body, as Markdown's tables have one, and that's warned of.
+- A counter, =[@N]=, on an item after a list's first, that doesn't follow on from the item before, is left out, and warned of. Markdown numbers a list only from its start.
 
-The page is written as [[file:../writing/markdown.md][Markdown]] is, so [[file:../themes/styling-markdown.md][Styling Markdown]] shows the HTML it is, for a theme's CSS.
+The page is written as [[file:../writing/markdown.md][Markdown]] is.
+So [[file:../themes/styling-markdown.md][Styling Markdown]] shows the HTML it is, for a theme's CSS.
 
 * Footnotes
 

@@ -5,18 +5,21 @@ description: Add to what little does as it builds a site, with plugins, each one
 
 # Using plugins
 
-A plugin adds to what little does as it builds a site: an API reference,
-from [Python's docstrings](python-api-reference.md),
-[Rust's doc comments](rust-api-reference.md),
-[JavaScript's](javascript-api-reference.md), or
-[Go's](go-api-reference.md), say, pages from
-[Jupyter notebooks](jupyter-notebooks.ipynb), [AsciiDoc](asciidoc.adoc),
-[Org mode](org-mode.org), or [reStructuredText](restructuredtext.rst),
-links to other sites that open in a new tab, or a table from a
-```` ```csv ```` block. It's one `.wasm` file, which runs wherever little
-does, in a sandbox, and little calls its
-[hooks](../reference/plugin-hooks.md) as the build reaches each step: as
-it reads the site's config, its theme, its files, and each page, and as it
+A plugin adds to what little does as it builds a site. It can add, say:
+
+- an API reference, from [Python's docstrings](python-api-reference.md),
+  [Rust's doc comments](rust-api-reference.md),
+  [JavaScript's](javascript-api-reference.md), or [Go's](go-api-reference.md)
+- pages from [Jupyter notebooks](jupyter-notebooks.ipynb),
+  [AsciiDoc](asciidoc.adoc), [Org mode](org-mode.org), or
+  [reStructuredText](restructuredtext.rst)
+- links to other sites that open in a new tab
+- a table from a ```` ```csv ```` block
+
+A plugin is one `.wasm` file, which runs wherever little does, in a
+[sandbox](#the-sandbox). little calls its
+[hooks](../reference/plugin-hooks.md) as the build reaches each step: as it
+reads the site's config, its theme, its files, and each page, and as it
 writes them.
 
 ## Naming a plugin
@@ -42,44 +45,47 @@ plugins:
 ```
 
 - A path is relative to the folder of the `little.yml` that sets it, as for
-  a [theme](../themes/choosing-a-theme.md). A URL must start with
-  `https://`: the first build downloads it into the site's
-  `.little/plugins/`, and little never downloads that URL again, so later
-  builds work offline. To use another version, change the URL. A download
-  stops, as a [theme's](../themes/choosing-a-theme.md#downloading-a-theme)
-  does, if it takes over 5 minutes, or is over 200 MB.
-- A theme can name plugins in its `little.yml`, for its sites to use, and
-  the site's `little.yml` has the last word, plugin by plugin and setting by
-  setting, so a site can change a setting of its theme's plugin, or turn one
-  off, like `python: false`. A page can't change them in its frontmatter.
+  a [theme](../themes/choosing-a-theme.md).
+- A URL must start with `https://`. The first build downloads it into the
+  site's `.little/plugins/`, and little never downloads that URL again. So
+  later builds work offline. To use another version, change the URL.
+- A download stops, as a
+  [theme's](../themes/choosing-a-theme.md#downloading-a-theme) does, if it
+  takes over 5 minutes, or is over 200 MB.
+- A theme can name plugins in its `little.yml`, for its sites to use. The
+  site's `little.yml` has the last word, plugin by plugin and setting by
+  setting. So a site can change a setting of its theme's plugin, or turn
+  one off, like `python: false`.
+- A page can't change plugins or their settings in its frontmatter.
 
 ## The order they run in
 
 little calls each hook of each plugin that has it in the order `plugins`
-names them, a theme's first, then the site's, so each is given what the
+names them, a theme's first, then the site's. So each is given what the
 one before it gave back. A site that changes a setting of its theme's
 plugin leaves it in its place.
 
 ## Code blocks
 
 A plugin can render fenced code blocks in languages of its own. A block is
-a plugin's by its language, the first word after its fence, up to a comma,
-in any case, as for [highlighting](../writing/code.md#languages). Two
-plugins that render the same language stop the build. A block can pass the
-plugin options after its language, like ```` ```csv headers=false ````, for
-it to read.
+a plugin's by its language: the first word after its fence, up to a comma,
+in any case, as for [highlighting](../writing/code.md#languages). A block
+can pass the plugin options after its language, like
+```` ```csv headers=false ````, for it to read.
 
-- A plugin gives back Markdown, which little writes as if you had: its
+- A plugin gives back Markdown, which little writes as if you had. So its
   headings join the page's table of contents, its links are checked, its
-  math is rendered, its diagrams drawn, and its code highlighted. Or it gives
-  back HTML, which little writes as it is, so it needs
-  [`raw_html`](../writing/markdown.md#choosing-markdowns-extensions): with
+  math is rendered, its diagrams drawn, and its code highlighted.
+- Or it gives back HTML, which little writes as it is. So it needs
+  [`raw_html`](../writing/markdown.md#choosing-markdowns-extensions). With
   `raw_html: false`, the build stops.
+- Two plugins that render the same language stop the build.
 - In a page in [another format](#pages-in-other-formats), like a
   [notebook](jupyter-notebooks.ipynb), the blocks in its Markdown go to
-  plugins too, and are warned of without a line. Its code doesn't.
-- A block a plugin can't render is left as it was, as code, and warned of,
-  with the file and line it's on:
+  plugins too, but they're warned of without a line. Its code doesn't go
+  to plugins.
+- A block a plugin can't render is left as it was, as code. It's warned
+  of, with the file and line it's on:
 
   ```text
   warning: plugin `csv` can't render the block on line 9 of ./docs/sizes.md: the table is empty
@@ -87,14 +93,15 @@ it to read.
 
 ## Pages and files
 
-A plugin can add pages, and other files, to a site, or leave files in its
-source out, with its [`files`](../reference/plugin-hooks.md#files) hook. A
-page it adds is built as if its file were in the source, at the path the
-plugin chooses, like `mypackage/README.md`, for `/mypackage/`: it's in the
-nav and search, its links are checked, and its code blocks go to plugins.
+A plugin can add pages, and other files, to a site, with its
+[`files`](../reference/plugin-hooks.md#files) hook. It can leave files in
+the source out too. A page it adds is built as if its file were in the
+source, at the path the plugin chooses, like `mypackage/README.md`, for
+`/mypackage/`. So it's in the nav and search, its links are checked, and
+its code blocks go to plugins.
 
-- A page that would be the same page as a file in the source, or as another
-  plugin's page, stops the build, naming both.
+- A page that would be the same page as a file in the source, or as
+  another plugin's page, stops the build, naming both.
 - It has no file in the site's
   [repository](../getting-started/configuring.md#choosing-the-sites-repository),
   so no `page.source_url` or `page.edit_url`.
@@ -103,17 +110,19 @@ nav and search, its links are checked, and its code blocks go to plugins.
 
 ## Pages in other formats
 
-A plugin can read files in a format of its own, by their extension, as
-pages, with its [`formats`](../reference/plugin-hooks.md#formats) hook, as
-[`jupyter`](jupyter-notebooks.ipynb) reads Jupyter notebooks, `.ipynb`
-files, and [`asciidoc`](asciidoc.adoc), [`orgmode`](org-mode.org), and
-[`restructuredtext`](restructuredtext.rst) read `.adoc`, `.org`, and
-`.rst` files. Each is a page as a Markdown file is: `analysis.ipynb` is
-the page at `/analysis`, `README.ipynb` is its folder's page, a link to
+A plugin can read files in a format of its own as pages, by their
+extension, with its [`formats`](../reference/plugin-hooks.md#formats)
+hook. [`jupyter`](jupyter-notebooks.ipynb) reads Jupyter notebooks,
+`.ipynb` files, this way. [`asciidoc`](asciidoc.adoc),
+[`orgmode`](org-mode.org), and [`restructuredtext`](restructuredtext.rst)
+read `.adoc`, `.org`, and `.rst` files.
+
+Each file is a page, as a Markdown file is. So `analysis.ipynb` is the page
+at `/analysis`, and `README.ipynb` is its folder's page. A link to
 `analysis.ipynb` leads to the page, and the file isn't copied.
 
-- Two plugins that read the same extension stop the build, and a plugin
-  can't read `.md` files, which little reads itself.
+- Two plugins that read the same extension stop the build.
+- A plugin can't read `.md` files, which little reads itself.
 - A file in an extension no plugin reads is copied, as it is.
 - A file the plugin can't read stops the build, naming it.
 
@@ -124,10 +133,11 @@ plugin does when it panics. After a crash, little starts the plugin again,
 for the next hook.
 
 - A plugin that can't start, as its settings are wrong, say, stops the
-  build, as does a hook that little calls once, like `files`, that fails,
-  or a `formats` hook that can't read a page.
-- Any other hook that little calls for each page, or block, that fails is
-  warned of, and the page is built as if the hook hadn't run:
+  build.
+- So does a hook that little calls once, like `files`, that fails, or a
+  `formats` hook that can't read a page.
+- Any other hook, which little calls for each page, or block, is warned of
+  when it fails. The page is built as if the hook hadn't run:
 
   ```text
   warning: plugin `links`'s `content` hook failed on ./docs/guide.md: …
@@ -139,34 +149,34 @@ for the next hook.
   warning: plugin `pydoc`: can't parse `mypackage/broken.py`: Expected a parameter or the end of the parameter list on line 3
   ```
 
-`little build --strict` fails on any of these warnings, and `little serve`
+`little build --strict` fails on any of these warnings. `little serve`
 shows each after each build.
 
 ## The sandbox
 
 A plugin reaches nothing little doesn't give it: not the network, your
-environment variables, or your files, but the folders `read` names, from the
-site's folder, like `src` or `[src, examples]`, which it can read, but not
-change. Only the site's `little.yml` can set `read`, so a theme's plugin
-reads your files only when you say so.
+environment variables, or your files. It can read only the folders `read`
+names, from the site's folder, like `src` or `[src, examples]`, and it
+can't change them. Only the site's `little.yml` can set `read`. So a
+theme's plugin reads your files only when you say so.
 
 What a plugin prints goes to little's stderr. Its clock reads the time the
-build started, and its random numbers are the same in each build, so a site
-builds the same each time.
+build started, and its random numbers are the same in each build. So a
+site builds the same each time.
 
 ## Limits, for now
 
 - The Markdown a plugin renders a code block as can't use the page's link
-  references, or have footnotes, and each part of a page in [another
-  format](#pages-in-other-formats) has only its own.
+  references, or have footnotes. Each part of a page in
+  [another format](#pages-in-other-formats) has only its own.
 - A plugin's pages are all added again in each build, even for a change to
   one.
-- A plugin has no time limit, so one that never returns holds the build up
+- A plugin has no time limit. So one that never returns holds the build up
   until you press Ctrl-C.
 - A download isn't checked against a hash, so little trusts the site it's
   on.
-- Each `little build` compiles each plugin again, which takes a moment for a
-  small plugin, and about a second for one in Python. `little serve`
+- Each `little build` compiles each plugin again. That takes a moment for
+  a small plugin, and about a second for one in Python. `little serve`
   compiles each once, and again when it changes.
 - `little config` prints the site's config before plugins change it.
 
