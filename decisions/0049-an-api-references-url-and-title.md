@@ -1,6 +1,8 @@
 # 0049 — An API reference's URL and title
 
-- Status: accepted
+- Status: accepted; amended by
+  [0067](./0067-littles-api-at-the-end-of-the-manuals-nav.md), which
+  titles the manual's `/api/` "API", not "little's API"
 - Date: 2026-10-17
 - Amends: [0031](./0031-a-plugin-for-pythons-docstrings.md),
   [0044](./0044-a-plugin-for-rusts-doc-comments.md),
