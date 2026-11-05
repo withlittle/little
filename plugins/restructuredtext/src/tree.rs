@@ -69,8 +69,6 @@ pub(crate) enum Node {
 pub(crate) struct Field {
     /// Its name, as text.
     pub name: Vec<Span>,
-    /// Its name, as written.
-    pub raw: String,
     /// Its body.
     pub body: Vec<Node>,
 }

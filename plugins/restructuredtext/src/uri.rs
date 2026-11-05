@@ -48,7 +48,6 @@ struct Scanner<'a> {
     colon: Vec<usize>,
     /// The `@` after the name of an email address that starts at each place.
     at: Vec<usize>,
-    uri_cache: Option<(usize, Option<usize>)>,
     host_cache: Option<(usize, Option<usize>)>,
 }
 
@@ -99,7 +98,6 @@ impl<'a> Scanner<'a> {
             best,
             colon,
             at,
-            uri_cache: None,
             host_cache: None,
         }
     }
@@ -122,18 +120,7 @@ impl<'a> Scanner<'a> {
 
     /// The end of the URI whose scheme ends with the `:` at `colon`: the
     /// furthest its path, query and fragment may take it.
-    fn uri(&mut self, colon: usize) -> Option<usize> {
-        if let Some((cached, end)) = self.uri_cache
-            && cached == colon
-        {
-            return end;
-        }
-        let end = self.find_uri(colon);
-        self.uri_cache = Some((colon, end));
-        end
-    }
-
-    fn find_uri(&self, colon: usize) -> Option<usize> {
+    fn uri(&self, colon: usize) -> Option<usize> {
         let (first, end, can) = self.segment(colon + 1)?;
         let mut found = (first != 0).then_some(first);
         if can {

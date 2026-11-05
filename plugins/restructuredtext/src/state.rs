@@ -42,13 +42,13 @@ pub(crate) struct Name {
 }
 
 /// What a footnote is: numbered by hand, automatically, with a label or
-/// not, with a symbol, or a citation, each with its name, normalized.
+/// not, with a symbol, or a citation.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Kind {
-    Manual(String),
-    Auto(Option<String>),
+    Manual,
+    Auto { labelled: bool },
     Symbol,
-    Citation(String),
+    Citation,
 }
 
 /// A footnote or citation, its label, as written between its brackets,
@@ -71,7 +71,7 @@ pub(crate) struct Substitution {
 }
 
 /// What an interpreted text role makes of its text.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) enum Role {
     Emphasis,
     Strong,
@@ -83,6 +83,7 @@ pub(crate) enum Role {
     Sub,
     Sup,
     /// `title-reference`, the default.
+    #[default]
     Title,
     /// Its text alone: `abbreviation`, `acronym`, or a custom role with no
     /// base.
@@ -129,7 +130,7 @@ impl Role {
 }
 
 /// What the parser knows of the document.
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub(crate) struct State {
     pub warnings: Vec<Warning>,
     /// The ids given so far.
@@ -179,28 +180,9 @@ pub(crate) struct State {
 impl State {
     pub fn new(clock: Clock) -> State {
         State {
-            warnings: Vec::new(),
-            ids: HashSet::new(),
-            counters: HashMap::new(),
-            names: HashMap::new(),
-            targets: Vec::new(),
-            anonymous: Vec::new(),
-            anonymous_refs: 0,
-            footnotes: Vec::new(),
-            auto_refs: 0,
-            symbol_refs: 0,
-            substitutions: HashMap::new(),
-            substitution_names: HashMap::new(),
-            roles: HashMap::new(),
             default_role: ("title-reference".to_string(), Role::Title),
-            metadata: Vec::new(),
-            styles: Vec::new(),
-            section_level: 0,
             clock,
-            depth: 0,
-            loose: None,
-            sidebar: None,
-            deep: false,
+            ..State::default()
         }
     }
 

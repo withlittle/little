@@ -55,7 +55,7 @@ fn read(text: &str, markdown: &str) -> Result<(Vec<Part>, Vec<Warning>), String>
 }
 
 /// The time a page is built at, in UTC, as the `date` directive writes it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(crate) struct Clock {
     /// The seconds since the Unix epoch.
     pub seconds: u64,
