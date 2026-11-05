@@ -489,22 +489,10 @@ fn url_filter(state: &State, value: Value, change: impl Fn(&str) -> Cow<'_, str>
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::plugin::tests::started;
+    use crate::testing::{scratch, site_url};
     use minijinja::context;
     use serde_json::json;
-
-    /// A fresh scratch theme holding `files`, each a (path, contents) pair.
-    fn scratch(label: &str, files: &[(&str, &str)]) -> PathBuf {
-        let root =
-            std::env::temp_dir().join(format!("little-theme-test-{}-{label}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&root);
-        std::fs::create_dir_all(&root).unwrap();
-        for (file, contents) in files {
-            let path = root.join(file);
-            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-            std::fs::write(path, contents).unwrap();
-        }
-        root
-    }
 
     /// Load the first of `themes`, which builds on the rest, for a site at
     /// `url`.
@@ -526,19 +514,6 @@ mod tests {
     /// The static files of the theme in `dir`, which builds on nothing.
     fn static_files_in(dir: &Path) -> Result<Vec<StaticFile>> {
         static_files(&[Location::Folder(dir.to_path_buf())])
-    }
-
-    /// The test plugin, started as `test`, with `theme` as its `theme`
-    /// hook's settings.
-    fn plugin(theme: serde_json::Value) -> Plugins {
-        let plugin = crate::config::Plugin {
-            name: "test".to_string(),
-            wasm: crate::config::Wasm::File(crate::plugin::tests::test_plugin().to_path_buf()),
-            read: Vec::new(),
-            settings: serde_json::json!({ "theme": theme }).to_string(),
-        };
-        let now = time::OffsetDateTime::UNIX_EPOCH;
-        Plugins::start(&[plugin], Path::new("."), now).unwrap()
     }
 
     /// What `theme` renders for each type of page, `None` for types it skips.
@@ -565,13 +540,10 @@ mod tests {
 
     #[test]
     fn each_type_of_page_uses_its_own_template_or_the_default() {
-        let dir = scratch(
-            "lookup",
-            &[
-                ("_templates/default.html", "default:{{ page.type }}"),
-                ("_templates/section.html", "section:{{ page.type }}"),
-            ],
-        );
+        let (_tmp, dir) = scratch(&[
+            ("_templates/default.html", "default:{{ page.type }}"),
+            ("_templates/section.html", "section:{{ page.type }}"),
+        ]);
         let rendered = render_each(&load(&dir).unwrap());
         let expect = |s: &str| Some(s.to_string());
         assert_eq!(
@@ -598,44 +570,36 @@ mod tests {
                 expect("own:404"),
             ]
         );
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
     fn templates_can_extend_and_include_each_other() {
-        let dir = scratch(
-            "inherit",
-            &[
-                (
-                    "_templates/default.html",
-                    r#"{% extends "layouts/base.html" %}{% block body %}default{% endblock %}"#,
-                ),
-                (
-                    "_templates/layouts/base.html",
-                    r#"<{% include "partials/brand.html" %}>{% block body %}{% endblock %}"#,
-                ),
-                ("_templates/partials/brand.html", "little"),
-                // Other files can sit alongside the templates.
-                ("_templates/README.md", "How to use {{ this theme"),
-            ],
-        );
+        let (_tmp, dir) = scratch(&[
+            (
+                "_templates/default.html",
+                r#"{% extends "layouts/base.html" %}{% block body %}default{% endblock %}"#,
+            ),
+            (
+                "_templates/layouts/base.html",
+                r#"<{% include "partials/brand.html" %}>{% block body %}{% endblock %}"#,
+            ),
+            ("_templates/partials/brand.html", "little"),
+            // Other files can sit alongside the templates.
+            ("_templates/README.md", "How to use {{ this theme"),
+        ]);
         let theme = load(&dir).unwrap();
         let html = theme.render(PageType::Page, context! {}).unwrap();
         assert_eq!(html.as_deref(), Some("<little>default"));
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
     fn url_filters_put_the_sites_path_and_address_before_a_url() {
-        let dir = scratch(
-            "url-filters",
-            &[(
-                "_templates/default.html",
-                "{{ '/assets/style.css' | url }} {{ page.url | absolute_url }} \
+        let (_tmp, dir) = scratch(&[(
+            "_templates/default.html",
+            "{{ '/assets/style.css' | url }} {{ page.url | absolute_url }} \
                  {{ '/og.png' | url | absolute_url }} {{ 'https://example.com/' | url }} \
                  {{ '/search?q=a&b' | url }} {{ '/a&amp;b' | safe | url }} [{{ missing | url }}]",
-            )],
-        );
+        )]);
         let render = |url: &SiteUrl| {
             let theme = load_chain(&[Location::Folder(dir.clone())], url).unwrap();
             let page_url = format!("{}/guide/", url.path);
@@ -643,11 +607,7 @@ mod tests {
             theme.render(PageType::Page, ctx).unwrap().unwrap()
         };
 
-        let project = SiteUrl {
-            origin: "https://withlittle.github.io".into(),
-            path: "/little".into(),
-            shared: None,
-        };
+        let project = site_url();
         assert_eq!(
             render(&project),
             "/little/assets/style.css https://withlittle.github.io/little/guide/ \
@@ -661,27 +621,22 @@ mod tests {
             "/assets/style.css /guide/ /og.png https://example.com/ \
              /search?q=a&amp;b /a&amp;b []"
         );
-
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
     fn a_theme_replaces_the_files_of_the_one_it_builds_on() {
-        let root = scratch(
-            "layers",
-            &[
-                (
-                    "base/_templates/default.html",
-                    r#"<{% include "partials/brand.html" %}>{{ page.type }}"#,
-                ),
-                ("base/_templates/partials/brand.html", "base"),
-                ("base/_static/logo.svg", "base logo"),
-                ("base/_static/css/style.css", "base style"),
-                // Only what it changes.
-                ("company/_templates/partials/brand.html", "company"),
-                ("company/_static/logo.svg", "company logo"),
-            ],
-        );
+        let (_tmp, root) = scratch(&[
+            (
+                "base/_templates/default.html",
+                r#"<{% include "partials/brand.html" %}>{{ page.type }}"#,
+            ),
+            ("base/_templates/partials/brand.html", "base"),
+            ("base/_static/logo.svg", "base logo"),
+            ("base/_static/css/style.css", "base style"),
+            // Only what it changes.
+            ("company/_templates/partials/brand.html", "company"),
+            ("company/_static/logo.svg", "company logo"),
+        ]);
         let (company, base) = (root.join("company"), root.join("base"));
         let chain = [
             Location::Folder(company.clone()),
@@ -714,17 +669,13 @@ mod tests {
         );
         let expected = format!("loading {}", home.display());
         assert!(message.starts_with(&expected), "{message}");
-
-        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]
     fn a_theme_needs_a_working_default_template() {
         let error = |files: &[(&str, &str)]| {
-            let dir = scratch("broken", files);
-            let message = format!("{:#}", load(&dir).err().unwrap());
-            let _ = std::fs::remove_dir_all(&dir);
-            message
+            let (_tmp, dir) = scratch(files);
+            format!("{:#}", load(&dir).err().unwrap())
         };
 
         let message = error(&[("_templates/page.html", "")]);
@@ -745,7 +696,7 @@ mod tests {
         );
 
         // A template is text.
-        let dir = scratch("binary", &[("_templates/default.html", "")]);
+        let (_tmp, dir) = scratch(&[("_templates/default.html", "")]);
         let file = dir.join("_templates").join("home.html");
         std::fs::write(&file, [0xff, 0xfe]).unwrap();
         let message = format!("{:#}", load(&dir).err().unwrap());
@@ -754,12 +705,11 @@ mod tests {
             "{message}"
         );
         assert!(message.contains("a template must be UTF-8"), "{message}");
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
     fn static_files_are_optional() {
-        let dir = scratch("static", &[("_templates/default.html", "")]);
+        let (_tmp, dir) = scratch(&[("_templates/default.html", "")]);
         assert!(static_files_in(&dir).unwrap().is_empty());
 
         let png: &[u8] = &[0x89, b'P', b'N', b'G', 0x00, 0xff];
@@ -769,28 +719,24 @@ mod tests {
         assert_eq!(files.len(), 1);
         assert_eq!(files[0].path, Path::new("img").join("logo.png"));
         assert_eq!(files[0].contents, png); // byte for byte
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
     fn stylesheets_are_compiled_with_what_they_load_from_sass() {
-        let dir = scratch(
-            "sass",
-            &[
-                ("_templates/default.html", ""),
-                (
-                    "_static/assets/style.scss",
-                    "@use 'colors';\na { color: colors.$link; }",
-                ),
-                (
-                    "_static/assets/print.sass",
-                    "@use 'colors'\nbody\n  color: black\n",
-                ),
-                ("_static/assets/notes.md", "Not Sass"),
-                ("_sass/_colors.scss", "$link: teal;"),
-                ("_sass/README.md", "Not published"),
-            ],
-        );
+        let (_tmp, dir) = scratch(&[
+            ("_templates/default.html", ""),
+            (
+                "_static/assets/style.scss",
+                "@use 'colors';\na { color: colors.$link; }",
+            ),
+            (
+                "_static/assets/print.sass",
+                "@use 'colors'\nbody\n  color: black\n",
+            ),
+            ("_static/assets/notes.md", "Not Sass"),
+            ("_sass/_colors.scss", "$link: teal;"),
+            ("_sass/README.md", "Not published"),
+        ]);
         let files = static_files_in(&dir).unwrap();
         assert_eq!(
             contents(&files),
@@ -806,27 +752,23 @@ mod tests {
         // Named as the stylesheet it's compiled from, in a broken link, say.
         let origin = dir.join("_static").join("assets").join("style.scss");
         assert_eq!(files[2].origin, origin.display().to_string());
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
     fn a_theme_replaces_the_sass_of_the_one_it_builds_on() {
-        let root = scratch(
-            "sass-layers",
-            &[
-                ("base/_templates/default.html", ""),
-                (
-                    "base/_static/style.scss",
-                    "@use 'colors';\na { color: colors.$link; }",
-                ),
-                ("base/_static/print.css", "base print"),
-                ("base/_static/extra.scss", "a {"), // replaced, so never compiled
-                ("base/_sass/_colors.scss", "$link: teal;"),
-                ("company/_static/print.scss", "body { color: black; }"),
-                ("company/_static/extra.css", "company extra"),
-                ("company/_sass/_colors.scss", "$link: navy;"),
-            ],
-        );
+        let (_tmp, root) = scratch(&[
+            ("base/_templates/default.html", ""),
+            (
+                "base/_static/style.scss",
+                "@use 'colors';\na { color: colors.$link; }",
+            ),
+            ("base/_static/print.css", "base print"),
+            ("base/_static/extra.scss", "a {"), // replaced, so never compiled
+            ("base/_sass/_colors.scss", "$link: teal;"),
+            ("company/_static/print.scss", "body { color: black; }"),
+            ("company/_static/extra.css", "company extra"),
+            ("company/_sass/_colors.scss", "$link: navy;"),
+        ]);
         let chain = [
             Location::Folder(root.join("company")),
             Location::Folder(root.join("base")),
@@ -839,13 +781,12 @@ mod tests {
                 ("style.css".into(), "a {\n  color: navy;\n}\n".into()),
             ]
         );
-        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]
     fn sass_in_the_wrong_place_stops_the_build() {
         let error = |files: &[(&str, &str)]| {
-            let dir = scratch("sass-misplaced", files);
+            let (_tmp, dir) = scratch(files);
             let message = format!("{:#}", static_files_in(&dir).unwrap_err());
             (dir, message)
         };
@@ -880,20 +821,16 @@ mod tests {
             );
             assert_eq!(message, expected);
         }
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
     fn a_plugins_theme_hook_is_given_the_layered_files_by_their_paths() {
-        let root = scratch(
-            "hook-layers",
-            &[
-                ("company/_static/assets/style.scss", "a { color: navy; }"),
-                ("company/_sass/_colors.scss", "$link: navy;"),
-            ],
-        );
+        let (_tmp, root) = scratch(&[
+            ("company/_static/assets/style.scss", "a { color: navy; }"),
+            ("company/_sass/_colors.scss", "$link: navy;"),
+        ]);
         let chain = [Location::Folder(root.join("company")), Location::BuiltIn];
-        let mut plugins = plugin(json!({ "list": "_static/paths.txt" }));
+        let mut plugins = started(&json!({ "theme": { "list": "_static/paths.txt" } }).to_string());
         let files = ThemeFiles::read(&chain).unwrap().hooked(&mut plugins);
         let files = files.unwrap().static_files().unwrap();
         let paths = files
@@ -905,31 +842,30 @@ mod tests {
             "_sass/_colors.scss\n_static/assets/script.js\n_static/assets/style.scss\n\
              _templates/404.html\n_templates/default.html"
         );
-        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]
     fn a_plugins_theme_hook_changes_the_theme() {
-        let dir = scratch(
-            "hook",
-            &[
-                (
-                    "_templates/default.html",
-                    "{% include 'og.html' %}{{ page.type }}",
-                ),
-                ("_static/logo.svg", "logo"),
-                ("_static/style.css", "a {}"),
-            ],
-        );
+        let (_tmp, dir) = scratch(&[
+            (
+                "_templates/default.html",
+                "{% include 'og.html' %}{{ page.type }}",
+            ),
+            ("_static/logo.svg", "logo"),
+            ("_static/style.css", "a {}"),
+        ]);
         let read = || ThemeFiles::read(&[Location::Folder(dir.clone())]).unwrap();
-        let mut plugins = plugin(json!({
-            "remove": ["_static/style.css"],
-            "add": [
-                { "path": "_templates/og.html", "text": "<meta>" },
-                { "path": "_static/style.scss", "text": "@use 'colors';\na { color: colors.$link; }" },
-                { "path": "_sass/_colors.scss", "text": "$link: teal;" },
-            ],
-        }));
+        let settings = json!({
+            "theme": {
+                "remove": ["_static/style.css"],
+                "add": [
+                    { "path": "_templates/og.html", "text": "<meta>" },
+                    { "path": "_static/style.scss", "text": "@use 'colors';\na { color: colors.$link; }" },
+                    { "path": "_sass/_colors.scss", "text": "$link: teal;" },
+                ],
+            },
+        });
+        let mut plugins = started(&settings.to_string());
         let hooked = read().hooked(&mut plugins).unwrap();
         let theme = Theme::load(&hooked, &SiteUrl::default()).unwrap();
         let ctx = context! { page => context! { type => "page" } };
@@ -950,7 +886,9 @@ mod tests {
 
         // A template it breaks is named for it.
         let broken = json!({ "add": [{ "path": "_templates/home.html", "text": "{% if %}" }] });
-        let hooked = read().hooked(&mut plugin(broken)).unwrap();
+        let hooked = read()
+            .hooked(&mut started(&json!({ "theme": broken }).to_string()))
+            .unwrap();
         let message = format!(
             "{:#}",
             Theme::load(&hooked, &SiteUrl::default()).err().unwrap()
@@ -962,7 +900,7 @@ mod tests {
 
         // What it gives back must be a theme's files.
         let error = |theme: serde_json::Value| {
-            let hooked = read().hooked(&mut plugin(theme));
+            let hooked = read().hooked(&mut started(&json!({ "theme": theme }).to_string()));
             format!("{:#}", hooked.unwrap_err())
         };
         let add = |path: &str| json!({ "add": [{ "path": path, "text": "" }] });
@@ -994,7 +932,6 @@ mod tests {
                 css.display()
             )
         );
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

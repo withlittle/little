@@ -241,6 +241,8 @@ fn normalize(path: &Path) -> PathBuf {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+    use crate::testing::{self, files_in, write};
+    use tempfile::TempDir;
 
     /// Run git in `dir`, for a test, as no one in particular, whatever the
     /// git config of whoever runs it, and give what it writes, trimmed.
@@ -289,53 +291,25 @@ pub(crate) mod tests {
 
     /// A fresh git repository, with `files`, each a (path, contents) pair,
     /// committed.
-    fn repository(label: &str, files: &[(&str, &str)]) -> PathBuf {
-        let root = scratch(label, files);
+    fn repository(files: &[(&str, &str)]) -> (TempDir, PathBuf) {
+        let (tmp, root) = scratch(files);
         init(&root);
         commit_all(&root);
-        root
+        (tmp, root)
     }
 
     /// A fresh scratch folder holding `files`, each a (path, contents) pair.
-    fn scratch(label: &str, files: &[(&str, &str)]) -> PathBuf {
-        let root =
-            std::env::temp_dir().join(format!("little-git-test-{}-{label}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&root);
-        std::fs::create_dir_all(&root).unwrap();
-        write(&root, files);
+    fn scratch(files: &[(&str, &str)]) -> (TempDir, PathBuf) {
+        let (tmp, root) = testing::scratch(files);
         // The folder as git names it: on macOS, the one the temporary
         // folder's link leads to, and on Windows, by its long name, not one
         // like `RUNNER~1`, and without the `\\?\` that `canonicalize` adds.
-        dunce::canonicalize(&root).unwrap()
-    }
-
-    fn write(root: &Path, files: &[(&str, &str)]) {
-        for (file, contents) in files {
-            let path = root.join(file);
-            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-            std::fs::write(path, contents).unwrap();
-        }
-    }
-
-    /// The files under `dir`, from it, with each `/`.
-    fn files_in(dir: &Path) -> Vec<String> {
-        let mut files: Vec<String> = walkdir::WalkDir::new(dir)
-            .into_iter()
-            .map(Result::unwrap)
-            .filter(|entry| entry.file_type().is_file())
-            .map(|entry| {
-                let path = entry.path().strip_prefix(dir).unwrap();
-                let names: Vec<_> = path.iter().map(|name| name.to_string_lossy()).collect();
-                names.join("/")
-            })
-            .collect();
-        files.sort();
-        files
+        (tmp, dunce::canonicalize(root).unwrap())
     }
 
     #[test]
     fn finds_where_a_site_is_in_its_repository() {
-        let root = repository("find", &[("docs/little.yml", ""), ("README.md", "")]);
+        let (_tmp, root) = repository(&[("docs/little.yml", ""), ("README.md", "")]);
         let repo = Repository::find(&root.join("docs")).unwrap();
         assert_eq!(
             (repo.top.as_path(), repo.prefix.as_str()),
@@ -346,7 +320,7 @@ pub(crate) mod tests {
 
         // A site that isn't in one can't have versions from git refs, and
         // its folder is named, tidied.
-        let lone = scratch("find-none", &[("little.yml", ""), ("sub/little.yml", "")]);
+        let (_lone, lone) = scratch(&[("little.yml", ""), ("sub/little.yml", "")]);
         let not_in_one = format!(
             "the site's `versions` are built from git refs, so its folder, {}, must be in a git \
              repository: git rev-parse failed: fatal: not a git repository",
@@ -356,25 +330,20 @@ pub(crate) mod tests {
             let message = format!("{:#}", Repository::find(&site_dir).unwrap_err());
             assert!(message.starts_with(&not_in_one), "{message}");
         }
-        let _ = std::fs::remove_dir_all(&root);
-        let _ = std::fs::remove_dir_all(&lone);
     }
 
     #[test]
     fn checks_out_only_the_files_asked_for_as_they_were() {
         // Many projects keep their docs out of the archives git makes of
         // them, but not out of their checkouts.
-        let root = repository(
-            "extract",
-            &[
-                ("docs/little.yml", "name: Old\n"),
-                ("docs/guide.md", "# Old\n"),
-                ("docs/a b/[c].md", "# C\n"),
-                ("src/lib.py", "x = 1\n"),
-                ("README.md", "# Read me\n"),
-                (".gitattributes", "docs export-ignore\n"),
-            ],
-        );
+        let (_tmp, root) = repository(&[
+            ("docs/little.yml", "name: Old\n"),
+            ("docs/guide.md", "# Old\n"),
+            ("docs/a b/[c].md", "# C\n"),
+            ("src/lib.py", "x = 1\n"),
+            ("README.md", "# Read me\n"),
+            (".gitattributes", "docs export-ignore\n"),
+        ]);
         git_in(&root, &["tag", "--annotate", "-m", "One", "v1"]);
         let head = |root: &Path| {
             let output = git(root).args(["rev-parse", "HEAD"]).output().unwrap();
@@ -442,12 +411,11 @@ pub(crate) mod tests {
         assert!(!root.join("src/lib.py").exists());
         let status = git(&root).args(["status", "--porcelain"]).output().unwrap();
         assert_eq!(String::from_utf8_lossy(&status.stdout), " D src/lib.py\n");
-        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]
     fn a_ref_that_isnt_there_is_explained() {
-        let root = repository("missing-ref", &[("docs/guide.md", "# Guide\n")]);
+        let (_tmp, root) = repository(&[("docs/guide.md", "# Guide\n")]);
         git_in(&root, &["tag", "v1"]);
         commit_all(&root);
         let repo = Repository::find(&root).unwrap();
@@ -459,12 +427,9 @@ pub(crate) mod tests {
         assert_eq!(message, missing);
 
         // A shallow clone has only some of the history, and its tags.
-        let clone = root.with_file_name(format!("{}-clone", root.file_name().unwrap().display()));
-        let _ = std::fs::remove_dir_all(&clone);
+        let (_clone, clone) = scratch(&[]);
         let url = url::Url::from_file_path(&root).unwrap().to_string();
-        let parent = clone.parent().unwrap();
-        let name = clone.file_name().unwrap().to_str().unwrap();
-        git_in(parent, &["clone", "--quiet", "--depth", "1", &url, name]);
+        git_in(&clone, &["clone", "--quiet", "--depth", "1", &url, "."]);
         let repo = Repository::find(&clone).unwrap();
         let message = format!("{:#}", repo.checkout("v1").unwrap_err());
         assert_eq!(
@@ -476,7 +441,5 @@ pub(crate) mod tests {
                 clone.display()
             )
         );
-        let _ = std::fs::remove_dir_all(&root);
-        let _ = std::fs::remove_dir_all(&clone);
     }
 }

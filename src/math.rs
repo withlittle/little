@@ -98,22 +98,12 @@ fn format_node<'a>(
 mod tests {
     use super::*;
     use crate::config::{Markdown, SiteUrl};
-    use crate::plugin::PagePlugins;
-    use crate::render::{Rendered, parse_document};
-    use time::OffsetDateTime;
+    use crate::render::Rendered;
+    use crate::testing::render_at;
 
     /// Render `md` with little's defaults, which write math as MathML.
     fn render(md: &str) -> Rendered {
-        parse_document(
-            md,
-            "/",
-            &(2..=6),
-            &SiteUrl::default(),
-            &Markdown::default(),
-            OffsetDateTime::UNIX_EPOCH,
-            &mut PagePlugins::none(),
-        )
-        .unwrap()
+        render_at(md, "/", &SiteUrl::default(), &Markdown::default()).unwrap()
     }
 
     const X_SQUARED: &str = "<msup><mi>x</mi><mn>2</mn></msup>";

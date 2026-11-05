@@ -358,10 +358,10 @@ fn cache_name(url: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::testing::{files_in, scratch};
     use std::cell::Cell;
     use std::io::Write;
     use tar::EntryType;
-    use walkdir::WalkDir;
 
     const URL: &str = "https://example.invalid/theme-1.0.tar.gz";
 
@@ -374,17 +374,6 @@ mod tests {
             &[0x89, b'P', b'N', b'G', 0x00, 0xff],
         ),
     ];
-
-    /// A fresh scratch site.
-    fn scratch(label: &str) -> PathBuf {
-        let site = std::env::temp_dir().join(format!(
-            "little-download-test-{}-{label}",
-            std::process::id()
-        ));
-        let _ = fs::remove_dir_all(&site);
-        fs::create_dir_all(&site).unwrap();
-        site
-    }
 
     /// A .tar.gz of `entries`, each a type, a path, and contents, written as
     /// they are, even ones `tar` won't write. A link's contents are what it
@@ -453,22 +442,6 @@ mod tests {
         [tar_gz(&tar), zip(&zip_entries)]
     }
 
-    /// Every file in `dir`, by its path from `dir`, and what it holds.
-    fn files_in(dir: &Path) -> Vec<(String, Vec<u8>)> {
-        let mut files: Vec<_> = WalkDir::new(dir)
-            .into_iter()
-            .map(Result::unwrap)
-            .filter(|entry| entry.file_type().is_file())
-            .map(|entry| {
-                let path = entry.path().strip_prefix(dir).unwrap();
-                let path = path.to_string_lossy().replace('\\', "/");
-                (path, fs::read(entry.path()).unwrap())
-            })
-            .collect();
-        files.sort();
-        files
-    }
-
     /// Why `archive` can't be unpacked as a theme.
     fn error(site: &Path, archive: Vec<u8>) -> String {
         format!("{:#}", theme_with(site, URL, |_| Ok(archive)).unwrap_err())
@@ -476,7 +449,7 @@ mod tests {
 
     #[test]
     fn a_theme_is_unpacked_from_the_folder_its_archive_holds() {
-        let site = scratch("unpack");
+        let (_tmp, site) = scratch(&[]);
         let mut expected: Vec<(String, Vec<u8>)> = FILES
             .iter()
             .map(|(path, contents)| (path.to_string(), contents.to_vec()))
@@ -491,7 +464,14 @@ mod tests {
             let dir = theme_with(&site, url, |_| Ok(archive)).unwrap();
             assert_eq!(dir, folder(&site, url));
             // Byte for byte, without the folder it was in or GitHub's header.
-            assert_eq!(files_in(&dir), expected, "from {url}");
+            let files: Vec<_> = files_in(&dir)
+                .into_iter()
+                .map(|path| {
+                    let contents = fs::read(dir.join(&path)).unwrap();
+                    (path, contents)
+                })
+                .collect();
+            assert_eq!(files, expected, "from {url}");
         }
 
         // Kept out of git, with nothing left over from unpacking.
@@ -506,13 +486,11 @@ mod tests {
         let mut folders = urls.map(|url| folder(&site, url));
         folders.sort();
         assert_eq!(kept, folders);
-
-        let _ = fs::remove_dir_all(&site);
     }
 
     #[test]
     fn a_theme_is_downloaded_once() {
-        let site = scratch("once");
+        let (_tmp, site) = scratch(&[]);
         let [archive, _] = github_archives();
         let dir = theme_with(&site, URL, |_| Ok(archive.clone())).unwrap();
 
@@ -529,13 +507,11 @@ mod tests {
         });
         assert_eq!(again.unwrap(), dir);
         assert!(downloaded.get());
-
-        let _ = fs::remove_dir_all(&site);
     }
 
     #[test]
     fn a_theme_that_fails_to_download_or_unpack_leaves_nothing() {
-        let site = scratch("fails");
+        let (_tmp, site) = scratch(&[]);
         let failed = theme_with(&site, URL, |_| bail!("the server answered 404 Not Found"));
         let message = format!("{:#}", failed.unwrap_err());
         let expected = "little couldn't download it: the server answered 404 Not Found";
@@ -552,13 +528,11 @@ mod tests {
         );
         let themes = site.join(CACHE_DIR).join("themes");
         assert_eq!(fs::read_dir(themes).unwrap().count(), 0);
-
-        let _ = fs::remove_dir_all(&site);
     }
 
     #[test]
     fn an_archive_holds_one_folder() {
-        let site = scratch("shape");
+        let (_tmp, site) = scratch(&[]);
 
         // A web page, say, from the URL of a repository, not of its archive.
         let message = error(&site, b"\n<!DOCTYPE html>\n<html>".to_vec());
@@ -575,13 +549,11 @@ mod tests {
         let expected = "little couldn't unpack it: it's empty";
         assert_eq!(error(&site, zip(&[])), expected);
         assert!(!folder(&site, URL).exists());
-
-        let _ = fs::remove_dir_all(&site);
     }
 
     #[test]
     fn only_files_and_folders_inside_the_archive_are_unpacked() {
-        let site = scratch("unsafe");
+        let (_tmp, site) = scratch(&[]);
         // From where it's unpacked, `.little/themes/<name>.<pid>.download/`,
         // this is the site's own folder.
         let outside = "theme/../../../../outside";
@@ -625,12 +597,11 @@ mod tests {
 
         assert!(!site.join("outside").exists());
         assert!(!folder(&site, URL).exists());
-        let _ = fs::remove_dir_all(&site);
     }
 
     #[test]
     fn an_archive_unpacks_to_no_more_than_its_limit() {
-        let site = scratch("limit");
+        let (_tmp, site) = scratch(&[]);
         let dest = site.join("unpacked");
         // Zeros, which pack small, as a zip bomb's do.
         let half = vec![0; (MB / 2) as usize];
@@ -669,12 +640,11 @@ mod tests {
         assert_eq!(written, MB + 1);
 
         assert_eq!(size(MAX_UNPACKED), "1 GB");
-        let _ = fs::remove_dir_all(&site);
     }
 
     #[test]
     fn a_plugin_is_downloaded_once_into_its_own_file() {
-        let site = scratch("plugin");
+        let (_tmp, site) = scratch(&[]);
         let url = "https://example.invalid/bob-1.0.wasm";
         // How every WebAssembly component starts.
         let wasm = b"\0asm\x0d\x00\x01\x00".to_vec();
@@ -692,13 +662,11 @@ mod tests {
         // Later builds use the plugin that was downloaded, even offline.
         let again = plugin_with(&site, url, |_| panic!("it downloaded the plugin again"));
         assert_eq!(again.unwrap(), file);
-
-        let _ = fs::remove_dir_all(&site);
     }
 
     #[test]
     fn a_plugin_that_fails_to_download_leaves_nothing() {
-        let site = scratch("plugin-fails");
+        let (_tmp, site) = scratch(&[]);
         let url = "https://example.invalid/bob-1.0.wasm";
         let failed = plugin_with(&site, url, |_| bail!("the server answered 404 Not Found"));
         let expected = "little couldn't download it: the server answered 404 Not Found";
@@ -711,7 +679,6 @@ mod tests {
         assert_eq!(format!("{:#}", page.unwrap_err()), expected);
 
         assert!(!site.join(CACHE_DIR).exists());
-        let _ = fs::remove_dir_all(&site);
     }
 
     #[test]

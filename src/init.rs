@@ -213,15 +213,7 @@ fn shown(path: &Path) -> &Path {
 mod tests {
     use super::*;
     use crate::config;
-
-    /// An empty folder for a test, named for it.
-    fn scratch(label: &str) -> PathBuf {
-        let root =
-            std::env::temp_dir().join(format!("little-init-test-{}-{label}", std::process::id()));
-        let _ = fs::remove_dir_all(&root);
-        fs::create_dir_all(&root).unwrap();
-        root
-    }
+    use crate::testing::scratch;
 
     /// The site's name, as little reads it.
     fn name(dir: &Path) -> Value {
@@ -230,7 +222,7 @@ mod tests {
 
     #[test]
     fn starts_a_site_that_builds() {
-        let root = scratch("builds");
+        let (_tmp, root) = scratch(&[]);
         let dir = root.join("nested").join("my-docs");
 
         let started = init(&dir).unwrap();
@@ -256,12 +248,11 @@ mod tests {
             built.contains("<title>Welcome · my-docs</title>"),
             "{built}"
         );
-        let _ = fs::remove_dir_all(&root);
     }
 
     #[test]
     fn wont_start_a_site_over_another() {
-        let dir = scratch("over");
+        let (_tmp, dir) = scratch(&[]);
         fs::write(dir.join("little.yml"), "name: Mine\n").unwrap();
 
         let error = init(&dir).unwrap_err().to_string();
@@ -278,12 +269,11 @@ mod tests {
         );
         // It wrote nothing else.
         assert_eq!(fs::read_dir(&dir).unwrap().count(), 1);
-        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]
     fn keeps_a_home_page_in_any_case() {
-        let dir = scratch("home");
+        let (_tmp, dir) = scratch(&[]);
         let docs = dir.join("docs");
         fs::create_dir_all(&docs).unwrap();
         fs::write(docs.join("readme.md"), "# Mine\n").unwrap();
@@ -305,12 +295,11 @@ mod tests {
         names.sort();
         assert_eq!(names, ["README.txt", "readme.md"]);
         site::build(&dir).unwrap();
-        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]
     fn a_notebook_isnt_a_home_page_without_a_plugin() {
-        let dir = scratch("notebook");
+        let (_tmp, dir) = scratch(&[]);
         let docs = dir.join("docs");
         fs::create_dir_all(&docs).unwrap();
         let notebook = r#"{"cells": [], "metadata": {}, "nbformat": 4, "nbformat_minor": 5}"#;
@@ -326,7 +315,6 @@ mod tests {
         site::build(&dir).unwrap();
         let copied = dir.join("dist").join("README.ipynb");
         assert_eq!(fs::read_to_string(copied).unwrap(), notebook);
-        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -339,7 +327,7 @@ mod tests {
             ("# built\n  /dist \r\n", "# built\n  /dist \r\n", false),
             ("!dist/\n", "!dist/\n/dist/\n", true),
         ] {
-            let dir = scratch("gitignore");
+            let (_tmp, dir) = scratch(&[]);
             let path = dir.join(".gitignore");
             fs::write(&path, before).unwrap();
 
@@ -352,13 +340,12 @@ mod tests {
             };
             assert_eq!(started.files[2], action, "{before:?}");
             assert_eq!(fs::read_to_string(&path).unwrap(), after, "{before:?}");
-            let _ = fs::remove_dir_all(&dir);
         }
     }
 
     #[test]
     fn names_a_site_after_its_folder_as_it_is() {
-        let root = scratch("names");
+        let (_tmp, root) = scratch(&[]);
         // Each would be read as something other than its name, unquoted.
         for folder in ["yes", "123", "null", "~", "#1", "- x", "[x]", "it's"] {
             let dir = root.join(folder);
@@ -372,7 +359,6 @@ mod tests {
         fs::create_dir_all(&dir).unwrap();
         init(&dir.join(".")).unwrap();
         assert_eq!(name(&dir), Value::from("here"));
-        let _ = fs::remove_dir_all(&root);
     }
 
     #[test]
