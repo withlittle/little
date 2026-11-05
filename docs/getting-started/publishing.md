@@ -84,7 +84,7 @@ To publish your site each time you push to `main`:
        steps:
          - uses: actions/checkout@v7
          - run: |
-             curl -fsSL https://github.com/withlittle/little/releases/download/v0.2.0/little-x86_64-unknown-linux-musl.tar.gz \
+             curl -fsSL https://github.com/withlittle/little/releases/download/v0.3.0/little-x86_64-unknown-linux-musl.tar.gz \
                | sudo tar -xz -C /usr/local/bin little
          - run: little build --strict
          - uses: actions/upload-pages-artifact@v5

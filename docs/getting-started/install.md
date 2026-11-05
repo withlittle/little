@@ -22,7 +22,7 @@ Check it works:
 little --version
 ```
 
-It prints little's version, like `little 0.2.0`. Run `little --help` to list
+It prints little's version, like `little 0.3.0`. Run `little --help` to list
 every [command](../reference/commands.md).
 
 Next, start [your first site](first-site.md).

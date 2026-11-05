@@ -1,6 +1,6 @@
 [package]
 name = "little-jsdoc"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 description = "A plugin for little that builds an API reference from JavaScript's and TypeScript's doc comments"
 license = "MIT"
