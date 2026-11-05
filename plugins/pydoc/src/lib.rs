@@ -74,7 +74,7 @@ fn document(settings: &Settings) -> Result<Added, String> {
     // there, of which `title` titles one.
     let mut tops = Vec::new();
     for folder in &settings.read {
-        if is_file(&join(folder, "__init__.py")) {
+        if Path::new(&join(folder, "__init__.py")).is_file() {
             let name = package_name(folder).ok_or_else(|| {
                 format!(
                     "`{folder}` holds an `__init__.py`, so it's a package, but it has no name \
@@ -215,8 +215,12 @@ impl Adding {
             .filter_map(|name| {
                 let path = join(folder, &name);
                 match name.strip_suffix(".py") {
-                    Some(module) if is_file(&path) => Some(Entry::Module(module.to_string())),
-                    _ if is_file(&join(&path, "__init__.py")) => Some(Entry::Package(name)),
+                    Some(module) if Path::new(&path).is_file() => {
+                        Some(Entry::Module(module.to_string()))
+                    }
+                    _ if Path::new(&join(&path, "__init__.py")).is_file() => {
+                        Some(Entry::Package(name))
+                    }
                     _ => None,
                 }
             })
@@ -231,10 +235,6 @@ impl Adding {
 /// The name of the package in `folder`, or none if it's `.` or `..`.
 fn package_name(folder: &str) -> Option<&str> {
     (folder.rsplit('/').next()).filter(|name| !matches!(*name, "" | "." | ".."))
-}
-
-fn is_file(path: &str) -> bool {
-    Path::new(path).is_file()
 }
 
 little_api_reference::plugin!(document);
