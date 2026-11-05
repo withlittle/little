@@ -1,4 +1,5 @@
-//! little, a static documentation site generator: the `little` command.
+//! little, the little static documentation site generator for big things:
+//! the `little` command.
 //! `little init` starts a site, as [`init`] does; `little build` builds a
 //! site, its Markdown and the files its plugins read, with its theme, into
 //! HTML, as [`site`] does; `little serve` serves it, building it again as it
@@ -38,7 +39,7 @@ static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 #[command(
     name = "little",
     version,
-    about = "A little static documentation site generator"
+    about = "The little static documentation site generator for big things."
 )]
 struct Cli {
     /// Site directory (defaults to the current directory)

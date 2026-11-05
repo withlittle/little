@@ -1,12 +1,12 @@
 ---
 title: Home
-description: little turns a folder of Markdown into a documentation site, with one binary and no config.
+description: The little static documentation site generator for big things.
 ---
 
 # little
 
-A little static site generator for documentation: put Markdown in
-`docs/`, and get a site.
+The little static documentation site generator for big things. Put
+Markdown in `docs/`, and get a site.
 
 > [!WARNING]
 > little is in early development, before 1.0, so expect breaking changes.
