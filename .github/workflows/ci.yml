@@ -21,6 +21,11 @@ jobs:
   ci:
     name: fmt / clippy / test / build
     runs-on: ubuntu-latest
+    env:
+      # Each in plugins/, in its own workspace: the libraries the plugins
+      # share, built natively, and the plugins, built for wasm32-wasip2.
+      LIBRARIES: api_reference markup
+      PLUGINS: pydoc rustdoc jsdoc godoc jupyter asciidoc orgmode restructuredtext
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -29,9 +34,8 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
-          # For the plugins: tests/plugin, which the tests build, plugins/pydoc,
-          # plugins/rustdoc, plugins/jsdoc, plugins/godoc, plugins/jupyter,
-          # plugins/asciidoc, plugins/orgmode, and plugins/restructuredtext.
+          # For the plugins: tests/plugin, which the tests build, and those
+          # in PLUGINS.
           targets: wasm32-wasip2
 
       - name: Cache cargo build artifacts
@@ -41,16 +45,9 @@ jobs:
         run: |
           cargo fmt --check
           cargo fmt --check --manifest-path tests/plugin/Cargo.toml
-          cargo fmt --check --manifest-path plugins/api_reference/Cargo.toml
-          cargo fmt --check --manifest-path plugins/pydoc/Cargo.toml
-          cargo fmt --check --manifest-path plugins/rustdoc/Cargo.toml
-          cargo fmt --check --manifest-path plugins/jsdoc/Cargo.toml
-          cargo fmt --check --manifest-path plugins/godoc/Cargo.toml
-          cargo fmt --check --manifest-path plugins/jupyter/Cargo.toml
-          cargo fmt --check --manifest-path plugins/markup/Cargo.toml
-          cargo fmt --check --manifest-path plugins/asciidoc/Cargo.toml
-          cargo fmt --check --manifest-path plugins/orgmode/Cargo.toml
-          cargo fmt --check --manifest-path plugins/restructuredtext/Cargo.toml
+          for p in $LIBRARIES $PLUGINS; do
+            cargo fmt --check --manifest-path plugins/$p/Cargo.toml
+          done
 
       # The plugins are linted, tested, and built with --locked, as their
       # releases are, so a pull request that raises one's version without its
@@ -60,30 +57,22 @@ jobs:
         run: |
           cargo clippy --all-targets -- -D warnings
           cargo clippy --manifest-path tests/plugin/Cargo.toml --target wasm32-wasip2 --target-dir target/test-plugin -- -D warnings
-          cargo clippy --manifest-path plugins/api_reference/Cargo.toml --all-targets --target-dir target/api_reference -- -D warnings
-          cargo clippy --locked --manifest-path plugins/pydoc/Cargo.toml --all-targets --target wasm32-wasip2 --target-dir target/pydoc -- -D warnings
-          cargo clippy --locked --manifest-path plugins/rustdoc/Cargo.toml --all-targets --target wasm32-wasip2 --target-dir target/rustdoc -- -D warnings
-          cargo clippy --locked --manifest-path plugins/jsdoc/Cargo.toml --all-targets --target wasm32-wasip2 --target-dir target/jsdoc -- -D warnings
-          cargo clippy --locked --manifest-path plugins/godoc/Cargo.toml --all-targets --target wasm32-wasip2 --target-dir target/godoc -- -D warnings
-          cargo clippy --locked --manifest-path plugins/jupyter/Cargo.toml --all-targets --target wasm32-wasip2 --target-dir target/jupyter -- -D warnings
-          cargo clippy --manifest-path plugins/markup/Cargo.toml --all-targets --target-dir target/markup -- -D warnings
-          cargo clippy --locked --manifest-path plugins/asciidoc/Cargo.toml --all-targets --target wasm32-wasip2 --target-dir target/asciidoc -- -D warnings
-          cargo clippy --locked --manifest-path plugins/orgmode/Cargo.toml --all-targets --target wasm32-wasip2 --target-dir target/orgmode -- -D warnings
-          cargo clippy --locked --manifest-path plugins/restructuredtext/Cargo.toml --all-targets --target wasm32-wasip2 --target-dir target/restructuredtext -- -D warnings
+          for p in $LIBRARIES; do
+            cargo clippy --manifest-path plugins/$p/Cargo.toml --all-targets --target-dir target/$p -- -D warnings
+          done
+          for p in $PLUGINS; do
+            cargo clippy --locked --manifest-path plugins/$p/Cargo.toml --all-targets --target wasm32-wasip2 --target-dir target/$p -- -D warnings
+          done
 
       - name: Test
         run: |
           cargo test
-          cargo test --manifest-path plugins/api_reference/Cargo.toml --target-dir target/api_reference
-          cargo test --locked --manifest-path plugins/pydoc/Cargo.toml --target-dir target/pydoc
-          cargo test --locked --manifest-path plugins/rustdoc/Cargo.toml --target-dir target/rustdoc
-          cargo test --locked --manifest-path plugins/jsdoc/Cargo.toml --target-dir target/jsdoc
-          cargo test --locked --manifest-path plugins/godoc/Cargo.toml --target-dir target/godoc
-          cargo test --locked --manifest-path plugins/jupyter/Cargo.toml --target-dir target/jupyter
-          cargo test --manifest-path plugins/markup/Cargo.toml --target-dir target/markup
-          cargo test --locked --manifest-path plugins/asciidoc/Cargo.toml --target-dir target/asciidoc
-          cargo test --locked --manifest-path plugins/orgmode/Cargo.toml --target-dir target/orgmode
-          cargo test --locked --manifest-path plugins/restructuredtext/Cargo.toml --target-dir target/restructuredtext
+          for p in $LIBRARIES; do
+            cargo test --manifest-path plugins/$p/Cargo.toml --target-dir target/$p
+          done
+          for p in $PLUGINS; do
+            cargo test --locked --manifest-path plugins/$p/Cargo.toml --target-dir target/$p
+          done
 
       - name: Install cargo-about
         uses: taiki-e/install-action@v2
@@ -96,15 +85,9 @@ jobs:
       # example `cargo test` built.
       - name: Write the third-party notices
         run: |
-          scripts/notices.sh little target/notices/little.md
-          scripts/notices.sh pydoc target/notices/pydoc.md
-          scripts/notices.sh rustdoc target/notices/rustdoc.md
-          scripts/notices.sh jsdoc target/notices/jsdoc.md
-          scripts/notices.sh godoc target/notices/godoc.md
-          scripts/notices.sh jupyter target/notices/jupyter.md
-          scripts/notices.sh asciidoc target/notices/asciidoc.md
-          scripts/notices.sh orgmode target/notices/orgmode.md
-          scripts/notices.sh restructuredtext target/notices/restructuredtext.md
+          for c in little $PLUGINS; do
+            scripts/notices.sh $c target/notices/$c.md
+          done
 
       # The crate a release publishes to crates.io, built as crates.io would
       # build it, so a pull request that leaves a file little needs out of
@@ -115,14 +98,9 @@ jobs:
       - name: Build release
         run: |
           cargo build --release
-          cargo build --release --locked --target wasm32-wasip2 --manifest-path plugins/pydoc/Cargo.toml --target-dir target/pydoc
-          cargo build --release --locked --target wasm32-wasip2 --manifest-path plugins/rustdoc/Cargo.toml --target-dir target/rustdoc
-          cargo build --release --locked --target wasm32-wasip2 --manifest-path plugins/jsdoc/Cargo.toml --target-dir target/jsdoc
-          cargo build --release --locked --target wasm32-wasip2 --manifest-path plugins/godoc/Cargo.toml --target-dir target/godoc
-          cargo build --release --locked --target wasm32-wasip2 --manifest-path plugins/jupyter/Cargo.toml --target-dir target/jupyter
-          cargo build --release --locked --target wasm32-wasip2 --manifest-path plugins/asciidoc/Cargo.toml --target-dir target/asciidoc
-          cargo build --release --locked --target wasm32-wasip2 --manifest-path plugins/orgmode/Cargo.toml --target-dir target/orgmode
-          cargo build --release --locked --target wasm32-wasip2 --manifest-path plugins/restructuredtext/Cargo.toml --target-dir target/restructuredtext
+          for p in $PLUGINS; do
+            cargo build --release --locked --target wasm32-wasip2 --manifest-path plugins/$p/Cargo.toml --target-dir target/$p
+          done
 
   # The job above tests on Linux x64. This one tests on each other platform
   # little could be released for, on its own runner. Formatting, lints, and
