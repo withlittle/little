@@ -2,114 +2,30 @@
 //! comrak as little renders it, with little's settings, with every extension
 //! on, and with none; and what's warned of, on which line.
 
-use little_markup::{Part, Settings};
+use little_markup::Part;
+use little_markup::testing::{self, ALL, DEFAULTS, NONE};
 
 use super::{check_settings, read};
 
-/// The site's `markdown` settings, as little gives them, with each of
-/// little's defaults.
-const DEFAULTS: &str = "{}";
-
-/// Every extension on, but smart punctuation, which changes text.
-const ALL: &str = r#"{ "superscript": true, "subscript": true, "mark": true, "insert": true,
-    "description_lists": true }"#;
-
-/// Every extension off.
-const NONE: &str = r#"{ "tables": false, "strikethrough": false, "autolinks": false,
-    "task_lists": false, "footnotes": false, "alerts": false, "emoji": false,
-    "raw_html": false, "math": false }"#;
-
-fn options(settings: &Settings) -> comrak::Options<'static> {
-    let mut options = comrak::Options::default();
-    let extension = &mut options.extension;
-    extension.table = settings.tables;
-    extension.strikethrough = settings.strikethrough;
-    extension.autolink = settings.autolinks;
-    extension.tasklist = settings.task_lists;
-    extension.footnotes = settings.footnotes;
-    extension.alerts = settings.alerts;
-    extension.shortcodes = settings.emoji;
-    extension.math_dollars = settings.math;
-    extension.math_code = settings.math;
-    extension.superscript = settings.superscript;
-    extension.subscript = settings.subscript;
-    extension.highlight = settings.mark;
-    extension.insert = settings.insert;
-    extension.description_lists = settings.description_lists;
-    extension.inline_footnotes = settings.inline_footnotes;
-    extension.cjk_friendly_emphasis = settings.cjk_friendly_emphasis;
-    extension.header_id_prefix = Some(String::new());
-    options.parse.smart = settings.smart_punctuation;
-    options.render.r#unsafe = settings.raw_html;
-    options
-}
-
-/// The parts of `source`, read with `markdown`, and what's warned of, each
-/// as `line: message`.
+// The shared helpers, each reading with this plugin's `read`.
 fn read_with(source: &str, markdown: &str) -> (Vec<Part>, Vec<String>) {
-    let (parts, warnings) = read(source, markdown).unwrap();
-    let warnings = warnings
-        .into_iter()
-        .map(|warning| match warning.line {
-            Some(line) => format!("{line}: {}", warning.message),
-            None => warning.message,
-        })
-        .collect();
-    (parts, warnings)
+    testing::read_with(read, source, markdown)
 }
 
-/// The HTML comrak renders `parts` as, with `markdown`, without the first
-/// part's frontmatter, which little reads itself.
-fn render(parts: &[Part], markdown: &str) -> String {
-    let options = options(&Settings::from_json(markdown).unwrap());
-    parts
-        .iter()
-        .map(|part| match part {
-            Part::Markdown(text) => {
-                let text = little_markup::split_frontmatter(text)
-                    .map_or(text.as_str(), |(_, body, _)| body);
-                comrak::markdown_to_html(text, &options)
-            }
-            Part::Html(html) => html.clone(),
-        })
-        .collect()
-}
-
-/// The Markdown `source` is written as, with `markdown`, which must be one
-/// part, and what's warned of.
 fn markdown_with(source: &str, markdown: &str) -> (String, Vec<String>) {
-    let (parts, warnings) = read_with(source, markdown);
-    let [Part::Markdown(text)] = parts.as_slice() else {
-        panic!("not one part of Markdown: {parts:?}");
-    };
-    (text.clone(), warnings)
+    testing::markdown_with(read, source, markdown)
 }
 
-/// The Markdown `source` is written as, with little's settings, which must
-/// be one part, with nothing warned of.
 fn md(source: &str) -> String {
-    let (text, warnings) = markdown_with(source, DEFAULTS);
-    assert_eq!(warnings, Vec::<String>::new(), "{source}");
-    text
+    testing::md(read, source)
 }
 
-/// The HTML `source` is rendered as, with `markdown`, and what's warned of.
-fn html_with(source: &str, markdown: &str) -> (String, Vec<String>) {
-    let (parts, warnings) = read_with(source, markdown);
-    (render(&parts, markdown), warnings)
-}
-
-/// The HTML `source` is rendered as, with little's settings, with nothing
-/// warned of.
 fn html(source: &str) -> String {
-    let (html, warnings) = html_with(source, DEFAULTS);
-    assert_eq!(warnings, Vec::<String>::new(), "{source}");
-    html
+    testing::html(read, source)
 }
 
-/// What's warned of in `source`, with little's settings.
 fn warnings(source: &str) -> Vec<String> {
-    read_with(source, DEFAULTS).1
+    testing::warnings(read, source)
 }
 
 /// little's manual has a page on the plugin, in AsciiDoc, and is built with

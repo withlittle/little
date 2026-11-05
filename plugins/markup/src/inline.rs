@@ -4,8 +4,7 @@
 //! else in HTML, where `raw_html` is on, else as plain text.
 
 use crate::block::Writer;
-use crate::model::Inline;
-use crate::normalize::Kind;
+use crate::model::{Inline, Kind};
 use crate::settings::Settings;
 use crate::targets::lines_as_spaces;
 use finl_unicode::categories::CharacterCategories;
@@ -125,9 +124,9 @@ impl Writer<'_> {
 
     fn run(&mut self, out: &mut String, inlines: &[Inline], state: &mut State) {
         for inline in inlines {
-            match Kind::of(inline) {
-                Some((kind, children)) => self.delimited(out, kind, children, state),
-                None => self.inline(out, inline, state),
+            match inline {
+                Inline::Styled(kind, children) => self.delimited(out, *kind, children, state),
+                _ => self.inline(out, inline, state),
             }
         }
     }
@@ -429,8 +428,8 @@ pub(crate) fn verbatim(out: &mut String, text: &str, context: Context) {
 /// start, as `delimited` counts them.
 fn kinds_of(inlines: &[Inline], kinds: &mut Vec<Kind>) {
     for inline in inlines {
-        if let Some((kind, children)) = Kind::of(inline) {
-            kinds.push(kind);
+        if let Inline::Styled(kind, children) = inline {
+            kinds.push(*kind);
             kinds_of(children, kinds);
         } else if let Inline::Link { content, .. } = inline {
             kinds_of(content, kinds);

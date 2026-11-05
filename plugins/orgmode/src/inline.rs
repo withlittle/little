@@ -6,7 +6,7 @@
 
 use std::collections::VecDeque;
 
-use little_markup::{Block, Inline, Target};
+use little_markup::{Block, Inline, Kind, Target};
 use orgize::ast::{Entity, InlineSrc, Link as LinkNode, Macros, Snippet};
 use orgize::config::UseSubSuperscript;
 use orgize::rowan::ast::AstNode;
@@ -356,9 +356,9 @@ fn script_at(text: &str, position: usize, scripts: &UseSubSuperscript) -> Option
     };
     let content = vec![Inline::Text(content.to_string())];
     let script = if text[position..].starts_with('^') {
-        Inline::Superscript(content)
+        Inline::Styled(Kind::Superscript, content)
     } else {
-        Inline::Subscript(content)
+        Inline::Styled(Kind::Subscript, content)
     };
     Some((position + 1 + length, script))
 }
@@ -380,10 +380,15 @@ impl Converter<'_> {
     fn object(&mut self, node: &SyntaxNode, links: bool) -> Vec<Inline> {
         let raw = || vec![Inline::Text(node.to_string())];
         match node.kind() {
-            SyntaxKind::BOLD => vec![Inline::Strong(self.objects(&inner(node), links))],
-            SyntaxKind::ITALIC => vec![Inline::Emphasis(self.objects(&inner(node), links))],
-            SyntaxKind::UNDERLINE => vec![Inline::Underline(self.objects(&inner(node), links))],
-            SyntaxKind::STRIKE => vec![Inline::Strikethrough(self.objects(&inner(node), links))],
+            SyntaxKind::BOLD | SyntaxKind::ITALIC | SyntaxKind::UNDERLINE | SyntaxKind::STRIKE => {
+                let kind = match node.kind() {
+                    SyntaxKind::BOLD => Kind::Strong,
+                    SyntaxKind::ITALIC => Kind::Emphasis,
+                    SyntaxKind::UNDERLINE => Kind::Underline,
+                    _ => Kind::Strikethrough,
+                };
+                vec![Inline::Styled(kind, self.objects(&inner(node), links))]
+            }
             SyntaxKind::VERBATIM | SyntaxKind::CODE => {
                 vec![Inline::Code(unindent(&inner_raw(node)))]
             }
@@ -397,9 +402,9 @@ impl Converter<'_> {
                 }
                 let inlines = self.objects(&children, links);
                 vec![if node.kind() == SyntaxKind::SUPERSCRIPT {
-                    Inline::Superscript(inlines)
+                    Inline::Styled(Kind::Superscript, inlines)
                 } else {
-                    Inline::Subscript(inlines)
+                    Inline::Styled(Kind::Subscript, inlines)
                 }]
             }
             SyntaxKind::ENTITY => {
@@ -434,7 +439,7 @@ impl Converter<'_> {
                     start(node),
                     format!(
                         "left out `{}`, as the plugin doesn't run code",
-                        one_line(&node.to_string())
+                        links::words(&node.to_string())
                     ),
                 );
                 Vec::new()
@@ -726,7 +731,7 @@ impl Converter<'_> {
     fn unexpanded(&mut self, node: &SyntaxNode, written: String, why: &str) -> Vec<Inline> {
         self.warn(
             start(node),
-            format!("kept `{}` as text, as {why}", one_line(&written)),
+            format!("kept `{}` as text, as {why}", links::words(&written)),
         );
         vec![Inline::Text(unindent(&written))]
     }
@@ -787,10 +792,4 @@ fn substitute(template: &str, arguments: &[String]) -> String {
     }
     out.push_str(rest);
     out
-}
-
-/// `text` on one line, with each run of whitespace a space, as a warning
-/// shows what it's of.
-fn one_line(text: &str) -> String {
-    text.split_whitespace().collect::<Vec<_>>().join(" ")
 }

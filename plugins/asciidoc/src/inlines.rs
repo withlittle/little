@@ -6,7 +6,7 @@ use asciidoc_parser::inlines::{
     StyleVariant, UiKind,
 };
 use asciidoc_parser::{HasSpan, Span};
-use little_markup::{Block, Footnote, Inline, Target};
+use little_markup::{Block, Footnote, Inline, Kind, Target};
 
 use crate::reader::Reader;
 use crate::text;
@@ -81,7 +81,10 @@ impl Reader<'_> {
                     }
                     UiKind::Button(label) => {
                         flush(&mut run, &mut inlines);
-                        inlines.push(Inline::Strong(vec![Inline::Text(text::decode(label))]));
+                        inlines.push(Inline::Styled(
+                            Kind::Strong,
+                            vec![Inline::Text(text::decode(label))],
+                        ));
                     }
                     UiKind::Menu {
                         menu,
@@ -122,15 +125,17 @@ impl Reader<'_> {
                 let mut children = self.inlines(&styled.children);
                 let has_role = |role: &str| styled.roles.iter().any(|each| each.as_ref() == role);
                 inlines.push(match styled.variant {
-                    StyleVariant::Strong => Inline::Strong(children),
-                    StyleVariant::Emphasis => Inline::Emphasis(children),
-                    StyleVariant::Mark => Inline::Mark(children),
-                    StyleVariant::Superscript => Inline::Superscript(children),
-                    StyleVariant::Subscript => Inline::Subscript(children),
+                    StyleVariant::Strong => Inline::Styled(Kind::Strong, children),
+                    StyleVariant::Emphasis => Inline::Styled(Kind::Emphasis, children),
+                    StyleVariant::Mark => Inline::Styled(Kind::Mark, children),
+                    StyleVariant::Superscript => Inline::Styled(Kind::Superscript, children),
+                    StyleVariant::Subscript => Inline::Styled(Kind::Subscript, children),
                     StyleVariant::Code => Inline::Code(flatten(&children)),
-                    StyleVariant::Unquoted if has_role("underline") => Inline::Underline(children),
+                    StyleVariant::Unquoted if has_role("underline") => {
+                        Inline::Styled(Kind::Underline, children)
+                    }
                     StyleVariant::Unquoted if has_role("line-through") => {
-                        Inline::Strikethrough(children)
+                        Inline::Styled(Kind::Strikethrough, children)
                     }
                     StyleVariant::DoubleQuote | StyleVariant::SingleQuote => {
                         let (open, close) = match styled.variant {
@@ -319,13 +324,7 @@ pub(crate) fn flatten(inlines: &[Inline]) -> String {
     for inline in inlines {
         match inline {
             Inline::Text(text) | Inline::Code(text) | Inline::Math(text) => flat.push_str(text),
-            Inline::Emphasis(children)
-            | Inline::Strong(children)
-            | Inline::Strikethrough(children)
-            | Inline::Underline(children)
-            | Inline::Mark(children)
-            | Inline::Superscript(children)
-            | Inline::Subscript(children)
+            Inline::Styled(_, children)
             | Inline::Link {
                 content: children, ..
             } => flat.push_str(&flatten(children)),

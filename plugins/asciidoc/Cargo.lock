@@ -204,9 +204,7 @@ name = "little-asciidoc"
 version = "0.1.0"
 dependencies = [
  "asciidoc-parser",
- "comrak",
  "little-markup",
- "serde_json",
  "wit-bindgen 0.62.0",
 ]
 
@@ -214,6 +212,7 @@ dependencies = [
 name = "little-markup"
 version = "0.1.0"
 dependencies = [
+ "comrak",
  "finl_unicode",
  "serde_json",
 ]

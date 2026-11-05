@@ -9,9 +9,15 @@ publish = false
 # Its own workspace, apart from little's and the plugins'.
 [workspace]
 
+[features]
+# `testing`, what the plugins' tests share, which renders with comrak.
+testing = ["dep:comrak"]
+
 [dependencies]
 serde_json = "1.0.151"
 finl_unicode = { version = "1.5", default-features = false, features = ["categories"] }
+# Only for `testing`, so it's in no plugin's release.
+comrak = { version = "0.55", default-features = false, features = ["shortcodes"], optional = true }
 
 [dev-dependencies]
 comrak = { version = "0.55", default-features = false, features = ["shortcodes"] }

@@ -7,7 +7,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use little_markup::{Block, Definition, Footnote, Inline, Item, Table, Target};
+use little_markup::{Block, Definition, Footnote, Inline, Item, Kind as Style, Table, Target};
 
 use crate::state::{Dest, Kind, MAX_DEPTH, State};
 use crate::tree::{Node, Ref, Span};
@@ -305,12 +305,12 @@ impl<'s> Resolver<'s> {
     fn inline(&mut self, span: Span, out: &mut Vec<Inline>) {
         let inline = match span {
             Span::Text(text) => Inline::Text(text),
-            Span::Emphasis(spans) => Inline::Emphasis(self.inlines(spans)),
-            Span::Strong(spans) => Inline::Strong(self.inlines(spans)),
+            Span::Emphasis(spans) => Inline::Styled(Style::Emphasis, self.inlines(spans)),
+            Span::Strong(spans) => Inline::Styled(Style::Strong, self.inlines(spans)),
             Span::Code(code) => Inline::Code(code),
             Span::Math(tex) => Inline::Math(tex),
-            Span::Sub(spans) => Inline::Subscript(self.inlines(spans)),
-            Span::Sup(spans) => Inline::Superscript(self.inlines(spans)),
+            Span::Sub(spans) => Inline::Styled(Style::Subscript, self.inlines(spans)),
+            Span::Sup(spans) => Inline::Styled(Style::Superscript, self.inlines(spans)),
             Span::Html(html, line) => Inline::Html {
                 html,
                 line: Some(line),
@@ -584,14 +584,7 @@ fn flatten(inlines: &[Inline], out: &mut String) -> bool {
                 continue;
             }
             Inline::Code(text) | Inline::Math(text) => out.push_str(text),
-            Inline::Emphasis(content)
-            | Inline::Strong(content)
-            | Inline::Strikethrough(content)
-            | Inline::Underline(content)
-            | Inline::Mark(content)
-            | Inline::Superscript(content)
-            | Inline::Subscript(content)
-            | Inline::Link { content, .. } => {
+            Inline::Styled(_, content) | Inline::Link { content, .. } => {
                 flatten(content, out);
             }
             Inline::Image { alt, .. } => out.push_str(alt),

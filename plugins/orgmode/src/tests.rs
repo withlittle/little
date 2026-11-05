@@ -1,35 +1,10 @@
 //! Checks what each part of Org becomes, as little renders it, with comrak
 //! set as little sets it.
 
+use little_markup::testing::options;
 use little_markup::{Part, Settings};
 
 use super::{check_settings, read};
-
-/// comrak's options, as little sets them for `settings`.
-fn options(settings: &Settings) -> comrak::Options<'static> {
-    let mut options = comrak::Options::default();
-    let extension = &mut options.extension;
-    extension.table = settings.tables;
-    extension.strikethrough = settings.strikethrough;
-    extension.autolink = settings.autolinks;
-    extension.tasklist = settings.task_lists;
-    extension.footnotes = settings.footnotes;
-    extension.alerts = settings.alerts;
-    extension.shortcodes = settings.emoji;
-    extension.math_dollars = settings.math;
-    extension.math_code = settings.math;
-    extension.superscript = settings.superscript;
-    extension.subscript = settings.subscript;
-    extension.highlight = settings.mark;
-    extension.insert = settings.insert;
-    extension.description_lists = settings.description_lists;
-    extension.inline_footnotes = settings.inline_footnotes;
-    extension.cjk_friendly_emphasis = settings.cjk_friendly_emphasis;
-    extension.header_id_prefix = Some(String::new());
-    options.parse.smart = settings.smart_punctuation;
-    options.render.r#unsafe = settings.raw_html;
-    options
-}
 
 /// The parts `org` is read into, with the site's `markdown` settings, as
 /// JSON, and what it warns of, each as little shows it, on `page.org`.

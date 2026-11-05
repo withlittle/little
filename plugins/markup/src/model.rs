@@ -1,6 +1,8 @@
 //! What a page holds, in no format in particular: what each plugin reads its
 //! format into, and [`write`](crate::write) writes as Markdown.
 
+use crate::targets::collapse;
+
 /// A page: its frontmatter, its blocks, and its footnotes.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Document {
@@ -180,20 +182,8 @@ impl AlertKind {
 pub enum Inline {
     /// Text, as it's shown.
     Text(String),
-    /// Emphasis, usually italic.
-    Emphasis(Vec<Inline>),
-    /// Strong emphasis, usually bold.
-    Strong(Vec<Inline>),
-    /// Text struck through.
-    Strikethrough(Vec<Inline>),
-    /// Underlined text, written in HTML, where `raw_html` is on.
-    Underline(Vec<Inline>),
-    /// Highlighted text.
-    Mark(Vec<Inline>),
-    /// Superscript.
-    Superscript(Vec<Inline>),
-    /// Subscript.
-    Subscript(Vec<Inline>),
+    /// Text set between delimiters, like emphasis.
+    Styled(Kind, Vec<Inline>),
     /// Code, in a line.
     Code(String),
     /// A formula, in a line, in TeX.
@@ -231,6 +221,25 @@ pub enum Inline {
     Anchor(String),
 }
 
+/// A kind of text set between delimiters, like emphasis.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Kind {
+    /// Emphasis, usually italic.
+    Emphasis,
+    /// Strong emphasis, usually bold.
+    Strong,
+    /// Text struck through.
+    Strikethrough,
+    /// Underlined text, written in HTML, where `raw_html` is on.
+    Underline,
+    /// Highlighted text.
+    Mark,
+    /// Superscript.
+    Superscript,
+    /// Subscript.
+    Subscript,
+}
+
 /// Where a link leads.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Target {
@@ -249,13 +258,7 @@ pub fn plain_text(inlines: &[Inline]) -> String {
         for inline in inlines {
             match inline {
                 Inline::Text(text) | Inline::Code(text) | Inline::Math(text) => out.push_str(text),
-                Inline::Emphasis(children)
-                | Inline::Strong(children)
-                | Inline::Strikethrough(children)
-                | Inline::Underline(children)
-                | Inline::Mark(children)
-                | Inline::Superscript(children)
-                | Inline::Subscript(children)
+                Inline::Styled(_, children)
                 | Inline::Link {
                     content: children, ..
                 } => walk(children, out),
@@ -267,5 +270,5 @@ pub fn plain_text(inlines: &[Inline]) -> String {
     }
     let mut out = String::new();
     walk(inlines, &mut out);
-    out.split_whitespace().collect::<Vec<_>>().join(" ")
+    collapse(&out)
 }

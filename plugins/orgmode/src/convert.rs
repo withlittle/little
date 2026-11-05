@@ -4,7 +4,8 @@
 use std::collections::{HashMap, HashSet};
 
 use little_markup::{
-    AlertKind, Block, Definition, Document, Footnote, Inline, Item, Target, Warning, plain_text,
+    AlertKind, Block, Definition, Document, Footnote, Inline, Item, Kind, Target, Warning,
+    each_inlines, plain_text,
 };
 use orgize::ast::{ExportBlock, Headline, ListItem, SourceBlock};
 use orgize::rowan::WalkEvent;
@@ -71,7 +72,7 @@ pub fn convert(text: &str, lines_before: usize) -> (Document, Vec<Warning>) {
             });
         }
     }
-    blocks.extend(converter.document(&root));
+    converter.sections(&root, Pending::default(), &mut blocks);
     let mut footnotes = std::mem::take(&mut converter.footnotes);
     converter.retarget(&mut blocks);
     for footnote in &mut footnotes {
@@ -357,18 +358,7 @@ impl Converter<'_> {
         let root = self.parse(&self.text[from..to]);
         let saved = std::mem::replace(&mut self.base, from);
         let mut blocks = Vec::new();
-        let mut pending = Some(pending);
-        for child in root.children() {
-            match child.kind() {
-                SyntaxKind::SECTION => {
-                    let nodes: Vec<SyntaxNode> = child.children().collect();
-                    let pending = pending.take().unwrap_or_default();
-                    blocks.extend(self.elements(&nodes, pending));
-                }
-                SyntaxKind::HEADLINE => self.headline(&child, &mut blocks),
-                _ => {}
-            }
-        }
+        self.sections(&root, pending, &mut blocks);
         self.base = saved;
         blocks
     }
@@ -533,23 +523,6 @@ impl Converter<'_> {
 }
 
 impl Converter<'_> {
-    /// The blocks of the document `root`: its first section's, then its
-    /// headlines'.
-    fn document(&mut self, root: &SyntaxNode) -> Vec<Block> {
-        let mut blocks = Vec::new();
-        for child in root.children() {
-            match child.kind() {
-                SyntaxKind::SECTION => {
-                    let nodes: Vec<SyntaxNode> = child.children().collect();
-                    blocks.extend(self.elements(&nodes, Pending::default()));
-                }
-                SyntaxKind::HEADLINE => self.headline(&child, &mut blocks),
-                _ => {}
-            }
-        }
-        blocks
-    }
-
     /// Add the headline `node` to `blocks`, as a heading a level below its
     /// stars', since `#+TITLE:` is the first, with its section and the
     /// headlines under it, unless export leaves it out.
@@ -578,18 +551,24 @@ impl Converter<'_> {
             content,
             ids: custom_id.into_iter().collect(),
         });
-        for child in node.children() {
+        self.sections(node, Pending::default(), blocks);
+        self.header_args = saved;
+    }
+
+    /// Add the blocks of the sections and headlines under `parent` to
+    /// `blocks`, in order: a document's first section, then its headlines.
+    /// The first section takes `pending`, the affiliated keywords before it.
+    fn sections(&mut self, parent: &SyntaxNode, mut pending: Pending, blocks: &mut Vec<Block>) {
+        for child in parent.children() {
             match child.kind() {
                 SyntaxKind::SECTION => {
                     let nodes: Vec<SyntaxNode> = child.children().collect();
-                    let section = self.elements(&nodes, Pending::default());
-                    blocks.extend(section);
+                    blocks.extend(self.elements(&nodes, std::mem::take(&mut pending)));
                 }
                 SyntaxKind::HEADLINE => self.headline(&child, blocks),
                 _ => {}
             }
         }
-        self.header_args = saved;
     }
 
     /// The blocks of the elements `nodes`, the first with `pending`, the
@@ -673,7 +652,8 @@ impl Converter<'_> {
             return None;
         }
         let content = self.snippet(&pending.caption.join(" "), pending.caption_line);
-        (!content.is_empty()).then(|| Block::Paragraph(vec![Inline::Emphasis(content)]))
+        (!content.is_empty())
+            .then(|| Block::Paragraph(vec![Inline::Styled(Kind::Emphasis, content)]))
     }
 
     /// The blocks of the elements in the block or drawer `node`.
@@ -1076,42 +1056,7 @@ impl Converter<'_> {
     /// placeholder [`Converter::headline_link`] gave it, to its heading, by
     /// its `CUSTOM_ID`, or else its text.
     fn retarget(&self, blocks: &mut [Block]) {
-        for block in blocks {
-            match block {
-                Block::Paragraph(inlines)
-                | Block::Heading {
-                    content: inlines, ..
-                } => {
-                    self.retarget_inlines(inlines);
-                }
-                Block::Quote {
-                    blocks,
-                    attribution,
-                } => {
-                    self.retarget(blocks);
-                    self.retarget_inlines(attribution);
-                }
-                Block::Alert { blocks, .. } => self.retarget(blocks),
-                Block::List { items, .. } => {
-                    for item in items {
-                        self.retarget(&mut item.blocks);
-                    }
-                }
-                Block::Definitions(definitions) => {
-                    for definition in definitions {
-                        self.retarget_inlines(&mut definition.term);
-                        self.retarget(&mut definition.blocks);
-                    }
-                }
-                Block::Table(table) => {
-                    let header = table.header.iter_mut().flatten();
-                    for cell in header.chain(table.rows.iter_mut().flatten()) {
-                        self.retarget(cell);
-                    }
-                }
-                _ => {}
-            }
-        }
+        each_inlines(blocks, &mut |inlines| self.retarget_inlines(inlines));
     }
 
     fn retarget_inlines(&self, inlines: &mut [Inline]) {
@@ -1134,13 +1079,7 @@ impl Converter<'_> {
                     }
                     self.retarget_inlines(content);
                 }
-                Inline::Emphasis(children)
-                | Inline::Strong(children)
-                | Inline::Strikethrough(children)
-                | Inline::Underline(children)
-                | Inline::Mark(children)
-                | Inline::Superscript(children)
-                | Inline::Subscript(children) => self.retarget_inlines(children),
+                Inline::Styled(_, children) => self.retarget_inlines(children),
                 _ => {}
             }
         }
@@ -1206,13 +1145,7 @@ fn set_alt(blocks: &mut [Block], alt: String) {
         for inline in inlines {
             match inline {
                 Inline::Link { .. } | Inline::Image { .. } => return Some(inline),
-                Inline::Emphasis(children)
-                | Inline::Strong(children)
-                | Inline::Strikethrough(children)
-                | Inline::Underline(children)
-                | Inline::Mark(children)
-                | Inline::Superscript(children)
-                | Inline::Subscript(children) => {
+                Inline::Styled(_, children) => {
                     if let Some(found) = first(children) {
                         return Some(found);
                     }
