@@ -51,7 +51,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light dark">
   <title>{% block title %}{{ page.title }} · {{ site.name }}{% endblock %}</title>
-  {% if page.description %}<meta name="description" content="{{ page.description }}">{% endif %}
+  {% set description = page.description or site.description %}
+  {% if description %}<meta name="description" content="{{ description }}">{% endif %}
   {# Before anything is drawn, so a page opens in the colours the reader
      chose, if they chose any; without a script, it follows the system's. #}
   <script>
@@ -108,7 +109,6 @@
       {% else %}
       <a class="brand" href="{{ '/' | url }}">{{ site.name }}</a>
       {% endif %}
-      {% if site.description %}<span class="description">{{ site.description }}</span>{% endif %}
       <div class="header-actions">
         {% if site.search %}
         {# A button that opens the search box, as ⌘K or Ctrl+K does. #}

@@ -2,7 +2,10 @@
 
 - Status: accepted; amended by [0040](./0040-versions-from-git-refs.md),
   which keeps the name to one line, cut short with an ellipsis, on a
-  phone, where the menu of versions goes below it
+  phone, where the menu of versions goes below it, and by
+  [0068](./0068-the-sites-description-as-a-meta-description.md), which
+  takes the description out of the header, so the name has all the room
+  the buttons leave
 - Date: 2026-10-11
 - Amends: [0033](./0033-the-built-in-themes-design.md)
 

@@ -1,7 +1,7 @@
 # little
 
-A little static site generator for documentation: put Markdown in
-`docs/`, and get a site.
+The little static documentation site generator for big things. Put
+Markdown in `docs/`, and get a site.
 
 - **One binary.** No runtime, no `node_modules`, and no version managers.
 - **Config that cascades.** little has defaults, a theme sets its own, and

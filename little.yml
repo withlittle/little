@@ -1,7 +1,7 @@
 # Site config — the LAST word in the cascade (little -> theme -> site).
 # Optional: without this file, the theme's config and little's defaults apply.
 name: little
-description: A little static documentation site generator
+description: The little static documentation site generator for big things.
 url: https://withlittle.github.io/little
 # Where the site's source is, so each page can link to its file there.
 repo: https://github.com/withlittle/little

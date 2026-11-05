@@ -7,7 +7,7 @@ edition = "2024"
 # The oldest Rust its dependencies build with, wasmtime's. Clippy warns of an
 # API from a later one.
 rust-version = "1.96"
-description = "A little static site generator for documentation"
+description = "The little static documentation site generator for big things."
 license = "MIT"
 repository = "https://github.com/withlittle/little"
 homepage = "https://withlittle.github.io/little"
