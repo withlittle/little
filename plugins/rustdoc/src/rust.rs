@@ -7,14 +7,14 @@ use std::collections::HashMap;
 
 use little_api_reference::model::{self, Items, Kind, Object, Section};
 use little_api_reference::text;
-use proc_macro2::TokenTree;
+use proc_macro2::{TokenStream, TokenTree};
 use syn::ext::IdentExt;
 use syn::punctuated::Punctuated;
 use syn::spanned::Spanned;
 use syn::{
-    Attribute, Block, Expr, Field, Fields, FieldsNamed, FnModifiers, ImplItem, ImplItemConst, Item,
-    ItemConst, ItemEnum, ItemFn, ItemImpl, ItemMacro, ItemStruct, ItemTrait, ItemUnion, Path,
-    Signature, Token, TraitItem, Type, TypePath, UnOp, Visibility,
+    AttrStyle, Attribute, Block, Expr, Field, Fields, FieldsNamed, FnModifiers, ImplItem,
+    ImplItemConst, Item, ItemConst, ItemEnum, ItemFn, ItemImpl, ItemMacro, ItemStruct, ItemTrait,
+    ItemUnion, Path, Signature, Token, TraitItem, Type, TypePath, UnOp, Visibility, parse_quote,
 };
 
 use crate::docs;
@@ -175,7 +175,7 @@ impl Reader<'_> {
             _ => None,
         };
         object.docs.extend(listed);
-        object.source = source(&module.source, item, attrs_of);
+        object.source = source(&module.source, parse_quote!(#item), attrs);
         let this = Target::Item {
             module: index,
             name: name.clone(),
@@ -221,7 +221,7 @@ impl Reader<'_> {
         let mut object = Object::new(&name, Kind::Macro);
         object.signature = Some(rules(&name, item, &module.source));
         object.docs = untitled(text);
-        object.source = source(&module.source, item, macro_attrs);
+        object.source = source(&module.source, parse_quote!(#item), &item.attrs);
         if module.file != modules[0].file {
             object.file = Some(module.file.clone());
         }
@@ -275,7 +275,7 @@ impl Reader<'_> {
             let mut object = Object::new(&member_name, kind);
             object.signature = Some(signature);
             object.docs = untitled(text);
-            object.source = source(&module.source, member, trait_item_attrs);
+            object.source = source(&module.source, parse_quote!(#member), attrs);
             let context = Context {
                 module: index,
                 this: Some(this.clone()),
@@ -437,7 +437,7 @@ impl Reader<'_> {
         let mut object = Object::new(&name, kind);
         object.signature = Some(signature);
         object.docs = untitled(text);
-        object.source = source(&module.source, member, impl_item_attrs);
+        object.source = source(&module.source, parse_quote!(#member), attrs);
         if module.file != modules[*page].file {
             object.file = Some(module.file.clone());
         }
@@ -817,54 +817,16 @@ fn type_text(ty: &Type) -> String {
         .replace(", ]", "]")
 }
 
-/// The code `node` is written as in `source`, without its docs: from the
-/// start of its first line, without that line's indentation. `attrs` gives
-/// the attributes of a node, if it has any.
-fn source<T: Clone + Spanned>(
-    source: &str,
-    node: &T,
-    attrs: fn(&mut T) -> Option<&mut Vec<Attribute>>,
-) -> Option<String> {
-    let mut node = node.clone();
-    if let Some(attrs) = attrs(&mut node) {
-        attrs.retain(|attr| !attr.path().is_ident("doc"));
-    }
-    text::source(source, node.span().byte_range())
-}
-
-fn attrs_of(item: &mut Item) -> Option<&mut Vec<Attribute>> {
-    match item {
-        Item::Const(item) => Some(&mut item.attrs),
-        Item::Enum(item) => Some(&mut item.attrs),
-        Item::Fn(item) => Some(&mut item.attrs),
-        Item::Static(item) => Some(&mut item.attrs),
-        Item::Struct(item) => Some(&mut item.attrs),
-        Item::Trait(item) => Some(&mut item.attrs),
-        Item::Type(item) => Some(&mut item.attrs),
-        Item::Union(item) => Some(&mut item.attrs),
-        _ => None,
-    }
-}
-
-fn trait_item_attrs(member: &mut TraitItem) -> Option<&mut Vec<Attribute>> {
-    match member {
-        TraitItem::Fn(member) => Some(&mut member.attrs),
-        TraitItem::Const(member) => Some(&mut member.attrs),
-        TraitItem::Type(member) => Some(&mut member.attrs),
-        _ => None,
-    }
-}
-
-fn impl_item_attrs(member: &mut ImplItem) -> Option<&mut Vec<Attribute>> {
-    match member {
-        ImplItem::Fn(member) => Some(&mut member.attrs),
-        ImplItem::Const(member) => Some(&mut member.attrs),
-        _ => None,
-    }
-}
-
-fn macro_attrs(item: &mut ItemMacro) -> Option<&mut Vec<Attribute>> {
-    Some(&mut item.attrs)
+/// The code of the item with `tokens` and `attrs`, written as in `source`,
+/// without the docs it starts with: from the start of its first line,
+/// without that line's indentation. Callers get `tokens` with
+/// `parse_quote!`, as `quote` isn't a dependency.
+fn source(source: &str, tokens: TokenStream, attrs: &[Attribute]) -> Option<String> {
+    let outer = (attrs.iter()).filter(|attr| matches!(attr.style, AttrStyle::Outer));
+    let docs = outer.take_while(|attr| attr.path().is_ident("doc")).count();
+    // An item's tokens start with its outer attributes, each a `#` and a `[...]`.
+    let tokens: TokenStream = tokens.into_iter().skip(2 * docs).collect();
+    text::source(source, tokens.span().byte_range())
 }
 
 #[cfg(test)]
@@ -996,16 +958,36 @@ mod tests {
     fn source_starts_at_its_line_without_its_docs() {
         let code = "// Ünïcödé — before it.\n/// Its docs.\n#[derive(Clone)]\npub struct Café {\n    \
                     pub naïve: bool,\n}\n";
-        let item: Item = parse(code);
+        let item: ItemStruct = parse(code);
         assert_eq!(
-            source(code, &item, attrs_of).as_deref(),
+            source(code, parse_quote!(#item), &item.attrs).as_deref(),
             Some("#[derive(Clone)]\npub struct Café {\n    pub naïve: bool,\n}")
         );
         let code = "impl Café {\n    /// Docs.\n    pub fn f(&self) {\n        g();\n    }\n}";
         let item: ItemImpl = parse(code);
+        let ImplItem::Fn(member) = &item.items[0] else {
+            panic!("it's a method");
+        };
         assert_eq!(
-            source(code, &item.items[0], impl_item_attrs).as_deref(),
+            source(code, parse_quote!(#member), &member.attrs).as_deref(),
             Some("pub fn f(&self) {\n    g();\n}")
+        );
+    }
+
+    #[test]
+    fn source_starts_at_its_first_attribute_that_isnt_docs() {
+        let code = "/// Docs.\n// A comment.\n#[cfg(x)]\n/// More docs.\n#[inline]\npub fn f() {\n    \
+                    //! Inner docs.\n}\n";
+        let item: ItemFn = parse(code);
+        assert_eq!(
+            source(code, parse_quote!(#item), &item.attrs).as_deref(),
+            Some("#[cfg(x)]\n/// More docs.\n#[inline]\npub fn f() {\n    //! Inner docs.\n}")
+        );
+        let code = "/** Docs. */\n#[doc = \"More.\"]\n// A comment.\n\n  const X: u8 = 1;";
+        let item: ItemConst = parse(code);
+        assert_eq!(
+            source(code, parse_quote!(#item), &item.attrs).as_deref(),
+            Some("const X: u8 = 1;")
         );
     }
 }
