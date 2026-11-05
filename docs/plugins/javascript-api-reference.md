@@ -26,7 +26,7 @@ where its pages go:
 # little.yml
 plugins:
   jsdoc:
-    wasm: https://github.com/withlittle/little/releases/download/jsdoc-v0.1.0/little_jsdoc.wasm
+    wasm: https://github.com/withlittle/little/releases/download/jsdoc-v0.1.1/little_jsdoc.wasm
     read: ./src
     package: my-lib
     title: API reference
@@ -61,11 +61,11 @@ another entry under `plugins`, with another name, and the same `wasm`:
 # little.yml
 plugins:
   core_api:
-    wasm: https://github.com/withlittle/little/releases/download/jsdoc-v0.1.0/little_jsdoc.wasm
+    wasm: https://github.com/withlittle/little/releases/download/jsdoc-v0.1.1/little_jsdoc.wasm
     read: ./packages/core/src
     package: "@my-org/core"
   cli_api:
-    wasm: https://github.com/withlittle/little/releases/download/jsdoc-v0.1.0/little_jsdoc.wasm
+    wasm: https://github.com/withlittle/little/releases/download/jsdoc-v0.1.1/little_jsdoc.wasm
     read: ./packages/cli/src
     package: "@my-org/cli"
 ```
@@ -74,7 +74,7 @@ plugins:
 
 Each version of `jsdoc` is released in little's repository, as a `.wasm`
 file, about 1.2 MB. A site names it by its URL, with the version in it, like
-`jsdoc-v0.1.0` above.
+`jsdoc-v0.1.1` above.
 
 little downloads it in the site's first build, and uses that copy from then
 on, as for [any plugin](using-plugins.md#naming-a-plugin). So to update it,
