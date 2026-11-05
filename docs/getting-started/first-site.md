@@ -89,8 +89,10 @@ name: My Project
 description: Docs that just work
 ```
 
-`little serve` sees the change, and reloads. See
-[Configuring](configuring.md) for what else you can set.
+`little serve` sees the change, and reloads. The name is in the header, and
+the browser's tab. The description is for search engines and link
+previews, on each page without its own. See [Configuring](configuring.md)
+for what else you can set.
 
 ## Build it
 

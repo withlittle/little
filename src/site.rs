@@ -3622,6 +3622,39 @@ mod tests {
     }
 
     #[test]
+    fn the_builtin_theme_gives_a_page_without_a_description_the_sites() {
+        let site = scratch_site(
+            "builtin-description",
+            &[
+                ("little.yml", "description: Docs that just work\n"),
+                ("docs/README.md", "# Home\n"),
+                (
+                    "docs/guide.md",
+                    "---\ndescription: All about it\n---\n# Guide\n",
+                ),
+            ],
+        );
+
+        build(&site).unwrap();
+
+        let read = |path: &str| fs::read_to_string(site.join("dist").join(path)).unwrap();
+        let meta = |text: &str| format!(r#"<meta name="description" content="{text}">"#);
+        let guide = read("guide/index.html");
+        assert!(guide.contains(&meta("All about it")), "{guide}");
+        assert!(!guide.contains("Docs that just work"), "{guide}");
+        // The header doesn't show it, so it's only in the meta tag.
+        let home = read("index.html");
+        assert!(home.contains(&meta("Docs that just work")), "{home}");
+        assert_eq!(home.matches("Docs that just work").count(), 1, "{home}");
+
+        fs::write(site.join("little.yml"), "").unwrap();
+        build(&site).unwrap();
+        let home = read("index.html");
+        assert!(!home.contains(r#"<meta name="description""#), "{home}");
+        let _ = fs::remove_dir_all(&site);
+    }
+
+    #[test]
     fn a_page_toc_is_shaped_like_the_site_nav() {
         // So one macro can list both.
         let site = scratch_site(

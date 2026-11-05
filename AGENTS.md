@@ -925,3 +925,13 @@ Record notable choices as short ADRs in `decisions/`, list each in its
   `rustdoc`'s `title` matches it. That page still links to it, as its
   example, and its URLs don't change — see
   [`decisions/0067-littles-api-at-the-end-of-the-manuals-nav.md`](./decisions/0067-littles-api-at-the-end-of-the-manuals-nav.md).
+- **The site's description as a meta description:** the built-in theme's
+  header no longer shows `site.description` beside the site's name, where
+  it was hidden on a phone, and cut short where room ran out, as the docs
+  themes 0033 drew on show none. Instead, it's the
+  `<meta name="description">` of each page without a `description` of its
+  own, the 404 page too, as in Starlight, VitePress, and Material for
+  MkDocs, so the setting, which `little init` suggests, still does
+  something, and a preview of a link to any page says what the site is. A
+  page on a site with one can't leave it out — see
+  [`decisions/0068-the-sites-description-as-a-meta-description.md`](./decisions/0068-the-sites-description-as-a-meta-description.md).

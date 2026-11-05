@@ -39,7 +39,7 @@ You can add settings of your own, too. Each reaches the theme as
 | Key | Default | Used for |
 | --- | ------- | -------- |
 | `name` | `Documentation` | The site's title, in the header and the browser's tab |
-| `description` | none | Text beside the site's title |
+| `description` | none | The meta description of a page without [its own](../writing/frontmatter.md) |
 | `font` | a system UI font stack | The text's `font-family` |
 | `lang` | `en` | Each page's `lang`, which [search](../writing/search.md) matches words in |
 | `search` | `true` | The [search box](../writing/search.md) in the header, and the index it searches |

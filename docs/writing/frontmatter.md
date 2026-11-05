@@ -16,8 +16,10 @@ description: A page's own settings, in YAML at its top.
 ```
 
 The built-in theme uses `description` as the page's meta description, for
-search engines and link previews. You can add keys of your own, too. Each
-reaches the theme as `page.<key>`, for a theme that shows it.
+search engines and link previews. A page without one gets the site's
+[`description`](../getting-started/configuring.md#the-built-in-themes-settings).
+You can add keys of your own, too. Each reaches the theme as `page.<key>`,
+for a theme that shows it.
 
 ## A page's title
 

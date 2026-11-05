@@ -87,7 +87,7 @@ goes over little's, and the site's goes over it:
 | Key | Default | Chooses… |
 | --- | ------- | -------- |
 | `name` | `Documentation` | the site's title, in the header and the browser's tab |
-| `description` | none | the text beside the site's title |
+| `description` | none | the meta description of a page without [its own](../writing/frontmatter.md) |
 | `lang` | `en` | each page's language, which [search](../writing/search.md) matches words in |
 | `font` | a system UI font stack | the text's `font-family` |
 | `toc_max_depth` | `3`, for `###` | the level a page's table of contents lists down to |
