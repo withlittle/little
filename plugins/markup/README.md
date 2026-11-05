@@ -9,6 +9,10 @@ little builds each page as it builds one written in Markdown. Text is
 escaped, so it shows as it's written; what Markdown can't hold is written
 as HTML, where `raw_html` is on, or as near as Markdown comes; and each
 heading's `#fragment` is worked out as little's, so links to it work.
+Its `plugin!` macro, in `src/lib.rs`, is their glue to little's
+[`wit/plugin.wit`](../../wit/plugin.wit). `check_settings` checks their
+settings, which are only `read`. Their tests share the helpers in
+`src/testing.rs`, behind the `testing` feature.
 Why they share it is in
 [ADR 0062](../../decisions/0062-plugins-for-asciidoc-and-orgmode.md).
 
