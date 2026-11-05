@@ -20,6 +20,9 @@ oxc_span = "0.154.0"
 pulldown-cmark = { version = "0.13.4", default-features = false }
 wit-bindgen = "0.62"
 
+[dev-dependencies]
+little-api-reference = { path = "../api_reference", features = ["testing"] }
+
 [profile.release]
 opt-level = "s"
 lto = true

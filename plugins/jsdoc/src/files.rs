@@ -4,7 +4,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use little_api_reference::model::Kind;
-use little_api_reference::pages::join;
+use little_api_reference::pages::{join, last, names, parent};
 
 /// The extensions of the files the plugin reads, the one it prefers first,
 /// when a folder has files with the same name but for it, like `index.ts`
@@ -57,18 +57,9 @@ fn visit(
         "" => root.to_string(),
         folder => join(root, folder),
     };
-    let names = std::fs::read_dir(&path).map(|entries| {
-        let names = entries.filter_map(|entry| entry.ok()?.file_name().into_string().ok());
-        names.collect::<Vec<_>>()
-    });
-    let mut names = match names {
-        Ok(names) => names,
-        Err(error) => {
-            warnings.push(format!("can't read `{path}`: {error}"));
-            return None;
-        }
-    };
-    names.sort();
+    let names = names(&path)
+        .map_err(|warning| warnings.push(warning))
+        .ok()?;
     for name in names {
         if name.starts_with(['.', '_']) || name == "node_modules" {
             continue;
@@ -211,22 +202,10 @@ pub fn layout(package: &str, sources: &[Source], documented: &[bool]) -> Layout 
     }
     for index in 0..pages.len() {
         let mut children = std::mem::take(&mut pages[index].children);
-        children.sort_by(|&a, &b| {
-            (&pages[a].title, &pages[a].path).cmp(&(&pages[b].title, &pages[b].path))
-        });
+        children.sort_by_key(|&page| (&pages[page].title, &pages[page].path));
         pages[index].children = children;
     }
     Layout { pages, module_page }
-}
-
-/// The folder `path` is in, or empty if it's in none.
-fn parent(path: &str) -> &str {
-    path.rfind('/').map_or("", |slash| &path[..slash])
-}
-
-/// The last part of `path`, like `strings` for `util/strings`.
-fn last(path: &str) -> &str {
-    path.rsplit('/').next().unwrap_or(path)
 }
 
 #[cfg(test)]

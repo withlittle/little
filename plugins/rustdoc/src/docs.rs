@@ -5,6 +5,7 @@
 use std::ops::Range;
 
 use little_api_reference::model::Section;
+use little_api_reference::text::dedent;
 use pulldown_cmark::{BrokenLink, CowStr, Event, LinkType, Options, Parser, Tag, TagEnd};
 use syn::spanned::Spanned;
 use syn::{Attribute, Expr, ExprLit, Lit, Meta};
@@ -37,7 +38,8 @@ pub fn text(attrs: &[Attribute], file: &str, warnings: &mut Vec<String>) -> Stri
             }
         }
     }
-    unindent(&lines)
+    let lines: Vec<&str> = lines.iter().map(String::as_str).collect();
+    trimmed(&dedent(&lines).join("\n"))
 }
 
 /// The lines of one doc comment, or `#[doc]`: a `/** ... */`'s without the
@@ -62,20 +64,6 @@ fn fragment(text: &str) -> Vec<String> {
         }
     }
     lines.into_iter().map(String::from).collect()
-}
-
-/// `lines`, without the margin of spaces and tabs they share, the blank
-/// lines they start with, or the whitespace they end with.
-fn unindent(lines: &[String]) -> String {
-    let margin = (lines.iter())
-        .filter(|line| !line.trim().is_empty())
-        .map(|line| line.len() - line.trim_start_matches([' ', '\t']).len())
-        .min()
-        .unwrap_or(0);
-    let lines: Vec<&str> = (lines.iter())
-        .map(|line| line.get(margin..).unwrap_or_default())
-        .collect();
-    trimmed(&lines.join("\n"))
 }
 
 /// `text` without the blank lines it starts with, or the whitespace it ends

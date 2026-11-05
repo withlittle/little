@@ -1,6 +1,7 @@
 //! Python's docstrings, in NumPy's, Google's, or Sphinx's style, which is
 //! found for each docstring.
 
+use little_api_reference::text::dedent;
 use ruff_python_parser::parse_expression;
 
 use crate::markdown::fence_for;
@@ -36,24 +37,14 @@ fn clean(docstring: &str) -> String {
     let lines: Vec<String> = (docstring.lines())
         .map(|line| expand_tabs(line).trim_end().to_string())
         .collect();
-    let margin = (lines.iter().skip(1))
-        .filter(|line| !line.is_empty())
-        .map(|line| indent(line))
-        .min()
-        .unwrap_or(0);
-    let mut cleaned: Vec<&str> = (lines.iter().enumerate())
-        .map(|(i, line)| match i {
-            0 => line.trim_start(),
-            _ => line.get(margin..).unwrap_or_default(),
-        })
+    let Some((first, rest)) = lines.split_first() else {
+        return String::new();
+    };
+    let rest: Vec<&str> = rest.iter().map(String::as_str).collect();
+    let cleaned: Vec<&str> = std::iter::once(first.trim_start())
+        .chain(dedent(&rest))
         .collect();
-    while cleaned.first().is_some_and(|line| line.is_empty()) {
-        cleaned.remove(0);
-    }
-    while cleaned.last().is_some_and(|line| line.is_empty()) {
-        cleaned.pop();
-    }
-    cleaned.join("\n")
+    trimmed(&cleaned)
 }
 
 /// `line` with each tab turned to the spaces up to the next multiple of 8
@@ -75,18 +66,6 @@ fn expand_tabs(line: &str) -> String {
 /// The spaces `line` starts with.
 fn indent(line: &str) -> usize {
     line.len() - line.trim_start_matches(' ').len()
-}
-
-/// `lines` without the indentation they share.
-fn dedent<'a>(lines: &[&'a str]) -> Vec<&'a str> {
-    let margin = (lines.iter())
-        .filter(|line| !line.trim().is_empty())
-        .map(|line| indent(line))
-        .min()
-        .unwrap_or(0);
-    (lines.iter())
-        .map(|line| line.get(margin..).unwrap_or_default())
-        .collect()
 }
 
 /// `lines` as text, without blank lines at either end.

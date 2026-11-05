@@ -10,7 +10,7 @@ mod rust;
 
 use std::collections::HashMap;
 
-use little_api_reference::pages::{Added, join, relative};
+use little_api_reference::pages::{Added, join, link, relative};
 use little_api_reference::{markdown, model, settings};
 
 use crate::markdown::{Language, Listed};
@@ -235,12 +235,7 @@ impl Pages<'_> {
                 (*module, Some(member.or_else(|| ids.get(name))?))
             }
         };
-        let to = &self.paths[page];
-        Some(match id {
-            Some(id) if to == from => format!("#{id}"),
-            Some(id) => format!("{}#{id}", relative(from, to)),
-            None => relative(from, to),
-        })
+        Some(link(from, &self.paths[page], id.map(String::as_str)))
     }
 
     /// The first paragraph of the docs of what `target` is, with its links
@@ -274,78 +269,13 @@ impl Pages<'_> {
     }
 }
 
-#[cfg(target_arch = "wasm32")]
-mod plugin {
-    use std::sync::Mutex;
-
-    use super::{Settings, document};
-
-    wit_bindgen::generate!({
-        path: "../../wit/plugin.wit",
-        inline: "
-            package little:rustdoc;
-
-            world rustdoc {
-                import little:plugin/warnings@0.2.1;
-                export little:plugin/setup@0.2.1;
-                export little:plugin/files@0.2.1;
-            }
-        ",
-        world: "little:rustdoc/rustdoc",
-        generate_all,
-    });
-
-    use exports::little::plugin::files::{self, Changes, File};
-    use exports::little::plugin::setup;
-    use little::plugin::warnings::warn;
-
-    /// What the site set, from `setup`.
-    static SETTINGS: Mutex<Option<Settings>> = Mutex::new(None);
-
-    struct Plugin;
-
-    impl setup::Guest for Plugin {
-        fn setup(settings: String) -> Result<(), String> {
-            *SETTINGS.lock().unwrap() = Some(Settings::parse(&settings)?);
-            Ok(())
-        }
-    }
-
-    impl files::Guest for Plugin {
-        fn files(_: Vec<String>) -> Result<Changes, String> {
-            let settings = SETTINGS.lock().unwrap();
-            let added = document(settings.as_ref().expect("little calls `setup` first"));
-            let add = added.files(warn).into_iter();
-            Ok(Changes {
-                add: add
-                    .map(|(path, contents)| File { path, contents })
-                    .collect(),
-                remove: Vec::new(),
-            })
-        }
-    }
-
-    export!(Plugin);
-}
+little_api_reference::plugin!(|settings| Ok(document(settings)));
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use little_api_reference::testing::{folder_with, markdown, paths};
 
-    /// A folder for the test called `test`, holding `files`, each its path
-    /// in the folder and what it holds.
-    fn folder_with(test: &str, files: &[(&str, &str)]) -> String {
-        let id = std::process::id();
-        let root = std::env::temp_dir().join(format!("little-rustdoc-{test}-{id}"));
-        let _ = std::fs::remove_dir_all(&root);
-        std::fs::create_dir_all(&root).unwrap();
-        for (path, text) in files {
-            let path = root.join(path);
-            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-            std::fs::write(path, text).unwrap();
-        }
-        root.to_str().unwrap().to_string()
-    }
+    use super::*;
 
     fn settings(read: &str, krate: &str, url: &str) -> Settings {
         Settings {
@@ -354,18 +284,6 @@ mod tests {
             title: None,
             url: url.to_string(),
         }
-    }
-
-    /// The paths of the pages `added` adds, in order.
-    fn paths(added: &Added) -> Vec<&str> {
-        let mut paths: Vec<_> = added.pages.iter().map(|(path, _)| path.as_str()).collect();
-        paths.sort();
-        paths
-    }
-
-    fn markdown<'a>(added: &'a Added, path: &str) -> &'a str {
-        let page = added.pages.iter().find(|(page, _)| page == path);
-        &page.unwrap_or_else(|| panic!("no page at {path}")).1
     }
 
     #[test]
@@ -419,6 +337,7 @@ mod tests {
     #[test]
     fn a_title_is_in_the_frontmatter_of_the_crates_page_alone() {
         let root = folder_with(
+            "little-rustdoc",
             "title",
             &[
                 ("src/lib.rs", "//! The crate.\n\npub mod config;\n"),
@@ -442,6 +361,7 @@ mod tests {
     #[test]
     fn each_module_has_a_page_where_rustc_finds_its_file() {
         let root = folder_with(
+            "little-rustdoc",
             "walk",
             &[
                 (
@@ -514,7 +434,7 @@ mod tests {
 
     #[test]
     fn a_folder_with_no_crate_is_warned_of() {
-        let root = folder_with("empty", &[("src/config.rs", "")]);
+        let root = folder_with("little-rustdoc", "empty", &[("src/config.rs", "")]);
         let added = document(&settings(&format!("{root}/src"), "demo", "api"));
         assert!(added.pages.is_empty());
         let warning = format!("`{root}/src` holds no `lib.rs` or `main.rs`");
@@ -529,6 +449,7 @@ mod tests {
     #[test]
     fn links_lead_to_the_pages_and_headings_of_what_they_name() {
         let root = folder_with(
+            "little-rustdoc",
             "links",
             &[
                 (

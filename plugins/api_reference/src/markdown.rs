@@ -445,7 +445,7 @@ fn cell(text: &str) -> String {
 }
 
 /// `text` in code.
-fn code(text: &str) -> String {
+pub fn code(text: &str) -> String {
     let longest = text.split(|c| c != '`').map(str::len).max().unwrap_or(0);
     let ticks = "`".repeat(longest + 1);
     let pad = if longest > 0 { " " } else { "" };

@@ -314,6 +314,8 @@ fn text(sections: Vec<Section>) -> String {
 
 #[cfg(test)]
 mod tests {
+    use little_api_reference::testing::folder_with;
+
     use super::*;
 
     /// The package at `import_path`, from `files`, each its name and text.
@@ -597,10 +599,6 @@ type Square int
 
     #[test]
     fn a_folder_of_two_packages_shows_the_one_with_more_files() {
-        let id = std::process::id();
-        let root = std::env::temp_dir().join(format!("little-godoc-package-two-{id}"));
-        let _ = std::fs::remove_dir_all(&root);
-        std::fs::create_dir_all(&root).unwrap();
         let files = [
             ("a.go", "package a\n"),
             ("b.go", "package a\n"),
@@ -608,10 +606,7 @@ type Square int
             ("ignored.go", "//go:build ignore\n\npackage main\n"),
             ("tools.go", "//go:build tools\n\npackage tools\n"),
         ];
-        for (name, text) in files {
-            std::fs::write(root.join(name), text).unwrap();
-        }
-        let root = root.to_str().unwrap().to_string();
+        let root = folder_with("little-godoc-package", "two", &files);
         let folder = Folder {
             path: String::new(),
             files: files.iter().map(|(name, _)| name.to_string()).collect(),

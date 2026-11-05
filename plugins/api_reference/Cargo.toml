@@ -11,3 +11,7 @@ publish = false
 
 [dependencies]
 serde_json = "1.0.151"
+
+[features]
+# Helpers for the plugins' tests, which only their dev-dependencies turn on.
+testing = []

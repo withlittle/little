@@ -1,19 +1,6 @@
-use super::*;
+use little_api_reference::testing::{assert_has, folder_with, markdown, paths};
 
-/// A folder for the test called `test`, holding `files`, each its path in
-/// the folder and what it holds.
-fn folder_with(test: &str, files: &[(&str, &str)]) -> String {
-    let id = std::process::id();
-    let root = std::env::temp_dir().join(format!("little-godoc-{test}-{id}"));
-    let _ = std::fs::remove_dir_all(&root);
-    std::fs::create_dir_all(&root).unwrap();
-    for (path, text) in files {
-        let path = root.join(path);
-        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-        std::fs::write(path, text).unwrap();
-    }
-    root.to_str().unwrap().to_string()
-}
+use super::*;
 
 fn settings(read: &str, url: Option<&str>) -> Settings {
     Settings {
@@ -28,34 +15,10 @@ fn settings(read: &str, url: Option<&str>) -> Settings {
 /// in `api`, and the folder, which is gone by then.
 fn built(test: &str, files: &[(&str, &str)]) -> (Added, String) {
     let go_mod = ("go.mod", "module example.com/demo\n\ngo 1.22\n");
-    let root = folder_with(test, &[&[go_mod], files].concat());
+    let root = folder_with("little-godoc", test, &[&[go_mod], files].concat());
     let added = document(&settings(&root, Some("api"))).unwrap();
     std::fs::remove_dir_all(&root).unwrap();
     (added, root)
-}
-
-/// The paths of the pages `added` adds, in order.
-fn paths(added: &Added) -> Vec<&str> {
-    let mut paths: Vec<_> = added.pages.iter().map(|(path, _)| path.as_str()).collect();
-    paths.sort();
-    paths
-}
-
-fn markdown<'a>(added: &'a Added, path: &str) -> &'a str {
-    let page = added.pages.iter().find(|(page, _)| page == path);
-    &page.unwrap_or_else(|| panic!("no page at {path}")).1
-}
-
-/// Assert that `page` has each of `parts`, in order.
-#[track_caller]
-fn assert_has(page: &str, parts: &[&str]) {
-    let mut rest = page;
-    for part in parts {
-        match rest.find(part) {
-            Some(at) => rest = &rest[at + part.len()..],
-            None => panic!("no {part:?}, in order, in:\n{page}"),
-        }
-    }
 }
 
 #[test]
@@ -147,7 +110,11 @@ fn the_modules_path_is_its_go_mods_module_line() {
 
 #[test]
 fn a_module_needs_a_go_mod_that_names_its_path() {
-    let root = folder_with("go-mod", &[("a.go", "// Package a is a.\npackage a\n")]);
+    let root = folder_with(
+        "little-godoc",
+        "go-mod",
+        &[("a.go", "// Package a is a.\npackage a\n")],
+    );
     let error = document(&settings(&root, None)).unwrap_err();
     assert_eq!(
         error,
@@ -180,7 +147,7 @@ fn the_pages_go_in_a_folder_named_for_the_module_unless_url_says() {
         ("go.mod", "module example.com/demo/v2\n"),
         ("a.go", "// Package demo runs things.\npackage demo\n"),
     ];
-    let root = folder_with("url", &files);
+    let root = folder_with("little-godoc", "url", &files);
     let named = document(&settings(&root, None)).unwrap();
     let at_root = document(&settings(&root, Some(""))).unwrap();
     std::fs::remove_dir_all(&root).unwrap();
@@ -661,7 +628,7 @@ fn a_title_is_in_the_frontmatter_of_the_modules_page_alone() {
             "// Package config configures it.\npackage config\n",
         ),
     ];
-    let root = folder_with("title", &files);
+    let root = folder_with("little-godoc", "title", &files);
     let mut settings = settings(&root, Some("api"));
     settings.title = Some("API: \"demo\"".to_string());
     let added = document(&settings).unwrap();

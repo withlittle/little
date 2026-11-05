@@ -3,7 +3,7 @@
 //! sections of a page they make.
 
 use crate::print::collapse;
-use little_api_reference::markdown::fence_for;
+use little_api_reference::markdown::{code, fence_for};
 use little_api_reference::model::{Item, Items, Section};
 use pulldown_cmark::{Event, Parser, TagEnd};
 
@@ -643,14 +643,6 @@ fn see(text: &str) -> String {
         true => format!("{{@link {word}}} {rest}").trim_end().to_string(),
         false => text.to_string(),
     }
-}
-
-/// `text` in code.
-fn code(text: &str) -> String {
-    let longest = text.split(|c| c != '`').map(str::len).max().unwrap_or(0);
-    let ticks = "`".repeat(longest + 1);
-    let pad = if longest > 0 { " " } else { "" };
-    format!("{ticks}{pad}{text}{pad}{ticks}")
 }
 
 /// `text` without the blank lines it starts with, or the whitespace it ends

@@ -1,11 +1,12 @@
 //! Python's modules, read with Ruff's parser into what they document.
 
+use little_api_reference::text;
 use ruff_python_ast::visitor::transformer::{Transformer, walk_expr};
 use ruff_python_ast::{self as ast, Expr, Stmt};
 use ruff_python_codegen::{Generator, Indentation};
 use ruff_python_parser::{parse_expression, parse_module};
 use ruff_source_file::LineEnding;
-use ruff_text_size::{Ranged, TextRange};
+use ruff_text_size::Ranged;
 
 use crate::docstring;
 use crate::model::{Kind, Object, Parameter, Section};
@@ -116,7 +117,7 @@ impl Reader<'_> {
         let parameters = match (init, dataclass) {
             (Some(init), _) => {
                 object.docs.extend(docs(&init.body));
-                object.source = Some(self.source(init.range()));
+                object.source = text::source(self.source, init.range().to_std_range());
                 Some(self.parameters(&init.parameters, true))
             }
             (None, Some(dataclass)) if !matches!(dataclass, Expr::Call(call) if sets_false(call, "init")) => {
@@ -165,7 +166,7 @@ impl Reader<'_> {
             object.signature = Some(signature(&object.name, &written, object.returns.as_deref()));
             object.parameters = parameters;
         }
-        object.source = Some(self.source(function.range()));
+        object.source = text::source(self.source, function.range().to_std_range());
         object
     }
 
@@ -330,22 +331,6 @@ impl Reader<'_> {
             Some(text) if !text.contains('\n') => text.to_string(),
             _ => code(expr),
         }
-    }
-
-    /// The code in `range`, from the start of its first line, without the
-    /// indentation of that line.
-    fn source(&self, range: TextRange) -> String {
-        let start = range.start().to_usize();
-        let start = self.source[..start]
-            .rfind('\n')
-            .map_or(0, |newline| newline + 1);
-        let code = &self.source[start..range.end().to_usize()];
-        let whitespace = |line: &str| line.len() - line.trim_start_matches([' ', '\t']).len();
-        let margin = code.lines().next().map_or(0, whitespace);
-        (code.lines())
-            .map(|line| &line[margin.min(whitespace(line))..])
-            .collect::<Vec<_>>()
-            .join("\n")
     }
 }
 

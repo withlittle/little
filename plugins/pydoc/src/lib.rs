@@ -9,7 +9,7 @@ mod python;
 
 use std::path::Path;
 
-use little_api_reference::pages::{Added, join};
+use little_api_reference::pages::{Added, join, names};
 use little_api_reference::{markdown, model, settings};
 
 use crate::markdown::{Language, Listed};
@@ -205,18 +205,9 @@ impl Adding {
     /// The packages and modules in `folder`, in order of name, but those
     /// whose names start with `_` or `.`; warns if it can't be read.
     fn entries(&mut self, folder: &str) -> Vec<Entry> {
-        let names = std::fs::read_dir(folder).map(|entries| {
-            let names = entries.filter_map(|entry| entry.ok()?.file_name().into_string().ok());
-            names.collect::<Vec<_>>()
-        });
-        let mut names = match names {
-            Ok(names) => names,
-            Err(error) => {
-                self.warn(format!("can't read `{folder}`: {error}"));
-                return Vec::new();
-            }
+        let Ok(names) = names(folder).map_err(|warning| self.warn(warning)) else {
+            return Vec::new();
         };
-        names.sort();
         let names = names
             .into_iter()
             .filter(|name| !name.starts_with(['_', '.']));
@@ -246,78 +237,13 @@ fn is_file(path: &str) -> bool {
     Path::new(path).is_file()
 }
 
-#[cfg(target_arch = "wasm32")]
-mod plugin {
-    use std::sync::Mutex;
-
-    use super::{Settings, document};
-
-    wit_bindgen::generate!({
-        path: "../../wit/plugin.wit",
-        inline: "
-            package little:pydoc;
-
-            world pydoc {
-                import little:plugin/warnings@0.2.1;
-                export little:plugin/setup@0.2.1;
-                export little:plugin/files@0.2.1;
-            }
-        ",
-        world: "little:pydoc/pydoc",
-        generate_all,
-    });
-
-    use exports::little::plugin::files::{self, Changes, File};
-    use exports::little::plugin::setup;
-    use little::plugin::warnings::warn;
-
-    /// What the site set, from `setup`.
-    static SETTINGS: Mutex<Option<Settings>> = Mutex::new(None);
-
-    struct Plugin;
-
-    impl setup::Guest for Plugin {
-        fn setup(settings: String) -> Result<(), String> {
-            *SETTINGS.lock().unwrap() = Some(Settings::parse(&settings)?);
-            Ok(())
-        }
-    }
-
-    impl files::Guest for Plugin {
-        fn files(_: Vec<String>) -> Result<Changes, String> {
-            let settings = SETTINGS.lock().unwrap();
-            let added = document(settings.as_ref().expect("little calls `setup` first"))?;
-            let add = added.files(warn).into_iter();
-            Ok(Changes {
-                add: add
-                    .map(|(path, contents)| File { path, contents })
-                    .collect(),
-                remove: Vec::new(),
-            })
-        }
-    }
-
-    export!(Plugin);
-}
+little_api_reference::plugin!(document);
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use little_api_reference::testing::{folder_with, markdown, paths};
 
-    /// A folder for the test called `test`, holding `files`, each its path
-    /// in the folder and what it holds.
-    fn folder_with(test: &str, files: &[(&str, &str)]) -> String {
-        let id = std::process::id();
-        let root = std::env::temp_dir().join(format!("little-pydoc-{test}-{id}"));
-        let _ = std::fs::remove_dir_all(&root);
-        std::fs::create_dir_all(&root).unwrap();
-        for (path, text) in files {
-            let path = root.join(path);
-            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-            std::fs::write(path, text).unwrap();
-        }
-        root.to_str().unwrap().to_string()
-    }
+    use super::*;
 
     fn settings(read: &[&str], url: &str) -> Settings {
         Settings {
@@ -325,18 +251,6 @@ mod tests {
             title: None,
             url: url.to_string(),
         }
-    }
-
-    /// The paths of the pages `added` adds, in order.
-    fn paths(added: &Added) -> Vec<&str> {
-        let mut paths: Vec<_> = added.pages.iter().map(|(path, _)| path.as_str()).collect();
-        paths.sort();
-        paths
-    }
-
-    fn markdown<'a>(added: &'a Added, path: &str) -> &'a str {
-        let page = added.pages.iter().find(|(page, _)| page == path);
-        &page.unwrap_or_else(|| panic!("no page at {path}")).1
     }
 
     #[test]
@@ -381,6 +295,7 @@ mod tests {
     #[test]
     fn a_title_is_in_the_frontmatter_of_the_one_package_or_module_it_documents() {
         let root = folder_with(
+            "little-pydoc",
             "title",
             &[
                 ("one/pkg/__init__.py", "\"\"\"The package.\"\"\"\n"),
@@ -430,6 +345,7 @@ mod tests {
     #[test]
     fn a_package_has_a_page_and_one_for_each_of_its_modules_and_packages() {
         let root = folder_with(
+            "little-pydoc",
             "package",
             &[
                 (
@@ -481,6 +397,7 @@ mod tests {
     #[test]
     fn a_package_that_cant_be_parsed_still_lists_its_modules() {
         let root = folder_with(
+            "little-pydoc",
             "unparsed",
             &[
                 ("pkg/__init__.py", "import (\n"),
@@ -506,6 +423,7 @@ mod tests {
     #[test]
     fn a_folder_that_isnt_a_package_holds_packages_and_modules() {
         let root = folder_with(
+            "little-pydoc",
             "folder",
             &[
                 ("loose.py", "\"\"\"Loose.\"\"\"\n"),
@@ -521,7 +439,7 @@ mod tests {
 
     #[test]
     fn a_folder_with_no_python_is_warned_of() {
-        let root = folder_with("empty", &[("module/code.py", "")]);
+        let root = folder_with("little-pydoc", "empty", &[("module/code.py", "")]);
         let added = document(&settings(&[&root], "reference")).unwrap();
         assert!(added.pages.is_empty());
         let warning = format!("`{root}` holds no Python package or module: ");

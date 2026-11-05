@@ -6,6 +6,7 @@
 use std::collections::HashMap;
 
 use little_api_reference::model::{self, Items, Kind, Object, Section};
+use little_api_reference::text;
 use proc_macro2::TokenTree;
 use syn::ext::IdentExt;
 use syn::punctuated::Punctuated;
@@ -828,15 +829,7 @@ fn source<T: Clone + Spanned>(
     if let Some(attrs) = attrs(&mut node) {
         attrs.retain(|attr| !attr.path().is_ident("doc"));
     }
-    let range = node.span().byte_range();
-    let start = (source.get(..range.start)?.rfind('\n')).map_or(0, |newline| newline + 1);
-    let code = source.get(start..range.end)?;
-    let whitespace = |line: &str| line.len() - line.trim_start_matches([' ', '\t']).len();
-    let margin = code.lines().next().map_or(0, whitespace);
-    let lines: Vec<&str> = (code.lines())
-        .map(|line| &line[margin.min(whitespace(line))..])
-        .collect();
-    Some(lines.join("\n"))
+    text::source(source, node.span().byte_range())
 }
 
 fn attrs_of(item: &mut Item) -> Option<&mut Vec<Attribute>> {

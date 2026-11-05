@@ -15,13 +15,13 @@ mod tests;
 
 use std::collections::HashMap;
 
-use little_api_reference::pages::{Added, join, relative};
+use little_api_reference::pages::{Added, join, link};
 use little_api_reference::{markdown, model, settings};
 
 use crate::files::{Layout, Source};
 use crate::links::{Scope, Target};
 use crate::markdown::{Language, Listed};
-use crate::model::{Item, Object, Section};
+use crate::model::{Object, Section};
 use crate::reader::Module;
 
 /// What a site sets for the plugin, in its `little.yml`.
@@ -252,21 +252,7 @@ impl Pages<'_> {
         };
         let render = |text: &str| links::render(text, &resolve);
         (docs.iter())
-            .map(|section| match section {
-                Section::Text { title, text } => Section::Text {
-                    title: title.clone(),
-                    text: render(text),
-                },
-                Section::Items { kind, items } => Section::Items {
-                    kind: *kind,
-                    items: (items.iter())
-                        .map(|item| Item {
-                            description: render(&item.description),
-                            ..item.clone()
-                        })
-                        .collect(),
-                },
-            })
+            .map(|section| section.map_text(render))
             .collect()
     }
 
@@ -288,12 +274,7 @@ impl Pages<'_> {
                 (page, Some(id))
             }
         };
-        let to = self.path(page);
-        Some(match id {
-            Some(id) if to == from => format!("#{id}"),
-            Some(id) => format!("{}#{id}", relative(from, &to)),
-            None => relative(from, &to),
-        })
+        Some(link(from, &self.path(page), id.map(String::as_str)))
     }
 
     /// The first paragraph of the docs of what `target` is, with its links
@@ -321,56 +302,4 @@ impl Pages<'_> {
     }
 }
 
-#[cfg(target_arch = "wasm32")]
-mod plugin {
-    use std::sync::Mutex;
-
-    use super::{Settings, document};
-
-    wit_bindgen::generate!({
-        path: "../../wit/plugin.wit",
-        inline: "
-            package little:jsdoc;
-
-            world jsdoc {
-                import little:plugin/warnings@0.2.1;
-                export little:plugin/setup@0.2.1;
-                export little:plugin/files@0.2.1;
-            }
-        ",
-        world: "little:jsdoc/jsdoc",
-        generate_all,
-    });
-
-    use exports::little::plugin::files::{self, Changes, File};
-    use exports::little::plugin::setup;
-    use little::plugin::warnings::warn;
-
-    /// What the site set, from `setup`.
-    static SETTINGS: Mutex<Option<Settings>> = Mutex::new(None);
-
-    struct Plugin;
-
-    impl setup::Guest for Plugin {
-        fn setup(settings: String) -> Result<(), String> {
-            *SETTINGS.lock().unwrap() = Some(Settings::parse(&settings)?);
-            Ok(())
-        }
-    }
-
-    impl files::Guest for Plugin {
-        fn files(_: Vec<String>) -> Result<Changes, String> {
-            let settings = SETTINGS.lock().unwrap();
-            let added = document(settings.as_ref().expect("little calls `setup` first"));
-            let add = added.files(warn).into_iter();
-            Ok(Changes {
-                add: add
-                    .map(|(path, contents)| File { path, contents })
-                    .collect(),
-                remove: Vec::new(),
-            })
-        }
-    }
-
-    export!(Plugin);
-}
+little_api_reference::plugin!(|settings| Ok(document(settings)));
