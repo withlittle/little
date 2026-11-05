@@ -15,8 +15,8 @@ use oxc_span::{GetSpan, Span};
 
 use crate::comment::{self, Comment, Context, Param, braced, param, template};
 use crate::print::{
-    self, WIDTH, call, indent, inline, key, literal, printed, source, type_arguments,
-    type_parameters, written,
+    self, call, indent, inline, key, literal, printed, source, type_arguments, type_parameters,
+    written,
 };
 use crate::reader::{Declaration, Declared, Reader};
 
@@ -79,7 +79,7 @@ impl<'a> Callable<'a> {
             Some(returns) => format!(": {}", inline(&returns.type_annotation)),
             None => String::new(),
         };
-        call(&head, &params, &tail, WIDTH)
+        call(&head, &params, &tail)
     }
 
     /// Its parameters, for the table of those its doc comment's `@param`s,
@@ -841,7 +841,7 @@ impl Reader<'_> {
                 .texts(&["returns", "return"])
                 .find_map(|text| braced(text).0);
             let tail = format!(" => {}", returns.as_deref().unwrap_or("void"));
-            call(&head, &params, &tail, WIDTH)
+            call(&head, &params, &tail)
         } else {
             let properties: Vec<Param> = (comment.texts(&["property", "prop"]))
                 .map(param)

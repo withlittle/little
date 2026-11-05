@@ -8,9 +8,11 @@ use oxc_ast::ast::{
 use oxc_codegen::{Codegen, CodegenOptions, CommentOptions, Context, Gen, IndentChar};
 use oxc_span::{GetSpan, Span};
 
+use crate::comment::margin;
+
 /// The width a signature fits in on one line, or else has a line for each
 /// parameter.
-pub const WIDTH: usize = 80;
+const WIDTH: usize = 80;
 
 /// `node` printed as code, with two spaces to an indent, and no comments.
 pub fn printed<T: Gen>(node: &T) -> String {
@@ -57,11 +59,7 @@ pub fn source(text: &str, span: Span) -> String {
     let lines: Vec<&str> = (code.split('\n'))
         .map(|line| line.strip_suffix('\r').unwrap_or(line))
         .collect();
-    let margin = (lines.iter())
-        .filter(|line| !line.trim().is_empty())
-        .map(|line| line.len() - line.trim_start_matches([' ', '\t']).len())
-        .min()
-        .unwrap_or(0);
+    let margin = margin(&lines);
     let lines: Vec<&str> = (lines.iter())
         .map(|line| line.get(margin..).unwrap_or_default().trim_end())
         .collect();
@@ -80,39 +78,19 @@ pub fn indent(text: &str, width: usize) -> String {
 /// The type parameters `declaration` declares, as code, like
 /// `<T extends object = {}>`, or nothing if there's none.
 pub fn type_parameters(declaration: Option<&TSTypeParameterDeclaration>) -> String {
-    let Some(declaration) = declaration else {
-        return String::new();
-    };
-    let params = declaration.params.iter().map(|param| {
-        let mut written = String::new();
-        for (modifier, word) in [
-            (param.r#const, "const "),
-            (param.r#in, "in "),
-            (param.out, "out "),
-        ] {
-            if modifier {
-                written += word;
-            }
-        }
-        written += param.name.name.as_str();
-        if let Some(constraint) = &param.constraint {
-            written += &format!(" extends {}", inline(constraint));
-        }
-        if let Some(default) = &param.default {
-            written += &format!(" = {}", inline(default));
-        }
-        written
-    });
-    format!("<{}>", params.collect::<Vec<_>>().join(", "))
+    angled(declaration.map(|declaration| declaration.params.as_slice()))
 }
 
 /// The type arguments of `arguments`, as code, like `<string>`, or nothing.
 pub fn type_arguments(arguments: Option<&TSTypeParameterInstantiation>) -> String {
-    let arguments = arguments.map(|arguments| arguments.params.iter().map(inline));
-    match arguments {
-        Some(arguments) => format!("<{}>", arguments.collect::<Vec<_>>().join(", ")),
-        None => String::new(),
-    }
+    angled(arguments.map(|arguments| arguments.params.as_slice()))
+}
+
+/// Each node in `list` on one line, between angle brackets, like `<T, U>`,
+/// or nothing if there's no list.
+fn angled<T: Gen>(list: Option<&[T]>) -> String {
+    let list = list.map(|list| list.iter().map(inline).collect::<Vec<_>>().join(", "));
+    list.map(|list| format!("<{list}>")).unwrap_or_default()
 }
 
 /// Each parameter in `params`, after `this`, if a function declares its
@@ -165,12 +143,12 @@ fn parameter(text: &str, param: &FormalParameter) -> String {
 }
 
 /// A call, like `name(a, b): R`: `head`, then `params` in parentheses,
-/// then `tail`, on one line if it fits in `width`, or else with each
+/// then `tail`, on one line if it fits in `WIDTH`, or else with each
 /// parameter on a line of its own, and a comma after each but a rest
 /// parameter.
-pub fn call(head: &str, params: &[String], tail: &str, width: usize) -> String {
+pub fn call(head: &str, params: &[String], tail: &str) -> String {
     let line = format!("{head}({}){tail}", params.join(", "));
-    if params.is_empty() || line.lines().all(|line| line.chars().count() <= width) {
+    if params.is_empty() || line.lines().all(|line| line.chars().count() <= WIDTH) {
         return line;
     }
     let mut lines: Vec<String> = params.iter().map(|param| format!("  {param},")).collect();
@@ -265,13 +243,13 @@ mod tests {
                 "...rest: string[]",
             ];
             assert_eq!(params, expected);
-            let long = call("function f", &params, ": void", WIDTH);
+            let long = call("function f", &params, ": void");
             let lines: Vec<&str> = long.lines().collect();
             assert_eq!(lines[0], "function f(");
             assert_eq!(lines[1], "  this: Window,");
             assert_eq!(lines[5], "  ...rest: string[]");
             assert_eq!(lines[6], "): void");
-            assert_eq!(call("f", &params[3..4], "", WIDTH), "f(c = {x: 1})");
+            assert_eq!(call("f", &params[3..4], ""), "f(c = {x: 1})");
         });
     }
 

@@ -267,7 +267,7 @@ fn lines(content: &str) -> Vec<&str> {
 }
 
 /// The margin of spaces and tabs that `lines` share, but blank ones.
-fn margin(lines: &[&str]) -> usize {
+pub fn margin(lines: &[&str]) -> usize {
     (lines.iter())
         .filter(|line| !line.trim().is_empty())
         .map(|line| line.len() - line.trim_start_matches([' ', '\t']).len())
