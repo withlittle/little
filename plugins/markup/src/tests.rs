@@ -2,32 +2,8 @@
 //! as little sets it, under little's settings, with every extension on, and
 //! with none.
 
+use crate::testing::options;
 use crate::*;
-
-fn options(settings: &Settings) -> comrak::Options<'static> {
-    let mut options = comrak::Options::default();
-    let extension = &mut options.extension;
-    extension.table = settings.tables;
-    extension.strikethrough = settings.strikethrough;
-    extension.autolink = settings.autolinks;
-    extension.tasklist = settings.task_lists;
-    extension.footnotes = settings.footnotes;
-    extension.alerts = settings.alerts;
-    extension.shortcodes = settings.emoji;
-    extension.math_dollars = settings.math;
-    extension.math_code = settings.math;
-    extension.superscript = settings.superscript;
-    extension.subscript = settings.subscript;
-    extension.highlight = settings.mark;
-    extension.insert = settings.insert;
-    extension.description_lists = settings.description_lists;
-    extension.inline_footnotes = settings.inline_footnotes;
-    extension.cjk_friendly_emphasis = settings.cjk_friendly_emphasis;
-    extension.header_id_prefix = Some(String::new());
-    options.parse.smart = settings.smart_punctuation;
-    options.render.r#unsafe = settings.raw_html;
-    options
-}
 
 /// Every extension on, but smart punctuation, which changes text.
 fn all() -> Settings {
@@ -234,60 +210,79 @@ fn url(url: &str) -> Target {
 #[test]
 fn inlines_read_back_as_they_were() {
     use Inline::*;
+    use Kind::*;
     let cases: Vec<(Vec<Inline>, &str)> = vec![
-        (vec![Emphasis(vec![text("a")])], "<em>a</em>"),
-        (vec![Strong(vec![text("a")])], "<strong>a</strong>"),
+        (vec![Styled(Emphasis, vec![text("a")])], "<em>a</em>"),
+        (vec![Styled(Strong, vec![text("a")])], "<strong>a</strong>"),
         (
-            vec![text("a"), Emphasis(vec![text("b")]), text("c")],
+            vec![text("a"), Styled(Emphasis, vec![text("b")]), text("c")],
             "a<em>b</em>c",
         ),
         (
-            vec![text("a"), Strong(vec![text("b")]), text("c")],
+            vec![text("a"), Styled(Strong, vec![text("b")]), text("c")],
             "a<strong>b</strong>c",
         ),
         (
-            vec![text("x"), Strong(vec![text("(y)")]), text("z")],
+            vec![text("x"), Styled(Strong, vec![text("(y)")]), text("z")],
             "x<strong>(y)</strong>z",
         ),
         (
-            vec![Emphasis(vec![Strong(vec![text("a")]), text("b")])],
+            vec![Styled(
+                Emphasis,
+                vec![Styled(Strong, vec![text("a")]), text("b")],
+            )],
             "<em><strong>a</strong>b</em>",
         ),
         (
-            vec![Strong(vec![Emphasis(vec![text("a")]), text("b")])],
+            vec![Styled(
+                Strong,
+                vec![Styled(Emphasis, vec![text("a")]), text("b")],
+            )],
             "<strong><em>a</em>b</strong>",
         ),
         (
-            vec![Emphasis(vec![text("a")]), Emphasis(vec![text("b")])],
+            vec![
+                Styled(Emphasis, vec![text("a")]),
+                Styled(Emphasis, vec![text("b")]),
+            ],
             "<em>ab</em>",
         ),
         (
-            vec![Strong(vec![text("a")]), Strong(vec![text("b")])],
+            vec![
+                Styled(Strong, vec![text("a")]),
+                Styled(Strong, vec![text("b")]),
+            ],
             "<strong>ab</strong>",
         ),
         (
-            vec![text("x "), Emphasis(vec![text(" a ")]), text(" y")],
+            vec![text("x "), Styled(Emphasis, vec![text(" a ")]), text(" y")],
             "x  <em>a</em>  y",
         ),
-        (vec![Emphasis(vec![text("*")])], "<em>*</em>"),
+        (vec![Styled(Emphasis, vec![text("*")])], "<em>*</em>"),
         (
-            vec![Emphasis(vec![Code("x".into())])],
+            vec![Styled(Emphasis, vec![Code("x".into())])],
             "<em><code>x</code></em>",
         ),
         (
-            vec![Strong(vec![text("「強調」")]), text("中文")],
+            vec![Styled(Strong, vec![text("「強調」")]), text("中文")],
             "<strong>「強調」</strong>中文",
         ),
-        (vec![Strikethrough(vec![text("a")])], "<del>a</del>"),
-        (vec![Underline(vec![text("a")])], "<u>a</u>"),
-        (vec![Mark(vec![text("a")])], "<mark>a</mark>"),
-        (vec![Superscript(vec![text("a b")])], "<sup>a b</sup>"),
+        (vec![Styled(Strikethrough, vec![text("a")])], "<del>a</del>"),
+        (vec![Styled(Underline, vec![text("a")])], "<u>a</u>"),
+        (vec![Styled(Mark, vec![text("a")])], "<mark>a</mark>"),
         (
-            vec![text("H"), Subscript(vec![text("2")]), text("O")],
+            vec![Styled(Superscript, vec![text("a b")])],
+            "<sup>a b</sup>",
+        ),
+        (
+            vec![text("H"), Styled(Subscript, vec![text("2")]), text("O")],
             "H<sub>2</sub>O",
         ),
         (
-            vec![Subscript(vec![text("a")]), Subscript(vec![text("b")])],
+            vec![
+                Styled(Subscript, vec![text("a")]),
+                Styled(Subscript, vec![text("b")]),
+            ],
             "<sub>ab</sub>",
         ),
         (vec![Code("a`b".into())], "<code>a`b</code>"),
@@ -334,13 +329,13 @@ fn inlines_read_back_as_they_were() {
             "<a href=\"#x\">y</a>",
         ),
         (
-            vec![Emphasis(vec![link(url("u"), vec![text("x")])])],
+            vec![Styled(Emphasis, vec![link(url("u"), vec![text("x")])])],
             "<em><a href=\"u\">x</a></em>",
         ),
         (
             vec![link(
                 url("u"),
-                vec![text("a"), Superscript(vec![text("2")])],
+                vec![text("a"), Styled(Superscript, vec![text("2")])],
             )],
             "<a href=\"u\">a<sup>2</sup></a>",
         ),
@@ -394,13 +389,14 @@ fn inlines_read_back_as_they_were() {
 #[test]
 fn what_markdown_cant_mark_is_left_plain_and_warned_of() {
     use Inline::*;
+    use Kind::*;
     let inlines = vec![
         text("x"),
-        Strong(vec![text("(y)")]),
+        Styled(Strong, vec![text("(y)")]),
         text("z "),
-        Underline(vec![text("u")]),
+        Styled(Underline, vec![text("u")]),
         text(" "),
-        Subscript(vec![text("s")]),
+        Styled(Subscript, vec![text("s")]),
         Html {
             html: "<kbd>K</kbd>".into(),
             line: None,
@@ -466,6 +462,7 @@ fn heading(level: u8, content: Vec<Inline>, ids: &[&str]) -> Block {
 #[test]
 fn links_lead_to_the_ids_headings_and_anchors_are_given() {
     use Inline::*;
+    use Kind::*;
     let headings = vec![
         vec![text("Hello, World!")],
         vec![text("Hello, World!")],
@@ -473,9 +470,9 @@ fn links_lead_to_the_ids_headings_and_anchors_are_given() {
         vec![text("a_b-c  d")],
         vec![text("code "), Code("x()".into())],
         vec![
-            Emphasis(vec![text("em")]),
+            Styled(Emphasis, vec![text("em")]),
             text(" and "),
-            Strong(vec![text("strong")]),
+            Styled(Strong, vec![text("strong")]),
         ],
         vec![link(url("u"), vec![text("link")]), text(" text")],
         vec![text("math "), Math("x^2".into())],
@@ -643,7 +640,10 @@ fn quotes_hold_their_blocks_and_who_said_them() {
                 attribution: vec![],
             },
         ],
-        attribution: vec![text("Some "), Inline::Emphasis(vec![text("one")])],
+        attribution: vec![
+            text("Some "),
+            Inline::Styled(Kind::Emphasis, vec![text("one")]),
+        ],
     };
     let expected = "<blockquote>\n<p>a</p>\n<ul>\n<li>b</li>\n</ul>\n<p>c</p>\n\
         <blockquote>\n<p>d</p>\n</blockquote>\n<p>— Some <em>one</em></p>\n</blockquote>\n";
@@ -1097,5 +1097,23 @@ fn warnings_name_the_page_and_line() {
     assert_eq!(
         warning.display("docs/guide.rst"),
         "docs/guide.rst: left out raw HTML"
+    );
+}
+
+#[test]
+fn a_plugin_has_no_settings_but_read() {
+    assert_eq!(check_settings("{}", "Org"), Ok(()));
+    assert_eq!(check_settings(r#"{ "read": ["docs"] }"#, "Org"), Ok(()));
+    assert_eq!(
+        check_settings(r#"{ "exports": "both" }"#, "Org"),
+        Err(
+            "it has no setting `exports`, only `read`, which it doesn't need: little gives it \
+             each Org file"
+                .to_string()
+        )
+    );
+    assert_eq!(
+        check_settings("[]", "Org"),
+        Err("its settings must be a mapping, not []".to_string())
     );
 }

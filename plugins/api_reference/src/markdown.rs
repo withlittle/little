@@ -152,9 +152,9 @@ impl Page<'_> {
             )
         });
         let members = ordered(&object.members);
-        for members in members.chunk_by(|a, b| Group::of(a) == Group::of(b)) {
-            let group = Group::of(members[0]);
-            if group == Group::Modules || (listed && group == Group::Attributes) {
+        for members in members.chunk_by(|a, b| group(a.kind) == group(b.kind)) {
+            let (_, title) = group(members[0].kind);
+            if title == "Modules" || (listed && title == "Attributes") {
                 continue;
             }
             let rows: Vec<Vec<String>> = (members.iter())
@@ -164,7 +164,13 @@ impl Page<'_> {
                     vec![name, summary(&member.docs)]
                 })
                 .collect();
-            *out += &format!("**{}:**\n\n", group.title(object.kind));
+            // A type's functions are its methods.
+            let title = match (title, object.kind) {
+                ("Functions", Kind::Class | Kind::Struct | Kind::Enum | Kind::Union) => "Methods",
+                ("Functions", Kind::Trait | Kind::Interface | Kind::Type) => "Methods",
+                _ => title,
+            };
+            *out += &format!("**{title}:**\n\n");
             table(out, &["Name", "Description"], &rows);
         }
     }
@@ -285,92 +291,35 @@ fn listing(object: &Object, kind: Items, items: &[Item]) -> (Vec<&'static str>, 
     }
 }
 
-/// Where a page lists an object, in the order it lists them.
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-enum Group {
-    Attributes,
-    Properties,
-    Classes,
-    Interfaces,
-    Macros,
-    Structs,
-    Enums,
-    Constants,
-    Variables,
-    Statics,
-    Traits,
-    AssociatedTypes,
-    AssociatedConstants,
-    Functions,
-    Types,
-    TypeAliases,
-    Unions,
-    Modules,
-}
-
-impl Group {
-    fn of(object: &Object) -> Group {
-        match object.kind {
-            Kind::Attribute | Kind::Property => Group::Attributes,
-            Kind::Class => Group::Classes,
-            Kind::Function | Kind::Method => Group::Functions,
-            Kind::Package | Kind::Module | Kind::Crate | Kind::Directory => Group::Modules,
-            Kind::Struct => Group::Structs,
-            Kind::Enum => Group::Enums,
-            Kind::Union => Group::Unions,
-            Kind::Trait => Group::Traits,
-            Kind::TypeAlias => Group::TypeAliases,
-            Kind::AssociatedType => Group::AssociatedTypes,
-            Kind::Constant => Group::Constants,
-            Kind::AssociatedConstant => Group::AssociatedConstants,
-            Kind::Static => Group::Statics,
-            Kind::Macro => Group::Macros,
-            Kind::Interface => Group::Interfaces,
-            Kind::Variable => Group::Variables,
-            Kind::Field => Group::Properties,
-            Kind::Type => Group::Types,
-        }
-    }
-
-    /// Its title, in a table of what an object of `kind` defines: its
-    /// functions are methods if it's a type.
-    fn title(self, kind: Kind) -> &'static str {
-        match self {
-            Group::Attributes => "Attributes",
-            Group::Properties => "Properties",
-            Group::Classes => "Classes",
-            Group::Interfaces => "Interfaces",
-            Group::Variables => "Variables",
-            Group::Macros => "Macros",
-            Group::Structs => "Structs",
-            Group::Enums => "Enums",
-            Group::Constants => "Constants",
-            Group::Statics => "Statics",
-            Group::Traits => "Traits",
-            Group::AssociatedTypes => "Associated Types",
-            Group::AssociatedConstants => "Associated Constants",
-            Group::Functions => match kind {
-                Kind::Class
-                | Kind::Struct
-                | Kind::Enum
-                | Kind::Union
-                | Kind::Trait
-                | Kind::Interface
-                | Kind::Type => "Methods",
-                _ => "Functions",
-            },
-            Group::Types => "Types",
-            Group::TypeAliases => "Type Aliases",
-            Group::Unions => "Unions",
-            Group::Modules => "Modules",
-        }
+/// Where a page lists an object of `kind`: its place in the order the page
+/// lists them, and the title of their table.
+fn group(kind: Kind) -> (u8, &'static str) {
+    match kind {
+        Kind::Attribute | Kind::Property => (0, "Attributes"),
+        Kind::Field => (1, "Properties"),
+        Kind::Class => (2, "Classes"),
+        Kind::Interface => (3, "Interfaces"),
+        Kind::Macro => (4, "Macros"),
+        Kind::Struct => (5, "Structs"),
+        Kind::Enum => (6, "Enums"),
+        Kind::Constant => (7, "Constants"),
+        Kind::Variable => (8, "Variables"),
+        Kind::Static => (9, "Statics"),
+        Kind::Trait => (10, "Traits"),
+        Kind::AssociatedType => (11, "Associated Types"),
+        Kind::AssociatedConstant => (12, "Associated Constants"),
+        Kind::Function | Kind::Method => (13, "Functions"),
+        Kind::Type => (14, "Types"),
+        Kind::TypeAlias => (15, "Type Aliases"),
+        Kind::Union => (16, "Unions"),
+        Kind::Package | Kind::Module | Kind::Crate | Kind::Directory => (17, "Modules"),
     }
 }
 
 /// `members` in the order a page shows them, by group, then by name.
 fn ordered(members: &[Object]) -> Vec<&Object> {
     let mut ordered: Vec<&Object> = members.iter().collect();
-    ordered.sort_by(|a, b| (Group::of(a), &a.name).cmp(&(Group::of(b), &b.name)));
+    ordered.sort_by(|a, b| (group(a.kind), &a.name).cmp(&(group(b.kind), &b.name)));
     ordered
 }
 
@@ -445,7 +394,7 @@ fn cell(text: &str) -> String {
 }
 
 /// `text` in code.
-fn code(text: &str) -> String {
+pub fn code(text: &str) -> String {
     let longest = text.split(|c| c != '`').map(str::len).max().unwrap_or(0);
     let ticks = "`".repeat(longest + 1);
     let pad = if longest > 0 { " " } else { "" };

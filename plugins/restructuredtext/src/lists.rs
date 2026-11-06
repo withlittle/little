@@ -434,7 +434,7 @@ impl Body<'_, '_> {
             let block = indented(self.lines, self.at, false, None, Some(end));
             self.at = block.end;
             let body = nested(self.state, &block.lines);
-            fields.push(Field { name, raw, body });
+            fields.push(Field { name, body });
             match self.next_item() {
                 Some(next) if field_marker(&self.lines[next].text).is_some() => self.at = next,
                 _ => break block.blank_finish,

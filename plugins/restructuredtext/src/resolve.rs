@@ -7,7 +7,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use little_markup::{Block, Definition, Footnote, Inline, Item, Table, Target};
+use little_markup::{Block, Definition, Footnote, Inline, Item, Kind as Style, Table, Target};
 
 use crate::state::{Dest, Kind, MAX_DEPTH, State};
 use crate::tree::{Node, Ref, Span};
@@ -123,8 +123,8 @@ impl<'s> Resolver<'s> {
         let mut numbers = HashMap::new();
         let mut next = 1usize;
         for (index, footnote) in state.footnotes.iter().enumerate() {
-            match &footnote.kind {
-                Kind::Auto(label) => {
+            match footnote.kind {
+                Kind::Auto { labelled } => {
                     let number = loop {
                         let number = next.to_string();
                         next += 1;
@@ -132,13 +132,13 @@ impl<'s> Resolver<'s> {
                             break number;
                         }
                     };
-                    if label.is_none() {
+                    if !labelled {
                         auto.push(index);
                         numbers.insert(number, index);
                     }
                 }
                 Kind::Symbol => symbols.push(index),
-                Kind::Manual(_) | Kind::Citation(_) => {}
+                Kind::Manual | Kind::Citation => {}
             }
         }
         let anonymous = state.anonymous_refs == state.anonymous.len();
@@ -154,11 +154,6 @@ impl<'s> Resolver<'s> {
             substituted: 0,
             referred: Vec::new(),
         }
-    }
-
-    /// Warn of `message`, on `line`.
-    pub fn warn(&mut self, line: usize, message: String) {
-        self.state.warn(line, message);
     }
 
     /// `nodes`, as blocks.
@@ -187,7 +182,7 @@ impl<'s> Resolver<'s> {
                 if flatten(&self.inlines(spans), &mut text) {
                     let message = "wrote `.. parsed-literal::` as code, leaving out its markup, \
                                    as a code block can't hold any";
-                    self.warn(line, message.to_string());
+                    self.state.warn(line, message);
                 }
                 out.push(Block::Code {
                     language: String::new(),
@@ -305,12 +300,12 @@ impl<'s> Resolver<'s> {
     fn inline(&mut self, span: Span, out: &mut Vec<Inline>) {
         let inline = match span {
             Span::Text(text) => Inline::Text(text),
-            Span::Emphasis(spans) => Inline::Emphasis(self.inlines(spans)),
-            Span::Strong(spans) => Inline::Strong(self.inlines(spans)),
+            Span::Emphasis(spans) => Inline::Styled(Style::Emphasis, self.inlines(spans)),
+            Span::Strong(spans) => Inline::Styled(Style::Strong, self.inlines(spans)),
             Span::Code(code) => Inline::Code(code),
             Span::Math(tex) => Inline::Math(tex),
-            Span::Sub(spans) => Inline::Subscript(self.inlines(spans)),
-            Span::Sup(spans) => Inline::Superscript(self.inlines(spans)),
+            Span::Sub(spans) => Inline::Styled(Style::Subscript, self.inlines(spans)),
+            Span::Sup(spans) => Inline::Styled(Style::Superscript, self.inlines(spans)),
             Span::Html(html, line) => Inline::Html {
                 html,
                 line: Some(line),
@@ -332,7 +327,8 @@ impl<'s> Resolver<'s> {
                 Ok(index) => self.footnote_ref(index),
                 Err(why) => {
                     if let Some(why) = why {
-                        self.warn(line, format!("kept `{raw}` as text, as {why}"));
+                        self.state
+                            .warn(line, format!("kept `{raw}` as text, as {why}"));
                     }
                     Inline::Text(raw)
                 }
@@ -364,7 +360,7 @@ impl<'s> Resolver<'s> {
                         "kept the anonymous references as text, as there are {refs} of them \
                          but {targets} anonymous targets"
                     );
-                    self.warn(line, message);
+                    self.state.warn(line, message);
                 }
                 out.push(Inline::Text(raw));
                 return;
@@ -385,13 +381,15 @@ impl<'s> Resolver<'s> {
                 return;
             }
             Err(why) if raw.is_empty() => {
-                self.warn(line, format!("kept an image without its link, as {why}"));
+                self.state
+                    .warn(line, format!("kept an image without its link, as {why}"));
                 let content = self.inlines(content);
                 out.extend(content);
                 return;
             }
             Err(why) => {
-                self.warn(line, format!("kept `{raw}` as text, as {why}"));
+                self.state
+                    .warn(line, format!("kept `{raw}` as text, as {why}"));
                 out.push(Inline::Text(raw));
                 return;
             }
@@ -511,7 +509,8 @@ impl<'s> Resolver<'s> {
         };
         let Some(key) = key.filter(|_| why.is_none()) else {
             let why = why.unwrap_or_default();
-            self.warn(line, format!("kept `{raw}` as text, as {why}"));
+            self.state
+                .warn(line, format!("kept `{raw}` as text, as {why}"));
             out.push(Inline::Text(raw.to_string()));
             return false;
         };
@@ -555,7 +554,7 @@ impl<'s> Resolver<'s> {
             }
             let footnote = &self.state.footnotes[index];
             let what = match footnote.kind {
-                Kind::Citation(_) => "citation",
+                Kind::Citation => "citation",
                 _ => "footnote",
             };
             let message = format!(
@@ -563,7 +562,7 @@ impl<'s> Resolver<'s> {
                 footnote.label
             );
             let line = footnote.line;
-            self.warn(line, message);
+            self.state.warn(line, message);
         }
         footnotes
     }
@@ -584,14 +583,7 @@ fn flatten(inlines: &[Inline], out: &mut String) -> bool {
                 continue;
             }
             Inline::Code(text) | Inline::Math(text) => out.push_str(text),
-            Inline::Emphasis(content)
-            | Inline::Strong(content)
-            | Inline::Strikethrough(content)
-            | Inline::Underline(content)
-            | Inline::Mark(content)
-            | Inline::Superscript(content)
-            | Inline::Subscript(content)
-            | Inline::Link { content, .. } => {
+            Inline::Styled(_, content) | Inline::Link { content, .. } => {
                 flatten(content, out);
             }
             Inline::Image { alt, .. } => out.push_str(alt),

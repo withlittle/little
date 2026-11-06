@@ -156,12 +156,6 @@ pub(crate) fn trim_end(lines: &mut Vec<Line>) {
 
 /// The text of `lines`, joined.
 pub(crate) fn join(lines: &[Line]) -> String {
-    let mut text = String::new();
-    for (index, line) in lines.iter().enumerate() {
-        if index > 0 {
-            text.push('\n');
-        }
-        text.push_str(&line.text);
-    }
-    text
+    let texts: Vec<&str> = lines.iter().map(|line| line.text.as_str()).collect();
+    texts.join("\n")
 }

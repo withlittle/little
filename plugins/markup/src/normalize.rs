@@ -4,78 +4,16 @@
 //! written as Markdown that reads back as it was.
 
 use crate::Warnings;
-use crate::model::{AlertKind, Block, Cell, Definition, Document, Inline, Item, Table, Target};
+use crate::model::{
+    AlertKind, Block, Cell, Definition, Document, Inline, Item, Kind, Table, Target,
+};
 use crate::settings::Settings;
+use crate::targets::collapse;
 use std::collections::HashSet;
 
-/// A kind of text set between delimiters, like emphasis.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Kind {
-    Emphasis,
-    Strong,
-    Strikethrough,
-    Underline,
-    Mark,
-    Superscript,
-    Subscript,
-}
-
 impl Kind {
-    /// The kind of `inline`, and what it holds, if it's set between
-    /// delimiters.
-    pub fn of(inline: &Inline) -> Option<(Kind, &[Inline])> {
-        Some(match inline {
-            Inline::Emphasis(c) => (Kind::Emphasis, c),
-            Inline::Strong(c) => (Kind::Strong, c),
-            Inline::Strikethrough(c) => (Kind::Strikethrough, c),
-            Inline::Underline(c) => (Kind::Underline, c),
-            Inline::Mark(c) => (Kind::Mark, c),
-            Inline::Superscript(c) => (Kind::Superscript, c),
-            Inline::Subscript(c) => (Kind::Subscript, c),
-            _ => return None,
-        })
-    }
-
-    pub fn split(inline: Inline) -> Result<(Kind, Vec<Inline>), Inline> {
-        Ok(match inline {
-            Inline::Emphasis(c) => (Kind::Emphasis, c),
-            Inline::Strong(c) => (Kind::Strong, c),
-            Inline::Strikethrough(c) => (Kind::Strikethrough, c),
-            Inline::Underline(c) => (Kind::Underline, c),
-            Inline::Mark(c) => (Kind::Mark, c),
-            Inline::Superscript(c) => (Kind::Superscript, c),
-            Inline::Subscript(c) => (Kind::Subscript, c),
-            other => return Err(other),
-        })
-    }
-
-    pub fn children_mut(inline: &mut Inline) -> Option<&mut Vec<Inline>> {
-        match inline {
-            Inline::Emphasis(c)
-            | Inline::Strong(c)
-            | Inline::Strikethrough(c)
-            | Inline::Underline(c)
-            | Inline::Mark(c)
-            | Inline::Superscript(c)
-            | Inline::Subscript(c) => Some(c),
-            _ => None,
-        }
-    }
-
-    pub fn wrap(self, children: Vec<Inline>) -> Inline {
-        match self {
-            Kind::Emphasis => Inline::Emphasis(children),
-            Kind::Strong => Inline::Strong(children),
-            Kind::Strikethrough => Inline::Strikethrough(children),
-            Kind::Underline => Inline::Underline(children),
-            Kind::Mark => Inline::Mark(children),
-            Kind::Superscript => Inline::Superscript(children),
-            Kind::Subscript => Inline::Subscript(children),
-        }
-    }
-
     /// What it's called in a warning.
-    pub fn name(self) -> &'static str {
+    pub(crate) fn name(self) -> &'static str {
         match self {
             Kind::Emphasis => "emphasis",
             Kind::Strong => "strong emphasis",
@@ -207,7 +145,7 @@ impl<'a> Normalizer<'a> {
     /// An alert, or, where `alerts` is off, a quote that starts with its
     /// title in bold.
     fn alert(&mut self, kind: AlertKind, title: &str, blocks: Vec<Block>) -> Block {
-        let title = title.split_whitespace().collect::<Vec<_>>().join(" ");
+        let title = collapse(title);
         let mut blocks = self.blocks(blocks);
         if self.settings.alerts {
             return Block::Alert {
@@ -223,7 +161,10 @@ impl<'a> Normalizer<'a> {
         };
         blocks.insert(
             0,
-            Block::Paragraph(vec![Inline::Strong(vec![Inline::Text(title)])]),
+            Block::Paragraph(vec![Inline::Styled(
+                Kind::Strong,
+                vec![Inline::Text(title)],
+            )]),
         );
         Block::Quote {
             blocks,
@@ -252,7 +193,9 @@ impl<'a> Normalizer<'a> {
             .map(|d| {
                 let mut blocks = Vec::new();
                 if !d.term.is_empty() {
-                    blocks.push(Block::Paragraph(self.inlines(vec![Inline::Strong(d.term)])));
+                    blocks.push(Block::Paragraph(
+                        self.inlines(vec![Inline::Styled(Kind::Strong, d.term)]),
+                    ));
                 }
                 blocks.extend(d.blocks);
                 Item {
@@ -305,7 +248,7 @@ impl<'a> Normalizer<'a> {
                         _ => Vec::new(),
                     };
                     if bold {
-                        inlines.push(Inline::Strong(text));
+                        inlines.push(Inline::Styled(Kind::Strong, text));
                     } else {
                         inlines.extend(text);
                     }
@@ -357,12 +300,9 @@ impl<'a> Normalizer<'a> {
     }
 
     fn inline(&mut self, inline: Inline, within: u16, out: &mut Vec<Inline>) {
-        let inline = match Kind::split(inline) {
-            Ok((kind, children)) => return self.delimited(kind, children, within, out),
-            Err(inline) => inline,
-        };
         let settings = self.settings;
         match inline {
+            Inline::Styled(kind, children) => self.delimited(kind, children, within, out),
             Inline::Text(text) => push(out, Inline::Text(text.replace(['\t', '\n', '\r'], " "))),
             Inline::Code(code) => {
                 if !code.is_empty() {
@@ -427,7 +367,7 @@ impl<'a> Normalizer<'a> {
                         }
                     }));
                 }
-                let title = title.split_whitespace().collect::<Vec<_>>().join(" ");
+                let title = collapse(&title);
                 push(
                     out,
                     Inline::Link {
@@ -444,12 +384,11 @@ impl<'a> Normalizer<'a> {
                 out,
                 Inline::Image {
                     url,
-                    alt: alt.split_whitespace().collect::<Vec<_>>().join(" "),
-                    title: title.split_whitespace().collect::<Vec<_>>().join(" "),
+                    alt: collapse(&alt),
+                    title: collapse(&title),
                 },
             ),
             Inline::LineBreak => push(out, Inline::LineBreak),
-            _ => unreachable!("delimited inlines are handled above"),
         }
     }
 
@@ -480,7 +419,7 @@ impl<'a> Normalizer<'a> {
             push(out, inline);
         }
         if !children.is_empty() {
-            push(out, kind.wrap(children));
+            push(out, Inline::Styled(kind, children));
         }
         for inline in after {
             push(out, inline);
@@ -509,10 +448,8 @@ fn push(out: &mut Vec<Inline>, inline: Inline) {
         (Some(Inline::Text(_)), Inline::Text(_))
         | (Some(Inline::Code(_)), Inline::Code(_))
         | (Some(Inline::Math(_)), Inline::Math(_)) => true,
-        (Some(last), inline) => {
-            matches!((Kind::of(last), Kind::of(inline)), (Some((a, _)), Some((b, _))) if a == b)
-        }
-        (None, _) => false,
+        (Some(Inline::Styled(a, _)), Inline::Styled(b, _)) => a == b,
+        _ => false,
     };
     if !join {
         out.push(inline);
@@ -526,14 +463,12 @@ fn push(out: &mut Vec<Inline>, inline: Inline) {
             last.push(' ');
             last.push_str(&tex);
         }
-        (last, inline) => {
-            let into = Kind::children_mut(last).expect("delimited");
-            if let Ok((_, children)) = Kind::split(inline) {
-                for child in children {
-                    push(into, child);
-                }
+        (Inline::Styled(_, into), Inline::Styled(_, children)) => {
+            for child in children {
+                push(into, child);
             }
         }
+        _ => {}
     }
 }
 
@@ -672,7 +607,7 @@ fn flatten(cell: Cell) -> (Vec<Inline>, bool) {
 fn lines_of(block: Block, lines: &mut Vec<Vec<Inline>>) {
     match block {
         Block::Paragraph(inlines) => lines.push(inlines),
-        Block::Heading { content, .. } => lines.push(vec![Inline::Strong(content)]),
+        Block::Heading { content, .. } => lines.push(vec![Inline::Styled(Kind::Strong, content)]),
         Block::Code { text, .. } => {
             lines.extend(
                 text.lines()
@@ -703,7 +638,10 @@ fn lines_of(block: Block, lines: &mut Vec<Vec<Inline>>) {
             } else {
                 title
             };
-            lines.push(vec![Inline::Strong(vec![Inline::Text(title)])]);
+            lines.push(vec![Inline::Styled(
+                Kind::Strong,
+                vec![Inline::Text(title)],
+            )]);
             for block in blocks {
                 lines_of(block, lines);
             }
@@ -732,7 +670,7 @@ fn lines_of(block: Block, lines: &mut Vec<Vec<Inline>>) {
         }
         Block::Definitions(definitions) => {
             for definition in definitions {
-                lines.push(vec![Inline::Strong(definition.term)]);
+                lines.push(vec![Inline::Styled(Kind::Strong, definition.term)]);
                 for block in definition.blocks {
                     lines_of(block, lines);
                 }

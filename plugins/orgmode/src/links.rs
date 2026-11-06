@@ -175,7 +175,8 @@ fn cookie(text: &str) -> Option<usize> {
 }
 
 /// `text` with each run of whitespace a space, trimmed, as a fuzzy link
-/// and the target, or `#+NAME:`, it leads to are matched.
+/// and the target, or `#+NAME:`, it leads to are matched, and as a warning
+/// shows what it's of.
 pub fn words(text: &str) -> String {
     text.split_whitespace().collect::<Vec<_>>().join(" ")
 }

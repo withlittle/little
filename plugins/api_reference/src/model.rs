@@ -147,6 +147,28 @@ pub enum Section {
     Items { kind: Items, items: Vec<Item> },
 }
 
+impl Section {
+    /// The section with `f` applied to its text, or to each item's
+    /// description, like leading its links where they go from a page.
+    pub fn map_text(&self, f: impl Fn(&str) -> String) -> Section {
+        match self {
+            Section::Text { title, text } => Section::Text {
+                title: title.clone(),
+                text: f(text),
+            },
+            Section::Items { kind, items } => Section::Items {
+                kind: *kind,
+                items: (items.iter())
+                    .map(|item| Item {
+                        description: f(&item.description),
+                        ..item.clone()
+                    })
+                    .collect(),
+            },
+        }
+    }
+}
+
 /// What a docstring's section lists.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Items {

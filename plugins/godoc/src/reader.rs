@@ -649,10 +649,8 @@ fn conversion(value: &Expression) -> Option<String> {
 /// A string literal's value, without its quotes, for an import's path,
 /// which has no escapes.
 fn unquote(literal: &str) -> String {
-    let mut chars = literal.chars();
-    chars.next();
-    chars.next_back();
-    chars.as_str().to_string()
+    let end = literal.len().saturating_sub(1);
+    literal.get(1..end).unwrap_or_default().to_string()
 }
 
 #[cfg(test)]
@@ -684,6 +682,16 @@ mod tests {
                 (None, "io".into())
             ]
         );
+    }
+
+    #[test]
+    fn an_import_path_loses_only_its_quotes() {
+        assert_eq!(unquote("\"fmt\""), "fmt");
+        assert_eq!(unquote("`a\"b`"), "a\"b");
+        assert_eq!(unquote("\"\\\"\""), "\\\"");
+        assert_eq!(unquote("\"\""), "");
+        assert_eq!(unquote("\""), "");
+        assert_eq!(unquote(""), "");
     }
 
     #[test]

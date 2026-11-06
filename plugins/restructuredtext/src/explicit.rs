@@ -294,20 +294,15 @@ impl Body<'_, '_> {
         let block = indented(self.lines, self.at, false, None, Some(start));
         self.at = block.end;
         let (kind, names, prefix) = if citation {
-            (
-                Kind::Citation(normalize(label)),
-                vec![normalize(label)],
-                "citation",
-            )
+            (Kind::Citation, vec![normalize(label)], "citation")
         } else if label == "*" {
             (Kind::Symbol, Vec::new(), "footnote")
         } else if let Some(name) = label.strip_prefix('#') {
-            let name = (!name.is_empty()).then(|| normalize(name));
-            let names = name.iter().cloned().collect();
-            (Kind::Auto(name), names, "footnote")
+            let labelled = !name.is_empty();
+            let names = labelled.then(|| normalize(name)).into_iter().collect();
+            (Kind::Auto { labelled }, names, "footnote")
         } else {
-            let names = vec![label.to_string()];
-            (Kind::Manual(label.to_string()), names, "footnote")
+            (Kind::Manual, vec![label.to_string()], "footnote")
         };
         let index = self.state.footnotes.len();
         self.state.footnotes.push(Footnote {

@@ -10,17 +10,8 @@ pub(crate) const ESCAPE: char = '\0';
 
 /// Whether `c` is in one of `ranges`.
 fn in_ranges(ranges: &[(char, char)], c: char) -> bool {
-    ranges
-        .binary_search_by(|&(low, high)| {
-            if high < c {
-                std::cmp::Ordering::Less
-            } else if low > c {
-                std::cmp::Ordering::Greater
-            } else {
-                std::cmp::Ordering::Equal
-            }
-        })
-        .is_ok()
+    let at = ranges.partition_point(|&(_, high)| high < c);
+    ranges.get(at).is_some_and(|&(low, _)| low <= c)
 }
 
 /// Whether inline markup may start after `c`.

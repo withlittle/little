@@ -171,6 +171,10 @@ scripts/notices.sh little target/notices/little.md # or any plugin, like pydoc
   config, source, themes, plugins, and the folders they read; builds every
   version again on each change, but doesn't watch git refs; checks the
   links within the site after each build.
+- `src/testing.rs` — what the modules' tests share, built only for them: a
+  scratch folder, `scratch`, deleted when it's dropped, so a test that
+  fails leaves nothing; and helpers to write files, list them, and render
+  a page.
 
 Content and theme live outside `src/`:
 - `docs/` — little's manual, for people who use little, published at
@@ -254,12 +258,19 @@ Content and theme live outside `src/`:
   that the plugins that add an API reference share: what a page documents,
   in no language in particular, and the Markdown of the page; and the
   settings, and the pages, paths, and links between them, they have alike.
+  It has their glue to `wit/plugin.wit` too, in its `plugin!` macro; the
+  code of what they document, and the lines of its docs, in `text`; and,
+  behind its `testing` feature, which only their tests turn on, what their
+  tests share.
 - `plugins/markup/` — a library, in its own workspace, not a plugin, that
   the plugins that read a markup format share: a model of a page, in no
   format in particular, and the Markdown it's written as, escaped, with
   only the extensions to Markdown the site turns on, else HTML or plainer
   Markdown, warned of; its links led to headings and anchors; and its
-  frontmatter.
+  frontmatter. It has their glue to `wit/plugin.wit` too, in its `plugin!`
+  macro, and the check of their settings, which are only `read`; and,
+  behind its `testing` feature, which only their tests turn on, as it
+  renders with comrak, what their tests share.
 - `about.toml`, `about.hbs`, `scripts/notices.sh` — the third-party notices
   that little's and the plugins' releases carry, which cargo-about writes,
   through `about.hbs`, from the `about.toml` beside each one's

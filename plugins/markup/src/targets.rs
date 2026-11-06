@@ -4,10 +4,9 @@
 
 use crate::inline::html_pieces;
 use crate::model::{Block, Document, Inline, Target, plain_text};
-use crate::normalize::Kind;
 use crate::settings::Settings;
-use crate::slug::Slugger;
-use std::collections::HashMap;
+use crate::slug::slug;
+use std::collections::{HashMap, HashSet};
 
 /// Gives each link with no text that of the heading it leads to, else its
 /// target, as the format would show it.
@@ -57,8 +56,9 @@ fn each_block<'a>(blocks: &'a [Block], f: &mut impl FnMut(&'a Block)) {
     }
 }
 
-/// Calls `f` with each block's own run of text in `blocks`, and in those.
-fn each_inlines(blocks: &mut [Block], f: &mut impl FnMut(&mut Vec<Inline>)) {
+/// Calls `f` with each block's own run of text in `blocks`, and in those,
+/// in order.
+pub fn each_inlines(blocks: &mut [Block], f: &mut impl FnMut(&mut Vec<Inline>)) {
     for block in blocks {
         match block {
             Block::Paragraph(inlines) => f(inlines),
@@ -121,7 +121,7 @@ fn fill(
                     }
                 },
             };
-        } else if let Some(children) = Kind::children_mut(inline) {
+        } else if let Inline::Styled(_, children) = inline {
             fill(children, by_text, by_id);
         }
     }
@@ -135,16 +135,15 @@ fn link_text(inlines: &[Inline]) -> Vec<Inline> {
         match inline {
             Inline::Footnote(_) | Inline::Anchor(_) => {}
             Inline::Link { content, .. } => out.extend(link_text(content)),
-            other => match Kind::of(other) {
-                Some((kind, children)) => out.push(kind.wrap(link_text(children))),
-                None => out.push(other.clone()),
-            },
+            Inline::Styled(kind, children) => out.push(Inline::Styled(*kind, link_text(children))),
+            other => out.push(other.clone()),
         }
     }
     out
 }
 
-fn collapse(text: &str) -> String {
+/// `text`, with each run of whitespace a space, and none at either end.
+pub(crate) fn collapse(text: &str) -> String {
     text.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
@@ -172,7 +171,7 @@ impl Targets {
             .collect();
         let mut walk = Walk {
             targets: Targets::default(),
-            slugger: Slugger::default(),
+            taken: HashSet::new(),
             last: "#".to_string(),
             settings,
             notes: Vec::new(),
@@ -219,7 +218,8 @@ impl Targets {
 
 struct Walk<'a> {
     targets: Targets,
-    slugger: Slugger,
+    /// The ids given to the headings met.
+    taken: HashSet<String>,
     /// The `#fragment` of the last heading met, or the top of the page.
     last: String,
     settings: &'a Settings,
@@ -235,7 +235,7 @@ impl<'a> Walk<'a> {
                 Block::Heading { content, ids, .. } => {
                     let mut text = String::new();
                     slug_text(content, self.settings.smart_punctuation, &mut text);
-                    let slug = self.slugger.slug(&text);
+                    let slug = slug(&mut self.taken, &text);
                     let fragment = format!("#{slug}");
                     self.targets
                         .by_text
@@ -292,12 +292,8 @@ impl<'a> Walk<'a> {
                         self.notes.push(label);
                     }
                 }
-                Inline::Link { content, .. } => self.inlines(content),
-                other => {
-                    if let Some((_, children)) = Kind::of(other) {
-                        self.inlines(children);
-                    }
-                }
+                Inline::Link { content, .. } | Inline::Styled(_, content) => self.inlines(content),
+                _ => {}
             }
         }
     }
@@ -325,11 +321,8 @@ fn slug_text(inlines: &[Inline], smart: bool, out: &mut String) {
             Inline::Html { html, .. } => out.push_str(&html_text(html)),
             Inline::LineBreak => out.push(' '),
             Inline::Footnote(_) | Inline::Anchor(_) => {}
-            Inline::Link { content, .. } => slug_text(content, smart, out),
-            other => {
-                if let Some((_, children)) = Kind::of(other) {
-                    slug_text(children, smart, out);
-                }
+            Inline::Link { content, .. } | Inline::Styled(_, content) => {
+                slug_text(content, smart, out)
             }
         }
     }

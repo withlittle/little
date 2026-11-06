@@ -19,6 +19,9 @@ ruff_source_file = "0.0.16"
 ruff_text_size = "0.0.16"
 wit-bindgen = "0.62"
 
+[dev-dependencies]
+little-api-reference = { path = "../api_reference", features = ["testing"] }
+
 [profile.release]
 opt-level = "s"
 lto = true

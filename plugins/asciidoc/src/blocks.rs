@@ -7,7 +7,7 @@ use asciidoc_parser::blocks::{
     SectionType, SimpleBlock, SimpleBlockStyle,
 };
 use asciidoc_parser::{HasSpan, Span};
-use little_markup::{AlertKind, Block, Definition, Inline, Item, Target};
+use little_markup::{AlertKind, Block, Definition, Inline, Item, Kind, Target};
 
 use crate::inlines;
 use crate::reader::Reader;
@@ -42,19 +42,15 @@ impl Reader<'_> {
                 out.extend(self.caption(node));
                 let content = raw.content();
                 match node.resolved_context().as_ref() {
-                    "listing" => {
+                    context @ ("listing" | "literal") => {
                         let text = inlines::verbatim(content.inlines());
                         let text = self.without_includes(content.original(), &text);
-                        let language = self.language(node);
+                        // Only a listing is source code, in a language.
+                        let language = match context {
+                            "listing" => self.language(node),
+                            _ => String::new(),
+                        };
                         out.push(Block::Code { language, text });
-                    }
-                    "literal" => {
-                        let text = inlines::verbatim(content.inlines());
-                        let text = self.without_includes(content.original(), &text);
-                        out.push(Block::Code {
-                            language: String::new(),
-                            text,
-                        });
                     }
                     "stem" => self.stem(node, content.original(), out),
                     _ => {
@@ -107,7 +103,10 @@ impl Reader<'_> {
             content.push(Inline::Text(text::plain(caption)));
         }
         content.extend(self.inlines(title.inlines()));
-        Some(Block::Paragraph(vec![Inline::Emphasis(content)]))
+        Some(Block::Paragraph(vec![Inline::Styled(
+            Kind::Emphasis,
+            content,
+        )]))
     }
 
     /// A section: its heading, a level below AsciiDoc's, as `=` is the
@@ -295,7 +294,10 @@ impl Reader<'_> {
             if !attribution.is_empty() {
                 attribution.push(Inline::Text(", ".to_string()));
             }
-            attribution.push(Inline::Emphasis(vec![Inline::Text(text::plain(work))]));
+            attribution.push(Inline::Styled(
+                Kind::Emphasis,
+                vec![Inline::Text(text::plain(work))],
+            ));
         }
         out.push(Block::Quote {
             blocks,

@@ -474,29 +474,19 @@ fn inject_livereload(mut html: String) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::testing::{scratch, write};
     use std::sync::mpsc::Receiver;
-
-    /// Build a throwaway `dist/` tree mirroring the pretty-URL output layout.
-    fn scratch_dist() -> PathBuf {
-        let root = std::env::temp_dir().join(format!("little-server-test-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&root);
-        for file in [
-            "index.html",
-            "getting-started/index.html",
-            "guide/index.html",
-            "guide/install/index.html",
-            "assets/style.css",
-        ] {
-            let path = root.join(file);
-            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-            std::fs::write(&path, b"x").unwrap();
-        }
-        root
-    }
 
     #[test]
     fn resolves_pretty_and_asset_routes() {
-        let dist = scratch_dist();
+        // A throwaway `dist/` tree mirroring the pretty-URL output layout.
+        let (_tmp, dist) = scratch(&[
+            ("index.html", "x"),
+            ("getting-started/index.html", "x"),
+            ("guide/index.html", "x"),
+            ("guide/install/index.html", "x"),
+            ("assets/style.css", "x"),
+        ]);
         let at = |url: &str| resolve_route(&dist, url);
 
         assert_eq!(at("/"), Some(dist.join("index.html")));
@@ -521,8 +511,6 @@ mod tests {
 
         assert_eq!(at("/does-not-exist"), None);
         assert_eq!(at("/../secret"), None);
-
-        let _ = std::fs::remove_dir_all(&dist);
     }
 
     #[test]
@@ -553,15 +541,12 @@ mod tests {
     fn encoded_urls_find_the_files_they_name() {
         // A browser encodes the space in `Incident Response`, and the `é` in
         // `café`, when it asks for them.
-        let root = scratch(
-            "encoded",
-            &[
-                ("dist/index.html", "Home"),
-                ("dist/Incident Response/Process/triage/index.html", "Triage"),
-                ("dist/café/index.html", "Café"),
-                ("secret/index.html", "Secret"),
-            ],
-        );
+        let (_tmp, root) = scratch(&[
+            ("dist/index.html", "Home"),
+            ("dist/Incident Response/Process/triage/index.html", "Triage"),
+            ("dist/café/index.html", "Café"),
+            ("secret/index.html", "Secret"),
+        ]);
         let dist = root.join("dist");
         let at = |url: &str| resolve_route(&dist, url);
         let triage = dist.join("Incident Response/Process/triage/index.html");
@@ -595,13 +580,11 @@ mod tests {
         ] {
             assert_eq!(at(url), None, "{url}");
         }
-
-        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]
     fn unknown_urls_get_the_sites_404_page() {
-        let dist = scratch("not-found", &[("index.html", "Home")]);
+        let (_tmp, dist) = scratch(&[("index.html", "Home")]);
         let not_found = dist.join(site::NOT_FOUND_FILE);
 
         // Without a 404 page, there's nothing to send...
@@ -622,20 +605,15 @@ mod tests {
             Some((dist.join("index.html"), 200))
         );
         assert_eq!(respond_with(&dist, "", "/404.html"), Some((not_found, 200)));
-
-        let _ = std::fs::remove_dir_all(&dist);
     }
 
     #[test]
     fn a_site_under_a_path_is_served_under_it() {
-        let dist = scratch(
-            "under-a-path",
-            &[
-                ("index.html", "Home"),
-                ("guide/index.html", "Guide"),
-                ("404.html", "Not found"),
-            ],
-        );
+        let (_tmp, dist) = scratch(&[
+            ("index.html", "Home"),
+            ("guide/index.html", "Guide"),
+            ("404.html", "Not found"),
+        ]);
         let at = |url: &str| respond_with(&dist, "/little", url);
         let found = |file: &str| Some((dist.join(file), 200));
         let not_found = Some((dist.join(site::NOT_FOUND_FILE), 404));
@@ -661,8 +639,6 @@ mod tests {
         }
         // A site at the root of its domain is already there.
         assert_eq!(redirect("", "/"), None);
-
-        let _ = std::fs::remove_dir_all(&dist);
     }
 
     #[test]
@@ -761,34 +737,16 @@ mod tests {
         assert!(!is_output(&rescan, destination));
     }
 
-    /// A throwaway folder holding `files`, each a (path, contents) pair.
-    fn scratch(label: &str, files: &[(&str, &str)]) -> PathBuf {
-        let root =
-            std::env::temp_dir().join(format!("little-server-test-{label}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&root);
-        for (file, contents) in files {
-            let path = root.join(file);
-            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-            std::fs::write(&path, contents).unwrap();
-        }
-        root
-    }
-
-    /// A throwaway site containing every kind of file a build reads.
-    fn scratch_site(label: &str) -> PathBuf {
-        scratch(
-            label,
-            &[
-                ("little.yml", "theme: ./theme\nname: Test\n"),
-                ("docs/README.md", "# Home\n"),
-                ("docs/guide/install.md", "# Install\n"),
-                ("docs/guide/images/diagram.png", "png"),
-                ("theme/little.yml", "font: serif\n"),
-                ("theme/_templates/default.html", "{{ page.content | safe }}"),
-                ("theme/_static/style.css", "body {}\n"),
-            ],
-        )
-    }
+    /// The files of a throwaway site, with every kind of file a build reads.
+    const SITE: [(&str, &str); 7] = [
+        ("little.yml", "theme: ./theme\nname: Test\n"),
+        ("docs/README.md", "# Home\n"),
+        ("docs/guide/install.md", "# Install\n"),
+        ("docs/guide/images/diagram.png", "png"),
+        ("theme/little.yml", "font: serif\n"),
+        ("theme/_templates/default.html", "{{ page.content | safe }}"),
+        ("theme/_static/style.css", "body {}\n"),
+    ];
 
     /// Watch a built site as `serve` does, and wait out any late events from
     /// creating it.
@@ -820,23 +778,21 @@ mod tests {
 
     #[test]
     fn a_build_does_not_retrigger_the_watcher() {
-        let site_dir = scratch_site("watch");
+        let (_tmp, site_dir) = scratch(&SITE);
         assert_only_edits_wake(&site_dir, &site_dir.join("theme/_static/style.css"));
-        let _ = std::fs::remove_dir_all(&site_dir);
     }
 
     #[test]
     fn a_source_can_hold_the_destination() {
-        let site_dir = scratch_site("inside");
+        let (_tmp, site_dir) = scratch(&SITE);
         let site_cfg = "theme: ./theme\ndestination: ./docs/_build\n";
         std::fs::write(site_dir.join("little.yml"), site_cfg).unwrap();
         assert_only_edits_wake(&site_dir, &site_dir.join("docs/guide/install.md"));
-        let _ = std::fs::remove_dir_all(&site_dir);
     }
 
     #[test]
     fn the_watcher_watches_every_theme_in_the_chain() {
-        let site_dir = scratch_site("chain");
+        let (_tmp, site_dir) = scratch(&SITE);
         std::fs::write(site_dir.join("little.yml"), "theme: ./company\n").unwrap();
         let company = site_dir.join("company");
         std::fs::create_dir_all(&company).unwrap();
@@ -847,13 +803,12 @@ mod tests {
         // config, so it goes last.
         assert_only_edits_wake(&site_dir, &site_dir.join("theme/_static/style.css"));
         assert_only_edits_wake(&site_dir, &company_cfg);
-        let _ = std::fs::remove_dir_all(&site_dir);
     }
 
     #[test]
     fn the_watcher_skips_downloaded_themes() {
         // A company's theme that builds on a downloaded one...
-        let site_dir = scratch_site("downloaded");
+        let (_tmp, site_dir) = scratch(&SITE);
         let url = "https://example.invalid/fancy-1.0.zip";
         std::fs::write(site_dir.join("little.yml"), "theme: ./company\n").unwrap();
         let company = site_dir.join("company");
@@ -874,12 +829,11 @@ mod tests {
             assert!(event.is_err(), "a downloaded theme is watched: {event:?}");
         }
         assert_only_edits_wake(&site_dir, &company_css);
-        let _ = std::fs::remove_dir_all(&site_dir);
     }
 
     #[test]
     fn the_watcher_watches_each_plugin_and_the_folders_it_reads() {
-        let site_dir = scratch_site("plugins");
+        let (_tmp, site_dir) = scratch(&SITE);
         let site_cfg =
             "theme: ./theme\nplugins:\n  test:\n    wasm: ./plugins/test.wasm\n    read: data\n";
         std::fs::write(site_dir.join("little.yml"), site_cfg).unwrap();
@@ -893,7 +847,6 @@ mod tests {
         // That edit breaks the plugin, so it goes last.
         assert_only_edits_wake(&site_dir, &data);
         assert_only_edits_wake(&site_dir, &wasm);
-        let _ = std::fs::remove_dir_all(&site_dir);
     }
 
     #[test]
@@ -903,21 +856,17 @@ mod tests {
         // the site's docs, or anywhere else in the theme.
         for destination in ["./dist", "../site"] {
             let demo_cfg = format!("theme: ..\ndestination: {destination}\n");
-            let theme_dir = scratch(
-                "demo",
-                &[
-                    ("little.yml", "font: serif\n"),
-                    ("_templates/default.html", "{{ page.content | safe }}"),
-                    ("_static/style.css", "body {}\n"),
-                    ("demo/little.yml", &demo_cfg),
-                    ("demo/docs/README.md", "# Home\n"),
-                ],
-            );
+            let (_tmp, theme_dir) = scratch(&[
+                ("little.yml", "font: serif\n"),
+                ("_templates/default.html", "{{ page.content | safe }}"),
+                ("_static/style.css", "body {}\n"),
+                ("demo/little.yml", &demo_cfg),
+                ("demo/docs/README.md", "# Home\n"),
+            ]);
             assert_only_edits_wake(
                 &theme_dir.join("demo"),
                 &theme_dir.join("_static/style.css"),
             );
-            let _ = std::fs::remove_dir_all(&theme_dir);
         }
     }
 
@@ -942,27 +891,25 @@ mod tests {
 
     #[test]
     fn the_watcher_follows_the_site_to_another_theme() {
-        let site_dir = scratch_site("switch");
-        for (file, contents) in [
-            ("other/_templates/default.html", "{{ page.content | safe }}"),
-            ("other/_static/style.css", "body {}\n"),
-        ] {
-            let path = site_dir.join(file);
-            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-            std::fs::write(&path, contents).unwrap();
-        }
+        let (_tmp, site_dir) = scratch(&SITE);
+        write(
+            &site_dir,
+            &[
+                ("other/_templates/default.html", "{{ page.content | safe }}"),
+                ("other/_static/style.css", "body {}\n"),
+            ],
+        );
         assert_follows(
             &site_dir,
             "theme: ./other\n",
             "theme/_static/style.css",
             "other/_static/style.css",
         );
-        let _ = std::fs::remove_dir_all(&site_dir);
     }
 
     #[test]
     fn the_watcher_follows_the_site_to_another_source() {
-        let site_dir = scratch_site("move");
+        let (_tmp, site_dir) = scratch(&SITE);
         std::fs::create_dir_all(site_dir.join("pages")).unwrap();
         std::fs::write(site_dir.join("pages/README.md"), "# Home\n").unwrap();
         assert_follows(
@@ -971,13 +918,12 @@ mod tests {
             "docs/README.md",
             "pages/README.md",
         );
-        let _ = std::fs::remove_dir_all(&site_dir);
     }
 
     #[test]
     fn the_watcher_skips_hidden_files_in_the_source() {
         // Like an editor's swap files or drafts, which a build leaves out.
-        let site_dir = scratch_site("hidden");
+        let (_tmp, site_dir) = scratch(&SITE);
         {
             let (_sources, rx) = watch_built_site(&site_dir);
             let docs = site_dir.join("docs");
@@ -1001,6 +947,5 @@ mod tests {
             "docs/README.md",
             ".docs/README.md",
         );
-        let _ = std::fs::remove_dir_all(&site_dir);
     }
 }

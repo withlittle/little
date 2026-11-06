@@ -421,6 +421,7 @@ fn into_repo(repo: &Repo) -> Result<RegexSet> {
 mod tests {
     use super::*;
     use crate::site;
+    use crate::testing::scratch;
     use std::fs;
 
     /// A theme that shows only each page's content, so a test sees only the
@@ -432,28 +433,13 @@ mod tests {
 
     const NOT_FOUND: &str = "File not found. Check if file exists and path is correct";
 
-    /// A throwaway site holding `files`, each a (path, contents) pair; a
-    /// later file overwrites an earlier one at the same path.
-    fn scratch_site(label: &str, files: &[(&str, &str)]) -> PathBuf {
-        let site =
-            std::env::temp_dir().join(format!("little-links-test-{label}-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&site);
-        for (file, contents) in files {
-            let path = site.join(file);
-            fs::create_dir_all(path.parent().unwrap()).unwrap();
-            fs::write(&path, contents).unwrap();
-        }
-        site
-    }
-
     /// Build the site holding `files`, and warn of each broken link in
     /// `scope`, naming each file by its path in the site, written with `/`
     /// on any system.
-    fn broken_links(label: &str, scope: Scope, files: &[(&str, &str)]) -> Vec<String> {
-        let site = scratch_site(label, files);
+    fn broken_links(scope: Scope, files: &[(&str, &str)]) -> Vec<String> {
+        let (_tmp, site) = scratch(files);
         let built = site::build(&site).unwrap();
         let broken = check(&built, scope).unwrap();
-        fs::remove_dir_all(&site).unwrap();
         let in_site = |file: &str| {
             let names: Vec<_> = Path::new(file)
                 .strip_prefix(&site)
@@ -479,7 +465,6 @@ mod tests {
     #[test]
     fn finds_pages_files_and_fragments_that_arent_there() {
         let broken = broken_links(
-            "missing",
             Scope::Internal,
             &[
                 BARE_THEME[0],
@@ -518,7 +503,6 @@ mod tests {
     #[test]
     fn follows_a_link_to_a_pages_file_to_the_page() {
         let broken = broken_links(
-            "md",
             Scope::Internal,
             &[
                 (
@@ -556,7 +540,6 @@ mod tests {
     #[test]
     fn shows_a_link_in_markdown_as_its_written() {
         let broken = broken_links(
-            "written",
             Scope::Internal,
             &[
                 (
@@ -590,7 +573,6 @@ mod tests {
     #[test]
     fn shows_a_page_at_its_url() {
         let broken = broken_links(
-            "shown",
             Scope::Internal,
             &[
                 BARE_THEME[0],
@@ -625,7 +607,6 @@ mod tests {
     #[test]
     fn checks_a_site_under_its_path_as_its_published() {
         let broken = broken_links(
-            "path",
             Scope::Internal,
             &[
                 (
@@ -665,7 +646,6 @@ mod tests {
     #[test]
     fn finds_a_link_thats_not_a_url() {
         let broken = broken_links(
-            "not-a-url",
             Scope::Internal,
             &[
                 BARE_THEME[0],
@@ -683,7 +663,6 @@ mod tests {
     #[test]
     fn leaves_links_out_of_the_site_to_a_build() {
         let broken = broken_links(
-            "internal",
             Scope::Internal,
             &[
                 BARE_THEME[0],
@@ -701,7 +680,6 @@ mod tests {
     #[test]
     fn leaves_out_links_that_work_only_on_the_authors_machine() {
         let broken = broken_links(
-            "private",
             Scope::All,
             &[
                 BARE_THEME[0],
@@ -722,7 +700,6 @@ mod tests {
         // file there, which no repository has, so none can be checked.
         let repo = "https://github.com/withlittle/no-such-repo";
         let broken = broken_links(
-            "repo",
             Scope::All,
             &[
                 ("little.yml", &format!("repo: {repo}/\n")),
@@ -770,18 +747,15 @@ mod tests {
         // A link to another site from a version from a ref isn't checked, as
         // the ref can't be fixed, but one within the site is, even to the
         // site's own `url`.
-        let site = scratch_site(
-            "versions",
-            &[
-                BARE_THEME[1],
-                (".gitignore", "dist/\n"),
-                (
-                    "docs/README.md",
-                    "[Elsewhere](https://example.invalid/) [Gone](gone.md) \
+        let (_tmp, site) = scratch(&[
+            BARE_THEME[1],
+            (".gitignore", "dist/\n"),
+            (
+                "docs/README.md",
+                "[Elsewhere](https://example.invalid/) [Gone](gone.md) \
                      [Missing](https://example.com/proj/1.4/missing)\n",
-                ),
-            ],
-        );
+            ),
+        ]);
         init(&site);
         commit_all(&site);
         git_in(&site, &["tag", "v1.4"]);
@@ -793,7 +767,6 @@ mod tests {
 
         let built = site::build(&site).unwrap();
         let broken = check(&built, Scope::All).unwrap();
-        fs::remove_dir_all(&site).unwrap();
         let broken: Vec<_> = broken.iter().map(ToString::to_string).collect();
         assert_eq!(
             broken,
@@ -811,7 +784,6 @@ mod tests {
     fn finds_no_broken_links_in_the_built_in_theme() {
         for config in ["", "url: https://withlittle.github.io/little\n"] {
             let broken = broken_links(
-                "built-in",
                 Scope::Internal,
                 &[
                     ("little.yml", config),

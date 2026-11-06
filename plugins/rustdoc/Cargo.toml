@@ -18,6 +18,9 @@ pulldown-cmark = { version = "0.13.4", default-features = false }
 syn = { version = "3.0.9", default-features = false, features = ["full", "parsing", "printing", "clone-impls"] }
 wit-bindgen = "0.62"
 
+[dev-dependencies]
+little-api-reference = { path = "../api_reference", features = ["testing"] }
+
 [profile.release]
 opt-level = "s"
 lto = true

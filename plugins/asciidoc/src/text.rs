@@ -4,17 +4,10 @@
 
 /// `text`, escaped as HTML.
 pub(crate) fn escape(text: &str) -> String {
-    let mut html = String::with_capacity(text.len());
-    for c in text.chars() {
-        match c {
-            '&' => html.push_str("&amp;"),
-            '<' => html.push_str("&lt;"),
-            '>' => html.push_str("&gt;"),
-            '"' => html.push_str("&quot;"),
-            _ => html.push(c),
-        }
-    }
-    html
+    text.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
 }
 
 /// The text of `html`, without its tags, and with its character references

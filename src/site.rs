@@ -70,13 +70,6 @@ struct Page {
     warnings: Vec<Warning>,
 }
 
-impl Page {
-    /// Is this a folder's README (its home page)?
-    fn is_index(&self) -> bool {
-        matches!(self.page_type, PageType::Home | PageType::Section)
-    }
-}
-
 /// What little works out for `page`, beneath the page's frontmatter (see
 /// `page_value`). Anything a page doesn't have is left out rather than set to
 /// null, which a template would print as "None".
@@ -865,7 +858,7 @@ fn finish(
     let mut searched = Vec::new();
     for page in &pages {
         let url = place.url.link(&page.url);
-        let children = page.is_index().then(|| children_of(&tree, &page.rel));
+        let children = is_readme(&page.rel).then(|| children_of(&tree, &page.rel));
         let (prev, next) = neighbours.get(&*url).copied().unwrap_or_default();
         // A page that isn't in the nav has nothing above it there.
         let breadcrumbs = (trails.get(&*url)).map(Vec::as_slice).unwrap_or_default();
@@ -1093,15 +1086,13 @@ fn page_from(
     let mut frontmatter = rendered.frontmatter;
     frontmatter.retain(|_, value| !value.is_null());
 
-    let is_index = is_readme(&rel);
-
     // Title: frontmatter `title` -> first <h1> -> filename/folder-derived.
     let title = frontmatter
         .get("title")
         .and_then(Value::as_str)
         .map(str::to_string)
         .or(rendered.first_h1)
-        .unwrap_or_else(|| fallback_title(&rel, is_index));
+        .unwrap_or_else(|| fallback_title(&rel));
 
     let url = derive_url(&rel);
     let out_path = out_path_for_url(destination, &url);
@@ -1364,9 +1355,7 @@ pub fn is_hidden(rel: &Path) -> bool {
 /// `index.html`.
 pub fn is_readme(rel: &Path) -> bool {
     rel.file_stem()
-        .and_then(|s| s.to_str())
-        .map(|s| s.eq_ignore_ascii_case("readme"))
-        .unwrap_or(false)
+        .is_some_and(|stem| stem.eq_ignore_ascii_case("readme"))
 }
 
 /// What type of page the file at `rel` makes, in Markdown or a format a
@@ -1447,18 +1436,13 @@ fn destination_in(source: &Path, destination: &Path) -> Option<PathBuf> {
 
 /// Map a pretty URL to its directory-index output file in the destination.
 fn out_path_for_url(destination: &Path, url: &str) -> PathBuf {
-    let trimmed = url.trim_matches('/');
-    if trimmed.is_empty() {
-        destination.join("index.html")
-    } else {
-        destination.join(trimmed).join("index.html")
-    }
+    destination.join(url.trim_matches('/')).join("index.html")
 }
 
 /// Last-resort page title when there's no frontmatter `title` or `<h1>`.
 /// Index pages borrow their folder name (root -> "Home").
-fn fallback_title(rel: &Path, is_index: bool) -> String {
-    if is_index {
+fn fallback_title(rel: &Path) -> String {
+    if is_readme(rel) {
         match rel
             .parent()
             .and_then(|p| p.file_name())
@@ -1528,7 +1512,7 @@ fn insert_into_tree(root: &mut DirNode, page: &Page) {
         url: Some(page.url.clone()),
         children: Vec::new(),
     };
-    if page.is_index() {
+    if is_readme(&page.rel) {
         node.index = Some(item);
     } else {
         node.pages.push(item);
@@ -1672,8 +1656,9 @@ fn push_trails<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::plugin::PagePlugins;
+    use crate::testing::{files_in, render_at, scratch, write};
     use std::io::Read;
+    use tempfile::TempDir;
 
     fn page(rel: &str, title: &str) -> Page {
         let origin = format!("docs/{rel}");
@@ -1706,19 +1691,6 @@ mod tests {
     /// names files in what it warns of.
     fn native(path: &str) -> PathBuf {
         path.split('/').collect()
-    }
-
-    /// A fresh scratch site holding `files`, each a (path, contents) pair.
-    fn scratch_site(label: &str, files: &[(&str, &str)]) -> PathBuf {
-        let site =
-            std::env::temp_dir().join(format!("little-site-test-{label}-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&site);
-        for (file, contents) in files {
-            let path = site.join(file);
-            fs::create_dir_all(path.parent().unwrap()).unwrap();
-            fs::write(&path, contents).unwrap();
-        }
-        site
     }
 
     /// What search found in each page of the site built into `dist`, as
@@ -1775,18 +1747,6 @@ mod tests {
             .map(|crumb| format!("{} {}", crumb.title, crumb.url.unwrap_or("(label)")))
             .collect::<Vec<_>>()
             .join(" > ")
-    }
-
-    /// Every file in `dir`, by its path in it, sorted.
-    fn files_in(dir: &Path) -> Vec<PathBuf> {
-        let mut files: Vec<_> = WalkDir::new(dir)
-            .into_iter()
-            .filter_map(Result::ok)
-            .filter(|entry| entry.file_type().is_file())
-            .map(|entry| entry.path().strip_prefix(dir).unwrap().to_path_buf())
-            .collect();
-        files.sort();
-        files
     }
 
     #[test]
@@ -1909,10 +1869,10 @@ mod tests {
 
     #[test]
     fn fallback_titles_use_folder_for_index() {
-        assert_eq!(fallback_title(Path::new("README.md"), true), "Home");
-        assert_eq!(fallback_title(Path::new("guide/README.md"), true), "Guide");
+        assert_eq!(fallback_title(Path::new("README.md")), "Home");
+        assert_eq!(fallback_title(Path::new("guide/README.md")), "Guide");
         assert_eq!(
-            fallback_title(Path::new("getting-started.md"), false),
+            fallback_title(Path::new("getting-started.md")),
             "Getting Started"
         );
     }
@@ -2037,17 +1997,9 @@ mod tests {
     fn a_page_toc_nests_its_headings() {
         let md = "### Before\n\n### Also Before\n\n## One\n\n### One A\n\n#### One A i\n\n\
                   ### One B\n\n## Two\n\n#### Two i\n";
-        let toc = render::parse_document(
-            md,
-            "/",
-            &(2..=6),
-            &SiteUrl::default(),
-            &config::Markdown::default(),
-            OffsetDateTime::UNIX_EPOCH,
-            &mut PagePlugins::none(),
-        )
-        .unwrap()
-        .toc;
+        let toc = render_at(md, "/", &SiteUrl::default(), &config::Markdown::default())
+            .unwrap()
+            .toc;
 
         // A heading goes under the nearest one above it with fewer `#`s, even
         // two levels up; before the first `##`, it goes at the top, beside the
@@ -2185,19 +2137,16 @@ mod tests {
 
     #[test]
     fn builds_with_a_local_theme() {
-        let site = scratch_site(
-            "theme",
-            &[
-                ("little.yml", "theme: ./path/to/my/theme\n"),
-                ("docs/README.md", "# Home\n"),
-                (
-                    "path/to/my/theme/_templates/default.html",
-                    "{{ site.greeting }} from my theme",
-                ),
-                ("path/to/my/theme/little.yml", "greeting: Hello\n"),
-                ("path/to/my/theme/_static/style.css", "body {}\n"),
-            ],
-        );
+        let (_tmp, site) = scratch(&[
+            ("little.yml", "theme: ./path/to/my/theme\n"),
+            ("docs/README.md", "# Home\n"),
+            (
+                "path/to/my/theme/_templates/default.html",
+                "{{ site.greeting }} from my theme",
+            ),
+            ("path/to/my/theme/little.yml", "greeting: Hello\n"),
+            ("path/to/my/theme/_static/style.css", "body {}\n"),
+        ]);
         let png: &[u8] = &[0x89, b'P', b'N', b'G', 0x00, 0xff];
         let img = site.join("path/to/my/theme/_static/img");
         fs::create_dir_all(&img).unwrap();
@@ -2213,13 +2162,12 @@ mod tests {
         assert_eq!(fs::read(site.join("dist/img/logo.png")).unwrap(), png);
         // No 404.html template, no 404 page.
         assert!(!site.join("dist").join(NOT_FOUND_FILE).exists());
-        let _ = fs::remove_dir_all(&site);
     }
 
     #[test]
     fn a_site_needs_only_its_docs() {
         // Without a little.yml or a theme, little's built-in theme builds it.
-        let site = scratch_site("builtin", &[("docs/README.md", "# Home\n")]);
+        let (_tmp, site) = scratch(&[("docs/README.md", "# Home\n")]);
 
         build(&site).unwrap();
 
@@ -2237,18 +2185,14 @@ mod tests {
         assert!(home.contains("<pagefind-modal-trigger>"), "{home}");
         // A site without versions has no menu of them.
         assert!(!home.contains("version-menu"), "{home}");
-        let _ = fs::remove_dir_all(&site);
     }
 
     #[test]
     fn a_site_can_turn_off_the_built_in_themes_search() {
-        let site = scratch_site(
-            "builtin-unsearched",
-            &[
-                ("little.yml", "search: false\n"),
-                ("docs/README.md", "# Home\n"),
-            ],
-        );
+        let (_tmp, site) = scratch(&[
+            ("little.yml", "search: false\n"),
+            ("docs/README.md", "# Home\n"),
+        ]);
 
         build(&site).unwrap();
 
@@ -2256,29 +2200,25 @@ mod tests {
         let home = fs::read_to_string(dist.join("index.html")).unwrap();
         assert!(!home.contains("pagefind"), "{home}");
         assert!(!dist.join("pagefind").exists());
-        let _ = fs::remove_dir_all(&site);
     }
 
     #[test]
     fn builds_with_a_theme_that_builds_on_another() {
-        let site = scratch_site(
-            "chain",
-            &[
-                ("little.yml", "theme: ./company\nname: My Docs\n"),
-                ("docs/README.md", "# Home\n"),
-                ("company/little.yml", "theme: ../base\ngreeting: Hi\n"),
-                ("company/_templates/partials/brand.html", "company"),
-                ("company/_static/logo.svg", "company logo"),
-                ("base/little.yml", "greeting: Hello\nname: Base\n"),
-                (
-                    "base/_templates/default.html",
-                    r#"{% include "partials/brand.html" %}: {{ site.greeting }} from {{ site.name }}"#,
-                ),
-                ("base/_templates/partials/brand.html", "base"),
-                ("base/_static/logo.svg", "base logo"),
-                ("base/_static/style.css", "body {}\n"),
-            ],
-        );
+        let (_tmp, site) = scratch(&[
+            ("little.yml", "theme: ./company\nname: My Docs\n"),
+            ("docs/README.md", "# Home\n"),
+            ("company/little.yml", "theme: ../base\ngreeting: Hi\n"),
+            ("company/_templates/partials/brand.html", "company"),
+            ("company/_static/logo.svg", "company logo"),
+            ("base/little.yml", "greeting: Hello\nname: Base\n"),
+            (
+                "base/_templates/default.html",
+                r#"{% include "partials/brand.html" %}: {{ site.greeting }} from {{ site.name }}"#,
+            ),
+            ("base/_templates/partials/brand.html", "base"),
+            ("base/_static/logo.svg", "base logo"),
+            ("base/_static/style.css", "body {}\n"),
+        ]);
 
         build(&site).unwrap();
 
@@ -2286,37 +2226,32 @@ mod tests {
         assert_eq!(read("index.html"), "company: Hi from My Docs");
         assert_eq!(read("logo.svg"), "company logo");
         assert_eq!(read("style.css"), "body {}\n");
-        let _ = fs::remove_dir_all(&site);
     }
 
     #[test]
     fn builds_with_a_theme_that_builds_on_a_downloaded_one() {
         let url = "https://example.invalid/fancy-1.0.zip";
         let company_cfg = format!("theme: {url}\ngreeting: Hi\n");
-        let site = scratch_site(
-            "downloaded",
-            &[
-                ("little.yml", "theme: ./company\n"),
-                ("docs/README.md", "# Home\n"),
-                ("company/little.yml", &company_cfg),
-                ("company/_static/logo.svg", "company logo"),
-            ],
-        );
+        let (_tmp, site) = scratch(&[
+            ("little.yml", "theme: ./company\n"),
+            ("docs/README.md", "# Home\n"),
+            ("company/little.yml", &company_cfg),
+            ("company/_static/logo.svg", "company logo"),
+        ]);
         // Where it's kept once it's downloaded, so the test needn't download it.
         let fancy = crate::download::folder(&site, url);
-        for (file, contents) in [
-            ("little.yml", "greeting: Hello\n"),
-            (
-                "_templates/default.html",
-                "{{ site.greeting }} from {{ page.title }}",
-            ),
-            ("_static/logo.svg", "fancy logo"),
-            ("_static/style.css", "body {}\n"),
-        ] {
-            let path = fancy.join(file);
-            fs::create_dir_all(path.parent().unwrap()).unwrap();
-            fs::write(path, contents).unwrap();
-        }
+        write(
+            &fancy,
+            &[
+                ("little.yml", "greeting: Hello\n"),
+                (
+                    "_templates/default.html",
+                    "{{ site.greeting }} from {{ page.title }}",
+                ),
+                ("_static/logo.svg", "fancy logo"),
+                ("_static/style.css", "body {}\n"),
+            ],
+        );
 
         build(&site).unwrap();
 
@@ -2334,12 +2269,11 @@ mod tests {
             site.join("docs").join("README.md").display()
         );
         assert_eq!(message, expected);
-        let _ = fs::remove_dir_all(&site);
     }
 
     #[test]
     fn a_build_needs_a_source_folder_and_a_theme() {
-        let site = scratch_site("needs", &[("little.yml", "name: My Docs\n")]);
+        let (_tmp, site) = scratch(&[("little.yml", "name: My Docs\n")]);
         let message = format!("{:#}", build(&site).unwrap_err());
         let expected = format!(
             "there's no source folder at {}",
@@ -2353,24 +2287,20 @@ mod tests {
         let expected = "little can't build a site without a theme (`theme: false`) yet";
         assert_eq!(message, expected);
         assert!(!site.join("dist").exists());
-        let _ = fs::remove_dir_all(&site);
     }
 
     #[test]
     fn builds_from_and_into_the_folders_the_config_chooses() {
-        let site = scratch_site(
-            "folders",
-            &[
-                (
-                    "little.yml",
-                    "theme: ./theme\nsource: ./content\ndestination: ./public\n",
-                ),
-                ("content/README.md", "# Home\n"),
-                ("content/guide/install.md", "# Install\n"),
-                ("docs/README.md", "# Not the source\n"),
-                ("theme/_templates/default.html", "{{ page.title }}"),
-            ],
-        );
+        let (_tmp, site) = scratch(&[
+            (
+                "little.yml",
+                "theme: ./theme\nsource: ./content\ndestination: ./public\n",
+            ),
+            ("content/README.md", "# Home\n"),
+            ("content/guide/install.md", "# Install\n"),
+            ("docs/README.md", "# Not the source\n"),
+            ("theme/_templates/default.html", "{{ page.title }}"),
+        ]);
 
         let destination = build(&site).unwrap().destination;
 
@@ -2379,38 +2309,34 @@ mod tests {
         assert_eq!(read("index.html"), "Home");
         assert_eq!(read("guide/install/index.html"), "Install");
         assert!(!site.join("dist").exists());
-        let _ = fs::remove_dir_all(&site);
     }
 
     #[test]
     fn hidden_files_and_folders_are_left_out() {
         // Like Jupyter's checkpoints, an editor's swap files, or drafts.
-        let site = scratch_site(
-            "hidden",
-            &[
-                ("little.yml", "theme: ./theme\n"),
-                ("docs/README.md", "# Home\n"),
-                ("docs/.draft.md", "# Draft\n"),
-                (
-                    "docs/.ipynb_checkpoints/notes-checkpoint.md",
-                    "# Checkpoint\n",
-                ),
-                ("docs/.hidden/README.md", "# Hidden\n"),
-                ("docs/guide/README.md", "# Guide\n"),
-                ("docs/guide/install.md", "# Install\n"),
-                ("docs/guide/.notes.md", "# Notes\n"),
-                ("docs/.DS_Store", ""),
-                ("docs/.drafts/diagram.png", "png"),
-                ("docs/guide/.install.md.swp", ""),
-                (
-                    "theme/_templates/default.html",
-                    "{% macro list(items) %}{% for item in items %}\
+        let (_tmp, site) = scratch(&[
+            ("little.yml", "theme: ./theme\n"),
+            ("docs/README.md", "# Home\n"),
+            ("docs/.draft.md", "# Draft\n"),
+            (
+                "docs/.ipynb_checkpoints/notes-checkpoint.md",
+                "# Checkpoint\n",
+            ),
+            ("docs/.hidden/README.md", "# Hidden\n"),
+            ("docs/guide/README.md", "# Guide\n"),
+            ("docs/guide/install.md", "# Install\n"),
+            ("docs/guide/.notes.md", "# Notes\n"),
+            ("docs/.DS_Store", ""),
+            ("docs/.drafts/diagram.png", "png"),
+            ("docs/guide/.install.md.swp", ""),
+            (
+                "theme/_templates/default.html",
+                "{% macro list(items) %}{% for item in items %}\
                      [{{ item.title }}{% if item.children %} {{ list(item.children) }}{% endif %}]\
                      {% endfor %}{% endmacro %}{{ list(site.nav) }}",
-                ),
-                ("theme/_static/.nojekyll", ""),
-            ],
-        );
+            ),
+            ("theme/_static/.nojekyll", ""),
+        ]);
 
         build(&site).unwrap();
 
@@ -2424,27 +2350,23 @@ mod tests {
             "guide/install/index.html",
             "index.html",
         ];
-        assert_eq!(files_in(&dist), built.map(PathBuf::from));
+        assert_eq!(files_in(&dist), built);
         let home = fs::read_to_string(dist.join("index.html")).unwrap();
         assert_eq!(home, "[Home][Guide [Install]]");
-        let _ = fs::remove_dir_all(&site);
     }
 
     #[test]
     fn only_hidden_names_inside_the_source_count() {
         // So the source can be a hidden folder, and the site can be in one.
-        let root = scratch_site(
-            "hidden-source",
-            &[
-                (".site/little.yml", "theme: ./theme\nsource: ./.github\n"),
-                (".site/README.md", "# Site\n"),
-                (".site/.github/README.md", "# Home\n"),
-                (".site/.github/ISSUE_TEMPLATE/bug.md", "# Bug\n"),
-                (".site/.github/.drafts/wip.md", "# WIP\n"),
-                (".site/.little/themes/fancy/README.md", "# Fancy\n"),
-                (".site/theme/_templates/default.html", "{{ page.title }}"),
-            ],
-        );
+        let (_tmp, root) = scratch(&[
+            (".site/little.yml", "theme: ./theme\nsource: ./.github\n"),
+            (".site/README.md", "# Site\n"),
+            (".site/.github/README.md", "# Home\n"),
+            (".site/.github/ISSUE_TEMPLATE/bug.md", "# Bug\n"),
+            (".site/.github/.drafts/wip.md", "# WIP\n"),
+            (".site/.little/themes/fancy/README.md", "# Fancy\n"),
+            (".site/theme/_templates/default.html", "{{ page.title }}"),
+        ]);
         let site = root.join(".site");
         let dist = site.join("dist");
         let read = |path: &str| fs::read_to_string(dist.join(path)).unwrap();
@@ -2452,7 +2374,7 @@ mod tests {
         build(&site).unwrap();
 
         let built = [MARKER_FILE, "ISSUE_TEMPLATE/bug/index.html", "index.html"];
-        assert_eq!(files_in(&dist), built.map(PathBuf::from));
+        assert_eq!(files_in(&dist), built);
         assert_eq!(read("index.html"), "Home");
 
         // With the site's folder as its source, what's in `.github/` and
@@ -2468,9 +2390,8 @@ mod tests {
             "little.yml",
             "theme/_templates/default.html",
         ];
-        assert_eq!(files_in(&dist), built.map(PathBuf::from));
+        assert_eq!(files_in(&dist), built);
         assert_eq!(read("index.html"), "Site");
-        let _ = fs::remove_dir_all(&root);
     }
 
     #[test]
@@ -2481,7 +2402,7 @@ mod tests {
             ("site/theme/_static/style.css", "body {}\n"),
             ("other/notes.txt", "mine\n"),
         ];
-        let root = scratch_site("wipe", &files);
+        let (_tmp, root) = scratch(&files);
         let site = root.join("site");
         let build_into = |destination: &str| {
             let site_cfg = format!("theme: ./theme\ndestination: {destination}\n");
@@ -2508,25 +2429,21 @@ mod tests {
             assert!(!dir.join("stale.html").exists(), "{destination}");
             assert_eq!(fs::read_to_string(dir.join("index.html")).unwrap(), "Home");
         }
-        let _ = fs::remove_dir_all(&root);
     }
 
     #[test]
     fn every_other_file_in_the_source_is_copied() {
-        let site = scratch_site(
-            "copied",
-            &[
-                ("little.yml", "theme: ./theme\n"),
-                ("docs/README.md", "# Home\n"),
-                ("docs/logo.svg", "<svg/>"),
-                ("docs/guide/install.md", "# Install\n"),
-                ("docs/guide/install/demo.mp4", "mp4"),
-                ("docs/assets/style.css", "site"),
-                ("theme/_templates/default.html", "{{ page.title }}"),
-                ("theme/_static/assets/style.css", "theme"),
-                ("theme/_static/assets/theme.js", "theme"),
-            ],
-        );
+        let (_tmp, site) = scratch(&[
+            ("little.yml", "theme: ./theme\n"),
+            ("docs/README.md", "# Home\n"),
+            ("docs/logo.svg", "<svg/>"),
+            ("docs/guide/install.md", "# Install\n"),
+            ("docs/guide/install/demo.mp4", "mp4"),
+            ("docs/assets/style.css", "site"),
+            ("theme/_templates/default.html", "{{ page.title }}"),
+            ("theme/_static/assets/style.css", "theme"),
+            ("theme/_static/assets/theme.js", "theme"),
+        ]);
         let png = [
             0x89, b'P', b'N', b'G', b'\r', b'\n', 0x1a, b'\n', 0x00, 0xff,
         ];
@@ -2548,31 +2465,27 @@ mod tests {
             "index.html",
             "logo.svg",
         ];
-        assert_eq!(files_in(&dist), built.map(PathBuf::from));
+        assert_eq!(files_in(&dist), built);
         assert_eq!(fs::read(dist.join("guide/images/step 1.png")).unwrap(), png);
         // Where the theme has a file at the same path, the site's wins.
         let style = fs::read_to_string(dist.join("assets/style.css")).unwrap();
         assert_eq!(style, "site");
-        let _ = fs::remove_dir_all(&site);
     }
 
     #[test]
     fn sass_in_the_theme_is_compiled_and_in_the_source_copied() {
-        let site = scratch_site(
-            "sass",
-            &[
-                ("little.yml", "theme: ./theme\n"),
-                ("docs/README.md", "# Home\n"),
-                ("docs/examples/button.scss", "$x: 1;"),
-                ("docs/examples/_mixins.scss", "$y: 2;"),
-                ("theme/_templates/default.html", "{{ page.title }}"),
-                (
-                    "theme/_static/assets/style.scss",
-                    "@use 'colors';\na { color: colors.$link; }",
-                ),
-                ("theme/_sass/_colors.scss", "$link: teal;"),
-            ],
-        );
+        let (_tmp, site) = scratch(&[
+            ("little.yml", "theme: ./theme\n"),
+            ("docs/README.md", "# Home\n"),
+            ("docs/examples/button.scss", "$x: 1;"),
+            ("docs/examples/_mixins.scss", "$y: 2;"),
+            ("theme/_templates/default.html", "{{ page.title }}"),
+            (
+                "theme/_static/assets/style.scss",
+                "@use 'colors';\na { color: colors.$link; }",
+            ),
+            ("theme/_sass/_colors.scss", "$link: teal;"),
+        ]);
         build(&site).unwrap();
 
         let dist = site.join("dist");
@@ -2583,7 +2496,7 @@ mod tests {
             "examples/button.scss",
             "index.html",
         ];
-        assert_eq!(files_in(&dist), built.map(PathBuf::from));
+        assert_eq!(files_in(&dist), built);
         let css = fs::read_to_string(dist.join("assets/style.css")).unwrap();
         assert_eq!(css, "a {\n  color: teal;\n}\n");
         let example = fs::read_to_string(dist.join("examples/button.scss")).unwrap();
@@ -2603,19 +2516,15 @@ mod tests {
         assert_eq!(message, expected);
         let css = fs::read_to_string(dist.join("assets/style.css")).unwrap();
         assert_eq!(css, "a {\n  color: teal;\n}\n");
-        let _ = fs::remove_dir_all(&site);
     }
 
     #[test]
     fn a_destination_in_the_source_isnt_copied_into_itself() {
-        let site = scratch_site(
-            "inside",
-            &[
-                ("docs/README.md", "# Home\n"),
-                ("docs/logo.svg", "<svg/>"),
-                ("theme/_templates/default.html", "{{ page.title }}"),
-            ],
-        );
+        let (_tmp, site) = scratch(&[
+            ("docs/README.md", "# Home\n"),
+            ("docs/logo.svg", "<svg/>"),
+            ("theme/_templates/default.html", "{{ page.title }}"),
+        ]);
         // However its path is written. The second build finds the first's.
         for destination in ["./docs/_build", "./docs/../docs/_build"] {
             let site_cfg = format!("theme: ./theme\ndestination: {destination}\n");
@@ -2624,36 +2533,32 @@ mod tests {
             build(&site).unwrap();
             let built = [MARKER_FILE, "index.html", "logo.svg"];
             let files = files_in(&site.join("docs/_build"));
-            assert_eq!(files, built.map(PathBuf::from), "{destination}");
+            assert_eq!(files, built, "{destination}");
         }
-        let _ = fs::remove_dir_all(&site);
     }
 
     #[test]
     fn links_lead_from_the_folder_of_the_file_theyre_in() {
         // As on GitHub, whatever URL the page is served at, with or without a
         // `/` at its end, and under the site's path.
-        let site = scratch_site(
-            "relative",
-            &[
-                (
-                    "little.yml",
-                    "theme: ./theme\nurl: https://withlittle.github.io/little\n",
-                ),
-                ("docs/README.md", "![Logo](assets/logo.svg)\n"),
-                (
-                    "docs/guide/README.md",
-                    "![Diagram](images/diagram.svg) [Install](install)\n",
-                ),
-                (
-                    "docs/guide/install.md",
-                    "![Diagram](images/diagram.svg) ![Logo](../assets/logo.svg)\n",
-                ),
-                ("docs/assets/logo.svg", "<svg/>"),
-                ("docs/guide/images/diagram.svg", "<svg/>"),
-                ("theme/_templates/default.html", "{{ page.content | safe }}"),
-            ],
-        );
+        let (_tmp, site) = scratch(&[
+            (
+                "little.yml",
+                "theme: ./theme\nurl: https://withlittle.github.io/little\n",
+            ),
+            ("docs/README.md", "![Logo](assets/logo.svg)\n"),
+            (
+                "docs/guide/README.md",
+                "![Diagram](images/diagram.svg) [Install](install)\n",
+            ),
+            (
+                "docs/guide/install.md",
+                "![Diagram](images/diagram.svg) ![Logo](../assets/logo.svg)\n",
+            ),
+            ("docs/assets/logo.svg", "<svg/>"),
+            ("docs/guide/images/diagram.svg", "<svg/>"),
+            ("theme/_templates/default.html", "{{ page.content | safe }}"),
+        ]);
 
         build(&site).unwrap();
 
@@ -2675,7 +2580,6 @@ mod tests {
         for image in ["assets/logo.svg", "guide/images/diagram.svg"] {
             assert!(dist.join(image).is_file(), "{image}");
         }
-        let _ = fs::remove_dir_all(&site);
     }
 
     /// A site's config that has the test plugin, as `test`, reading the
@@ -2700,24 +2604,21 @@ mod tests {
             "given",
         ]));
         let data = parts(serde_json::json!([{ "markdown": "What we have." }]));
-        let site = scratch_site(
-            "formats",
-            &[
-                ("little.yml", &reading_tests()),
-                (
-                    "docs/README.md",
-                    "[Analysis](guide/analysis.test#results)\n",
-                ),
-                ("docs/guide/analysis.test", &analysis),
-                ("docs/data/README.test", &data),
-                // Its extension, as it's written, is the plugin's.
-                ("docs/data/notes.TEST", "Notes"),
-                (
-                    "theme/_templates/default.html",
-                    "{{ page.title }}\n{{ page.content | safe }}",
-                ),
-            ],
-        );
+        let (_tmp, site) = scratch(&[
+            ("little.yml", &reading_tests()),
+            (
+                "docs/README.md",
+                "[Analysis](guide/analysis.test#results)\n",
+            ),
+            ("docs/guide/analysis.test", &analysis),
+            ("docs/data/README.test", &data),
+            // Its extension, as it's written, is the plugin's.
+            ("docs/data/notes.TEST", "Notes"),
+            (
+                "theme/_templates/default.html",
+                "{{ page.title }}\n{{ page.content | safe }}",
+            ),
+        ]);
         let built = build(&site).unwrap();
 
         // Each is built into its page, as a Markdown file is, and isn't
@@ -2730,7 +2631,7 @@ mod tests {
             "guide/analysis/index.html",
             "index.html",
         ];
-        assert_eq!(files_in(&dist), files.map(PathBuf::from));
+        assert_eq!(files_in(&dist), files);
         let read = |path: &str| fs::read_to_string(dist.join(path)).unwrap();
         let analysis = read("guide/analysis/index.html");
         assert!(analysis.starts_with("The analysis\n<h1"), "{analysis}");
@@ -2775,123 +2676,77 @@ mod tests {
             broken.display()
         );
         assert_eq!(message, expected);
-        let _ = fs::remove_dir_all(&site);
     }
 
     #[test]
-    fn each_formula_that_cant_be_rendered_is_noted() {
-        let parts = serde_json::json!([{ "markdown": "$x^2$ and $\\dv{f}{x}$" }]);
-        let site = scratch_site(
-            "math",
-            &[
-                ("little.yml", &reading_tests()),
-                ("docs/README.md", "$$\\qty{1}{m}$$\n"),
-                ("docs/analysis.test", &parts.to_string()),
-                ("theme/_templates/default.html", "{{ page.content | safe }}"),
-            ],
-        );
-        let built = build(&site).unwrap();
-
-        // The math in a file a plugin reads is MathML, as a Markdown file's
-        // is.
-        let analysis = fs::read_to_string(site.join("dist/analysis/index.html")).unwrap();
-        assert!(analysis.starts_with("<p><math><msup>"), "{analysis}");
-        // Each formula that isn't is noted, with the file it's in, in the
-        // order of the pages.
-        let docs = site.join("docs");
-        let warnings = warnings_of(&built);
-        let expected = [
-            format!(
-                "can't render $$\\qty{{1}}{{m}}$$ in {}: Unknown command \"\\qty\".",
-                docs.join("README.md").display()
+    fn each_formula_diagram_and_block_that_fails_is_noted() {
+        // Each case has the home page's Markdown, and that of a file the
+        // plugin reads. Then a page that works, and how it starts. Then
+        // what's noted of each file, with `{}` for the file.
+        let cases = [
+            // The math in a file a plugin reads is MathML, as a Markdown
+            // file's is. Each formula that isn't is noted, with the file it's
+            // in, in the order of the pages.
+            (
+                "$$\\qty{1}{m}$$\n",
+                "$x^2$ and $\\dv{f}{x}$",
+                "analysis/index.html",
+                "<p><math><msup>",
+                [
+                    "can't render $$\\qty{1}{m}$$ in {}: Unknown command \"\\qty\".",
+                    "can't render $\\dv{f}{x}$ in {}: Unknown command \"\\dv\".",
+                ],
             ),
-            format!(
-                "can't render $\\dv{{f}}{{x}}$ in {}: Unknown command \"\\dv\".",
-                docs.join("analysis.test").display()
+            // Each diagram that isn't drawn is noted, with the file it's in,
+            // and the line its block starts on in a Markdown file, in the
+            // order of the pages.
+            (
+                "---\ntitle: Home\n---\n```mermaid\nflowchart LR\n  A --> B\n```\n\n\
+                 ```mermaid\nflowchat LR\n```\n",
+                "```mermaid\nflowchat\n```",
+                "index.html",
+                "<svg id=\"mermaid-1\" ",
+                [
+                    "can't draw the diagram on line 9 of {}: No diagram type detected",
+                    "can't draw a diagram in {}: No diagram type detected",
+                ],
             ),
-        ];
-        assert_eq!(warnings, expected);
-        let _ = fs::remove_dir_all(&site);
-    }
-
-    #[test]
-    fn each_diagram_that_cant_be_drawn_is_noted() {
-        let parts = serde_json::json!([{ "markdown": "```mermaid\nflowchat\n```" }]);
-        let site = scratch_site(
-            "diagrams",
-            &[
-                ("little.yml", &reading_tests()),
-                (
-                    "docs/README.md",
-                    "---\ntitle: Home\n---\n```mermaid\nflowchart LR\n  A --> B\n```\n\n\
-                     ```mermaid\nflowchat LR\n```\n",
-                ),
-                ("docs/analysis.test", &parts.to_string()),
-                ("theme/_templates/default.html", "{{ page.content | safe }}"),
-            ],
-        );
-        let built = build(&site).unwrap();
-
-        let home = fs::read_to_string(site.join("dist/index.html")).unwrap();
-        assert!(home.starts_with("<svg id=\"mermaid-1\" "), "{home}");
-        // Each that isn't is noted, with the file it's in, and the line its
-        // block starts on in a Markdown file, in the order of the pages.
-        let docs = site.join("docs");
-        let warnings = warnings_of(&built);
-        let expected = [
-            format!(
-                "can't draw the diagram on line 9 of {}: No diagram type detected",
-                docs.join("README.md").display()
-            ),
-            format!(
-                "can't draw a diagram in {}: No diagram type detected",
-                docs.join("analysis.test").display()
+            // A plugin is told the file of each block's page from the site's
+            // folder, wherever the site is. Each block it can't render is
+            // noted, with the file it's in, and the line it starts on in a
+            // Markdown file, in the order of the pages.
+            (
+                "---\ntitle: Home\n---\n```test\nblock\n```\n\n```test\nerror it is broken\n```\n",
+                "```test\nerror it is lost\n```",
+                "index.html",
+                "<p>test | test | docs/README.md</p>\n",
+                [
+                    "plugin `test` can't render the block on line 8 of {}: it is broken",
+                    "plugin `test` can't render a block in {}: it is lost",
+                ],
             ),
         ];
-        assert_eq!(warnings, expected);
-        let _ = fs::remove_dir_all(&site);
-    }
-
-    #[test]
-    fn each_block_a_plugin_cant_render_is_noted() {
-        let parts = serde_json::json!([{ "markdown": "```test\nerror it is lost\n```" }]);
-        let site = scratch_site(
-            "plugins",
-            &[
+        for (readme, analysis, page, start, noted) in cases {
+            let parts = serde_json::json!([{ "markdown": analysis }]);
+            let (_tmp, site) = scratch(&[
                 ("little.yml", &reading_tests()),
-                (
-                    "docs/README.md",
-                    "---\ntitle: Home\n---\n```test\nblock\n```\n\n```test\nerror it is broken\n```\n",
-                ),
+                ("docs/README.md", readme),
                 ("docs/analysis.test", &parts.to_string()),
                 ("theme/_templates/default.html", "{{ page.content | safe }}"),
-            ],
-        );
-        let built = build(&site).unwrap();
+            ]);
+            let built = build(&site).unwrap();
 
-        // A plugin is told the file of each block's page from the site's
-        // folder, wherever the site is.
-        let home = fs::read_to_string(site.join("dist/index.html")).unwrap();
-        assert!(
-            home.starts_with("<p>test | test | docs/README.md</p>\n"),
-            "{home}"
-        );
-        // Each block it can't render is noted, with the file it's in, and the
-        // line it starts on in a Markdown file, in the order of the pages.
-        let docs = site.join("docs");
-        let warnings = warnings_of(&built);
-        let expected = [
-            format!(
-                "plugin `test` can't render the block on line 8 of {}: it is broken",
-                docs.join("README.md").display()
-            ),
-            format!(
-                "plugin `test` can't render a block in {}: it is lost",
-                docs.join("analysis.test").display()
-            ),
-        ];
-        assert_eq!(warnings, expected);
-        let _ = fs::remove_dir_all(&site);
+            let html = fs::read_to_string(site.join("dist").join(page)).unwrap();
+            assert!(html.starts_with(start), "{html}");
+            let docs = site.join("docs");
+            let files = [docs.join("README.md"), docs.join("analysis.test")];
+            let expected: Vec<String> = noted
+                .iter()
+                .zip(files)
+                .map(|(note, file)| note.replace("{}", &file.display().to_string()))
+                .collect();
+            assert_eq!(warnings_of(&built), expected);
+        }
     }
 
     /// A site's config that has the test plugin, as `api`, beside `config`,
@@ -2925,24 +2780,21 @@ mod tests {
             pages,
             Some("can't read pkg/broken.py"),
         );
-        let site = scratch_site(
-            "added",
-            &[
-                ("little.yml", &site_cfg),
-                ("docs/README.md", "# Home\n"),
-                (
-                    "docs/guide.md",
-                    "# Guide\n\nSee [the API](reference/README.md).\n",
-                ),
-                (
-                    "theme/_templates/default.html",
-                    "{{ page.title }} | {{ 'source_url' in page }} | \
+        let (_tmp, site) = scratch(&[
+            ("little.yml", &site_cfg),
+            ("docs/README.md", "# Home\n"),
+            (
+                "docs/guide.md",
+                "# Guide\n\nSee [the API](reference/README.md).\n",
+            ),
+            (
+                "theme/_templates/default.html",
+                "{{ page.title }} | {{ 'source_url' in page }} | \
                      {{ page.breadcrumbs | map(attribute='title') | join(', ') }} | \
                      {{ page.prev.title if page.prev }} | {{ page.next.title if page.next }}\n\
                      {{ page.content | safe }}",
-                ),
-            ],
-        );
+            ),
+        ]);
         let built = build(&site).unwrap();
         let read = |file: &str| fs::read_to_string(site.join("dist").join(file)).unwrap();
 
@@ -2993,25 +2845,22 @@ mod tests {
             broken[0].starts_with("broken link gone.md in plugin `api`'s reference/pkg/base.md: "),
             "{broken:?}"
         );
-        let _ = fs::remove_dir_all(&site);
     }
 
     #[test]
     fn a_plugins_page_cant_be_the_same_page_as_another() {
-        let clash = |label: &str, files: &[(&str, &str)], pages: serde_json::Value| {
+        let clash = |files: &[(&str, &str)], pages: serde_json::Value| {
             let site_cfg = adding_files("theme: ./theme\n", pages, None);
             let mut files = files.to_vec();
             files.push(("little.yml", &site_cfg));
             files.push(("theme/_templates/default.html", "{{ page.content | safe }}"));
-            let site = scratch_site(label, &files);
+            let (_tmp, site) = scratch(&files);
             let error = format!("{:#}", build(&site).err().unwrap());
-            let _ = fs::remove_dir_all(&site);
             error.replace(&site.display().to_string(), ".")
         };
         let page = |path: &str| serde_json::json!({ "path": path, "text": "# API\n" });
         assert_eq!(
             clash(
-                "clash-file",
                 &[("docs/reference.md", "# Reference\n")],
                 serde_json::json!([page("reference/README.md")]),
             ),
@@ -3023,7 +2872,6 @@ mod tests {
         );
         assert_eq!(
             clash(
-                "clash-plugin",
                 &[("docs/README.md", "# Home\n")],
                 serde_json::json!([page("api.md"), page("api/README.md")]),
             ),
@@ -3050,20 +2898,17 @@ mod tests {
         });
         let site_cfg =
             format!("theme: ./theme\nurl: https://example.com/docs\nplugins:\n  test: {plugin}\n");
-        let site = scratch_site(
-            "hooks",
-            &[
-                ("little.yml", &site_cfg),
-                ("docs/README.md", "# Home\n\nHello, world.\n"),
-                ("docs/old.md", "# Old\n"),
-                ("theme/little.yml", "search: true\n"),
-                (
-                    "theme/_templates/default.html",
-                    "<html lang=\"en\">{{ site.title }} | {{ site.motto }} | {{ page.badge }} | \
+        let (_tmp, site) = scratch(&[
+            ("little.yml", &site_cfg),
+            ("docs/README.md", "# Home\n\nHello, world.\n"),
+            ("docs/old.md", "# Old\n"),
+            ("theme/little.yml", "search: true\n"),
+            (
+                "theme/_templates/default.html",
+                "<html lang=\"en\">{{ site.title }} | {{ site.motto }} | {{ page.badge }} | \
                      {{ page.title }}\n{{ page.content | safe }}</html>",
-                ),
-            ],
-        );
+            ),
+        ]);
         let built = build(&site).unwrap();
         let dist = site.join("dist");
         let read = |file: &str| fs::read_to_string(dist.join(file)).unwrap();
@@ -3130,18 +2975,14 @@ mod tests {
             "{broken:?}"
         );
         assert!(built.warnings.is_empty(), "{:?}", built.warnings);
-        let _ = fs::remove_dir_all(&site);
     }
 
     #[test]
     fn a_hook_that_fails_is_warned_of_or_stops_the_build() {
-        let site = scratch_site(
-            "hooks-fail",
-            &[
-                ("docs/README.md", "# Home\n\nHello, world.\n"),
-                ("theme/_templates/default.html", "{{ page.content | safe }}"),
-            ],
-        );
+        let (_tmp, site) = scratch(&[
+            ("docs/README.md", "# Home\n\nHello, world.\n"),
+            ("theme/_templates/default.html", "{{ page.content | safe }}"),
+        ]);
         let with = |mut plugin: serde_json::Value| {
             plugin["wasm"] = serde_json::json!(crate::plugin::tests::test_plugin());
             let site_cfg = format!("theme: ./theme\nplugins:\n  test: {plugin}\n");
@@ -3202,37 +3043,33 @@ mod tests {
         // Each stops the build before it's written, so the last build stays.
         let home = fs::read_to_string(site.join("dist/index.html")).unwrap();
         assert!(home.contains("Hello, world."), "{home}");
-        let _ = fs::remove_dir_all(&site);
     }
 
     #[test]
     fn each_type_of_page_gets_its_template_and_data() {
         // Each template says which it is, and what `page` holds.
-        let site = scratch_site(
-            "types",
-            &[
-                ("little.yml", "theme: ./theme\n"),
-                ("docs/README.md", "# Home\n"),
-                (
-                    "docs/guide/README.md",
-                    "---\ndescription: All about it\n---\n# Guide\n",
-                ),
-                ("docs/guide/install.md", "# Install\n"),
-                ("docs/api/reference.md", "# Reference\n"),
-                (
-                    "theme/_templates/default.html",
-                    "{{ page.type }} with default.html: {{ page | list | sort | join(' ') }}",
-                ),
-                (
-                    "theme/_templates/section.html",
-                    "{{ page.type }} with section.html: {{ page | list | sort | join(' ') }}",
-                ),
-                (
-                    "theme/_templates/404.html",
-                    "{{ page.type }} with 404.html: {{ page | list | sort | join(' ') }} = {{ page.url | safe }}",
-                ),
-            ],
-        );
+        let (_tmp, site) = scratch(&[
+            ("little.yml", "theme: ./theme\n"),
+            ("docs/README.md", "# Home\n"),
+            (
+                "docs/guide/README.md",
+                "---\ndescription: All about it\n---\n# Guide\n",
+            ),
+            ("docs/guide/install.md", "# Install\n"),
+            ("docs/api/reference.md", "# Reference\n"),
+            (
+                "theme/_templates/default.html",
+                "{{ page.type }} with default.html: {{ page | list | sort | join(' ') }}",
+            ),
+            (
+                "theme/_templates/section.html",
+                "{{ page.type }} with section.html: {{ page | list | sort | join(' ') }}",
+            ),
+            (
+                "theme/_templates/404.html",
+                "{{ page.type }} with 404.html: {{ page | list | sort | join(' ') }} = {{ page.url | safe }}",
+            ),
+        ]);
 
         build(&site).unwrap();
 
@@ -3262,26 +3099,22 @@ mod tests {
             read(NOT_FOUND_FILE),
             "404 with 404.html: type url = /404.html"
         );
-        let _ = fs::remove_dir_all(&site);
     }
 
     #[test]
     fn each_page_links_to_the_pages_before_and_after_it() {
-        let site = scratch_site(
-            "pager",
-            &[
-                ("little.yml", "theme: ./theme\n"),
-                ("docs/README.md", "# Home\n"),
-                ("docs/guide/README.md", "# Guide\n"),
-                ("docs/guide/install.md", "# Install\n"),
-                (
-                    "theme/_templates/default.html",
-                    "{% if page.prev %}{{ page.prev.title }} {{ page.prev.url | safe }} {% endif %}\
+        let (_tmp, site) = scratch(&[
+            ("little.yml", "theme: ./theme\n"),
+            ("docs/README.md", "# Home\n"),
+            ("docs/guide/README.md", "# Guide\n"),
+            ("docs/guide/install.md", "# Install\n"),
+            (
+                "theme/_templates/default.html",
+                "{% if page.prev %}{{ page.prev.title }} {{ page.prev.url | safe }} {% endif %}\
                      < {{ page.title }} >\
                      {% if page.next %} {{ page.next.title }} {{ page.next.url | safe }}{% endif %}",
-                ),
-            ],
-        );
+            ),
+        ]);
 
         build(&site).unwrap();
 
@@ -3295,35 +3128,31 @@ mod tests {
             read("guide/install/index.html"),
             "Guide /guide/ < Install >"
         );
-        let _ = fs::remove_dir_all(&site);
     }
 
     #[test]
     fn each_page_lists_the_pages_above_it() {
-        let site = scratch_site(
-            "breadcrumbs",
-            &[
-                ("little.yml", "theme: ./theme\n"),
-                ("docs/README.md", "# Home\n"),
-                ("docs/guide/README.md", "# Guide\n"),
-                ("docs/guide/install.md", "# Install\n"),
-                ("docs/api/reference.md", "# Reference\n"),
-                (
-                    "docs/api/errors.md",
-                    "---\nbreadcrumbs: false\n---\n# Errors\n",
-                ),
-                (
-                    "docs/api/limits.md",
-                    "---\nbreadcrumbs:\n  - { title: Reference, url: /api/reference }\n---\n# Limits\n",
-                ),
-                (
-                    "theme/_templates/default.html",
-                    "{% if page.breadcrumbs %}{% for crumb in page.breadcrumbs %}\
+        let (_tmp, site) = scratch(&[
+            ("little.yml", "theme: ./theme\n"),
+            ("docs/README.md", "# Home\n"),
+            ("docs/guide/README.md", "# Guide\n"),
+            ("docs/guide/install.md", "# Install\n"),
+            ("docs/api/reference.md", "# Reference\n"),
+            (
+                "docs/api/errors.md",
+                "---\nbreadcrumbs: false\n---\n# Errors\n",
+            ),
+            (
+                "docs/api/limits.md",
+                "---\nbreadcrumbs:\n  - { title: Reference, url: /api/reference }\n---\n# Limits\n",
+            ),
+            (
+                "theme/_templates/default.html",
+                "{% if page.breadcrumbs %}{% for crumb in page.breadcrumbs %}\
                      {{ crumb.title }} {{ crumb.url | default('(label)') | safe }} > \
                      {% endfor %}{% endif %}{{ page.title }}",
-                ),
-            ],
-        );
+            ),
+        ]);
 
         build(&site).unwrap();
 
@@ -3354,24 +3183,20 @@ mod tests {
         build(&site).unwrap();
         assert_eq!(read("guide/install/index.html"), "Start / > Install");
         assert_eq!(read("guide/index.html"), "Guide");
-        let _ = fs::remove_dir_all(&site);
     }
 
     #[test]
     fn the_builtin_theme_shows_breadcrumbs() {
-        let site = scratch_site(
-            "builtin-breadcrumbs",
-            &[
-                ("docs/README.md", "# Home\n"),
-                ("docs/guide/README.md", "# Guide\n"),
-                ("docs/guide/install.md", "# Install\n"),
-                ("docs/api/reference.md", "# Reference\n"),
-                (
-                    "docs/api/errors.md",
-                    "---\nbreadcrumbs: false\n---\n# Errors\n",
-                ),
-            ],
-        );
+        let (_tmp, site) = scratch(&[
+            ("docs/README.md", "# Home\n"),
+            ("docs/guide/README.md", "# Guide\n"),
+            ("docs/guide/install.md", "# Install\n"),
+            ("docs/api/reference.md", "# Reference\n"),
+            (
+                "docs/api/errors.md",
+                "---\nbreadcrumbs: false\n---\n# Errors\n",
+            ),
+        ]);
 
         build(&site).unwrap();
 
@@ -3411,28 +3236,24 @@ mod tests {
         for path in ["index.html", "api/errors/index.html", NOT_FOUND_FILE] {
             assert!(!read(path).contains(nav), "{path}");
         }
-        let _ = fs::remove_dir_all(&site);
     }
 
     #[test]
     fn the_builtin_theme_folds_the_nav() {
-        let site = scratch_site(
-            "builtin-folds",
-            &[
-                ("docs/README.md", "# Home\n"),
-                ("docs/api/reference.md", "# Reference\n"),
-                ("docs/guide/README.md", "# Guide\n"),
-                ("docs/guide/install.md", "# Install\n"),
-                ("docs/guide/advanced/README.md", "# Advanced\n"),
-                ("docs/guide/advanced/tuning.md", "# Tuning\n"),
-                ("docs/guide/advanced/deep/limits.md", "# Limits\n"),
-                ("docs/guide/recipes/bake.md", "# Bake\n"),
-                (
-                    "docs/guide/recipes/marks.md",
-                    "# Marking the aria-current=\"page\"\n",
-                ),
-            ],
-        );
+        let (_tmp, site) = scratch(&[
+            ("docs/README.md", "# Home\n"),
+            ("docs/api/reference.md", "# Reference\n"),
+            ("docs/guide/README.md", "# Guide\n"),
+            ("docs/guide/install.md", "# Install\n"),
+            ("docs/guide/advanced/README.md", "# Advanced\n"),
+            ("docs/guide/advanced/tuning.md", "# Tuning\n"),
+            ("docs/guide/advanced/deep/limits.md", "# Limits\n"),
+            ("docs/guide/recipes/bake.md", "# Bake\n"),
+            (
+                "docs/guide/recipes/marks.md",
+                "# Marking the aria-current=\"page\"\n",
+            ),
+        ]);
 
         build(&site).unwrap();
 
@@ -3502,7 +3323,6 @@ mod tests {
                 "{path}"
             );
         }
-        let _ = fs::remove_dir_all(&site);
     }
 
     #[test]
@@ -3513,21 +3333,18 @@ mod tests {
         let repo = "https://github.com/withlittle/little";
         let site_cfg =
             format!("theme: ./theme\nurl: https://withlittle.github.io/little\nrepo: {repo}\n");
-        let root = scratch_site(
-            "repo",
-            &[
-                (".git/HEAD", "ref: refs/heads/main\n"),
-                ("site/little.yml", &site_cfg),
-                ("site/docs/README.md", "# Home\n"),
-                ("site/docs/guide/install.md", "# Install\n"),
-                (
-                    "site/docs/guide/reference.md",
-                    "---\nsource_url: /api/\nedit_url: false\n---\n# Reference\n",
-                ),
-                ("site/theme/_templates/default.html", template),
-                ("site/theme/_templates/404.html", template),
-            ],
-        );
+        let (_tmp, root) = scratch(&[
+            (".git/HEAD", "ref: refs/heads/main\n"),
+            ("site/little.yml", &site_cfg),
+            ("site/docs/README.md", "# Home\n"),
+            ("site/docs/guide/install.md", "# Install\n"),
+            (
+                "site/docs/guide/reference.md",
+                "---\nsource_url: /api/\nedit_url: false\n---\n# Reference\n",
+            ),
+            ("site/theme/_templates/default.html", template),
+            ("site/theme/_templates/404.html", template),
+        ]);
         let site = root.join("site");
         let read = |path: &str| fs::read_to_string(site.join("dist").join(path)).unwrap();
         let links = |path: &str| format!("{repo} | {repo}/blob/{path} | {repo}/edit/{path}");
@@ -3570,21 +3387,17 @@ mod tests {
         fs::write(site.join("little.yml"), site_cfg.replace(repo, codeberg)).unwrap();
         build(&site).unwrap();
         assert_eq!(read("index.html"), format!("{codeberg} |  | "));
-        let _ = fs::remove_dir_all(&root);
     }
 
     #[test]
     fn the_builtin_theme_links_to_the_repo_and_each_pages_file() {
         let repo = "https://github.com/withlittle/little";
-        let site = scratch_site(
-            "builtin-repo",
-            &[
-                (".git/HEAD", "ref: refs/heads/main\n"),
-                ("little.yml", &format!("repo: {repo}\n")),
-                ("docs/README.md", "# Home\n"),
-                ("docs/guide.md", "---\nedit_url: false\n---\n# Guide\n"),
-            ],
-        );
+        let (_tmp, site) = scratch(&[
+            (".git/HEAD", "ref: refs/heads/main\n"),
+            ("little.yml", &format!("repo: {repo}\n")),
+            ("docs/README.md", "# Home\n"),
+            ("docs/guide.md", "---\nedit_url: false\n---\n# Guide\n"),
+        ]);
 
         build(&site).unwrap();
 
@@ -3618,22 +3431,18 @@ mod tests {
         let home = read("index.html");
         assert!(!home.contains("repo-link"), "{home}");
         assert!(!home.contains("View source of this page"), "{home}");
-        let _ = fs::remove_dir_all(&site);
     }
 
     #[test]
     fn the_builtin_theme_gives_a_page_without_a_description_the_sites() {
-        let site = scratch_site(
-            "builtin-description",
-            &[
-                ("little.yml", "description: Docs that just work\n"),
-                ("docs/README.md", "# Home\n"),
-                (
-                    "docs/guide.md",
-                    "---\ndescription: All about it\n---\n# Guide\n",
-                ),
-            ],
-        );
+        let (_tmp, site) = scratch(&[
+            ("little.yml", "description: Docs that just work\n"),
+            ("docs/README.md", "# Home\n"),
+            (
+                "docs/guide.md",
+                "---\ndescription: All about it\n---\n# Guide\n",
+            ),
+        ]);
 
         build(&site).unwrap();
 
@@ -3651,31 +3460,27 @@ mod tests {
         build(&site).unwrap();
         let home = read("index.html");
         assert!(!home.contains(r#"<meta name="description""#), "{home}");
-        let _ = fs::remove_dir_all(&site);
     }
 
     #[test]
     fn a_page_toc_is_shaped_like_the_site_nav() {
         // So one macro can list both.
-        let site = scratch_site(
-            "page-toc",
-            &[
-                ("little.yml", "theme: ./theme\n"),
-                (
-                    "docs/README.md",
-                    "# Home\n\n## Setup\n\n### Requirements\n\n## Usage\n",
-                ),
-                ("docs/guide/README.md", "# Guide\n"),
-                ("docs/guide/install.md", "# Install\n"),
-                (
-                    "theme/_templates/default.html",
-                    "{% macro list(items) %}{% for item in items %}\
+        let (_tmp, site) = scratch(&[
+            ("little.yml", "theme: ./theme\n"),
+            (
+                "docs/README.md",
+                "# Home\n\n## Setup\n\n### Requirements\n\n## Usage\n",
+            ),
+            ("docs/guide/README.md", "# Guide\n"),
+            ("docs/guide/install.md", "# Install\n"),
+            (
+                "theme/_templates/default.html",
+                "{% macro list(items) %}{% for item in items %}\
                      [{{ item.title }} {{ item.url | safe }}{% if item.children %} {{ list(item.children) }}{% endif %}]\
                      {% endfor %}{% endmacro %}\
                      {{ list(site.nav) }} / {{ list(page.toc) }}",
-                ),
-            ],
-        );
+            ),
+        ]);
 
         build(&site).unwrap();
 
@@ -3687,23 +3492,19 @@ mod tests {
         );
         // A page without headings has an empty `page.toc`.
         assert_eq!(read("guide/install/index.html"), format!("{nav} / "));
-        let _ = fs::remove_dir_all(&site);
     }
 
     #[test]
     fn a_page_can_turn_off_its_toc() {
         // `toc: false` replaces the table of contents, and the built-in theme
         // lists one only `{% if page.toc %}`.
-        let site = scratch_site(
-            "no-toc",
-            &[
-                ("docs/README.md", "# Home\n\n## Setup\n"),
-                (
-                    "docs/guide.md",
-                    "---\ntoc: false\n---\n# Guide\n\n## Setup\n",
-                ),
-            ],
-        );
+        let (_tmp, site) = scratch(&[
+            ("docs/README.md", "# Home\n\n## Setup\n"),
+            (
+                "docs/guide.md",
+                "---\ntoc: false\n---\n# Guide\n\n## Setup\n",
+            ),
+        ]);
 
         build(&site).unwrap();
 
@@ -3711,7 +3512,6 @@ mod tests {
         let toc = r#"<nav class="toc""#;
         assert!(read("index.html").contains(toc));
         assert!(!read("guide/index.html").contains(toc));
-        let _ = fs::remove_dir_all(&site);
     }
 
     #[test]
@@ -3738,7 +3538,7 @@ mod tests {
                 &["#install", "#from-source"],
             ),
         ] {
-            let site = scratch_site(label, &[("little.yml", site_cfg), ("docs/README.md", page)]);
+            let (_tmp, site) = scratch(&[("little.yml", site_cfg), ("docs/README.md", page)]);
 
             build(&site).unwrap();
 
@@ -3752,26 +3552,22 @@ mod tests {
                 .filter(|url| toc.contains(&format!(r#"href="{url}""#)))
                 .collect();
             assert_eq!(links, listed, "{label}");
-            let _ = fs::remove_dir_all(&site);
         }
     }
 
     #[test]
     fn every_frontmatter_key_reaches_the_page() {
-        let site = scratch_site(
-            "frontmatter",
-            &[
-                ("little.yml", "theme: ./theme\n"),
-                (
-                    "docs/README.md",
-                    "---\nauthor: Ada\ntags: [setup, cli]\nhero:\n  image: hero.png\ntitle:\ndraft:\n---\n# Home\n",
-                ),
-                (
-                    "theme/_templates/default.html",
-                    r#"{{ page.author }}, {{ page.tags | join("+") }}, {{ page.hero.image }}, {{ page.title }}, {{ page.draft | default("not a draft") }}"#,
-                ),
-            ],
-        );
+        let (_tmp, site) = scratch(&[
+            ("little.yml", "theme: ./theme\n"),
+            (
+                "docs/README.md",
+                "---\nauthor: Ada\ntags: [setup, cli]\nhero:\n  image: hero.png\ntitle:\ndraft:\n---\n# Home\n",
+            ),
+            (
+                "theme/_templates/default.html",
+                r#"{{ page.author }}, {{ page.tags | join("+") }}, {{ page.hero.image }}, {{ page.title }}, {{ page.draft | default("not a draft") }}"#,
+            ),
+        ]);
 
         build(&site).unwrap();
 
@@ -3786,31 +3582,27 @@ mod tests {
         let message = format!("{:#}", build(&site).unwrap_err());
         let expected = format!("rendering {}: parsing frontmatter: ", readme.display());
         assert!(message.starts_with(&expected), "{message}");
-        let _ = fs::remove_dir_all(&site);
     }
 
     #[test]
     fn frontmatter_has_the_last_word_on_the_page() {
-        let site = scratch_site(
-            "last-word",
-            &[
-                ("little.yml", "theme: ./theme\n"),
-                ("docs/README.md", "# Home\n"),
-                (
-                    "docs/guide.md",
-                    "---\ntype: tutorial\nurl: /elsewhere\nprev:\n  title: Start here\nnext: false\n---\n# Guide\n",
-                ),
-                ("docs/reference.md", "# Reference\n"),
-                (
-                    "theme/_templates/default.html",
-                    "{{ page.type }} {{ page.url | safe }}: \
+        let (_tmp, site) = scratch(&[
+            ("little.yml", "theme: ./theme\n"),
+            ("docs/README.md", "# Home\n"),
+            (
+                "docs/guide.md",
+                "---\ntype: tutorial\nurl: /elsewhere\nprev:\n  title: Start here\nnext: false\n---\n# Guide\n",
+            ),
+            ("docs/reference.md", "# Reference\n"),
+            (
+                "theme/_templates/default.html",
+                "{{ page.type }} {{ page.url | safe }}: \
                      {% if page.prev %}{{ page.prev.title }} {{ page.prev.url | safe }} {% endif %}\
                      < {{ page.title }} >\
                      {% if page.next %} {{ page.next.title }} {{ page.next.url | safe }}{% endif %}",
-                ),
-                ("theme/_templates/tutorial.html", "tutorial.html"),
-            ],
-        );
+            ),
+            ("theme/_templates/tutorial.html", "tutorial.html"),
+        ]);
 
         build(&site).unwrap();
 
@@ -3829,7 +3621,6 @@ mod tests {
             read("reference/index.html"),
             "page /reference: Guide /guide < Reference >"
         );
-        let _ = fs::remove_dir_all(&site);
     }
 
     #[test]
@@ -3838,22 +3629,19 @@ mod tests {
                         - { title: Start, url: /guide/install }\n\
                         - { title: Home, url: /, icon: house }\n\
                         - { title: GitHub, url: \"https://github.com/withlittle/little\" }\n";
-        let site = scratch_site(
-            "own-nav",
-            &[
-                ("little.yml", site_cfg),
-                ("docs/README.md", "# Home\n"),
-                ("docs/guide/README.md", "# Guide\n"),
-                ("docs/guide/install.md", "# Install\n"),
-                (
-                    "theme/_templates/default.html",
-                    "{% for item in site.nav %}{{ item.title }}{% if item.icon %} ({{ item.icon }}){% endif %}; {% endfor %}\
+        let (_tmp, site) = scratch(&[
+            ("little.yml", site_cfg),
+            ("docs/README.md", "# Home\n"),
+            ("docs/guide/README.md", "# Guide\n"),
+            ("docs/guide/install.md", "# Install\n"),
+            (
+                "theme/_templates/default.html",
+                "{% for item in site.nav %}{{ item.title }}{% if item.icon %} ({{ item.icon }}){% endif %}; {% endfor %}\
                      {% if page.prev %}{{ page.prev.url | safe }} {% endif %}\
                      < {{ page.title }} >\
                      {% if page.next %} {{ page.next.url | safe }}{% endif %}",
-                ),
-            ],
-        );
+            ),
+        ]);
 
         build(&site).unwrap();
 
@@ -3879,22 +3667,18 @@ mod tests {
             let expected = "`nav` in little.yml must be a list of links";
             assert!(message.starts_with(expected), "{message}");
         }
-        let _ = fs::remove_dir_all(&site);
     }
 
     #[test]
     fn every_page_gets_the_year_of_the_build() {
         let template = "&copy; {{ site.year }} {{ site.name }}";
-        let site = scratch_site(
-            "year",
-            &[
-                ("little.yml", "theme: ./theme\nname: Little\n"),
-                ("docs/README.md", "# Home\n"),
-                ("docs/guide.md", "# Guide\n"),
-                ("theme/_templates/default.html", template),
-                ("theme/_templates/404.html", template),
-            ],
-        );
+        let (_tmp, site) = scratch(&[
+            ("little.yml", "theme: ./theme\nname: Little\n"),
+            ("docs/README.md", "# Home\n"),
+            ("docs/guide.md", "# Guide\n"),
+            ("theme/_templates/default.html", template),
+            ("theme/_templates/404.html", template),
+        ]);
         let year = time_of_build(env::var_os("SOURCE_DATE_EPOCH"))
             .unwrap()
             .year();
@@ -3911,7 +3695,6 @@ mod tests {
         fs::write(site.join("little.yml"), site_cfg).unwrap();
         build(&site).unwrap();
         assert_eq!(read("index.html"), "&copy; 2019–2026 Little");
-        let _ = fs::remove_dir_all(&site);
     }
 
     #[test]
@@ -3943,23 +3726,21 @@ mod tests {
     #[test]
     fn a_url_puts_every_link_under_the_sites_path() {
         let site_cfg = "theme: ./theme\nurl: https://withlittle.github.io/little\n";
-        let site = scratch_site(
-            "site-url",
-            &[
-                ("little.yml", site_cfg),
-                (
-                    "docs/README.md",
-                    "# Home\n\nRead the [guide](/guide/), or see ![the logo](/logo.png).\n",
-                ),
-                ("docs/guide/README.md", "# Guide\n\n## Steps\n"),
-                (
-                    "docs/guide/install.md",
-                    "---\nprev: { url: /start/ }\nlogo: /logo.png\n---\n# Install\n",
-                ),
-                ("theme/_templates/home.html", "{{ page.content | safe }}"),
-                (
-                    "theme/_templates/default.html",
-                    "{% for item in site.nav recursive %}{{ item.url | safe }} \
+        let (_tmp, site) = scratch(&[
+            ("little.yml", site_cfg),
+            (
+                "docs/README.md",
+                "# Home\n\nRead the [guide](/guide/), or see ![the logo](/logo.png).\n",
+            ),
+            ("docs/guide/README.md", "# Guide\n\n## Steps\n"),
+            (
+                "docs/guide/install.md",
+                "---\nprev: { url: /start/ }\nlogo: /logo.png\n---\n# Install\n",
+            ),
+            ("theme/_templates/home.html", "{{ page.content | safe }}"),
+            (
+                "theme/_templates/default.html",
+                "{% for item in site.nav recursive %}{{ item.url | safe }} \
                      {% if item.children %}{{ loop(item.children) }}{% endif %}{% endfor %}\
                      | {{ page.url | safe }} \
                      | {% if page.prev %}{{ page.prev.url | safe }}{% endif %} \
@@ -3968,13 +3749,12 @@ mod tests {
                      | {% for item in page.children %}{{ item.url | safe }} {% endfor %}\
                      | {% for item in page.toc %}{{ item.url | safe }} {% endfor %}\
                      | {{ page.logo | safe }}",
-                ),
-                (
-                    "theme/_templates/404.html",
-                    "{{ page.url | safe }} {{ '/' | url }} {{ site.url | safe }}",
-                ),
-            ],
-        );
+            ),
+            (
+                "theme/_templates/404.html",
+                "{{ page.url | safe }} {{ '/' | url }} {{ site.url | safe }}",
+            ),
+        ]);
 
         build(&site).unwrap();
 
@@ -4031,20 +3811,15 @@ mod tests {
                  | /little/start/ {github} | | | | /logo.png"
             )
         );
-
-        let _ = fs::remove_dir_all(&site);
     }
 
     #[test]
     fn a_failed_build_leaves_the_last_one() {
-        let site = scratch_site(
-            "failed",
-            &[
-                ("little.yml", "theme: ./theme\n"),
-                ("docs/README.md", "# Home\n"),
-                ("theme/_templates/default.html", "{{ page.title }}"),
-            ],
-        );
+        let (_tmp, site) = scratch(&[
+            ("little.yml", "theme: ./theme\n"),
+            ("docs/README.md", "# Home\n"),
+            ("theme/_templates/default.html", "{{ page.title }}"),
+        ]);
         build(&site).unwrap();
         let home = site.join("dist/index.html");
         assert_eq!(fs::read_to_string(&home).unwrap(), "Home");
@@ -4065,22 +3840,18 @@ mod tests {
             "{message}"
         );
         assert_eq!(fs::read_to_string(&home).unwrap(), "Home");
-        let _ = fs::remove_dir_all(&site);
     }
 
     #[test]
     fn static_files_cannot_take_the_place_of_pages() {
-        let site = scratch_site(
-            "clash",
-            &[
-                ("little.yml", "theme: ./theme\n"),
-                ("docs/README.md", "# Home\n"),
-                ("docs/guide/install.md", "# Install\n"),
-                ("theme/_templates/default.html", "{{ page.title }}"),
-                ("theme/_templates/404.html", "Not found"),
-                ("theme/_static/guide/style.css", "body {}\n"),
-            ],
-        );
+        let (_tmp, site) = scratch(&[
+            ("little.yml", "theme: ./theme\n"),
+            ("docs/README.md", "# Home\n"),
+            ("docs/guide/install.md", "# Install\n"),
+            ("theme/_templates/default.html", "{{ page.title }}"),
+            ("theme/_templates/404.html", "Not found"),
+            ("theme/_static/guide/style.css", "body {}\n"),
+        ]);
         // Beside the pages is fine...
         build(&site).unwrap();
         assert!(site.join("dist/guide/style.css").is_file());
@@ -4109,20 +3880,16 @@ mod tests {
         }
         let home = fs::read_to_string(site.join("dist/index.html")).unwrap();
         assert_eq!(home, "Home");
-        let _ = fs::remove_dir_all(&site);
     }
 
     #[test]
     fn pages_cannot_take_each_others_place() {
-        let site = scratch_site(
-            "same-page",
-            &[
-                ("little.yml", "theme: ./theme\n"),
-                ("docs/README.md", "# Home\n"),
-                ("docs/guide/README.md", "# Guide\n"),
-                ("theme/_templates/default.html", "{{ page.title }}"),
-            ],
-        );
+        let (_tmp, site) = scratch(&[
+            ("little.yml", "theme: ./theme\n"),
+            ("docs/README.md", "# Home\n"),
+            ("docs/guide/README.md", "# Guide\n"),
+            ("theme/_templates/default.html", "{{ page.title }}"),
+        ]);
         build(&site).unwrap();
 
         // `guide.md` would be built into `guide/index.html` too, so the build
@@ -4138,31 +3905,27 @@ mod tests {
         assert_eq!(message, expected);
         let guide = fs::read_to_string(site.join("dist/guide/index.html")).unwrap();
         assert_eq!(guide, "Guide");
-        let _ = fs::remove_dir_all(&site);
     }
 
     #[test]
     fn each_page_is_indexed_for_search() {
-        let site = scratch_site(
-            "search",
-            &[
-                (
-                    "little.yml",
-                    "theme: ./theme\nurl: https://example.com/docs\n",
-                ),
-                ("docs/README.md", "# Home\n\nWelcome aboard.\n"),
-                (
-                    "docs/guide/install.md",
-                    "---\ntitle: Installing\n---\n# Install\n\n## From source\n\nRun cargo.\n",
-                ),
-                ("theme/little.yml", "search: true\n"),
-                (
-                    "theme/_templates/default.html",
-                    "<html lang=\"fr\"><header>Theme header</header>{{ page.content }}</html>",
-                ),
-                ("theme/_templates/404.html", "<html lang=\"fr\">Lost</html>"),
-            ],
-        );
+        let (_tmp, site) = scratch(&[
+            (
+                "little.yml",
+                "theme: ./theme\nurl: https://example.com/docs\n",
+            ),
+            ("docs/README.md", "# Home\n\nWelcome aboard.\n"),
+            (
+                "docs/guide/install.md",
+                "---\ntitle: Installing\n---\n# Install\n\n## From source\n\nRun cargo.\n",
+            ),
+            ("theme/little.yml", "search: true\n"),
+            (
+                "theme/_templates/default.html",
+                "<html lang=\"fr\"><header>Theme header</header>{{ page.content }}</html>",
+            ),
+            ("theme/_templates/404.html", "<html lang=\"fr\">Lost</html>"),
+        ]);
         build(&site).unwrap();
 
         // Each page but the 404 page, in the language the theme gives it...
@@ -4202,27 +3965,23 @@ mod tests {
         build(&site).unwrap();
         assert!(dist.join("index.html").is_file());
         assert!(!dist.join("pagefind").exists());
-        let _ = fs::remove_dir_all(&site);
     }
 
     #[test]
     fn a_site_or_a_page_can_leave_pages_out_of_search() {
         let site_cfg = |exclude: &str| format!("theme: ./theme\nsearch:\n  exclude: {exclude}\n");
-        let site = scratch_site(
-            "search-exclude",
-            &[
-                ("little.yml", &site_cfg("[/other/, /this/old, /typo/]")),
-                ("docs/README.md", "# Home\n"),
-                ("docs/this/old.md", "# Old\n"),
-                ("docs/this/new.md", "# New\n"),
-                ("docs/this/secret.md", "---\nsearch: false\n---\n# Secret\n"),
-                ("docs/other/README.md", "# Other\n"),
-                ("docs/other/a.md", "# A\n"),
-                ("docs/other/deep/b.md", "---\nsearch: true\n---\n# B\n"),
-                ("docs/others.md", "# Others\n"),
-                ("theme/_templates/default.html", "{{ page.content }}"),
-            ],
-        );
+        let (_tmp, site) = scratch(&[
+            ("little.yml", &site_cfg("[/other/, /this/old, /typo/]")),
+            ("docs/README.md", "# Home\n"),
+            ("docs/this/old.md", "# Old\n"),
+            ("docs/this/new.md", "# New\n"),
+            ("docs/this/secret.md", "---\nsearch: false\n---\n# Secret\n"),
+            ("docs/other/README.md", "# Other\n"),
+            ("docs/other/a.md", "# A\n"),
+            ("docs/other/deep/b.md", "---\nsearch: true\n---\n# B\n"),
+            ("docs/others.md", "# Others\n"),
+            ("theme/_templates/default.html", "{{ page.content }}"),
+        ]);
         let built = build(&site).unwrap();
         let dist = site.join("dist");
 
@@ -4269,20 +4028,16 @@ mod tests {
         fs::write(&page, "---\nsearch: true\n---\n# New\n").unwrap();
         build(&site).unwrap();
         assert!(!dist.join("pagefind").exists());
-        let _ = fs::remove_dir_all(&site);
     }
 
     #[test]
     fn nothing_can_take_the_place_of_search_files() {
-        let site = scratch_site(
-            "search-clash",
-            &[
-                ("little.yml", "theme: ./theme\n"),
-                ("docs/README.md", "# Home\n"),
-                ("theme/little.yml", "search: true\n"),
-                ("theme/_templates/default.html", "{{ page.title }}"),
-            ],
-        );
+        let (_tmp, site) = scratch(&[
+            ("little.yml", "theme: ./theme\n"),
+            ("docs/README.md", "# Home\n"),
+            ("theme/little.yml", "search: true\n"),
+            ("theme/_templates/default.html", "{{ page.title }}"),
+        ]);
         // A page at /pagefind, or a file beside search's files, is fine...
         fs::write(site.join("docs/pagefind.md"), "# Pagefind\n").unwrap();
         fs::create_dir_all(site.join("docs/pagefind")).unwrap();
@@ -4329,13 +4084,12 @@ mod tests {
 
         // The last build is left in place.
         assert!(dist.join("pagefind/pagefind.js").is_file());
-        let _ = fs::remove_dir_all(&site);
     }
 
     /// A site in a git repository whose files were `old`, at the tag `v1.4`,
     /// and are now `new`, uncommitted. Its destination is ignored.
-    fn versioned_site(label: &str, old: &[(&str, &str)], new: &[(&str, &str)]) -> PathBuf {
-        let site = scratch_site(label, old);
+    fn versioned_site(old: &[(&str, &str)], new: &[(&str, &str)]) -> (TempDir, PathBuf) {
+        let (tmp, site) = scratch(old);
         fs::write(site.join(".gitignore"), "dist/\n").unwrap();
         git::tests::init(&site);
         git::tests::commit_all(&site);
@@ -4343,12 +4097,8 @@ mod tests {
         for (file, _) in old {
             fs::remove_file(site.join(file)).unwrap();
         }
-        for (file, contents) in new {
-            let path = site.join(file);
-            fs::create_dir_all(path.parent().unwrap()).unwrap();
-            fs::write(&path, contents).unwrap();
-        }
-        site
+        write(&site, new);
+        (tmp, site)
     }
 
     #[test]
@@ -4365,8 +4115,7 @@ mod tests {
                  repo: https://github.com/o/r\nversions:\n{versions}"
             )
         };
-        let site = versioned_site(
-            "versions",
+        let (_tmp, site) = versioned_site(
             &[
                 // Of its own settings, only its `source` and `nav` count.
                 ("little.yml", "name: Old\nurl: https://example.com/old\n"),
@@ -4517,7 +4266,6 @@ mod tests {
         assert!(built.from_refs.contains(Path::new("new/index.html")));
         assert!(!built.from_refs.contains(Path::new("dev/new/index.html")));
         assert!((built.from_refs).contains(Path::new("versions/1.4/old/index.html")));
-        let _ = fs::remove_dir_all(&site);
     }
 
     #[test]
@@ -4532,8 +4280,7 @@ mod tests {
         };
         // At the ref, the site wasn't built with little, so has no
         // little.yml.
-        let site = versioned_site(
-            "version-pages",
+        let (_tmp, site) = versioned_site(
             &[
                 (
                     "content/README.md",
@@ -4610,40 +4357,34 @@ mod tests {
             head("1.4/index.html"),
             "New /proj/style.css | Start /proj/1.4/; "
         );
-        let _ = fs::remove_dir_all(&site);
     }
 
     #[test]
     fn a_site_whose_versions_have_no_ref_needs_no_repository() {
-        let site = scratch_site(
-            "versions-no-ref",
-            &[
-                // little says which version is at `/`, whatever an entry
-                // says.
-                (
-                    "little.yml",
-                    "theme: ./theme\nversions:\n  - { title: Latest, url: /, root: false }\n",
-                ),
-                ("docs/README.md", "# Home\n"),
-                (
-                    "theme/_templates/default.html",
-                    "{{ site.version }} | {{ site.versions | map(attribute='url') | join(' ') | safe }} \
+        let (_tmp, site) = scratch(&[
+            // little says which version is at `/`, whatever an entry
+            // says.
+            (
+                "little.yml",
+                "theme: ./theme\nversions:\n  - { title: Latest, url: /, root: false }\n",
+            ),
+            ("docs/README.md", "# Home\n"),
+            (
+                "theme/_templates/default.html",
+                "{{ site.version }} | {{ site.versions | map(attribute='url') | join(' ') | safe }} \
                      | {{ page.versions | map(attribute='url') | join(' ') | safe }} \
                      | {{ page.versions | map(attribute='root') | join(' ') }}",
-                ),
-            ],
-        );
+            ),
+        ]);
         build(&site).unwrap();
         let home = fs::read_to_string(site.join("dist/index.html")).unwrap();
         // MiniJinja writes a boolean as Jinja2 does.
         assert_eq!(home, "Latest | / | / | True");
-        let _ = fs::remove_dir_all(&site);
     }
 
     #[test]
     fn each_version_leaves_out_the_pages_search_excludes() {
-        let site = versioned_site(
-            "versions-search",
+        let (_tmp, site) = versioned_site(
             &[("docs/README.md", "# Home\n"), ("docs/old.md", "# Old\n")],
             &[
                 (
@@ -4667,7 +4408,6 @@ mod tests {
             warnings_of(&built),
             ["`search.exclude` lists /gone/, but there's no page at that URL, or under it"]
         );
-        let _ = fs::remove_dir_all(&site);
     }
 
     #[test]
@@ -4678,8 +4418,7 @@ mod tests {
                  - {{ title: \"1.4\", url: {url}, ref: v1.4 }}\n"
             )
         };
-        let site = versioned_site(
-            "version-clash",
+        let (_tmp, site) = versioned_site(
             &[("docs/README.md", "# Old\n")],
             &[
                 ("little.yml", &site_cfg("/1.4")),
@@ -4741,7 +4480,6 @@ mod tests {
             "version `1.4`, built at /pagefind/ clashes with /pagefind/, where little writes \
              files for search"
         );
-        let _ = fs::remove_dir_all(&site);
     }
 
     #[test]
@@ -4753,8 +4491,7 @@ mod tests {
                  - {{ title: 1.4 (Old), url: /1.4, {version} }}\n"
             )
         };
-        let site = versioned_site(
-            "version-errors",
+        let (_tmp, site) = versioned_site(
             &[("docs/README.md", "# Old\n\n$\\qty{1}{m}$\n")],
             &[
                 ("little.yml", &site_cfg("ref: v1.4")),
@@ -4799,7 +4536,6 @@ mod tests {
         fs::write(site.join("little.yml"), fixed).unwrap();
         build(&site).unwrap();
         assert!(site.join("dist/1.4/index.html").is_file());
-        let _ = fs::remove_dir_all(&site);
     }
 
     #[test]
@@ -4816,8 +4552,7 @@ mod tests {
         };
         // At the ref, the site had no plugins, and the plugin's file, which
         // is built, is never committed.
-        let site = versioned_site(
-            "version-plugins",
+        let (_tmp, site) = versioned_site(
             &[
                 ("docs/README.md", "# Home\n"),
                 ("pkg/hello.md", "# Hello\n"),
@@ -4884,7 +4619,6 @@ mod tests {
         assert!(site.join("dist/reference/hello/index.html").is_file());
         let warnings = warnings_of(&built);
         assert_eq!(warnings, ["plugin `api`: can't read pkg/broken.py"]);
-        let _ = fs::remove_dir_all(&site);
     }
 
     #[test]
@@ -4899,7 +4633,7 @@ mod tests {
              - title: \"1.4 (Latest)\"\n    url: /\n    ref: v1.4\n",
         )];
         new.extend(pages);
-        let site = versioned_site("versions-builtin", &pages, &new);
+        let (_tmp, site) = versioned_site(&pages, &new);
 
         build(&site).unwrap();
 
@@ -4962,6 +4696,5 @@ mod tests {
         let only = read("guide/index.html");
         assert!(!only.contains("version-menu"), "{only}");
         assert!(!only.contains("version-note"), "{only}");
-        let _ = fs::remove_dir_all(&site);
     }
 }

@@ -40,7 +40,7 @@ pub fn read(folder: &str, krate: &str, warnings: &mut Vec<String>) -> Vec<Module
         warnings,
     };
     let roots = ["lib.rs", "main.rs"].map(|name| join(folder, name));
-    let Some(root) = roots.into_iter().find(|file| is_file(file)) else {
+    let Some(root) = roots.into_iter().find(|file| Path::new(file).is_file()) else {
         reader.warnings.push(format!(
             "`{folder}` holds no `lib.rs` or `main.rs`, so there's no crate in it to document"
         ));
@@ -177,10 +177,10 @@ impl Reader<'_> {
         }
         let flat = join(&place.children, &format!("{name}.rs"));
         let nested = join(&place.children, &format!("{name}/mod.rs"));
-        if is_file(&flat) {
+        if Path::new(&flat).is_file() {
             return Some(flat);
         }
-        if is_file(&nested) {
+        if Path::new(&nested).is_file() {
             return Some(nested);
         }
         self.warnings.push(format!(
@@ -247,10 +247,11 @@ fn has(attrs: &[Attribute], name: &str, arg: &str) -> bool {
     })
 }
 
-/// The string `attrs` sets with `#[name = "..."]`, if it does.
-pub fn string(attrs: &[Attribute], name: &str) -> Option<String> {
+/// The path `attrs` gives a module's file with `#[path = "..."]`, if they
+/// do.
+fn path_attr(attrs: &[Attribute]) -> Option<String> {
     (attrs.iter())
-        .filter(|attr| attr.path().is_ident(name))
+        .filter(|attr| attr.path().is_ident("path"))
         .find_map(|attr| match &attr.meta {
             Meta::NameValue(meta) => match &meta.value {
                 Expr::Lit(ExprLit {
@@ -261,12 +262,6 @@ pub fn string(attrs: &[Attribute], name: &str) -> Option<String> {
             },
             _ => None,
         })
-}
-
-/// The path `attrs` gives a module's file with `#[path = "..."]`, if they
-/// do.
-fn path_attr(attrs: &[Attribute]) -> Option<String> {
-    string(attrs, "path")
 }
 
 /// Whether `item` is a `macro_rules!` with `#[macro_export]`, so it's in the
@@ -354,10 +349,6 @@ fn named(prefix: &[String], ident: &Ident, name: &Ident) -> Option<Use> {
 /// The folder `file` is in.
 fn dir(file: &str) -> String {
     (file.rsplit_once('/')).map_or_else(String::new, |(folder, _)| folder.to_string())
-}
-
-fn is_file(path: &str) -> bool {
-    Path::new(path).is_file()
 }
 
 /// What a path leads to.

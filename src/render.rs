@@ -368,25 +368,14 @@ pub(crate) fn split_frontmatter(raw: &str) -> (String, String) {
 mod tests {
     use super::*;
     use crate::config::Highlight;
+    use crate::testing::{render_at, site_url};
     use serde_yaml::Value;
 
     /// little's defaults, from `src/little.yml`: every heading but the title.
     const TOC_DEPTHS: RangeInclusive<u8> = 2..=6;
 
-    /// When each test's page is built, for its diagrams.
-    const NOW: OffsetDateTime = OffsetDateTime::UNIX_EPOCH;
-
     fn render(md: &str) -> Rendered {
-        parse_document(
-            md,
-            "/",
-            &TOC_DEPTHS,
-            &SiteUrl::default(),
-            &Markdown::default(),
-            NOW,
-            &mut PagePlugins::none(),
-        )
-        .expect("document renders")
+        render_at(md, "/", &SiteUrl::default(), &Markdown::default()).expect("document renders")
     }
 
     #[test]
@@ -421,17 +410,9 @@ mod tests {
         ] {
             let message = format!(
                 "{:#}",
-                parse_document(
-                    md,
-                    "/",
-                    &TOC_DEPTHS,
-                    &SiteUrl::default(),
-                    &Markdown::default(),
-                    NOW,
-                    &mut PagePlugins::none()
-                )
-                .err()
-                .unwrap()
+                render_at(md, "/", &SiteUrl::default(), &Markdown::default())
+                    .err()
+                    .unwrap()
             );
             assert!(message.starts_with("parsing frontmatter: "), "{message}");
             assert!(message.contains("expected a YAML mapping"), "{message}");
@@ -456,7 +437,7 @@ mod tests {
                 &depths,
                 &SiteUrl::default(),
                 &Markdown::default(),
-                NOW,
+                OffsetDateTime::UNIX_EPOCH,
                 &mut PagePlugins::none(),
             )
             .unwrap();
@@ -518,16 +499,7 @@ mod tests {
                 math,
                 ..Markdown::default()
             };
-            let r = parse_document(
-                md,
-                "/",
-                &TOC_DEPTHS,
-                &SiteUrl::default(),
-                &markdown,
-                NOW,
-                &mut PagePlugins::none(),
-            )
-            .unwrap();
+            let r = render_at(md, "/", &SiteUrl::default(), &markdown).unwrap();
             // A heading's math is TeX in the outline, which is text.
             let titles: Vec<_> = r.toc.iter().map(|item| item.title.as_str()).collect();
             assert_eq!(titles, ["The x^2 term", "Done 🎉", "Two lines"]);
@@ -581,16 +553,7 @@ mod tests {
             for on in [true, false] {
                 let mut markdown = Markdown::default();
                 *setting(&mut markdown) = on;
-                let rendered = parse_document(
-                    md,
-                    "/",
-                    &TOC_DEPTHS,
-                    &SiteUrl::default(),
-                    &markdown,
-                    NOW,
-                    &mut PagePlugins::none(),
-                )
-                .unwrap();
+                let rendered = render_at(md, "/", &SiteUrl::default(), &markdown).unwrap();
                 assert_eq!(
                     rendered.html.contains(html),
                     on,
@@ -620,17 +583,9 @@ mod tests {
                 highlight,
                 ..Markdown::default()
             };
-            parse_document(
-                md,
-                "/",
-                &TOC_DEPTHS,
-                &SiteUrl::default(),
-                &markdown,
-                NOW,
-                &mut PagePlugins::none(),
-            )
-            .unwrap()
-            .html
+            render_at(md, "/", &SiteUrl::default(), &markdown)
+                .unwrap()
+                .html
         };
         assert_eq!(
             html(Some(Highlight::Pygments)),
@@ -672,17 +627,9 @@ mod tests {
                 ..Markdown::default()
             };
             let md = "$a*b + c*d$ costs $5";
-            parse_document(
-                md,
-                "/",
-                &TOC_DEPTHS,
-                &SiteUrl::default(),
-                &markdown,
-                NOW,
-                &mut PagePlugins::none(),
-            )
-            .unwrap()
-            .html
+            render_at(md, "/", &SiteUrl::default(), &markdown)
+                .unwrap()
+                .html
         };
         let mathml = "<math><mi>a</mi><mo lspace=\"0.2222em\" rspace=\"0.2222em\">∗</mo>\
                       <mi>b</mi><mo>+</mo><mi>c</mi>\
@@ -707,17 +654,9 @@ mod tests {
                 math,
                 ..Markdown::default()
             };
-            parse_document(
-                md,
-                "/",
-                &TOC_DEPTHS,
-                &SiteUrl::default(),
-                &markdown,
-                NOW,
-                &mut PagePlugins::none(),
-            )
-            .unwrap()
-            .html
+            render_at(md, "/", &SiteUrl::default(), &markdown)
+                .unwrap()
+                .html
         };
         assert_eq!(
             html(Some(Math::MathML)),
@@ -747,25 +686,13 @@ mod tests {
 
     #[test]
     fn links_from_the_root_get_the_sites_path() {
-        let url = SiteUrl {
-            origin: "https://withlittle.github.io".into(),
-            path: "/little".into(),
-            shared: None,
-        };
+        let url = site_url();
         let md = "[Install](/guide/install) ![Logo](/logo.png) [Guide][guide]\n\n\
                   [Usage](usage) [Top](#top) [little](https://example.com/)\n\n\
                   [guide]: /guide/\n";
-        let html = parse_document(
-            md,
-            "/guide/",
-            &TOC_DEPTHS,
-            &url,
-            &Markdown::default(),
-            NOW,
-            &mut PagePlugins::none(),
-        )
-        .unwrap()
-        .html;
+        let html = render_at(md, "/guide/", &url, &Markdown::default())
+            .unwrap()
+            .html;
         for within in [
             r#"<a href="/little/guide/install">Install</a>"#,
             r#"<img src="/little/logo.png" alt="Logo" />"#,
@@ -829,17 +756,9 @@ mod tests {
         // allows: a space is escaped as the page is written.
         let md = "[Logo](logo.png) ![Logo](<images/the logo.png> \"Logo\") \
                   ![Logo][logo]\n\n[logo]: ../logo.png\n";
-        let html = parse_document(
-            md,
-            "/guide/",
-            &TOC_DEPTHS,
-            &SiteUrl::default(),
-            &Markdown::default(),
-            NOW,
-            &mut PagePlugins::none(),
-        )
-        .unwrap()
-        .html;
+        let html = render_at(md, "/guide/", &SiteUrl::default(), &Markdown::default())
+            .unwrap()
+            .html;
         for resolved in [
             r#"<a href="/guide/logo.png">Logo</a>"#,
             r#"<img src="/guide/images/the%20logo.png" alt="Logo" title="Logo" />"#,
@@ -891,25 +810,13 @@ mod tests {
 
         // In Markdown, from the document's folder, and with the site's path,
         // in a link, but not an image.
-        let url = SiteUrl {
-            origin: "https://withlittle.github.io".into(),
-            path: "/little".into(),
-            shared: None,
-        };
+        let url = site_url();
         let md = "[Install](install.md#from-source) [Home](../README.md) \
                   [Guide](./README.md) [Usage][usage] ![Diagram](diagram.md)\n\n\
                   [usage]: /guide/usage.md\n";
-        let html = parse_document(
-            md,
-            "/guide/",
-            &TOC_DEPTHS,
-            &url,
-            &Markdown::default(),
-            NOW,
-            &mut PagePlugins::none(),
-        )
-        .unwrap()
-        .html;
+        let html = render_at(md, "/guide/", &url, &Markdown::default())
+            .unwrap()
+            .html;
         for within in [
             r#"<a href="/little/guide/install#from-source">Install</a>"#,
             r#"<a href="/little/">Home</a>"#,
@@ -923,24 +830,11 @@ mod tests {
 
     #[test]
     fn keeps_each_link_as_its_written() {
-        let url = SiteUrl {
-            origin: "https://withlittle.github.io".into(),
-            path: "/little".into(),
-            shared: None,
-        };
+        let url = site_url();
         let md = "[Install](install.md#from-source) ![Logo](<images/the logo.png>) \
                   [Top](#top) [Search](https://example.com/?q=a&b='c') [Usage][usage]\n\n\
                   [usage]: /guide/usage\n";
-        let rendered = parse_document(
-            md,
-            "/guide/",
-            &TOC_DEPTHS,
-            &url,
-            &Markdown::default(),
-            NOW,
-            &mut PagePlugins::none(),
-        )
-        .unwrap();
+        let rendered = render_at(md, "/guide/", &url, &Markdown::default()).unwrap();
         let links: Vec<_> = rendered
             .links
             .iter()

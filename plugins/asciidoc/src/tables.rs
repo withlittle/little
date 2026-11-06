@@ -5,7 +5,7 @@ use asciidoc_parser::HasSpan;
 use asciidoc_parser::blocks::{
     ColumnStyle, HorizontalAlignment, TableBlock, TableCell, TableCellContent, TableRow,
 };
-use little_markup::{Align, Block, Cell, Inline, Table};
+use little_markup::{Align, Block, Cell, Inline, Kind, Table};
 
 use crate::inlines;
 use crate::reader::Reader;
@@ -104,8 +104,10 @@ impl Reader<'_> {
             return Vec::new();
         }
         vec![Block::Paragraph(match cell.style() {
-            ColumnStyle::Emphasis => vec![Inline::Emphasis(inlines)],
-            ColumnStyle::Strong | ColumnStyle::Header => vec![Inline::Strong(inlines)],
+            ColumnStyle::Emphasis => vec![Inline::Styled(Kind::Emphasis, inlines)],
+            ColumnStyle::Strong | ColumnStyle::Header => {
+                vec![Inline::Styled(Kind::Strong, inlines)]
+            }
             ColumnStyle::Monospace => vec![Inline::Code(inlines::flatten(&inlines))],
             _ => inlines,
         })]

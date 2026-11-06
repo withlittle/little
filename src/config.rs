@@ -1272,24 +1272,11 @@ pub fn merge(base: &mut Mapping, over: Mapping) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::testing::{self, scratch, write};
     use serde_json::json;
 
     fn get<'a>(cfg: &'a Mapping, key: &str) -> Option<&'a str> {
         cfg.get(key).and_then(Value::as_str)
-    }
-
-    /// A fresh scratch folder holding `files`, each a (path, contents) pair.
-    fn scratch(label: &str, files: &[(&str, &str)]) -> PathBuf {
-        let root =
-            std::env::temp_dir().join(format!("little-config-test-{}-{label}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&root);
-        std::fs::create_dir_all(&root).unwrap();
-        for (file, contents) in files {
-            let path = root.join(file);
-            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-            std::fs::write(path, contents).unwrap();
-        }
-        root
     }
 
     /// Why the site's config doesn't load once its little.yml is `site_cfg`.
@@ -1303,11 +1290,7 @@ mod tests {
     fn downloaded(site: &Path, url: &str, files: &[(&str, &str)]) -> Location {
         let dir = download::folder(site, url);
         std::fs::create_dir_all(&dir).unwrap();
-        for (file, contents) in files {
-            let path = dir.join(file);
-            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-            std::fs::write(path, contents).unwrap();
-        }
+        write(&dir, files);
         Location::Downloaded {
             url: url.to_string(),
             dir,
@@ -1323,13 +1306,10 @@ mod tests {
 
     #[test]
     fn a_site_gets_the_builtin_theme_unless_it_chooses_another() {
-        let site = scratch(
-            "choose",
-            &[
-                ("theme/little.yml", "font: mono\n"),
-                ("path/to/my/theme/little.yml", "name: Mine\nfont: serif\n"),
-            ],
-        );
+        let (_tmp, site) = scratch(&[
+            ("theme/little.yml", "font: mono\n"),
+            ("path/to/my/theme/little.yml", "name: Mine\nfont: serif\n"),
+        ]);
         let load_with = |site_cfg: &str| {
             std::fs::write(site.join(CONFIG_FILE), site_cfg).unwrap();
             load(&site).unwrap()
@@ -1356,20 +1336,15 @@ mod tests {
         assert_eq!(get(&cfg.values, "font"), Some("serif")); // the chosen theme's
         assert_eq!(get(&cfg.values, "name"), Some("My Docs")); // the site still wins
         assert_eq!(get(&cfg.values, "theme"), Some("./path/to/my/theme"));
-
-        let _ = std::fs::remove_dir_all(&site);
     }
 
     #[test]
     fn theme_paths_are_relative_to_the_file_that_sets_them() {
-        let root = scratch(
-            "paths",
-            &[
-                ("site/themes/mine/_templates/default.html", ""),
-                ("shared/theme/_templates/default.html", ""),
-                ("shared/company/little.yml", "theme: ../theme\n"),
-            ],
-        );
+        let (_tmp, root) = scratch(&[
+            ("site/themes/mine/_templates/default.html", ""),
+            ("shared/theme/_templates/default.html", ""),
+            ("shared/company/little.yml", "theme: ../theme\n"),
+        ]);
         let site = root.join("site");
         // Unquoted, as people usually write them.
         let chosen = |theme: &str| {
@@ -1394,26 +1369,21 @@ mod tests {
         // A theme's are relative to the theme: it can't know where sites are.
         let chain = [real("shared/company"), real("shared/theme")];
         assert_eq!(chosen("../shared/company"), chain);
-
-        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]
     fn a_theme_can_build_on_another() {
-        let site = scratch(
-            "chain",
-            &[
-                ("little.yml", "theme: ./company\nname: My Docs\n"),
-                (
-                    "company/little.yml",
-                    "theme: ../fancy\nfont: Inter\ncolors:\n  accent: navy\n",
-                ),
-                (
-                    "fancy/little.yml",
-                    "name: Fancy\nfont: serif\nlang: en\ncolors:\n  accent: pink\n  text: black\n",
-                ),
-            ],
-        );
+        let (_tmp, site) = scratch(&[
+            ("little.yml", "theme: ./company\nname: My Docs\n"),
+            (
+                "company/little.yml",
+                "theme: ../fancy\nfont: Inter\ncolors:\n  accent: navy\n",
+            ),
+            (
+                "fancy/little.yml",
+                "name: Fancy\nfont: serif\nlang: en\ncolors:\n  accent: pink\n  text: black\n",
+            ),
+        ]);
         let company = site.join("company");
 
         // little -> fancy -> company -> site, each over the one before, as
@@ -1447,15 +1417,13 @@ mod tests {
         assert_eq!(cfg.themes, [Location::Folder(company), Location::BuiltIn]);
         assert_eq!(get(&cfg.values, "font"), Some("Inter"));
         assert_eq!(get(&cfg.values, "lang"), get(&with_builtin_theme(), "lang"));
-
-        let _ = std::fs::remove_dir_all(&site);
     }
 
     #[test]
     fn a_theme_can_be_downloaded_from_a_url() {
         let url = "https://example.invalid/fancy-1.0.zip";
         let site_cfg = format!("theme: {url}\nname: My Docs\n");
-        let site = scratch("url", &[(CONFIG_FILE, &site_cfg)]);
+        let (_tmp, site) = scratch(&[(CONFIG_FILE, &site_cfg)]);
         let fancy_cfg = "name: Fancy\nfont: serif\nlang: en\n";
         let fancy = downloaded(&site, url, &[(CONFIG_FILE, fancy_cfg)]);
 
@@ -1494,19 +1462,14 @@ mod tests {
             let themes = load(&site).unwrap().themes;
             assert_eq!(themes, [company.clone(), fancy.clone(), beneath]);
         }
-
-        let _ = std::fs::remove_dir_all(&site);
     }
 
     #[test]
     fn themes_cannot_build_on_each_other_in_a_loop() {
-        let site = scratch(
-            "loop",
-            &[
-                ("a/little.yml", "theme: ../b\n"),
-                ("b/little.yml", "theme: ../a\n"),
-            ],
-        );
+        let (_tmp, site) = scratch(&[
+            ("a/little.yml", "theme: ../b\n"),
+            ("b/little.yml", "theme: ../a\n"),
+        ]);
         let (a, b) = (site.join("a"), site.join("a").join("..").join("b"));
         let message = error(&site, "theme: ./a\n");
         let expected = format!(
@@ -1535,13 +1498,11 @@ mod tests {
         let message = error(&site, &format!("theme: {a}\n"));
         let expected = format!("themes build on each other in a loop: {a} -> {b} -> {a}");
         assert_eq!(message, expected);
-
-        let _ = std::fs::remove_dir_all(&site);
     }
 
     #[test]
     fn bad_theme_choices_explain_themselves() {
-        let site = scratch("bad-theme", &[("theme/_templates/default.html", "")]);
+        let (_tmp, site) = scratch(&[("theme/_templates/default.html", "")]);
         let file = site.join(CONFIG_FILE).display().to_string();
         let must_be = |file: &str| {
             format!(
@@ -1602,16 +1563,11 @@ mod tests {
             message.starts_with(&format!("parsing {fancy_file}: ")),
             "{message}"
         );
-
-        let _ = std::fs::remove_dir_all(&site);
     }
 
     #[test]
     fn folders_are_relative_to_the_site_wherever_theyre_set() {
-        let root = scratch(
-            "folders",
-            &[("site/themes/mine/_templates/default.html", "")],
-        );
+        let (_tmp, root) = scratch(&[("site/themes/mine/_templates/default.html", "")]);
         let site = root.join("site");
         let folders = |theme_cfg: &str, site_cfg: &str| {
             std::fs::write(site.join("themes/mine").join(CONFIG_FILE), theme_cfg).unwrap();
@@ -1638,13 +1594,11 @@ mod tests {
         let out = root.join("out");
         let site_cfg = format!("destination: {}\n", out.display());
         assert_eq!(folders("", &site_cfg), (site.join("docs"), out));
-
-        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]
     fn bad_folders_explain_themselves() {
-        let site = scratch("bad-folders", &[]);
+        let (_tmp, site) = scratch(&[]);
         for key in ["source", "destination"] {
             // A list, or no value at all, isn't a path.
             for value in [" [a, b]", ""] {
@@ -1657,13 +1611,11 @@ mod tests {
         // doesn't read it.
         std::fs::write(site.join(CONFIG_FILE), "source: ./missing\n").unwrap();
         assert!(load(&site).is_ok());
-
-        let _ = std::fs::remove_dir_all(&site);
     }
 
     #[test]
     fn toc_depths_cascade() {
-        let site = scratch("toc-depths", &[("theme/_templates/default.html", "")]);
+        let (_tmp, site) = scratch(&[("theme/_templates/default.html", "")]);
         let depths = |site_cfg: &str| {
             std::fs::write(site.join(CONFIG_FILE), site_cfg).unwrap();
             load(&site).unwrap().toc_depths
@@ -1674,13 +1626,11 @@ mod tests {
         assert_eq!(depths("theme: ./theme\n"), 2..=6);
         assert_eq!(depths(""), 2..=3);
         assert_eq!(depths("toc_min_depth: 1\ntoc_max_depth: 6\n"), 1..=6);
-
-        let _ = std::fs::remove_dir_all(&site);
     }
 
     #[test]
     fn bad_toc_depths_explain_themselves() {
-        let site = scratch("bad-toc-depths", &[]);
+        let (_tmp, site) = scratch(&[]);
         for key in ["toc_min_depth", "toc_max_depth"] {
             // There's no `#######`, a heading level is a number, and no value
             // at all isn't one.
@@ -1698,20 +1648,15 @@ mod tests {
             error(&site, "toc_min_depth: 4\n"),
             "`toc_min_depth` (4) can't be more than `toc_max_depth` (3)"
         );
-
-        let _ = std::fs::remove_dir_all(&site);
     }
 
     #[test]
     fn search_cascades() {
-        let site = scratch(
-            "search",
-            &[
-                ("theme/_templates/default.html", ""),
-                ("drafty/_templates/default.html", ""),
-                ("drafty/little.yml", "search:\n  exclude: [/drafts/]\n"),
-            ],
-        );
+        let (_tmp, site) = scratch(&[
+            ("theme/_templates/default.html", ""),
+            ("drafty/_templates/default.html", ""),
+            ("drafty/little.yml", "search:\n  exclude: [/drafts/]\n"),
+        ]);
         let search = |site_cfg: &str| {
             std::fs::write(site.join(CONFIG_FILE), site_cfg).unwrap();
             load(&site).unwrap().search
@@ -1743,13 +1688,11 @@ mod tests {
         assert_eq!(search(site_cfg), on(&["/old/"]));
         assert_eq!(search("theme: ./drafty\nsearch: true\n"), on(&[]));
         assert_eq!(search("theme: ./drafty\nsearch: false\n"), None);
-
-        let _ = std::fs::remove_dir_all(&site);
     }
 
     #[test]
     fn bad_searches_explain_themselves() {
-        let site = scratch("bad-search", &[]);
+        let (_tmp, site) = scratch(&[]);
         // YAML reads `yes` and a quoted `"true"` as text, not `true`, and a
         // theme would read settings left empty as `false`.
         for value in [" yes", " \"true\"", " 1", "", " {}"] {
@@ -1785,8 +1728,6 @@ mod tests {
                 )
             );
         }
-
-        let _ = std::fs::remove_dir_all(&site);
     }
 
     #[test]
@@ -1820,10 +1761,7 @@ mod tests {
 
     #[test]
     fn markdown_cascades() {
-        let site = scratch(
-            "markdown",
-            &[("theme/little.yml", "markdown:\n  math: tex\n")],
-        );
+        let (_tmp, site) = scratch(&[("theme/little.yml", "markdown:\n  math: tex\n")]);
         let markdown = |site_cfg: &str| {
             std::fs::write(site.join(CONFIG_FILE), site_cfg).unwrap();
             load(&site).unwrap().markdown
@@ -1867,13 +1805,11 @@ mod tests {
         assert_eq!(markdown(site_cfg).highlight, Some(Highlight::GitHub));
         let site_cfg = "markdown:\n  highlight: false\n";
         assert_eq!(markdown(site_cfg).highlight, None);
-
-        let _ = std::fs::remove_dir_all(&site);
     }
 
     #[test]
     fn bad_markdown_explains_itself() {
-        let site = scratch("bad-markdown", &[]);
+        let (_tmp, site) = scratch(&[]);
         // YAML reads `yes` and a quoted `"true"` as text, not `true`.
         for value in [" yes", " \"true\"", " 1", ""] {
             let message = error(&site, &format!("markdown:\n  mark:{value}\n"));
@@ -1954,15 +1890,13 @@ mod tests {
             message,
             "`markdown.inline_footnotes` needs `markdown.footnotes` to be `true` too"
         );
-
-        let _ = std::fs::remove_dir_all(&site);
     }
 
     #[test]
     fn mermaid_cascades() {
         let theme_cfg = "mermaid:\n  theme: base\n  themeVariables:\n    primaryColor: \"#6f42c1\"\n    \
                          lineColor: \"#333333\"\n";
-        let site = scratch("mermaid", &[("theme/little.yml", theme_cfg)]);
+        let (_tmp, site) = scratch(&[("theme/little.yml", theme_cfg)]);
         let mermaid = |site_cfg: &str| {
             std::fs::write(site.join(CONFIG_FILE), site_cfg).unwrap();
             (load(&site).unwrap().markdown.mermaid).expect("diagrams should be drawn")
@@ -2005,13 +1939,11 @@ mod tests {
         assert_eq!(config.markdown.mermaid, None);
         let theme = config.values.get("mermaid").and_then(|m| m.get("theme"));
         assert_eq!(theme.and_then(Value::as_str), Some("drak"));
-
-        let _ = std::fs::remove_dir_all(&site);
     }
 
     #[test]
     fn bad_mermaid_explains_itself() {
-        let site = scratch("bad-mermaid", &[]);
+        let (_tmp, site) = scratch(&[]);
         for site_cfg in ["mermaid: forest\n", "mermaid:\n", "mermaid: [theme]\n"] {
             let message = error(&site, site_cfg);
             assert_eq!(
@@ -2044,13 +1976,11 @@ mod tests {
             message.starts_with("`mermaid.fontFamily` is empty: "),
             "{message}"
         );
-
-        let _ = std::fs::remove_dir_all(&site);
     }
 
     #[test]
     fn host_and_port_cascade() {
-        let site = scratch("host-port", &[("theme/little.yml", "port: 4000\n")]);
+        let (_tmp, site) = scratch(&[("theme/little.yml", "port: 4000\n")]);
         let address = |site_cfg: &str| {
             std::fs::write(site.join(CONFIG_FILE), site_cfg).unwrap();
             let cfg = load(&site).unwrap();
@@ -2066,13 +1996,11 @@ mod tests {
 
         // An IPv6 address needs no quotes or brackets.
         assert_eq!(address("host: ::1\n"), ("::1".into(), 8080));
-
-        let _ = std::fs::remove_dir_all(&site);
     }
 
     #[test]
     fn bad_hosts_and_ports_explain_themselves() {
-        let site = scratch("bad-host-port", &[]);
+        let (_tmp, site) = scratch(&[]);
 
         // A host is a name or an address, written as text.
         for value in [" 8080", " [a, b]", " \"\"", ""] {
@@ -2092,13 +2020,11 @@ mod tests {
                 "`port` must be a number from 1 to 65535, like 8080"
             );
         }
-
-        let _ = std::fs::remove_dir_all(&site);
     }
 
     #[test]
     fn a_url_puts_the_site_under_its_path() {
-        let site = scratch("site-url", &[]);
+        let (_tmp, site) = scratch(&[]);
         let url = |site_cfg: &str| {
             std::fs::write(site.join(CONFIG_FILE), site_cfg).unwrap();
             load(&site).unwrap().url
@@ -2121,13 +2047,11 @@ mod tests {
         assert_eq!(url("url: https://docs.example.com/\n"), domain);
         let nested = site_url("http://localhost:4000", "/a/b");
         assert_eq!(url("url: http://localhost:4000/a/b\n"), nested);
-
-        let _ = std::fs::remove_dir_all(&site);
     }
 
     #[test]
     fn bad_urls_explain_themselves() {
-        let site = scratch("bad-site-url", &[]);
+        let (_tmp, site) = scratch(&[]);
 
         // A url is the whole address, as text: not just its host or path, and
         // with nothing after the path.
@@ -2152,17 +2076,11 @@ mod tests {
                 "url:{value}"
             );
         }
-
-        let _ = std::fs::remove_dir_all(&site);
     }
 
     #[test]
     fn links_from_the_root_get_the_sites_path() {
-        let url = SiteUrl {
-            origin: "https://withlittle.github.io".into(),
-            path: "/little".into(),
-            shared: None,
-        };
+        let url = testing::site_url();
         assert_eq!(url.link("/"), "/little/");
         assert_eq!(url.link("/guide/install"), "/little/guide/install");
         assert_eq!(url.link("/assets/style.css"), "/little/assets/style.css");
@@ -2212,9 +2130,9 @@ mod tests {
                 .into(),
         };
         let version = SiteUrl {
-            origin: "https://withlittle.github.io".into(),
             path: "/little/1.4".into(),
             shared: Some(shared("/little")),
+            ..testing::site_url()
         };
         // The theme's files are the root's, whatever follows their path, and
         // however it's encoded.
@@ -2260,7 +2178,7 @@ mod tests {
 
     #[test]
     fn a_repo_and_its_branch_cascade() {
-        let site = scratch("repo", &[("theme/little.yml", "branch: trunk\n")]);
+        let (_tmp, site) = scratch(&[("theme/little.yml", "branch: trunk\n")]);
         let repo = |site_cfg: &str| {
             std::fs::write(site.join(CONFIG_FILE), site_cfg).unwrap();
             load(&site).unwrap().repo
@@ -2284,13 +2202,11 @@ mod tests {
         let site_cfg = format!("theme: ./theme\n{site_cfg}");
         assert_eq!(repo(&site_cfg), little("trunk"));
         assert_eq!(repo(&format!("{site_cfg}branch: \"2.0\"\n")), little("2.0"));
-
-        let _ = std::fs::remove_dir_all(&site);
     }
 
     #[test]
     fn bad_repos_and_branches_explain_themselves() {
-        let site = scratch("bad-repo", &[]);
+        let (_tmp, site) = scratch(&[]);
 
         // A repo is the address a browser shows for it, as text: not the
         // address it's cloned from, or just its host, and with nothing after
@@ -2331,8 +2247,6 @@ mod tests {
                 "branch:{value}"
             );
         }
-
-        let _ = std::fs::remove_dir_all(&site);
     }
 
     #[test]
@@ -2387,7 +2301,7 @@ mod tests {
 
     #[test]
     fn config_files_hold_settings() {
-        let site = scratch("settings", &[]);
+        let (_tmp, site) = scratch(&[]);
         let parsing = format!("parsing {}: ", site.join(CONFIG_FILE).display());
 
         // Settings are keys and values: a list or a single value would replace
@@ -2402,13 +2316,11 @@ mod tests {
         let message = error(&site, "name: \"My Docs\n");
         assert!(message.starts_with(&parsing), "{message}");
         assert!(message.contains("at line"), "{message}");
-
-        let _ = std::fs::remove_dir_all(&site);
     }
 
     #[test]
     fn config_files_are_optional_and_can_be_empty() {
-        let site = scratch("optional", &[("theme/_templates/default.html", "")]);
+        let (_tmp, site) = scratch(&[("theme/_templates/default.html", "")]);
 
         // Without a little.yml, or with one that's empty or only comments, a
         // site gets little's defaults and the built-in theme's.
@@ -2425,8 +2337,6 @@ mod tests {
         assert_eq!(load(&site).unwrap().values, expected);
         std::fs::write(site.join("theme").join(CONFIG_FILE), "# nothing\n").unwrap();
         assert_eq!(load(&site).unwrap().values, expected);
-
-        let _ = std::fs::remove_dir_all(&site);
     }
 
     #[test]
@@ -2506,13 +2416,10 @@ mod tests {
         let theme_cfg = "plugins:\n  bob: ./plugins/bob.wasm\n  \
                          ann:\n    wasm: https://example.com/ann.wasm\n    style: plain\n    \
                          width: 80\n  old: ./old.wasm\n";
-        let site = scratch(
-            "plugins",
-            &[
-                ("theme/_templates/default.html", ""),
-                ("theme/little.yml", theme_cfg),
-            ],
-        );
+        let (_tmp, site) = scratch(&[
+            ("theme/_templates/default.html", ""),
+            ("theme/little.yml", theme_cfg),
+        ]);
         // The site changes one of the theme's settings, turns one of its
         // plugins off, and adds its own, which reads two folders.
         let site_cfg = "theme: ./theme\nplugins:\n  ann:\n    style: fancy\n  old: false\n  \
@@ -2562,12 +2469,11 @@ mod tests {
             std::fs::write(site.join(CONFIG_FILE), site_cfg).unwrap();
             assert_eq!(load(&site).unwrap().plugins, [], "{site_cfg}");
         }
-        let _ = std::fs::remove_dir_all(&site);
     }
 
     #[test]
     fn plugins_must_be_named_with_their_wasm() {
-        let site = scratch("bad-plugins", &[("theme/_templates/default.html", "")]);
+        let (_tmp, site) = scratch(&[("theme/_templates/default.html", "")]);
         let file = site.join(CONFIG_FILE);
         let file = file.display();
         for (site_cfg, expected) in [
@@ -2629,12 +2535,11 @@ mod tests {
             )),
             "{message}"
         );
-        let _ = std::fs::remove_dir_all(&site);
     }
 
     #[test]
     fn versions_have_titles_and_urls_and_are_built_from_refs() {
-        let site = scratch("versions", &[]);
+        let (_tmp, site) = scratch(&[]);
         let versions = |site_cfg: &str| {
             std::fs::write(site.join(CONFIG_FILE), site_cfg).unwrap();
             load(&site).unwrap().versions
@@ -2723,12 +2628,11 @@ mod tests {
             versions(site_cfg),
             [version("a", "", None), b, version("c", "/c", Some("v0"))]
         );
-        let _ = std::fs::remove_dir_all(&site);
     }
 
     #[test]
     fn bad_versions_explain_themselves() {
-        let site = scratch("bad-versions", &[]);
+        let (_tmp, site) = scratch(&[]);
         let list = "`versions` must list the site's versions, each with its `title`, the `url` \
                     it's at, and the `ref` it's built from, like \
                     `- { title: \"1.4\", url: /1.4, ref: v1.4 }`";
@@ -2930,7 +2834,6 @@ mod tests {
             );
             assert_eq!(error(&site, &site_cfg), expected, "{key}");
         }
-        let _ = std::fs::remove_dir_all(&site);
     }
 
     #[test]
@@ -2941,14 +2844,11 @@ mod tests {
         let old_cfg = "theme: ./elsewhere\nname: Old\nurl: https://old.example.com\n\
                        source: ./src\nversions: []\nnav: [{ title: Old, url: / }]\n\
                        toc_min_depth: 9\nplugins: [./cal.wasm]\n";
-        let site = scratch(
-            "for-version",
-            &[
-                ("theme/little.yml", theme_cfg),
-                ("theme/_templates/default.html", ""),
-                ("old/little.yml", old_cfg),
-            ],
-        );
+        let (_tmp, site) = scratch(&[
+            ("theme/little.yml", theme_cfg),
+            ("theme/_templates/default.html", ""),
+            ("old/little.yml", old_cfg),
+        ]);
         let site_cfg = "theme: ./theme\nname: New\nurl: https://example.com/docs\n\
                         repo: https://github.com/example/docs\ndestination: ./public\n\
                         source: ./content\nnav: [{ title: New, url: / }]\n\
@@ -3059,12 +2959,11 @@ mod tests {
             message.starts_with("parsing v1.4:old/little.yml: "),
             "{message}"
         );
-        let _ = std::fs::remove_dir_all(&site);
     }
 
     #[test]
     fn a_plugin_changes_the_config_but_not_what_little_reads_before_it_starts() {
-        let site = scratch("hooked", &[(CONFIG_FILE, "title: Docs\nport: 9000\n")]);
+        let (_tmp, site) = scratch(&[(CONFIG_FILE, "title: Docs\nport: 9000\n")]);
         let config = load(&site).unwrap();
         let hook = |change: &dyn Fn(&mut Mapping)| {
             let mut values = config.values.clone();
@@ -3105,6 +3004,5 @@ mod tests {
             message.starts_with("gives back a config little can't use: "),
             "{message}"
         );
-        let _ = std::fs::remove_dir_all(&site);
     }
 }

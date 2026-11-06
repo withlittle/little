@@ -4,7 +4,7 @@
 //! field list after them is the docinfo, as `DocInfo` makes it; and each
 //! reference is led to its target, with [`crate::resolve`].
 
-use little_markup::{Block, Document, Inline, Warning};
+use little_markup::{Block, Document, Inline, Kind, Warning};
 
 use crate::Clock;
 use crate::body;
@@ -55,7 +55,7 @@ pub(crate) fn document(rest: &str, frontmatter: &str, clock: Clock) -> (Document
     }
     if let Some((subtitle, ids)) = subtitle {
         let mut content: Vec<Inline> = ids.into_iter().map(Inline::Anchor).collect();
-        content.push(Inline::Emphasis(resolver.inlines(subtitle)));
+        content.push(Inline::Styled(Kind::Emphasis, resolver.inlines(subtitle)));
         blocks.push(Block::Paragraph(content));
     }
     blocks.extend(resolver.blocks(docinfo));

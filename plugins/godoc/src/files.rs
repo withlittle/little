@@ -4,7 +4,7 @@
 use std::collections::{BTreeSet, HashMap};
 
 use little_api_reference::model::Kind;
-use little_api_reference::pages::join;
+use little_api_reference::pages::{join, last, names, parent};
 
 /// A folder of the module's that holds Go files, other than tests.
 #[derive(Debug, PartialEq)]
@@ -39,18 +39,9 @@ fn visit(
         "" => root.to_string(),
         folder => join(root, folder),
     };
-    let names = std::fs::read_dir(&path).map(|entries| {
-        let names = entries.filter_map(|entry| entry.ok()?.file_name().into_string().ok());
-        names.collect::<Vec<_>>()
-    });
-    let mut names = match names {
-        Ok(names) => names,
-        Err(error) => {
-            warnings.push(format!("can't read `{path}`: {error}"));
-            return None;
-        }
-    };
-    names.sort();
+    let names = names(&path)
+        .map_err(|warning| warnings.push(warning))
+        .ok()?;
     let mut files = Vec::new();
     let mut inner = Vec::new();
     for name in names {
@@ -165,66 +156,41 @@ pub fn layout(module: &str, packages: &[(&str, &str)], documented: &[bool]) -> L
     }
     for index in 0..pages.len() {
         let mut children = std::mem::take(&mut pages[index].children);
-        children.sort_by(|&a, &b| {
-            (&pages[a].title, &pages[a].path).cmp(&(&pages[b].title, &pages[b].path))
-        });
+        children.sort_by_key(|&page| (&pages[page].title, &pages[page].path));
         pages[index].children = children;
     }
     Layout { pages, folder_page }
 }
 
-/// The folder `path` is in, or empty if it's in none.
-fn parent(path: &str) -> &str {
-    path.rfind('/').map_or("", |slash| &path[..slash])
-}
-
-/// The last part of `path`, like `config` for `internal/config`.
-fn last(path: &str) -> &str {
-    path.rsplit('/').next().unwrap_or(path)
-}
-
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use little_api_reference::testing::folder_with;
 
-    /// A folder for the test called `test`, holding `files`, each its path
-    /// in the folder.
-    fn folder_with(test: &str, files: &[&str]) -> String {
-        let id = std::process::id();
-        let root = std::env::temp_dir().join(format!("little-godoc-files-{test}-{id}"));
-        let _ = std::fs::remove_dir_all(&root);
-        for path in files {
-            let path = root.join(path);
-            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-            std::fs::write(path, "").unwrap();
-        }
-        root.to_str().unwrap().to_string()
-    }
+    use super::*;
 
     #[test]
     fn the_go_files_of_each_package_are_found_as_the_go_command_finds_them() {
-        let root = folder_with(
-            "walk",
-            &[
-                "go.mod",
-                "b.go",
-                "a.go",
-                "a_test.go",
-                "README.md",
-                ".hidden.go",
-                "_draft.go",
-                "config/config.go",
-                "config/testdata/x.go",
-                "config/internal/load/load.go",
-                "docs/guide.md",
-                "vendor/example.com/x/x.go",
-                "_examples/x.go",
-                ".git/x.go",
-                "tools/go.mod",
-                "tools/tools.go",
-                "tests/only_test.go",
-            ],
-        );
+        let files = [
+            "go.mod",
+            "b.go",
+            "a.go",
+            "a_test.go",
+            "README.md",
+            ".hidden.go",
+            "_draft.go",
+            "config/config.go",
+            "config/testdata/x.go",
+            "config/internal/load/load.go",
+            "docs/guide.md",
+            "vendor/example.com/x/x.go",
+            "_examples/x.go",
+            ".git/x.go",
+            "tools/go.mod",
+            "tools/tools.go",
+            "tests/only_test.go",
+        ]
+        .map(|path| (path, ""));
+        let root = folder_with("little-godoc-files", "walk", &files);
         let mut warnings = Vec::new();
         let folders = walk(&root, &mut warnings).unwrap();
         std::fs::remove_dir_all(&root).unwrap();

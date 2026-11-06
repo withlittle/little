@@ -18,6 +18,7 @@ wit-bindgen = "0.62"
 
 [dev-dependencies]
 comrak = { version = "0.55", default-features = false, features = ["shortcodes"] }
+little-api-reference = { path = "../api_reference", features = ["testing"] }
 
 [profile.release]
 opt-level = "s"

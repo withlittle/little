@@ -1071,6 +1071,7 @@ pub(crate) mod tests {
     use crate::config::{Markdown, SiteUrl};
     use crate::parts::parse_parts;
     use crate::render::{Rendered, parse_document};
+    use crate::testing::scratch;
     use serde_json::json;
     use std::process::Command;
     use std::slice;
@@ -1120,7 +1121,7 @@ pub(crate) mod tests {
     }
 
     /// The test plugin, started with `settings`.
-    fn started(settings: &str) -> Plugins {
+    pub(crate) fn started(settings: &str) -> Plugins {
         start(&[named("test", settings, &[])]).unwrap()
     }
 
@@ -1172,20 +1173,6 @@ pub(crate) mod tests {
             ..Markdown::default()
         };
         render_with(md, &markdown, plugins).unwrap()
-    }
-
-    /// A fresh scratch folder holding `files`, each a (path, contents) pair.
-    fn scratch(label: &str, files: &[(&str, &str)]) -> PathBuf {
-        let root =
-            std::env::temp_dir().join(format!("little-plugin-test-{}-{label}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&root);
-        std::fs::create_dir_all(&root).unwrap();
-        for (file, contents) in files {
-            let path = root.join(file);
-            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-            std::fs::write(path, contents).unwrap();
-        }
-        root
     }
 
     #[test]
@@ -1339,14 +1326,11 @@ pub(crate) mod tests {
 
     #[test]
     fn a_plugin_reads_only_the_folders_the_site_lets_it() {
-        let site = scratch(
-            "read",
-            &[
-                ("site/data/hello.txt", "Hello from data"),
-                ("site/secret.txt", "Secret"),
-                ("shared/hello.txt", "Hello from shared"),
-            ],
-        );
+        let (_tmp, site) = scratch(&[
+            ("site/data/hello.txt", "Hello from data"),
+            ("site/secret.txt", "Secret"),
+            ("shared/hello.txt", "Hello from shared"),
+        ]);
         let read = |folder: &str, path: &str| config::Read {
             folder: site.join(folder),
             path: path.to_string(),
@@ -1374,7 +1358,6 @@ pub(crate) mod tests {
         );
         let hello = std::fs::read_to_string(site.join("site/data/hello.txt")).unwrap();
         assert_eq!(hello, "Hello from data");
-        let _ = std::fs::remove_dir_all(&site);
     }
 
     #[test]
@@ -1552,14 +1535,11 @@ pub(crate) mod tests {
 
     #[test]
     fn a_plugin_must_be_a_component() {
-        let site = scratch(
-            "files",
-            &[
-                ("module.wasm", "\0asm\x01\0\0\0"),
-                ("text.wasm", "Hello"),
-                ("empty.wasm", "\0asm\x0d\0\x01\0"),
-            ],
-        );
+        let (_tmp, site) = scratch(&[
+            ("module.wasm", "\0asm\x01\0\0\0"),
+            ("text.wasm", "Hello"),
+            ("empty.wasm", "\0asm\x0d\0\x01\0"),
+        ]);
         let plugin = |file: &str, read: &[config::Read]| config::Plugin {
             wasm: Wasm::File(site.join(file)),
             ..named("test", "{}", read)
@@ -1637,7 +1617,6 @@ pub(crate) mod tests {
                 file("data")
             )
         );
-        let _ = std::fs::remove_dir_all(&site);
     }
 
     #[test]
@@ -1686,7 +1665,7 @@ pub(crate) mod tests {
 
     #[test]
     fn each_plugin_changes_what_the_one_before_gives_back() {
-        let site = scratch("config", &[("little.yml", "title: Docs\n")]);
+        let (_tmp, site) = scratch(&[("little.yml", "title: Docs\n")]);
         let config = config::load(&site).unwrap();
         let first = json!({
             "config": { "merge": { "title": "First", "description": "Hooked" } },
@@ -1747,12 +1726,11 @@ pub(crate) mod tests {
         let html = plugins.html("/a", "docs/a.md", "<p>A</p>".to_string());
         assert_eq!(html, "<p>A</p> <!-- /a -->");
         assert_eq!(warnings(&mut plugins), [] as [String; 0]);
-        let _ = std::fs::remove_dir_all(&site);
     }
 
     #[test]
     fn a_plugins_config_hook_cant_change_what_little_reads_before_it_starts() {
-        let site = scratch("config-errors", &[("little.yml", "title: Docs\n")]);
+        let (_tmp, site) = scratch(&[("little.yml", "title: Docs\n")]);
         let error = |settings: serde_json::Value| {
             let config = config::load(&site).unwrap();
             let mut plugins = started(&json!({ "config": settings }).to_string());
@@ -1779,12 +1757,11 @@ pub(crate) mod tests {
             ),
             "{message}"
         );
-        let _ = std::fs::remove_dir_all(&site);
     }
 
     #[test]
     fn a_plugins_files_hook_adds_and_removes_the_sources_files() {
-        let site = scratch("files-hook", &[("pkg/hello.md", "# Hello\n")]);
+        let (_tmp, site) = scratch(&[("pkg/hello.md", "# Hello\n")]);
         let read = [config::Read {
             folder: site.join("pkg"),
             path: "pkg".to_string(),
@@ -1886,7 +1863,6 @@ pub(crate) mod tests {
         let mut on_disk = BTreeMap::from_iter([("guide.md".to_string(), ())]);
         plugins.files(&mut on_disk, |_, _| ()).unwrap();
         assert_eq!(Vec::from_iter(on_disk.keys()), ["guide.md/logo.png"]);
-        let _ = std::fs::remove_dir_all(&site);
     }
 
     #[test]

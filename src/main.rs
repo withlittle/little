@@ -23,6 +23,8 @@ mod sass;
 mod search;
 mod server;
 mod site;
+#[cfg(test)]
+mod testing;
 mod theme;
 
 use anyhow::{Result, bail};
