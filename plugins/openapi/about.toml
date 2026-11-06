@@ -1,0 +1,16 @@
+# How cargo-about writes openapi's third-party notices, which its releases
+# include: see decisions/0054-third-party-notices.md.
+
+# The licences openapi's crates may use, in order of preference: where a
+# crate offers a choice, the first listed wins.
+accepted = [
+  "MIT",
+  "Unicode-3.0",
+  "Unicode-DFS-2016",
+  "Zlib",
+]
+targets = ["wasm32-wasip2"]
+ignore-build-dependencies = true
+ignore-dev-dependencies = true
+# Leaves out openapi and little-api-reference, which aren't published.
+private = { ignore = true }
