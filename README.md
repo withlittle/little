@@ -51,7 +51,8 @@ this repository, and open <http://127.0.0.1:8080/little/>.
 - [Themes](./docs/themes/choosing-a-theme.md): choose a theme, or make one.
 - [Plugins](./docs/plugins/using-plugins.md): use plugins, build pages
   from Jupyter notebooks, AsciiDoc, Org mode, or reStructuredText, add an
-  API reference for Python, Rust, JavaScript, or Go, or write a plugin.
+  API reference for Python, Rust, JavaScript, Go, or OpenAPI, or write a
+  plugin.
 - [Reference](./docs/reference/commands.md): commands, settings, and the
   data a theme's templates get.
 
@@ -69,11 +70,11 @@ The tests build a [plugin](./docs/plugins/writing-a-plugin.md),
 [`rust-toolchain.toml`](./rust-toolchain.toml) has rustup install.
 The [`pydoc`](./plugins/pydoc/), [`rustdoc`](./plugins/rustdoc/),
 [`jsdoc`](./plugins/jsdoc/), [`godoc`](./plugins/godoc/),
-[`jupyter`](./plugins/jupyter/), [`asciidoc`](./plugins/asciidoc/),
-[`orgmode`](./plugins/orgmode/), and
+[`openapi`](./plugins/openapi/), [`jupyter`](./plugins/jupyter/),
+[`asciidoc`](./plugins/asciidoc/), [`orgmode`](./plugins/orgmode/), and
 [`restructuredtext`](./plugins/restructuredtext/) plugins are crates of
 their own, with their own tests, which their READMEs say how to run, as
-are the [library](./plugins/api_reference/) the first four share, and the
+are the [library](./plugins/api_reference/) the first five share, and the
 [one](./plugins/markup/) the last three share. The manual documents
 little's own code with `rustdoc`, and has a page in the format each of the
 last four reads, so build

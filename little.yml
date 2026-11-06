@@ -71,6 +71,7 @@ nav:
       - { title: Rust API reference, url: /plugins/rust-api-reference }
       - { title: JavaScript API reference, url: /plugins/javascript-api-reference }
       - { title: Go API reference, url: /plugins/go-api-reference }
+      - { title: HTTP API reference, url: /plugins/http-api-reference }
       - { title: Writing a plugin, url: /plugins/writing-a-plugin }
   - title: Reference
     children:

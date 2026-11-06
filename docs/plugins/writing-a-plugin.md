@@ -240,7 +240,8 @@ componentize-py -d plugin.wit -d links.wit -w my:links/links componentize app -o
 
 - [Plugin hooks](../reference/plugin-hooks.md) lists every hook, in the
   order little calls them, with what each is given, and gives back.
-- little's own `pydoc`, `rustdoc`, `jsdoc`, and `godoc` plugins, in its
+- little's own `pydoc`, `rustdoc`, `jsdoc`, `godoc`, and `openapi`
+  plugins, in its
   [`plugins/`](https://github.com/withlittle/little/tree/main/plugins), add
   an API reference with the [`files`](../reference/plugin-hooks.md#files)
   hook.

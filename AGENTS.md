@@ -239,6 +239,12 @@ Content and theme live outside `src/`:
   for each package of a Go module, from its doc comments, parsed with
   gosyn, as Go's own go/doc reads them, with doc links led to their items.
   Its tests run natively, as pydoc's do.
+- `plugins/openapi/` — the `openapi` plugin, a crate in its own
+  workspace, built for `wasm32-wasip2`, that adds an HTTP API's reference,
+  with the `files` hook: a page for each OpenAPI 3 document, in JSON, read
+  with serde_json, or YAML, with yaml-rust2, with its operations, under
+  their tags, and its schemas, each `$ref` followed. Its tests run
+  natively, as pydoc's do.
 - `plugins/jupyter/` — the `jupyter` plugin, a crate in its own
   workspace, built for `wasm32-wasip2`, that reads Jupyter notebooks
   (`.ipynb`, format 4), with serde, with the `formats` hook: each into the
@@ -266,7 +272,8 @@ Content and theme live outside `src/`:
   It has their glue to `wit/plugin.wit` too, in its `plugin!` macro; the
   code of what they document, and the lines of its docs, in `text`; and,
   behind its `testing` feature, which only their tests turn on, what their
-  tests share.
+  tests share. `openapi` uses all but what a page documents, and `text`,
+  as a document isn't code.
 - `plugins/markup/` — a library, in its own workspace, not a plugin, that
   the plugins that read a markup format share: a model of a page, in no
   format in particular, and the Markdown it's written as, escaped, with
@@ -379,9 +386,9 @@ Content and theme live outside `src/`:
     is released; `docs`, `refactor`, `test`, `style`, `build`, `ci`, or
     `chore` for any other; `revert`, with a `Refs:` footer, to undo one.
   - Scope: the plugin or library a commit is about, `pydoc`, `rustdoc`,
-    `jsdoc`, `godoc`, `jupyter`, `asciidoc`, `orgmode`, `restructuredtext`,
-    `api_reference`, or `markup`; none for little, its theme, `wit/`, or
-    more than one component.
+    `jsdoc`, `godoc`, `openapi`, `jupyter`, `asciidoc`, `orgmode`,
+    `restructuredtext`, `api_reference`, or `markup`; none for little, its
+    theme, `wit/`, or more than one component.
   - Breaking: `!` before the `:`, and a footer,
     `BREAKING-CHANGE: <what to change>`, beside the co-author trailer;
     written `BREAKING CHANGE:`, with a space, git misses the trailer.
@@ -951,3 +958,21 @@ Record notable choices as short ADRs in `decisions/`, list each in its
   something, and a preview of a link to any page says what the site is. A
   page on a site with one can't leave it out — see
   [`decisions/0068-the-sites-description-as-a-meta-description.md`](./decisions/0068-the-sites-description-as-a-meta-description.md).
+- **A plugin for OpenAPI:** `plugins/openapi/`, in its own workspace, named
+  for its format, as 0062's plugins are, adds a page for each OpenAPI 3
+  document, a `.json`, `.yaml`, or `.yml` file whose `openapi` is 3, in the
+  folders it reads, with the `files` hook, not `formats`, which would be
+  given every `.json` file, at its path there, without its extension,
+  under `url`, `/` by default. It reads YAML 1.2 with yaml-rust2, and JSON
+  with serde_json, keeping each number as it's written; follows each
+  `$ref`, within a file, and to another, but not to a URL, which is warned
+  of; and warns of Swagger 2.0, and leaves it out. A page has the
+  document's `info.title` as its heading, its servers, security, and
+  security schemes, a `##` heading for each tag, with each operation under
+  it, in a `###` heading of its summary, else its method and path, with
+  tables of its parameters and responses, then its webhooks, and each named
+  schema, under Schemas, which every other schema that uses it links to.
+  Headings in descriptions move below the heading they're under. It shares
+  `plugins/api_reference/`'s glue and helpers, but not its model, and
+  `openapi` is a scope — see
+  [`decisions/0069-a-plugin-for-openapi.md`](./decisions/0069-a-plugin-for-openapi.md).
