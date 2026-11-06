@@ -10,6 +10,8 @@ A plugin adds to what little does as it builds a site. It can add, say:
 - an API reference, from [Python's docstrings](python-api-reference.md),
   [Rust's doc comments](rust-api-reference.md),
   [JavaScript's](javascript-api-reference.md), or [Go's](go-api-reference.md)
+- the reference of an [HTTP API](http-api-reference.md), from its OpenAPI
+  document
 - pages from [Jupyter notebooks](jupyter-notebooks.ipynb),
   [AsciiDoc](asciidoc.adoc), [Org mode](org-mode.org), or
   [reStructuredText](restructuredtext.rst)

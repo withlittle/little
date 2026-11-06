@@ -1,0 +1,31 @@
+[package]
+name = "little-openapi"
+version = "0.1.0"
+edition = "2024"
+description = "A plugin for little that builds a reference of an HTTP API from its OpenAPI document"
+license = "MIT"
+publish = false
+
+# A WebAssembly component, built for wasm32-wasip2.
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+finl_unicode = { version = "1.4", default-features = false, features = ["categories"] }
+little-api-reference = { path = "../api_reference" }
+pulldown-cmark = { version = "0.13.4", default-features = false }
+serde_json = { version = "1.0.151", features = ["preserve_order", "arbitrary_precision"] }
+wit-bindgen = "0.62"
+yaml-rust2 = { version = "0.13", default-features = false }
+
+[dev-dependencies]
+comrak = { version = "0.55", default-features = false, features = ["shortcodes"] }
+little-api-reference = { path = "../api_reference", features = ["testing"] }
+
+[profile.release]
+opt-level = "s"
+lto = true
+strip = true
+
+# Its own workspace, apart from little's.
+[workspace]

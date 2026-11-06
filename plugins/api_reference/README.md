@@ -4,9 +4,12 @@ A library, not a plugin, that little's plugins that build an API reference
 share: [`pydoc`](../pydoc/), from Python's docstrings,
 [`rustdoc`](../rustdoc/), from Rust's doc comments,
 [`jsdoc`](../jsdoc/), from JavaScript's and TypeScript's, and
-[`godoc`](../godoc/), from Go's. Each reads its
-language's code into what a page documents, in `src/model.rs`, and this
-writes the page's Markdown, in `src/markdown.rs`, so their pages look alike.
+[`godoc`](../godoc/), from Go's, and [`openapi`](../openapi/), from an
+HTTP API's OpenAPI document. The first four each read their language's
+code into what a page documents, in `src/model.rs`, and this writes the
+page's Markdown, in `src/markdown.rs`, so their pages look alike.
+`openapi` writes its own, as a document isn't code, but with helpers from
+`src/markdown.rs`, like `table`.
 It also reads the settings they have alike, like `title` and `url`, in
 `src/settings.rs`, and holds the pages each adds, with their paths and the
 links between them, in `src/pages.rs`. Its `plugin!` macro, in
@@ -21,7 +24,9 @@ how it grew for Rust in
 for JavaScript in
 [ADR 0048](../../decisions/0048-a-plugin-for-javascripts-doc-comments.md),
 and for Go in
-[ADR 0064](../../decisions/0064-a-plugin-for-gos-doc-comments.md).
+[ADR 0064](../../decisions/0064-a-plugin-for-gos-doc-comments.md), and
+for OpenAPI in
+[ADR 0069](../../decisions/0069-a-plugin-for-openapi.md).
 
 ## Developing it
 

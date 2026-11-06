@@ -46,7 +46,8 @@ To install little without Rust, see
   Plugins add API references for [Python](plugins/python-api-reference.md),
   [Rust](plugins/rust-api-reference.md),
   [JavaScript](plugins/javascript-api-reference.md), and
-  [Go](plugins/go-api-reference.md). They also read
+  [Go](plugins/go-api-reference.md), and for
+  [HTTP APIs](plugins/http-api-reference.md), from OpenAPI. They also read
   [Jupyter notebooks](plugins/jupyter-notebooks.ipynb),
   [AsciiDoc](plugins/asciidoc.adoc), [Org mode](plugins/org-mode.org), and
   [reStructuredText](plugins/restructuredtext.rst).

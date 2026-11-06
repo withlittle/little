@@ -376,7 +376,7 @@ fn labels(object: &Object) -> String {
 
 /// A table, with `header`, of `rows`, with each cell on one line, and its
 /// pipes escaped.
-fn table(out: &mut String, header: &[&str], rows: &[Vec<String>]) {
+pub fn table(out: &mut String, header: &[&str], rows: &[Vec<String>]) {
     *out += &format!("| {} |\n", header.join(" | "));
     *out += &format!("|{}\n", " --- |".repeat(header.len()));
     for row in rows {

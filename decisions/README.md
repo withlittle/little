@@ -78,3 +78,4 @@ made, and link to each other.
 - [0066 — The manual's plain style](0066-the-manuals-plain-style.md)
 - [0067 — little's API at the end of the manual's nav](0067-littles-api-at-the-end-of-the-manuals-nav.md)
 - [0068 — The site's description as a meta description](0068-the-sites-description-as-a-meta-description.md)
+- [0069 — A plugin for OpenAPI](0069-a-plugin-for-openapi.md)
