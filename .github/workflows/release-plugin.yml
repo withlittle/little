@@ -11,6 +11,7 @@ on:
       - "rustdoc-v*"
       - "jsdoc-v*"
       - "godoc-v*"
+      - "openapi-v*"
       - "jupyter-v*"
       - "asciidoc-v*"
       - "orgmode-v*"
@@ -37,7 +38,7 @@ jobs:
 
       - name: Read the plugin and version from the tag
         run: |
-          pattern='^(pydoc|rustdoc|jsdoc|godoc|jupyter|asciidoc|orgmode|restructuredtext)-v((0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*))$'
+          pattern='^(pydoc|rustdoc|jsdoc|godoc|openapi|jupyter|asciidoc|orgmode|restructuredtext)-v((0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*))$'
           if [[ ! $GITHUB_REF_NAME =~ $pattern ]]; then
             echo "::error::$GITHUB_REF_NAME isn't a plugin's name and version, like pydoc-v0.1.0"
             exit 1
@@ -92,6 +93,7 @@ jobs:
             rustdoc) page=rust-api-reference.md ;;
             jsdoc) page=javascript-api-reference.md ;;
             godoc) page=go-api-reference.md ;;
+            openapi) page=http-api-reference.md ;;
             jupyter) page=jupyter-notebooks.ipynb ;;
             asciidoc) page=asciidoc.adoc ;;
             orgmode) page=org-mode.org ;;
@@ -103,7 +105,7 @@ jobs:
           # or markup, for one that reads a format as Markdown.
           paths=(--include-path "plugins/$PLUGIN/**")
           case $PLUGIN in
-            pydoc | rustdoc | jsdoc | godoc) paths+=(--include-path "plugins/api_reference/**") ;;
+            pydoc | rustdoc | jsdoc | godoc | openapi) paths+=(--include-path "plugins/api_reference/**") ;;
             asciidoc | orgmode | restructuredtext) paths+=(--include-path "plugins/markup/**") ;;
           esac
           previous=$(git describe --tags --abbrev=0 --match "$PLUGIN-v*" HEAD^ 2>/dev/null || true)

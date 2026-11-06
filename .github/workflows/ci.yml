@@ -25,7 +25,7 @@ jobs:
       # Each in plugins/, in its own workspace: the libraries the plugins
       # share, built natively, and the plugins, built for wasm32-wasip2.
       LIBRARIES: api_reference markup
-      PLUGINS: pydoc rustdoc jsdoc godoc jupyter asciidoc orgmode restructuredtext
+      PLUGINS: pydoc rustdoc jsdoc godoc openapi jupyter asciidoc orgmode restructuredtext
     steps:
       - name: Checkout
         uses: actions/checkout@v7

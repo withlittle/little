@@ -1,7 +1,8 @@
 # Releasing
 
 How little, and its plugins, `pydoc`, `rustdoc`, `jsdoc`, `godoc`,
-`jupyter`, `asciidoc`, `orgmode`, and `restructuredtext`, are released.
+`openapi`, `jupyter`, `asciidoc`, `orgmode`, and `restructuredtext`, are
+released.
 Each is released on its own, from a tag of its version: `v0.2.0` for
 little, and one that names the plugin too, like `pydoc-v0.2.0`, for a
 plugin. Pushing the tag to GitHub runs a workflow, which checks the tag,
@@ -54,11 +55,12 @@ once, by hand:
 [git-cliff](https://git-cliff.org) lists a plugin's changes since its last
 release, as the release's notes will: the commits that changed its folder,
 `plugins/<plugin>/`, or the library it shares with others like it,
-`plugins/api_reference/`, for `pydoc`, `rustdoc`, `jsdoc`, and `godoc`, or
-`plugins/markup/`, for `asciidoc`, `orgmode`, and `restructuredtext`, of a
-type that's released, `feat`, `fix`, or `perf`, with those that break
-something first. Install it, with `cargo install --locked git-cliff` or
-`brew install git-cliff`, then, in the repository's root:
+`plugins/api_reference/`, for `pydoc`, `rustdoc`, `jsdoc`, `godoc`, and
+`openapi`, or `plugins/markup/`, for `asciidoc`, `orgmode`, and
+`restructuredtext`, of a type that's released, `feat`, `fix`, or `perf`,
+with those that break something first. Install it, with
+`cargo install --locked git-cliff` or `brew install git-cliff`, then, in
+the repository's root:
 
 ```sh
 plugin=pydoc
@@ -88,9 +90,10 @@ On a branch from `main`:
    `Cargo.toml`, the pull request fails, before the release can.
 3. Change the URLs in its page in the manual,
    `docs/plugins/python-api-reference.md`, `rust-api-reference.md`,
-   `javascript-api-reference.md`, `jupyter-notebooks.ipynb`,
-   `asciidoc.adoc`, `org-mode.org`, or `restructuredtext.rst`, to the new
-   version, so the manual gives it.
+   `javascript-api-reference.md`, `go-api-reference.md`,
+   `http-api-reference.md`, `jupyter-notebooks.ipynb`, `asciidoc.adoc`,
+   `org-mode.org`, or `restructuredtext.rst`, to the new version, so the
+   manual gives it.
    `git grep -n "download/$plugin-v" docs/` finds them.
 4. Commit them as `chore(<plugin>): release <version>`, like
    `chore(pydoc): release 0.2.0`, open a pull request, and merge it once CI
@@ -256,7 +259,7 @@ there. To write them yourself, install cargo-about 0.9.2, with
 `cargo install --locked cargo-about@0.9.2`, then, in the repository's root:
 
 ```sh
-scripts/notices.sh pydoc target/notices/pydoc.md   # or little, rustdoc, jsdoc, godoc, jupyter, asciidoc, orgmode, or restructuredtext
+scripts/notices.sh pydoc target/notices/pydoc.md   # or little, rustdoc, jsdoc, godoc, openapi, jupyter, asciidoc, orgmode, or restructuredtext
 ```
 
 Each one's `about.toml`, beside its `Cargo.toml`, accepts the licences its
