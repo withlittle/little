@@ -80,3 +80,4 @@ made, and link to each other.
 - [0068 — The site's description as a meta description](0068-the-sites-description-as-a-meta-description.md)
 - [0069 — A plugin for OpenAPI](0069-a-plugin-for-openapi.md)
 - [0070 — little's API out of the manual](0070-littles-api-out-of-the-manual.md)
+- [0071 — Ordering and naming the manual's plugin pages](0071-ordering-and-naming-the-manuals-plugin-pages.md)

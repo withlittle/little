@@ -1,9 +1,9 @@
 ---
-title: HTTP API reference
+title: OpenAPI
 description: Add a page for each OpenAPI document, with its operations and schemas, with the openapi plugin.
 ---
 
-# HTTP API reference
+# OpenAPI
 
 [`openapi`](https://github.com/withlittle/little/tree/main/plugins/openapi),
 a plugin in little's repository, adds the reference of an HTTP API to a

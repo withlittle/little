@@ -28,9 +28,9 @@ about 1.6 MB, which a site can name where it is, or copy.
 
 ## Using it
 
-[Python API reference](../../docs/plugins/python-api-reference.md), in
-little's manual, says how to name it in a site's `little.yml`, what pages
-it adds, what they show, and its limits, for now.
+[Python docs](../../docs/plugins/pydoc.md), in little's manual, says how
+to name it in a site's `little.yml`, what pages it adds, what they show,
+and its limits, for now.
 
 ## Developing it
 

@@ -32,7 +32,7 @@ folder.
 
 With a [plugin](../plugins/using-plugins.md#pages-in-other-formats), files
 in other formats are pages too, like
-[Jupyter notebooks](../plugins/jupyter-notebooks.ipynb) (`.ipynb`),
+[Jupyter notebooks](../plugins/jupyter.ipynb) (`.ipynb`),
 [AsciiDoc](../plugins/asciidoc.adoc) (`.adoc`),
 [Org mode](../plugins/org-mode.org) (`.org`), and
 [reStructuredText](../plugins/restructuredtext.rst) (`.rst`). Without the

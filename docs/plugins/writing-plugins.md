@@ -1,9 +1,9 @@
 ---
-title: Writing a plugin
+title: Writing plugins
 description: Write your first plugin, which opens links to other sites in a new tab, in Rust or Python, step by step.
 ---
 
-# Writing a plugin
+# Writing plugins
 
 This page writes a plugin, in Rust, that opens each link to another site
 in a new tab. It turns

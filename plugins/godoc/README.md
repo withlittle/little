@@ -27,9 +27,9 @@ about 520 KB, which a site can name where it is, or copy.
 
 ## Using it
 
-[Go API reference](../../docs/plugins/go-api-reference.md), in little's
-manual, says how to name it in a site's `little.yml`, what pages it adds,
-what they show, and its limits, for now.
+[Go docs](../../docs/plugins/godoc.md), in little's manual, says how to
+name it in a site's `little.yml`, what pages it adds, what they show, and
+its limits, for now.
 
 ## Developing it
 

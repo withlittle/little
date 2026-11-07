@@ -1,6 +1,9 @@
 # 0047 — Naming API reference plugins
 
-- Status: accepted
+- Status: accepted; amended by
+  [0071](./0071-ordering-and-naming-the-manuals-plugin-pages.md), which
+  titles the manual's pages on `pydoc` and `rustdoc` "Python docs" and
+  "Rust docs", and names their files for the plugins, so their URLs change
 - Date: 2026-10-15
 - Amends: [0031](./0031-a-plugin-for-pythons-docstrings.md),
   [0044](./0044-a-plugin-for-rusts-doc-comments.md)

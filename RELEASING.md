@@ -88,12 +88,10 @@ On a branch from `main`:
    which updates its `Cargo.lock` to the new version too. CI builds with
    `--locked`, as the release does, so if `Cargo.lock` isn't committed with
    `Cargo.toml`, the pull request fails, before the release can.
-3. Change the URLs in its page in the manual,
-   `docs/plugins/python-api-reference.md`, `rust-api-reference.md`,
-   `javascript-api-reference.md`, `go-api-reference.md`,
-   `http-api-reference.md`, `jupyter-notebooks.ipynb`, `asciidoc.adoc`,
-   `org-mode.org`, or `restructuredtext.rst`, to the new version, so the
-   manual gives it.
+3. Change the URLs in its page in the manual, `docs/plugins/pydoc.md`,
+   `rustdoc.md`, `jsdoc.md`, `godoc.md`, `openapi.md`, `jupyter.ipynb`,
+   `asciidoc.adoc`, `org-mode.org`, or `restructuredtext.rst`, to the new
+   version, so the manual gives it.
    `git grep -n "download/$plugin-v" docs/` finds them.
 4. Commit them as `chore(<plugin>): release <version>`, like
    `chore(pydoc): release 0.2.0`, open a pull request, and merge it once CI

@@ -1,6 +1,8 @@
 # 0060 — Other formats in plugins
 
-- Status: accepted
+- Status: accepted; amended by
+  [0071](./0071-ordering-and-naming-the-manuals-plugin-pages.md), which
+  names the manual's page on notebooks `docs/plugins/jupyter.ipynb`
 - Date: 2026-10-22
 - Amends: [0024](./0024-jupyter-notebooks.md),
   [0029](./0029-plugins-that-render-code-blocks.md),

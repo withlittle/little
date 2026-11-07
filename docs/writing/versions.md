@@ -172,7 +172,7 @@ What's in a version's folder, at its `url`, is its own:
   one. Otherwise, it's the `nav` of the `little.yml` at its `ref`, if it
   sets one, or else one from its pages and folders.
 - The folders its plugins read, as they were at its `ref`. So an older
-  version's [API reference](../plugins/python-api-reference.md) is of its
+  version's [API reference](../plugins/pydoc.md) is of its
   own code, with any [settings](#a-versions-own-nav-and-plugins) its entry
   gives the plugins.
 - Its [search](search.md) index, so a search finds the pages of the version

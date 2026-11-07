@@ -722,7 +722,7 @@ Record notable choices as short ADRs in `decisions/`, list each in its
   folder in `plugins/`, its crate, `little-rustdoc`, its `.wasm` file,
   `little_rustdoc.wasm`, and its entry in the manual's `plugins`. Neither
   runs its language's tool, and its page says so first; the manual's pages
-  keep their names, like "Rust API reference" — see
+  kept their names, like "Rust API reference", until 0071 — see
   [`decisions/0047-naming-api-reference-plugins.md`](./decisions/0047-naming-api-reference-plugins.md).
 - **A plugin for JavaScript's doc comments:** `plugins/jsdoc/`, in its own
   workspace, adds a page for a JavaScript or TypeScript package and each of
@@ -980,3 +980,14 @@ Record notable choices as short ADRs in `decisions/`, list each in its
   as the manual's other pages on API references have none; and the URLs
   under `/api/` lead nowhere, as little has no redirects — see
   [`decisions/0070-littles-api-out-of-the-manual.md`](./decisions/0070-littles-api-out-of-the-manual.md).
+- **Ordering and naming the manual's plugin pages:** the manual's Plugins
+  section lists "Using plugins" and "Writing plugins" first, then the
+  pages on formats, "Jupyter notebooks", "AsciiDoc", "Org mode", and
+  "reStructuredText", then "OpenAPI", "Python docs", "Rust docs",
+  "Go docs", and "JavaScript docs", in place of "Python API reference" and
+  the like, each title the same in `nav`, frontmatter, and heading. A page
+  on a plugin is named for it, like `pydoc.md`, at `/plugins/pydoc`, but
+  `org-mode.org`, and keeps its format; the old URLs lead nowhere, as
+  little has no redirects, but a release's notes link to its page at its
+  tag — see
+  [`decisions/0071-ordering-and-naming-the-manuals-plugin-pages.md`](./decisions/0071-ordering-and-naming-the-manuals-plugin-pages.md).

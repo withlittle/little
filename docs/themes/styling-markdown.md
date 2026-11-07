@@ -57,7 +57,7 @@ heading row is in a `<thead>`, and the rest in a `<tbody>`.
 
 ## Notebooks
 
-A [notebook](../plugins/jupyter-notebooks.ipynb)'s output, like what its
+A [notebook](../plugins/jupyter.ipynb)'s output, like what its
 code printed, is a code block in `output`:
 `<pre class="highlight"><code class="language-output">`. The built-in theme
 sets it apart from code with a dashed border, with

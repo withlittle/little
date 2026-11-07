@@ -1,9 +1,9 @@
 ---
-title: Rust API reference
+title: Rust docs
 description: Add a page for a Rust crate and each of its modules, from their doc comments, with the rustdoc plugin.
 ---
 
-# Rust API reference
+# Rust docs
 
 [`rustdoc`](https://github.com/withlittle/little/tree/main/plugins/rustdoc),
 a plugin in little's repository, adds an API reference to a site. It adds a
