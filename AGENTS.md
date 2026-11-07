@@ -290,9 +290,9 @@ Content and theme live outside `src/`:
   syntax definitions two-face bundles to little's. CI writes them all, and
   fails on any warning.
 - `.github/workflows/docs.yml` — builds the manual with little from the
-  same commit, and the plugins it uses, `rustdoc`, `jupyter`, `asciidoc`,
-  `orgmode`, and `restructuredtext`, with `--strict`, for each pull request
-  and push to `main`, and publishes each push's on GitHub Pages, at
+  same commit, and the plugins it uses, `jupyter`, `asciidoc`, `orgmode`,
+  and `restructuredtext`, with `--strict`, for each pull request and push
+  to `main`, and publishes each push's on GitHub Pages, at
   <https://withlittle.github.io/little>.
 - `.github/workflows/release-plugin.yml` — releases a plugin when a tag
   that names it and its version, like `pydoc-v0.1.0`, is pushed: checks
