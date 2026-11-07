@@ -16,12 +16,7 @@ cargo test                  # run tests (they build tests/plugin for wasm32-wasi
 cargo clippy --all-targets  # lint — keep it clean
 cargo fmt                   # format — run before committing
 
-# the rustdoc plugin, which the manual uses: build it before the manual
-cargo build --release --target wasm32-wasip2 --manifest-path plugins/rustdoc/Cargo.toml
-cargo test --manifest-path plugins/rustdoc/Cargo.toml
-cargo clippy --manifest-path plugins/rustdoc/Cargo.toml --all-targets --target wasm32-wasip2
-
-# the jupyter plugin, which the manual uses too: build it before the manual
+# the jupyter plugin, which the manual uses: build it before the manual
 cargo build --release --target wasm32-wasip2 --manifest-path plugins/jupyter/Cargo.toml
 cargo test --manifest-path plugins/jupyter/Cargo.toml
 cargo clippy --manifest-path plugins/jupyter/Cargo.toml --all-targets --target wasm32-wasip2
@@ -42,6 +37,11 @@ cargo clippy --manifest-path plugins/restructuredtext/Cargo.toml --all-targets -
 cargo build --release --target wasm32-wasip2 --manifest-path plugins/pydoc/Cargo.toml
 cargo test --manifest-path plugins/pydoc/Cargo.toml
 cargo clippy --manifest-path plugins/pydoc/Cargo.toml --all-targets --target wasm32-wasip2
+
+# the rustdoc plugin, in its own workspace
+cargo build --release --target wasm32-wasip2 --manifest-path plugins/rustdoc/Cargo.toml
+cargo test --manifest-path plugins/rustdoc/Cargo.toml
+cargo clippy --manifest-path plugins/rustdoc/Cargo.toml --all-targets --target wasm32-wasip2
 
 # the jsdoc plugin, in its own workspace
 cargo build --release --target wasm32-wasip2 --manifest-path plugins/jsdoc/Cargo.toml
@@ -186,12 +186,10 @@ Content and theme live outside `src/`:
   <https://withlittle.github.io/little>. It's a little site, so each page
   uses what it documents, where it can, and the README links to it. Pages
   link to each other by their files, and to little's own files on GitHub.
-  Meta docs, like ADRs, don't go here. little's own API, which the
-  `rustdoc` plugin adds from `src/`'s doc comments, is at `/api/`, with
-  no file in `docs/`. Its page on notebooks is a notebook, which the
-  `jupyter` plugin reads, and its pages on AsciiDoc, Org mode, and
-  reStructuredText are written in them, which the `asciidoc`, `orgmode`,
-  and `restructuredtext` plugins read.
+  Meta docs, like ADRs, don't go here. Its page on notebooks is a notebook,
+  which the `jupyter` plugin reads, and its pages on AsciiDoc, Org mode,
+  and reStructuredText are written in them, which the `asciidoc`,
+  `orgmode`, and `restructuredtext` plugins read.
 - `theme/` — little's built-in theme, compiled into the binary: `_templates/`
   (MiniJinja; `default.html` is required) + `_static/` (copied to the site's
   root) + an optional `little.yml`. It's plain CSS, in cascade layers, with
@@ -201,10 +199,10 @@ Content and theme live outside `src/`:
   writes. Its header has a menu of a site's versions, when it has two or
   more.
 - `little.yml` — the manual's config: its `url`, `repo`, and `nav`, which
-  orders its pages by hand, the `rustdoc` plugin, which documents `src/`
-  at `/api/`, the `jupyter` plugin, which reads its page on notebooks, and
-  the `asciidoc`, `orgmode`, and `restructuredtext` plugins, which read its
-  pages in their formats, each from where Cargo builds its `.wasm` file.
+  orders its pages by hand, the `jupyter` plugin, which reads its page on
+  notebooks, and the `asciidoc`, `orgmode`, and `restructuredtext`
+  plugins, which read its pages in their formats, each from where Cargo
+  builds its `.wasm` file.
   It sets `theme: ./theme`, so edits to the built-in theme live-reload.
 - `wit/plugin.wit` — `little:plugin@0.2.1`: an interface for each hook a
   plugin can export, and `warnings`, which it imports. Plugin authors copy
@@ -224,8 +222,8 @@ Content and theme live outside `src/`:
   workspace, built for `wasm32-wasip2`, that adds an API reference, with the
   `files` hook: a page
   for a Rust crate and each of its modules, from their doc comments, parsed
-  with syn, and with intra-doc links led to their items. The manual uses it
-  on `src/`. Its tests run natively, as pydoc's do.
+  with syn, and with intra-doc links led to their items. Its tests run
+  natively, as pydoc's do.
 - `plugins/jsdoc/` — the `jsdoc` plugin, a crate in its own
   workspace, built for `wasm32-wasip2`, that adds an API reference, with the
   `files` hook: a page
@@ -352,8 +350,7 @@ Content and theme live outside `src/`:
   bundles code its `license` leaves out, as
   [`RELEASING.md`](./RELEASING.md#third-party-notices) says.
 - Comment the *why*, not the *what*; don't over-comment.
-- Doc comments in `src/` are published, as little's API at `/api/` in the
-  manual: give each module a `//!`, and each `pub` item a `///`, in the
+- Give each module in `src/` a `//!`, and each `pub` item a `///`, in the
   [manual's plain style](#writing-the-manual), and link to items by path,
   like ``[`Config`]``.
 - Add unit tests for parsing/merging logic (frontmatter, config cascade).
@@ -693,8 +690,8 @@ Record notable choices as short ADRs in `decisions/`, list each in its
   reads, with `lib.rs` or `main.rs`, and `crate`, its name. It documents
   each `pub` item with docs where it's defined, leads intra-doc links to
   their items, and shares its model and Markdown with `pydoc`, in
-  `plugins/api_reference/`. The manual documents little with it, at
-  `/api/` — see
+  `plugins/api_reference/`. The manual documented little with it, at
+  `/api/`, until 0070 — see
   [`decisions/0044-a-plugin-for-rusts-doc-comments.md`](./decisions/0044-a-plugin-for-rusts-doc-comments.md).
 - **Limits on downloads:** a download of a theme or a plugin stops if the
   server takes over 30 seconds to connect, or 30 more to answer, or if it
@@ -811,7 +808,7 @@ Record notable choices as short ADRs in `decisions/`, list each in its
   [`decisions/0055-releasing-little.md`](./decisions/0055-releasing-little.md).
 - **Publishing the manual:** `.github/workflows/docs.yml` builds the
   manual with little from the same commit, not a release, with the
-  `rustdoc` plugin, and `--strict`, and publishes it on GitHub Pages, at
+  plugins it uses, and `--strict`, and publishes it on GitHub Pages, at
   `https://withlittle.github.io/little`, from each push to `main`, so it
   can document a feature before a release has it; a pull request's run
   only builds it. Only `main` can deploy to the `github-pages`
@@ -940,13 +937,10 @@ Record notable choices as short ADRs in `decisions/`, list each in its
   follow it as they change, review checks it, and these records and
   AGENTS.md aren't rewritten — see
   [`decisions/0066-the-manuals-plain-style.md`](./decisions/0066-the-manuals-plain-style.md).
-- **little's API in the manual's nav:** `/api/`, little's API, is a link of
-  its own, "API", at the end of the manual's `nav`, after Reference, not
-  under the page "Rust API reference", where 0044 put it, as it's for those
-  who work on little, and Plugins is for finding plugins, and writing one.
-  Its title doesn't name little, as no other in the nav does, and
-  `rustdoc`'s `title` matches it. That page still links to it, as its
-  example, and its URLs don't change — see
+- **little's API in the manual's nav:** superseded by 0070. `/api/`,
+  little's API, was a link of its own, "API", at the end of the manual's
+  `nav`, after Reference, not under the page "Rust API reference", where
+  0044 put it, until 0070 took it out of the manual — see
   [`decisions/0067-littles-api-at-the-end-of-the-manuals-nav.md`](./decisions/0067-littles-api-at-the-end-of-the-manuals-nav.md).
 - **The site's description as a meta description:** the built-in theme's
   header no longer shows `site.description` beside the site's name, where
@@ -976,3 +970,13 @@ Record notable choices as short ADRs in `decisions/`, list each in its
   `plugins/api_reference/`'s glue and helpers, but not its model, and
   `openapi` is a scope — see
   [`decisions/0069-a-plugin-for-openapi.md`](./decisions/0069-a-plugin-for-openapi.md).
+- **little's API out of the manual:** the manual no longer documents
+  little's code: its `little.yml` doesn't name the `rustdoc` plugin, or
+  list `/api/` in `nav`, and the Docs workflow doesn't build `rustdoc`, as
+  the manual is for people who use little, and little's API, for those who
+  work on it, was a distraction in its nav and search, as 0065 found these
+  records were. little's doc comments stay, for those who read its code,
+  or `cargo doc`; the page "Rust API reference" has no example of its own,
+  as the manual's other pages on API references have none; and the URLs
+  under `/api/` lead nowhere, as little has no redirects — see
+  [`decisions/0070-littles-api-out-of-the-manual.md`](./decisions/0070-littles-api-out-of-the-manual.md).

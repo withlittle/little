@@ -1,6 +1,8 @@
 # 0056 — Publishing the manual
 
-- Status: accepted
+- Status: accepted; amended by
+  [0070](./0070-littles-api-out-of-the-manual.md), which no longer builds
+  `rustdoc` for the manual, as it no longer documents little's code
 - Date: 2026-10-19
 
 ## Context

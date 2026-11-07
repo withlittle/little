@@ -10,7 +10,9 @@
   `url` is set, and titles the crate's page with `title`, and by
   [0067](./0067-littles-api-at-the-end-of-the-manuals-nav.md), which
   lists little's API at the end of the manual's `nav`, not under the page
-  "Rust API reference"
+  "Rust API reference", and by
+  [0070](./0070-littles-api-out-of-the-manual.md), which takes little's API
+  out of the manual
 - Date: 2026-10-14
 - Amends: [0032](./0032-docs-are-the-manual.md)
 

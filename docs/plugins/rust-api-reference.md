@@ -15,9 +15,6 @@ It's named for rustdoc, but doesn't run it. It reads the crate's code with
 needs neither Cargo nor the crate's dependencies, and a site builds the same
 each time, offline.
 
-This manual uses it on little's own code. [little's API](../api/README.md)
-is a page for each of little's modules, for those who work on little.
-
 ## Using it
 
 Name it in your site's `little.yml`, with the folder your crate's code is
@@ -112,8 +109,8 @@ source. So it's in the nav and search, and its links are checked.
   the build, naming both.
 - A site with
   [a nav of its own](../writing/navigation.md#writing-the-nav-yourself)
-  lists the pages it wants. This manual lists only little's crate's page,
-  which links to the rest.
+  lists the pages it wants. It can list only the crate's page, which links
+  to the rest.
 
 It finds each module as rustc does, from the `mod` that declares it:
 

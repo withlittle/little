@@ -75,10 +75,8 @@ The [`pydoc`](./plugins/pydoc/), [`rustdoc`](./plugins/rustdoc/),
 [`restructuredtext`](./plugins/restructuredtext/) plugins are crates of
 their own, with their own tests, which their READMEs say how to run, as
 are the [library](./plugins/api_reference/) the first five share, and the
-[one](./plugins/markup/) the last three share. The manual documents
-little's own code with `rustdoc`, and has a page in the format each of the
-last four reads, so build
-[`rustdoc`](./plugins/rustdoc/README.md#building-it),
+[one](./plugins/markup/) the last three share. The manual has a page in the
+format each of the last four reads, so build
 [`jupyter`](./plugins/jupyter/README.md#building-it),
 [`asciidoc`](./plugins/asciidoc/README.md#building-it),
 [`orgmode`](./plugins/orgmode/README.md#building-it), and

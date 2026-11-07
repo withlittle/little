@@ -1,6 +1,7 @@
 # 0067 — little's API at the end of the manual's nav
 
-- Status: accepted
+- Status: superseded by [0070](./0070-littles-api-out-of-the-manual.md),
+  which takes little's API out of the manual
 - Date: 2026-11-05
 - Amends: [0044](./0044-a-plugin-for-rusts-doc-comments.md),
   [0049](./0049-an-api-references-url-and-title.md)
