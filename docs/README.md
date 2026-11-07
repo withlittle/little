@@ -43,12 +43,10 @@ To install little without Rust, see
   your site sets only what it changes.
 - **Plugins in a sandbox.** A plugin is one WebAssembly file, written in
   Rust, Python, or another language, that hooks into each step of a build.
-  Plugins add API references for [Python](plugins/python-api-reference.md),
-  [Rust](plugins/rust-api-reference.md),
-  [JavaScript](plugins/javascript-api-reference.md), and
-  [Go](plugins/go-api-reference.md), and for
-  [HTTP APIs](plugins/http-api-reference.md), from OpenAPI. They also read
-  [Jupyter notebooks](plugins/jupyter-notebooks.ipynb),
+  Plugins add API references for [Python](plugins/pydoc.md),
+  [Rust](plugins/rustdoc.md), [JavaScript](plugins/jsdoc.md), and
+  [Go](plugins/godoc.md), and for [HTTP APIs](plugins/openapi.md), from
+  OpenAPI. They also read [Jupyter notebooks](plugins/jupyter.ipynb),
   [AsciiDoc](plugins/asciidoc.adoc), [Org mode](plugins/org-mode.org), and
   [reStructuredText](plugins/restructuredtext.rst).
 
@@ -59,12 +57,11 @@ To install little without Rust, see
 | [Getting started](getting-started/install.md) | install little, start a site, configure it, and publish it |
 | [Writing](writing/pages-and-files.md) | write pages, with links, code, math, diagrams, and navigation, and keep a version for each release |
 | [Themes](themes/choosing-a-theme.md) | choose a theme for a site, or make one |
-| [Plugins](plugins/using-plugins.md) | use plugins, build pages from Jupyter notebooks, AsciiDoc, Org mode, or reStructuredText, add an API reference, or write a plugin |
+| [Plugins](plugins/using-plugins.md) | use or write plugins, build pages from Jupyter notebooks, AsciiDoc, Org mode, or reStructuredText, or add an API reference |
 | [Reference](reference/commands.md) | look up a command, a setting, what a theme's templates get, or a plugin's hooks |
 
 > [!TIP]
 > This manual is a little site, in the `docs/` folder of little's
 > [repository](https://github.com/withlittle/little). Each page uses what it
 > describes: the page on [math](writing/math.md) has math in it, and the
-> page on [Jupyter notebooks](plugins/jupyter-notebooks.ipynb) is a
-> notebook.
+> page on [Jupyter notebooks](plugins/jupyter.ipynb) is a notebook.

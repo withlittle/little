@@ -1,9 +1,9 @@
 ---
-title: JavaScript API reference
+title: JavaScript docs
 description: Add a page for a JavaScript or TypeScript package and each of its modules, from their doc comments, with the jsdoc plugin.
 ---
 
-# JavaScript API reference
+# JavaScript docs
 
 [`jsdoc`](https://github.com/withlittle/little/tree/main/plugins/jsdoc), a
 plugin in little's repository, adds an API reference to a site. It adds a
@@ -119,9 +119,8 @@ naming both.
 
 ## What a page shows
 
-A page looks like those of the [Python](python-api-reference.md) and
-[Rust](rust-api-reference.md) API references, in the site's theme. It
-shows:
+A page looks like those of the [Python](pydoc.md) and [Rust](rustdoc.md)
+API references, in the site's theme. It shows:
 
 - Its module's name, labelled `package` or `module`.
 - Its docs, from a doc comment with `@packageDocumentation`, `@module`,

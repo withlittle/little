@@ -1,9 +1,9 @@
 ---
-title: Python API reference
+title: Python docs
 description: Add a page for each module of a Python package, from its docstrings, with the pydoc plugin.
 ---
 
-# Python API reference
+# Python docs
 
 [`pydoc`](https://github.com/withlittle/little/tree/main/plugins/pydoc), a
 plugin in little's repository, adds an API reference to a site. It adds a
@@ -171,9 +171,9 @@ warning: plugin `pydoc`: can't parse `mypackage/broken.py`: Expected a parameter
 
 ## Limits, for now
 
-- It reads only Python. [`rustdoc`](rust-api-reference.md) reads Rust,
-  [`jsdoc`](javascript-api-reference.md) reads JavaScript and TypeScript,
-  and [`godoc`](go-api-reference.md) reads Go.
+- It reads only Python. [`rustdoc`](rustdoc.md) reads Rust,
+  [`jsdoc`](jsdoc.md) reads JavaScript and TypeScript,
+  and [`godoc`](godoc.md) reads Go.
 - A type isn't linked to its class's heading, nor to another module's page.
 - An object a package imports from a module whose name starts with `_`
   isn't documented, as the plugin documents an object where it's defined.

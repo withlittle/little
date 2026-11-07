@@ -64,7 +64,7 @@ shows around a page:
 ## In a notebook
 
 A notebook's frontmatter goes in a raw or Markdown cell at its top, as in
-Quarto and MyST. See [Jupyter notebooks](../plugins/jupyter-notebooks.ipynb).
+Quarto and MyST. See [Jupyter notebooks](../plugins/jupyter.ipynb).
 
 ## In another format
 

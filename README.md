@@ -49,10 +49,9 @@ this repository, and open <http://127.0.0.1:8080/little/>.
 - [Writing](./docs/writing/pages-and-files.md): pages, Markdown, links,
   code, math, diagrams, frontmatter, navigation, search, and versions.
 - [Themes](./docs/themes/choosing-a-theme.md): choose a theme, or make one.
-- [Plugins](./docs/plugins/using-plugins.md): use plugins, build pages
-  from Jupyter notebooks, AsciiDoc, Org mode, or reStructuredText, add an
-  API reference for Python, Rust, JavaScript, Go, or OpenAPI, or write a
-  plugin.
+- [Plugins](./docs/plugins/using-plugins.md): use or write plugins, build
+  pages from Jupyter notebooks, AsciiDoc, Org mode, or reStructuredText, or
+  add an API reference from OpenAPI, Python, Rust, Go, or JavaScript.
 - [Reference](./docs/reference/commands.md): commands, settings, and the
   data a theme's templates get.
 
@@ -65,7 +64,7 @@ cargo fmt                      # format
 cargo run -- build --strict    # build the manual, and check its links
 ```
 
-The tests build a [plugin](./docs/plugins/writing-a-plugin.md),
+The tests build a [plugin](./docs/plugins/writing-plugins.md),
 [`tests/plugin/`](./tests/plugin/), with Rust's `wasm32-wasip2` target, which
 [`rust-toolchain.toml`](./rust-toolchain.toml) has rustup install.
 The [`pydoc`](./plugins/pydoc/), [`rustdoc`](./plugins/rustdoc/),

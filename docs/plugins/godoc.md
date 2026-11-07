@@ -1,9 +1,9 @@
 ---
-title: Go API reference
+title: Go docs
 description: Add a page for each package of a Go module, from their doc comments, with the godoc plugin.
 ---
 
-# Go API reference
+# Go docs
 
 [`godoc`](https://github.com/withlittle/little/tree/main/plugins/godoc), a
 plugin in little's repository, adds an API reference to a site. It adds a

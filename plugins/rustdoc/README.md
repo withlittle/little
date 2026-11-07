@@ -27,9 +27,9 @@ about 1.2 MB, which a site can name where it is, or copy.
 
 ## Using it
 
-[Rust API reference](../../docs/plugins/rust-api-reference.md), in little's
-manual, says how to name it in a site's `little.yml`, what pages it adds,
-what they show, and its limits, for now.
+[Rust docs](../../docs/plugins/rustdoc.md), in little's manual, says how
+to name it in a site's `little.yml`, what pages it adds, what they show,
+and its limits, for now.
 
 ## Developing it
 

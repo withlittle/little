@@ -7,14 +7,12 @@ description: Add to what little does as it builds a site, with plugins, each one
 
 A plugin adds to what little does as it builds a site. It can add, say:
 
-- an API reference, from [Python's docstrings](python-api-reference.md),
-  [Rust's doc comments](rust-api-reference.md),
-  [JavaScript's](javascript-api-reference.md), or [Go's](go-api-reference.md)
-- the reference of an [HTTP API](http-api-reference.md), from its OpenAPI
-  document
-- pages from [Jupyter notebooks](jupyter-notebooks.ipynb),
-  [AsciiDoc](asciidoc.adoc), [Org mode](org-mode.org), or
-  [reStructuredText](restructuredtext.rst)
+- an API reference, from [Python's docstrings](pydoc.md),
+  [Rust's doc comments](rustdoc.md), [JavaScript's](jsdoc.md), or
+  [Go's](godoc.md)
+- the reference of an [HTTP API](openapi.md), from its OpenAPI document
+- pages from [Jupyter notebooks](jupyter.ipynb), [AsciiDoc](asciidoc.adoc),
+  [Org mode](org-mode.org), or [reStructuredText](restructuredtext.rst)
 - links to other sites that open in a new tab
 - a table from a ```` ```csv ```` block
 
@@ -83,9 +81,8 @@ can pass the plugin options after its language, like
   `raw_html: false`, the build stops.
 - Two plugins that render the same language stop the build.
 - In a page in [another format](#pages-in-other-formats), like a
-  [notebook](jupyter-notebooks.ipynb), the blocks in its Markdown go to
-  plugins too, but they're warned of without a line. Its code doesn't go
-  to plugins.
+  [notebook](jupyter.ipynb), the blocks in its Markdown go to plugins too,
+  but they're warned of without a line. Its code doesn't go to plugins.
 - A block a plugin can't render is left as it was, as code. It's warned
   of, with the file and line it's on:
 
@@ -114,7 +111,7 @@ its code blocks go to plugins.
 
 A plugin can read files in a format of its own as pages, by their
 extension, with its [`formats`](../reference/plugin-hooks.md#formats)
-hook. [`jupyter`](jupyter-notebooks.ipynb) reads Jupyter notebooks,
+hook. [`jupyter`](jupyter.ipynb) reads Jupyter notebooks,
 `.ipynb` files, this way. [`asciidoc`](asciidoc.adoc),
 [`orgmode`](org-mode.org), and [`restructuredtext`](restructuredtext.rst)
 read `.adoc`, `.org`, and `.rst` files.
@@ -184,4 +181,4 @@ site builds the same each time.
 
 [Plugin hooks](../reference/plugin-hooks.md#limits-for-now) lists the
 hooks' own limits. To write a plugin, see
-[Writing a plugin](writing-a-plugin.md).
+[Writing plugins](writing-plugins.md).

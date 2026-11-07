@@ -11,7 +11,7 @@ repo: https://github.com/withlittle/little
 theme: ./theme
 
 # The plugins that read the pages in other formats, each written in the
-# format it describes: jupyter, for docs/plugins/jupyter-notebooks.ipynb,
+# format it describes: jupyter, for docs/plugins/jupyter.ipynb,
 # asciidoc, for asciidoc.adoc, orgmode, for org-mode.org, and
 # restructuredtext, for restructuredtext.rst. Build each before the
 # manual, with:
@@ -55,16 +55,16 @@ nav:
   - title: Plugins
     children:
       - { title: Using plugins, url: /plugins/using-plugins }
-      - { title: Jupyter notebooks, url: /plugins/jupyter-notebooks }
+      - { title: Writing plugins, url: /plugins/writing-plugins }
+      - { title: Jupyter notebooks, url: /plugins/jupyter }
       - { title: AsciiDoc, url: /plugins/asciidoc }
       - { title: Org mode, url: /plugins/org-mode }
       - { title: reStructuredText, url: /plugins/restructuredtext }
-      - { title: Python API reference, url: /plugins/python-api-reference }
-      - { title: Rust API reference, url: /plugins/rust-api-reference }
-      - { title: JavaScript API reference, url: /plugins/javascript-api-reference }
-      - { title: Go API reference, url: /plugins/go-api-reference }
-      - { title: HTTP API reference, url: /plugins/http-api-reference }
-      - { title: Writing a plugin, url: /plugins/writing-a-plugin }
+      - { title: OpenAPI, url: /plugins/openapi }
+      - { title: Python docs, url: /plugins/pydoc }
+      - { title: Rust docs, url: /plugins/rustdoc }
+      - { title: Go docs, url: /plugins/godoc }
+      - { title: JavaScript docs, url: /plugins/jsdoc }
   - title: Reference
     children:
       - { title: Commands, url: /reference/commands }

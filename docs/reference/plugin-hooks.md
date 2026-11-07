@@ -10,7 +10,7 @@ little's
 [`wit/plugin.wit`](https://github.com/withlittle/little/blob/main/wit/plugin.wit),
 `little:plugin@0.2.1`. little calls each as the build reaches its step,
 with what the build has made so far. What the hook gives back is what the
-build goes on with. [Writing a plugin](../plugins/writing-a-plugin.md) shows
+build goes on with. [Writing plugins](../plugins/writing-plugins.md) shows
 how to export one.
 
 ## The build, step by step
@@ -145,8 +145,7 @@ files: func(paths: list<string>) -> result<changes, string>;
 - Each file it adds is built as if it were in the source folder at its
   path. So a Markdown file, or a file a [`formats`](#formats) hook reads,
   is a page, and any other file is copied. That's how an
-  [API reference](../plugins/python-api-reference.md) adds a page for each
-  module.
+  [API reference](../plugins/pydoc.md) adds a page for each module.
 - A path is relative, with `/` between its parts. None of them is empty,
   `.`, or `..`. It has no `\` or `:`, which mean something else on Windows.
 - A file can be added where there's one only if the hook removes that one.
@@ -277,7 +276,7 @@ render: func(block: block) -> result<output, string>;
   ```
 
 - In a page a [`formats`](#formats) hook reads, like a
-  [notebook](../plugins/jupyter-notebooks.ipynb), the blocks in its
+  [notebook](../plugins/jupyter.ipynb), the blocks in its
   `markdown` parts go to plugins too. They're warned of without a line. Its
   `code` parts don't go to plugins.
 
@@ -291,7 +290,7 @@ content: func(page: string, html: string) -> result<string, string>;
   put in the theme. It's given the page's file, as for `source`, and the
   HTML, which the theme gets as `page.content`.
 - Gives back the HTML the build goes on with. The plugin in
-  [Writing a plugin](../plugins/writing-a-plugin.md), say, makes each of the
+  [Writing plugins](../plugins/writing-plugins.md), say, makes each of the
   page's links to other sites open in a new tab.
 - An error is warned of, and the HTML is kept as it was.
 
