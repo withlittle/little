@@ -10,23 +10,15 @@ repo: https://github.com/withlittle/little
 # means editing it live-reloads. Without this, little uses its built-in copy.
 theme: ./theme
 
-# little's own code, documented from its doc comments, at /api/, as the
-# example of the Rust API reference. Its pages are reached from /api/, which
-# alone is in the nav, at its end. And the plugins that read the pages in
-# other formats, each written in the format it describes: jupyter, for
-# docs/plugins/jupyter-notebooks.ipynb, asciidoc, for asciidoc.adoc, orgmode,
-# for org-mode.org, and restructuredtext, for restructuredtext.rst. Build each
-# before the manual, with:
-#   cargo build --release --target wasm32-wasip2 --manifest-path plugins/rustdoc/Cargo.toml
-# and the same for plugins/jupyter, plugins/asciidoc, plugins/orgmode, and
+# The plugins that read the pages in other formats, each written in the
+# format it describes: jupyter, for docs/plugins/jupyter-notebooks.ipynb,
+# asciidoc, for asciidoc.adoc, orgmode, for org-mode.org, and
+# restructuredtext, for restructuredtext.rst. Build each before the
+# manual, with:
+#   cargo build --release --target wasm32-wasip2 --manifest-path plugins/jupyter/Cargo.toml
+# and the same for plugins/asciidoc, plugins/orgmode, and
 # plugins/restructuredtext.
 plugins:
-  rustdoc:
-    wasm: ./plugins/rustdoc/target/wasm32-wasip2/release/little_rustdoc.wasm
-    read: ./src
-    crate: little
-    title: API
-    url: /api
   jupyter: ./plugins/jupyter/target/wasm32-wasip2/release/little_jupyter.wasm
   asciidoc: ./plugins/asciidoc/target/wasm32-wasip2/release/little_asciidoc.wasm
   orgmode: ./plugins/orgmode/target/wasm32-wasip2/release/little_orgmode.wasm
@@ -79,6 +71,3 @@ nav:
       - { title: Settings, url: /reference/settings }
       - { title: Template data, url: /reference/template-data }
       - { title: Plugin hooks, url: /reference/plugin-hooks }
-  # little's API is for those who work on little, so it's apart from the
-  # sections for those who use it.
-  - { title: API, url: /api/ }

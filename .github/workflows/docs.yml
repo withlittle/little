@@ -36,9 +36,8 @@ jobs:
       - name: Install stable Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
-          # For the rustdoc plugin, which documents src/ at /api/, and the
-          # jupyter, asciidoc, orgmode, and restructuredtext plugins, which
-          # read the pages written in their formats.
+          # For the jupyter, asciidoc, orgmode, and restructuredtext plugins,
+          # which read the pages written in their formats.
           targets: wasm32-wasip2
 
       - name: Cache cargo build artifacts
@@ -46,7 +45,6 @@ jobs:
         with:
           workspaces: |
             .
-            plugins/rustdoc
             plugins/jupyter
             plugins/asciidoc
             plugins/orgmode
@@ -55,7 +53,7 @@ jobs:
       # Each into its own target/, where little.yml looks for it.
       - name: Build the plugins
         run: |
-          for p in rustdoc jupyter asciidoc orgmode restructuredtext; do
+          for p in jupyter asciidoc orgmode restructuredtext; do
             cargo build --release --locked --target wasm32-wasip2 --manifest-path plugins/$p/Cargo.toml
           done
 

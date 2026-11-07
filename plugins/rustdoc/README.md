@@ -7,8 +7,7 @@ from their doc comments, as Rust's own
 rustdoc, but doesn't run it: it reads the crate's code with
 [syn](https://github.com/dtolnay/syn)'s parser, without compiling it, so it
 needs neither Cargo nor the crate's dependencies, and a site builds the same
-each time, offline. little's manual documents little's own code with it. Why
-it works as it does is in
+each time, offline. Why it works as it does is in
 [ADR 0044](../../decisions/0044-a-plugin-for-rusts-doc-comments.md), and
 why it's named so, in
 [ADR 0047](../../decisions/0047-naming-api-reference-plugins.md).
@@ -24,8 +23,7 @@ cargo build --release --target wasm32-wasip2 --manifest-path plugins/rustdoc/Car
 
 That builds
 `plugins/rustdoc/target/wasm32-wasip2/release/little_rustdoc.wasm`,
-about 1.2 MB, which a site can name where it is, or copy. little's manual
-names it where it is, so build it before `cargo run -- build` or `serve`.
+about 1.2 MB, which a site can name where it is, or copy.
 
 ## Using it
 
