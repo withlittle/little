@@ -89,12 +89,12 @@ jobs:
           repo="https://github.com/$GITHUB_REPOSITORY"
           wit=$(sed -n 's/^package little:plugin@\(.*\);$/\1/p' wit/plugin.wit)
           case $PLUGIN in
-            pydoc) page=python-api-reference.md ;;
-            rustdoc) page=rust-api-reference.md ;;
-            jsdoc) page=javascript-api-reference.md ;;
-            godoc) page=go-api-reference.md ;;
-            openapi) page=http-api-reference.md ;;
-            jupyter) page=jupyter-notebooks.ipynb ;;
+            pydoc) page=pydoc.md ;;
+            rustdoc) page=rustdoc.md ;;
+            jsdoc) page=jsdoc.md ;;
+            godoc) page=godoc.md ;;
+            openapi) page=openapi.md ;;
+            jupyter) page=jupyter.ipynb ;;
             asciidoc) page=asciidoc.adoc ;;
             orgmode) page=org-mode.org ;;
             restructuredtext) page=restructuredtext.rst ;;
