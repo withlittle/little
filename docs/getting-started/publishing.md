@@ -105,6 +105,8 @@ To publish your site each time you push to `main`:
 - The workflow downloads the version of little in `curl`'s URL, so every
   build uses the same little. To update it, change the version to a newer
   [release](https://github.com/withlittle/little/releases)'s.
+- Downloading little takes seconds. `cargo install` would build it from
+  source on every run, which takes minutes.
 - For a site in its own folder, like `website/`, run
   `little -C website build --strict`, and upload `website/dist`.
 - A site with [versions](../writing/versions.md#publishing-versions) needs
