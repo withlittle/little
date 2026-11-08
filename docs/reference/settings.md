@@ -68,11 +68,6 @@ or works them out. A theme or a site can change any of them:
   outside the repository gets no links to its files.
 - In `plugins`, only the site can set a plugin's `read`, the folders it can
   read.
-- Each of the `versions` has a `title`, and the `url` it's published at. A
-  version built from git has a `ref`: the tag, branch, or commit it's built
-  from. If its pages have moved since, it can set the `source` they were in
-  there. It can set its [own `nav` and plugins'
-  settings](../writing/versions.md#a-versions-own-nav-and-plugins), too.
 - little works out `nav` and `year` as it builds, and, on a site with
   [versions](../writing/versions.md), `version`, the title of the one it's
   building, so `little config` doesn't print them, unless a `little.yml`
