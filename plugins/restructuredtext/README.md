@@ -33,8 +33,8 @@ about 570 KB, which a site can name where it is, or copy.
 ## Using it
 
 [reStructuredText](../../docs/plugins/restructuredtext.rst), in little's
-manual, says how a site names it in its `plugins`, what a
-reStructuredText file's page shows, and its limits.
+manual, says how a site names it in its `plugins`, and what a
+reStructuredText file's page shows.
 
 ## Developing it
 

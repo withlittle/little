@@ -30,8 +30,7 @@ about 0.6 MB, which a site can name where it is, or copy.
 ## Using it
 
 [Org mode](../../docs/plugins/org-mode.org), in little's manual, says how a
-site names it in its `plugins`, what an Org file's page shows, and its
-limits.
+site names it in its `plugins`, and what an Org file's page shows.
 
 ## Developing it
 

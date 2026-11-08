@@ -31,8 +31,7 @@ about 2.1 MB, which a site can name where it is, or copy.
 ## Using it
 
 [AsciiDoc](../../docs/plugins/asciidoc.adoc), in little's manual, says how
-a site names it in its `plugins`, what an AsciiDoc file's page shows, and
-its limits.
+a site names it in its `plugins`, and what an AsciiDoc file's page shows.
 
 ## Developing it
 
