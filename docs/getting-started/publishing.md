@@ -109,6 +109,6 @@ To publish your site each time you push to `main`:
   source on every run, which takes minutes.
 - For a site in its own folder, like `website/`, run
   `little -C website build --strict`, and upload `website/dist`.
-- A site with [versions](../writing/versions.md#publishing-versions) needs
+- A site with [versions](../writing/versions.md) needs
   `fetch-depth: 0` in `actions/checkout`'s `with:`, to fetch each version's
   tag or branch.

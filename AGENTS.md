@@ -351,7 +351,7 @@ Content and theme live outside `src/`:
   [`RELEASING.md`](./RELEASING.md#third-party-notices) says.
 - Comment the *why*, not the *what*; don't over-comment.
 - Give each module in `src/` a `//!`, and each `pub` item a `///`, in the
-  [manual's plain style](#writing-the-manual), and link to items by path,
+  [manual's style](#writing-the-manual), and link to items by path,
   like ``[`Config`]``.
 - Add unit tests for parsing/merging logic (frontmatter, config cascade).
 - A change people using little can see updates its page in the manual
@@ -394,20 +394,32 @@ Content and theme live outside `src/`:
     rather than merging `main` into it.
 
 ## Writing the manual
-The manual is for people who use little, so it's written in a plain style,
-as [0066](./decisions/0066-the-manuals-plain-style.md) sets. The README
+The manual is for people who use little. Write so they find what they
+need, do it, and stop reading, as
+[0072](./decisions/0072-the-manuals-concise-style.md) sets. The README
 follows it where it's for them, and so do doc comments in `src/`.
-- Lead each page with what most readers type or write: a command, a
-  setting, or some Markdown.
-- Write short sentences, one idea each. Split a chain of clauses with
-  "So", "Then", or "But".
-- Put the common case first, and edge cases last, in short bullets. Put
-  rules a reader looks up in Reference, and link to them.
-- List what's a list, like what stops a build, after a line like "These
-  stop the build:".
-- Keep table cells short. Put the detail in a note below the table.
-- When rewriting, keep every fact, heading, and anchor a link leads to.
-  Code, and what little prints, stay as they are.
+- **One home for each fact.** State it once, on the page a reader would
+  look for it, and link to it from anywhere else. Guides teach a task;
+  Reference holds the rules a reader looks up. A pointer elsewhere is a
+  line and a link, not a second copy.
+- **Lead with the task.** Open each page with what most readers type or
+  write: a command, a setting, or some Markdown. Put the common case
+  first, and end a guide when its task is done.
+- **Document little, not the tools around it.** Assume readers know git,
+  their CI service, and how they release. Don't assume they use GitHub:
+  what's only for one host, like a GitHub Pages workflow, goes in a
+  section of its own. Saying little reads Markdown as GitHub does is fine.
+- **Say what little does.** No "Limits" sections, or lists of what it
+  doesn't do yet. Leave out how it works inside, browser support, and
+  rules whose error message says how to fix them.
+- **Write natural sentences.** Address the reader as "you". Join ideas
+  that belong together, and vary the length. Don't open sentences with
+  "So", "Then", or "But" by habit, or compare everything with "as X does".
+- **Lists and tables are for lists and lookups**, not for paragraphs of
+  rules. Keep table cells short.
+- **A rewrite may cut.** Keep each heading a link leads to, or update the
+  links, and keep pages' file names, as little has no redirects. Code,
+  and what little prints, stay as they are.
 
 ## Decisions
 Record notable choices as short ADRs in `decisions/`, list each in its
@@ -928,15 +940,11 @@ Record notable choices as short ADRs in `decisions/`, list each in its
   people who use little: it doesn't link to the records, or list them, and
   leaves nothing out of search — see
   [`decisions/0065-decisions-at-the-root.md`](./decisions/0065-decisions-at-the-root.md).
-- **The manual's plain style:** the manual, and the README where it's for
-  people who use little, are written plainly. Each page leads with what
-  most readers type or write, like `cargo install --locked little-docs`
-  atop the Install page, in short sentences, one idea each. The common
-  case comes first, and edge cases last, in short bullets, or in
-  Reference. Lists are lists, and long table cells get notes. A rewrite
-  keeps every fact, heading, and linked anchor. Doc comments in `src/`
-  follow it as they change, review checks it, and these records and
-  AGENTS.md aren't rewritten — see
+- **The manual's plain style:** superseded by 0072. The manual, and the
+  README where it was for people who use little, were written in short
+  sentences, one idea each, joined with "So", "Then", or "But", with the
+  common case first, and a rewrite kept every fact, until 0072 let a
+  rewrite cut, and state each fact once — see
   [`decisions/0066-the-manuals-plain-style.md`](./decisions/0066-the-manuals-plain-style.md).
 - **little's API in the manual's nav:** superseded by 0070. `/api/`,
   little's API, was a link of its own, "API", at the end of the manual's
@@ -992,3 +1000,17 @@ Record notable choices as short ADRs in `decisions/`, list each in its
   little has no redirects, but a release's notes link to its page at its
   tag — see
   [`decisions/0071-ordering-and-naming-the-manuals-plugin-pages.md`](./decisions/0071-ordering-and-naming-the-manuals-plugin-pages.md).
+- **The manual's concise style:** the manual, the README where it's for
+  people who use little, and doc comments in `src/` are written so readers
+  find what they need, do it, and stop reading. Each fact has one home,
+  the page a reader would look for it on, and others link to it: guides
+  teach a task, and Reference holds what a reader looks up. A page leads
+  with what most readers type or write, and a guide ends when its task is
+  done. The manual documents little, not git, CI, or how a project
+  releases, and doesn't assume GitHub; it says what little does, with no
+  "Limits" sections, internals, browser support, or rules that little's
+  errors explain. Sentences are natural, to "you", and a rewrite may cut,
+  keeping linked headings and pages' file names. It's rolled out a section
+  per pull request, from Versions, which went from 2,064 words to 504 —
+  see
+  [`decisions/0072-the-manuals-concise-style.md`](./decisions/0072-the-manuals-concise-style.md).
