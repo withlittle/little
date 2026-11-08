@@ -5,18 +5,8 @@ reStructuredText
 .. meta::
    :description: Build each reStructuredText file into a page, without docutils, Sphinx, or Python, with the restructuredtext plugin.
 
-`restructuredtext <https://github.com/withlittle/little/tree/main/plugins/restructuredtext>`__,
-a plugin in little's repository, makes each `reStructuredText <https://docutils.sourceforge.io/rst.html>`__ file (``.rst``) in ``docs/`` a page.
-It reads reStructuredText itself, as docutils does.
-So it needs no docutils, Sphinx, or Python, and you don't convert it first.
-
-This page is one, ``docs/plugins/restructuredtext.rst``.
-A link to it from Markdown, like ``[reStructuredText](restructuredtext.rst)``, leads to its page.
-
-Using it
-========
-
-Name it in your site's ``little.yml``, and each reStructuredText file in ``docs/`` is a page:
+``restructuredtext``, one of `little's own plugins <using-plugins.md#littles-own-plugins>`__, makes each `reStructuredText <https://docutils.sourceforge.io/rst.html>`__ file in ``docs/``, ``.rst``, a `page <using-plugins.md#pages-in-other-formats>`__, without docutils, Sphinx, or Python.
+Name it in your site's `plugins <using-plugins.md#naming-a-plugin>`__:
 
 .. code:: yaml
 
@@ -25,29 +15,12 @@ Name it in your site's ``little.yml``, and each reStructuredText file in ``docs/
      restructuredtext: https://github.com/withlittle/little/releases/download/restructuredtext-v0.1.0/little_restructuredtext.wasm
 
 It has no settings.
-Without it, a reStructuredText file is copied into the site as it is, as any other file is.
-A folder's ``README.rst`` is its page, as a ``README.md`` is.
-
-Getting it
-==========
-
-Each version of ``restructuredtext`` is released in little's repository, as a ``.wasm`` file, about 570 KB.
-A site names it by its URL, with the version in it, like ``restructuredtext-v0.1.0`` above.
-
-little downloads it in the site's first build, and uses that copy from then on, as for `any plugin <using-plugins.md#naming-a-plugin>`__.
-So to update it, change the URL to a later version's.
-
-* Its releases, among `little's <https://github.com/withlittle/little/releases>`__, list what changed in each version, and the version of little's `hooks <../reference/plugin-hooks.md>`__ it's built for.
-* Each release carries a ``THIRD-PARTY-NOTICES.md``, with the licences of the crates it's built from.
-* To build it yourself, see its `README <https://github.com/withlittle/little/tree/main/plugins/restructuredtext#building-it>`__.
+This page is one reStructuredText file, ``docs/plugins/restructuredtext.rst``.
 
 The title
 =========
 
-A title alone at the top of the file, in a style of its own, is the page's title, and its ``#`` heading, as docutils makes it the document's title.
-This page's is overlined and underlined with ``=``.
-A lone title just below it, at the next level, is its subtitle, in italics.
-
+A title alone at the top of the file, in a style of its own, is the page's title and its ``#`` heading, and a lone title just below it, at the next level, is its subtitle, in italics.
 A ``meta`` directive's ``:description:`` is the page's description:
 
 .. code:: rst
@@ -60,34 +33,17 @@ A ``meta`` directive's ``:description:`` is the page's description:
       :description: Build each reStructuredText file into a page.
 
 A ``title`` directive, ``.. title:: Text``, is the page's title, for the nav and the browser's tab, without changing its heading.
+A page can also start with `frontmatter <../writing/frontmatter.md#in-another-format>`__, above its title, which goes over its title and description.
 
-A field list just below the title, like ``:Author:`` or ``:Version:``, is a description list, as docutils' bibliographic fields are.
-But each of ``:Dedication:`` and ``:Abstract:`` is its name, in bold, above its text.
-
-A page can start with `frontmatter <../writing/frontmatter.md#in-another-format>`__ too, between ``---`` lines, above its title, as a Markdown page can.
-It goes over its title and description, for any of little's keys, like ``search: false``:
-
-.. code:: rst
-
-   ---
-   search: false
-   ---
-   =============
-   Release notes
-   =============
-
-   .. meta::
-      :description: What changed in each version.
+A field list just below the title, like ``:Author:`` or ``:Version:``, is a description list, except that ``:Dedication:`` and ``:Abstract:`` are each their name, in bold, above their text.
 
 Text
 ====
 
 reStructuredText's markup is Markdown's where Markdown has it: *emphasis*, **strong emphasis**, and ``inline literals``, which are code.
-Where it hasn't, it's HTML: the ``sub`` role, for H\ :sub:`2`\ O, is ``<sub>``, and the ``sup`` role, for E = mc\ :sup:`2`, ``<sup>``.
-With the `extensions <../writing/markdown.md#choosing-markdowns-extensions>`__ for them on, ``subscript`` and ``superscript``, they're Markdown.
-With neither those nor `HTML <../writing/markdown.md#html>`__, they're plain text, and warned of.
+Where it hasn't, it's HTML: the ``sub`` role, for H\ :sub:`2`\ O, is ``<sub>``, and the ``sup`` role, for E = mc\ :sup:`2`, ``<sup>``, or Markdown, where your site turns on the `extensions <../writing/markdown.md#choosing-markdowns-extensions>`__ ``subscript`` and ``superscript``.
 
-Text in single backquotes, the default role, names a title, like `A Tale of Two Cities`, in italics.
+Text in single backquotes, the default role, names a title, like `A Tale of Two Cities`, in italics, and the ``default-role`` directive changes the default.
 These roles are read too:
 
 * ``emphasis``, ``strong``, ``literal``, and ``code`` are the markup they name.
@@ -95,14 +51,10 @@ These roles are read too:
 * ``pep`` and ``rfc`` link to the PEP or RFC they number.
 * ``abbreviation`` and ``acronym`` are their text.
 
-A role you make with the ``role`` directive is the role it's based on, or its text.
-One based on ``raw``, for ``html``, is HTML, as it is.
-The ``default-role`` directive changes the default.
-A role the plugin doesn't read, like Sphinx's ``ref``, keeps its text, and is warned of.
+A role you make with the ``role`` directive is the role it's based on, or its text, and one based on ``raw``, for ``html``, is HTML, as it is.
+A role the plugin doesn't read, like Sphinx's ``ref`` or ``doc``, keeps its text, and is warned of.
 
-Text shows as you write it, even where Markdown would read it as markup, like the * in 2 * 3, or :smile:.
-A backslash escapes markup, like ``\*``.
-A backslash before a space joins what's either side of it, as in ``H\ :sub:`2`\ O``.
+A backslash escapes markup, like ``\*``, and a backslash before a space joins what's either side of it, as in ``H\ :sub:`2`\ O``.
 
 A substitution, like ``|rarr|``, is what its definition makes it.
 Here, ``.. |rarr| unicode:: U+2192`` makes it |rarr|.
@@ -118,23 +70,16 @@ A definition can make it:
 Sections and links
 ==================
 
-A section's title is a heading.
-It's underlined, or overlined and underlined, with a punctuation character, like ``=``, ``-``, or ``~``.
-Its level is the order its style is first used in.
-On this page, under the title, a title underlined with ``=`` is ``##``, the next style ``###``, and so on, to ``######``.
-A link to it leads to the ``#fragment`` little gives a heading in Markdown.
-Where the two differ, docutils' id for it leads to it too, like ``#uber-strasze`` for Über Straße.
+A section's title, underlined, or overlined and underlined, with a punctuation character, like ``=``, ``-``, or ``~``, is a heading.
+Its level is the order its style is first used in: on this page, under the title, a title underlined with ``=`` is ``##``, the next style ``###``, and so on, to ``######``.
+A link to it leads to the ``#fragment`` little gives a heading in Markdown, and docutils' id for it, where that differs, like ``#uber-strasze`` for Über Straße, leads to it too.
 
-A URL, like https://docutils.sourceforge.io, is a link, and so is an email address.
-So is ```text <https://example.com>`_``, and ```text`_`` links to it again.
-With two underscores, ```text <https://example.com>`__`` is a link too, but nothing can link to it again.
+A URL, like https://docutils.sourceforge.io, or an email address, is a link, and so is ```text <https://example.com>`_``, which ```text`_`` links to again.
+One with two underscores, ```text <https://example.com>`__``, is a link that nothing links to again.
 
-A target, ``.. _name: https://example.com``, gives ``name_`` its URL.
-One without a URL, above a block, leads to the block.
-A section's title is a target too, so ```Using it`_`` leads to `Using it`_.
-
-A link to a page's file, like ```Markdown <../writing/markdown.md>`__``, leads to its page, as little leads a link to one.
-So does one to another ``.rst`` file.
+A target, ``.. _name: https://example.com``, gives ``name_`` its URL, and one without a URL, above a block, leads to the block.
+A section's title is a target too, so ```The title`_`` leads to `The title`_.
+A link to a page's file, like ```Markdown <../writing/markdown.md>`__``, or to another ``.rst`` file, leads to its page.
 
 Lists
 =====
@@ -149,7 +94,7 @@ Numbers
    It starts at its first number.
 
 Terms
-   A term, with what it means indented below it, like these, is a description list, in HTML, unless the ``description_lists`` extension is on.
+   A term, with what it means indented below it, like these, is a description list.
 
 Fields and options
    A field list, ``:Field: text``, and an option list, ``-o  text``, are description lists too, as docutils writes them.
@@ -159,8 +104,7 @@ A numbered list's letters or Roman numerals, like ``c.`` or ``iv.``, are numbers
 Code
 ====
 
-A literal block, indented below a paragraph that ends in ``::``, is a code block with no language.
-Its ``::`` is a colon, as here::
+A literal block, indented below a paragraph that ends in ``::``, is a code block with no language, and its ``::`` is a colon, as here::
 
    A literal block shows *markup* as it is.
 
@@ -172,10 +116,8 @@ A ``code`` directive, or ``code-block``, or ``sourcecode``, is a code block in t
 
       print("Hello")
 
-Like a Markdown page's, a code block goes to `plugins <using-plugins.md#code-blocks>`__ that render its language.
-A ``mermaid`` one is a `diagram <../writing/diagrams.md>`__.
-A doctest block, a Python session that starts with ``>>>``, is code in ``pycon``.
-A ``parsed-literal`` is code, without its markup, which is warned of.
+A code block goes to `plugins <using-plugins.md#code-blocks>`__ that render its language, and a ``mermaid`` one is a `diagram <../writing/diagrams.md>`__.
+A doctest block, a Python session that starts with ``>>>``, is code in ``pycon``, and a ``parsed-literal`` is code, without its markup.
 
 Admonitions
 ===========
@@ -200,8 +142,6 @@ Admonitions
    * - ``danger`` and ``error``, each titled with its name
      - Caution
 
-Where your site turns the ``alerts`` extension off, an admonition is a quote that starts with its name, or its title, in bold.
-
 Other blocks
 ============
 
@@ -224,7 +164,7 @@ Other blocks
    * - ``compound`` and ``container``
      - What they hold
    * - ``raw``, for ``html``
-     - Its HTML, as it is, unless your site turns `HTML <../writing/markdown.md#html>`__ off, and nothing for another format
+     - Its HTML, as it is, and nothing for another format
    * - Transition, a line of ``-`` or another punctuation character
      - A rule
    * - ``contents``
@@ -238,60 +178,38 @@ Tables
 ======
 
 A grid table, drawn with ``+``, ``-``, and ``|``, and a simple table, of columns between lines of ``=``, are each one of GitHub's tables, with their header row, if they have one.
-So are a ``table`` directive's table, a ``csv-table``, with its data in the directive, and a ``list-table``, like those above, with ``:header-rows: 1``.
-A table without a header row has an empty one, as Markdown's tables need one, which the built-in theme hides.
+A ``table`` directive's table, a ``csv-table``, with its data in the directive, and a ``list-table``, like those above, with ``:header-rows: 1``, are too.
 
-Markdown's tables can't merge cells, have more than one header row, or hold blocks in their cells.
-So:
-
-* A cell that spans columns or rows is written in its first place, with empty cells after it.
-* Header rows after the first are joined to the body.
-* A cell's blocks, like a list, are run together, a line each.
-
+Markdown's tables can't merge cells, or hold blocks, so a cell that spans columns or rows is written in its first place, with empty cells after it, and a cell's blocks, like a list, are run together, a line each.
 Each is warned of.
 
 Images
 ======
 
-An image, ``.. image:: file.png``, with its ``:alt:`` text, is in a paragraph of its own.
-One with a ``:target:`` is a link.
+An image, ``.. image:: file.png``, with its ``:alt:`` text, is in a paragraph of its own, and one with a ``:target:`` is a link.
 A figure, ``.. figure:: file.png``, is its image, then its caption, in italics, then its legend.
 An image in a substitution, ``.. |name| image:: file.png``, is in the line, where ``|name|`` is.
 
-Without ``:alt:``, an image's alt text is its path, as in docutils' HTML.
+Without ``:alt:``, an image's alt text is its path.
 Its size and alignment, like ``:width:``, are left out, for your theme's CSS.
 
 Footnotes
 =========
 
-A footnote, ``[#]_``, with its text in ``.. [#]``, is numbered through the page, like this one\ [#]_.
-So are those with numbers, ``[1]_``, names, ``[#name]_``, or symbols, ``[*]_``, and citations, ``[CIT2002]_``.
+A footnote, ``[#]_``, with its text in ``.. [#]``, is numbered through the page, like this one\ [#]_, as are those with numbers, ``[1]_``, names, ``[#name]_``, or symbols, ``[*]_``, and citations, ``[CIT2002]_``.
 They're numbered in the order they're first referred to, so their labels are lost.
-A footnote nothing refers to is left out, and warned of.
 
 .. [#] Its text is at the foot of the page.
 
 Math
 ====
 
-Math is TeX, written as `your site chooses <../writing/math.md#choosing-how-math-is-written>`__.
-In a line, it's the ``math`` role, like :math:`e^{i\pi} + 1 = 0`.
-On its own, it's the ``math`` directive.
-Each formula in the directive, between blank lines, is a block of its own.
+Math is TeX, written as `your site chooses <../writing/math.md#choosing-how-math-is-written>`__: the ``math`` role in a line, like :math:`e^{i\pi} + 1 = 0`, or the ``math`` directive, on its own, where each formula, between blank lines, is a block of its own.
 
 What's different
 ================
 
-The plugin reads reStructuredText as docutils does, without Sphinx's additions, and leaves out what docutils' HTML leaves out, like comments.
-But:
+The plugin reads reStructuredText as docutils does, without Sphinx's additions, and leaves out what docutils' HTML leaves out, like comments, except that:
 
-* An include, ``.. include:: file.rst``, isn't followed, as a plugin reads only the file it's given. Nor is a ``raw`` or ``csv-table`` directive's ``:file:`` or ``:url:``. Each is warned of, and left out.
-* A directive the plugin doesn't read, like Sphinx's ``toctree``, is kept as code, as you wrote it, and warned of, with its line. So is one docutils doesn't accept, like a ``code-block`` with Sphinx's ``:linenos:``.
-* A role the plugin doesn't read, like Sphinx's ``ref`` or ``doc``, keeps its text, and is warned of.
-* ``sectnum``, ``header``, ``footer``, and ``target-notes`` are warned of, and left out. The plugin doesn't number sections or list targets' URLs, and the theme writes the page's header and footer.
-* A title, in the default role, is in italics, not ``<cite>``.
-* An abbreviation or acronym is its text, not ``<abbr>``.
-* A code block's ``:number-lines:`` numbers no lines.
-
-The page is written as `Markdown <../writing/markdown.md>`__ is.
-So `Styling Markdown <../themes/styling-markdown.md>`__ shows the HTML it is, for a theme's CSS.
+* An include, ``.. include:: file.rst``, isn't followed, and nor is a ``raw`` or ``csv-table`` directive's ``:file:`` or ``:url:``. Each is left out, and warned of.
+* A directive the plugin doesn't read, like Sphinx's ``toctree``, or one docutils doesn't accept, like a ``code-block`` with Sphinx's ``:linenos:``, is kept as code, as you wrote it, and warned of.
