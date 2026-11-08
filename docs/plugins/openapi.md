@@ -5,20 +5,16 @@ description: Add a page for each OpenAPI document, with its operations and schem
 
 # OpenAPI
 
-[`openapi`](https://github.com/withlittle/little/tree/main/plugins/openapi),
-a plugin in little's repository, adds the reference of an HTTP API to a
-site. It adds a page for each [OpenAPI](https://www.openapis.org) document,
-in JSON or YAML, as Redoc and Swagger UI show them, but in the site's
-theme.
+`openapi`, one of
+[little's own plugins](using-plugins.md#littles-own-plugins), adds the
+reference of an HTTP API to your site: a
+[page](using-plugins.md#pages-and-files) for each
+[OpenAPI](https://www.openapis.org) document, 3.0, 3.1, or 3.2, in JSON or
+YAML, as Redoc and Swagger UI show them, but in your site's theme, and with
+no script, so your site's search finds each operation.
 
-It reads OpenAPI 3.0, 3.1, and 3.2, and follows each `$ref`, to other files
-too. It needs no Node, and puts no script on the page. So a site builds the
-same each time, offline, and its search finds each operation.
-
-## Using it
-
-Name it in your site's `little.yml`, with the folder your documents are in.
-If you like, set where their pages go:
+Name it in your site's [`plugins`](using-plugins.md#naming-a-plugin), with
+the folder your documents are in:
 
 ```yaml
 # little.yml
@@ -29,103 +25,70 @@ plugins:
     url: /api
 ```
 
-- `read` names the folder your documents are in, from the site's folder,
-  like `api`. Name more than one in a list, like `[api, events]`.
-- `url` is the folder its pages go in, from the source's folder. It's the
-  source's own, `/`, unless you set it.
-
-It has no other settings. One it doesn't have, or no `read`, stops the
-build, saying why.
-
-A page's title is its document's `info.title`, like `Petstore`. To call it
-something else in the nav, give its URL a `title` in your
-[nav](../writing/navigation.md#writing-the-nav-yourself).
-
-## Getting it
-
-Each version of `openapi` is released in little's repository, as a `.wasm`
-file, about 700 KB. A site names it by its URL, with the version in it, like
-`openapi-v0.1.0` above.
-
-little downloads it in the site's first build, and uses that copy from then
-on, as for [any plugin](using-plugins.md#naming-a-plugin). So to update it,
-change the URL to a later version's.
-
-- Its releases, among
-  [little's](https://github.com/withlittle/little/releases), list what
-  changed in each version, and the version of little's
-  [hooks](../reference/plugin-hooks.md) it's built for.
-- Each release carries a `THIRD-PARTY-NOTICES.md`, with the licences of
-  the crates it's built from.
-- To build it yourself, see its
-  [README](https://github.com/withlittle/little/tree/main/plugins/openapi#building-it).
+- `read` names the folder your documents are in, like `api`, or a list of
+  folders, like `[api, events]`.
+- `url` is the folder its pages go in, from the source's folder, like
+  `/api`. It's the source's own, `/`, unless you set it.
 
 ## Its pages
 
 It reads each `.json`, `.yaml`, and `.yml` file in `read`, and in the
-folders in it. It skips files and folders whose names start with `.`, and
-`node_modules`. A file whose `openapi`, at its top level, is 3, like
-`3.1.0`, is a document. It passes over other files quietly, like a schema
-in a file of its own, but for those [Warnings](#warnings) lists.
+folders in it, but for `node_modules`, and those whose names start with
+`.`. A file whose `openapi`, at its top level, is 3, like `3.1.0`, is a
+document. Other files, like a schema in a file of its own, are passed over,
+but one in Swagger 2.0 or another version of OpenAPI, or one that mentions
+`openapi` or `swagger` but can't be parsed, is
+[warned of](using-plugins.md#when-a-plugin-fails). YAML is read as YAML
+1.2, which has no merge keys, so `<<` is a key like any other.
 
 Each document is a page, at its path in `read`, without its extension, in
-`url`. Take the example in [Using it](#using-it). There, `api/openapi.yaml`
-is the page `api/openapi.md`, at `/api/openapi`. And `api/v2/openapi.yaml`
-is at `/api/v2/openapi`.
+`url`. For the example above, `api/openapi.yaml` is the page
+`api/openapi.md`, at `/api/openapi`, and `api/v2/openapi.yaml` is at
+`/api/v2/openapi`. A document in the source, like `docs/api/openapi.yaml`,
+is copied too, as any file is, so readers can download it.
 
-Each page is built as if it were a Markdown file at that path in the site's
-source. So it's in the nav and search, and its links are checked. A
-document in the source, like `docs/api/openapi.yaml`, is copied too, as any
-file is, so readers can download it.
+Two folders in `read` with documents of the same name, like
+`api/v1/openapi.yaml` and `api/v2/openapi.yaml`, with
+`read: [api/v1, api/v2]`, would be the same page, which stops the build.
+Read `api` instead, or give each folder an entry of its own under
+`plugins`, with another name, the same `wasm`, and its own `url`:
 
-These stop the build:
-
-- A file in the source at the same path as a page, like
-  `docs/api/openapi.md`.
-- Two documents that would be the same page, like `pets.json` and
-  `pets.yaml`.
-- Two folders in `read` with documents of the same name, like
-  `api/v1/openapi.yaml` and `api/v2/openapi.yaml`, with
-  `read: [api/v1, api/v2]`. Read `api` instead. Or give each folder an
-  entry of its own under `plugins`, with another name, the same `wasm`, and
-  its own `url`:
-
-  ```yaml
-  # little.yml
-  plugins:
-    v1_api:
-      wasm: https://github.com/withlittle/little/releases/download/openapi-v0.1.0/little_openapi.wasm
-      read: api/v1
-      url: /v1
-    v2_api:
-      wasm: https://github.com/withlittle/little/releases/download/openapi-v0.1.0/little_openapi.wasm
-      read: api/v2
-      url: /v2
-  ```
+```yaml
+# little.yml
+plugins:
+  v1_api:
+    wasm: https://github.com/withlittle/little/releases/download/openapi-v0.1.0/little_openapi.wasm
+    read: api/v1
+    url: /v1
+  v2_api:
+    wasm: https://github.com/withlittle/little/releases/download/openapi-v0.1.0/little_openapi.wasm
+    read: api/v2
+    url: /v2
+```
 
 ## What a page shows
 
-A page looks like Redoc's, in the site's theme. It shows:
+A page looks like Redoc's, in your site's theme. Its title and heading are
+the document's `info.title`, like `Petstore`, else its file's name, like
+`openapi`; to call it something else in the nav, give its URL a `title` in
+[your nav](../writing/navigation.md#writing-the-nav-yourself). Its
+[description](../writing/frontmatter.md), for search engines and link
+previews, is `info.summary`, if it has one. Under its heading, it shows:
 
-- The document's `info.title`, as its heading. A document without one is
-  titled with its file's name, like `openapi`.
-- Its version, terms of service, contact, licence, and external docs.
+- The document's version, terms of service, contact, licence, and external
+  docs.
 - Its servers, with their variables, and the security it needs.
 - Its description.
 - `## Authentication`, with each of its security schemes, under a heading
-  of its name, like ``### `api_key` ``. Each says what a client sends, like
-  an API key in a header, or OAuth 2.0's flows and scopes.
-- A `##` heading for each tag, with the tag's description. Under it is each
-  operation with the tag, in the document's order. Tags are in the order
-  `tags` lists them, then those it doesn't.
+  of its name, like ``### `api_key` ``, each saying what a client sends,
+  like an API key in a header, or OAuth 2.0's flows and scopes.
+- A `##` heading for each tag, with the tag's description, and under it
+  each operation with the tag, in the document's order. Tags are in the
+  order `tags` lists them, then those it doesn't.
 - `## Webhooks`, with each of its webhooks, shown as an operation is.
 - `## Schemas`, with each schema in `components.schemas`, under a heading
-  of its name, like ``### `Pet` ``. Each has its type, its description, a
+  of its name, like ``### `Pet` ``, with its type, its description, a
   table of its fields, and its example.
-
-`info.summary`, if it has one, is the page's
-[description](../writing/frontmatter.md), for search engines and link
-previews.
 
 Each operation is under a heading of its `summary`, like
 `### List all pets`, else its method and path, like
@@ -138,8 +101,8 @@ Each operation is under a heading of its `summary`, like
 - A table of its parameters for each place they go: the path, the query,
   the headers, and the cookies.
 - Its request body, with a table of its fields, and its examples.
-- A table of its responses, with each one's status, description, and body.
-  Then each response's headers, fields, and examples.
+- A table of its responses, with each one's status, description, and body,
+  then each response's headers, fields, and examples.
 
 Some operations, tags, and parameters are shown otherwise, or not at all:
 
@@ -149,8 +112,9 @@ Some operations, tags, and parameters are shown otherwise, or not at all:
 - A tag's heading is its `summary`, new in 3.2, else its name.
 - A tag with no operations isn't shown.
 - A header parameter named `Accept`, `Content-Type`, or `Authorization`
-  isn't shown, as OpenAPI ignores it. Nor is a response's `Content-Type`
+  isn't shown, as OpenAPI ignores it, nor is a response's `Content-Type`
   header.
+- Examples are the document's own, not made from its schemas.
 - Extensions, like `x-logo`, aren't read.
 
 ## Types and fields
@@ -185,13 +149,12 @@ After each field's description are notes on it:
 
 ## Descriptions
 
-A description is Markdown, as OpenAPI says, and is shown as it's written.
-But each heading in it is moved below the heading it's under. So a `#` in
-an operation's description is a `####`, below the operation's `###`.
-
-- A description in a table, like a field's, is on one line.
-- Text that isn't Markdown, like a summary or a name, is escaped. So it
-  shows as it's written.
+A description is Markdown, as OpenAPI says, and is shown as it's written,
+but each heading in it is moved below the heading it's under, so a `#` in
+an operation's description is a `####`, below the operation's `###`. A
+description in a table, like a field's, is on one line. Text that isn't
+Markdown, like a summary or a name, is escaped, so it shows as it's
+written.
 
 ## `$ref`s
 
@@ -200,45 +163,7 @@ A `$ref` leads to a part of the document, like
 `$ref: ./schemas/Pet.yaml`, from the folder of the file it's in. The plugin
 follows each, and shows what it leads to.
 
-A file a `$ref` leads to must be in a folder `read` names. The plugin reads
-only those, in its [sandbox](using-plugins.md#the-sandbox).
-
-## Warnings
-
-What it can't read is warned of, and `little build --strict` fails on each:
-
-- A document in Swagger 2.0, or in a version of OpenAPI other than 3. It
-  leaves it out:
-
-  ```text
-  warning: plugin `openapi`: `api/swagger.json` is in Swagger 2.0, which it doesn't read: convert it to OpenAPI 3 first
-  ```
-
-- A file that mentions `openapi` or `swagger`, but can't be parsed. It
-  leaves it out.
-- A `$ref` it can't follow, like one to a URL, as it has no network, or to
-  a file that isn't there. It shows the `$ref` as it's written.
-- No OpenAPI 3 document in any folder in `read`.
-
-## Limits, for now
-
-- It reads only OpenAPI 3. Convert a document in Swagger 2.0 to OpenAPI 3
-  first.
-- It doesn't show callbacks, links, a media type's `encoding`, or a
-  parameter's `style` and `explode`.
-- It shows only JSON Schema's common keywords. So it doesn't show `not` or
-  `if`, nor OpenAPI's `discriminator` or `xml`.
-- The schemas of a `oneOf` or `anyOf`, and of a map's values, aren't listed
-  in a table. Those in `components.schemas` link to their headings.
-- In an `allOf`, a field in more than one schema is shown as the first
-  defines it.
-- A `$ref` to a URL, or to a schema's `$id` or `$anchor`, isn't followed.
-- YAML's merge keys, `<<`, aren't merged, as YAML 1.2 has none.
-- 3.2's nested tags are listed one after another.
-- There's no console to try an operation in.
-- Its examples are the document's own, not made from its schemas. An
-  example that's an object or an array isn't in a field's notes.
-- A document is one page, however big. A reader finds an operation on it
-  with the browser's own search.
-- A code block, comment, or `<pre>` in a description that isn't closed can
-  swallow what follows it.
+A file a `$ref` leads to must be in a folder `read` names, as the plugin
+reads only those, in its [sandbox](using-plugins.md#the-sandbox). A `$ref`
+it can't follow, like one to a URL, or to a file that isn't there, is
+warned of, and shown as it's written.
