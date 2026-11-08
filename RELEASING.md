@@ -50,6 +50,14 @@ once, by hand:
 
 ## Releasing a plugin
 
+Release a new plugin as soon as the pull request that adds it is merged.
+Its page in the manual names its first release already, like
+`openapi-v0.1.0`. But the manual is published from `main`, so that URL
+leads nowhere until the release is out. Its `Cargo.toml` says 0.1.0,
+which hasn't been released, so a first release skips steps 1 and 2: tag
+`main`, as in [step 3](#3-tag-it-and-push-the-tag). Its notes say it's
+its first release, rather than list every change before it.
+
 ### 1. See what's changed
 
 [git-cliff](https://git-cliff.org) lists a plugin's changes since its last

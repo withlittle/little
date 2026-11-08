@@ -372,8 +372,9 @@ Content and theme live outside `src/`:
   lists.
 - little is released from a tag on `main` like `v0.2.0`, and a plugin from
   one like `pydoc-v0.2.0`, each after a pull request that raises its
-  version, as [`RELEASING.md`](./RELEASING.md) says. A release can't be
-  undone, so don't push a tag: the maintainer does.
+  version, or, for a new plugin, the one that adds it, as
+  [`RELEASING.md`](./RELEASING.md) says. A release can't be undone, so
+  don't push a tag: the maintainer does.
 - Commits follow [Conventional Commits](https://www.conventionalcommits.org/),
   as `committed.toml` checks in CI: `type(scope)!: description`, with a
   lowercase, imperative description, no full stop, and a first line of up
