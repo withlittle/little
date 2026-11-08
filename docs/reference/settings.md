@@ -6,12 +6,10 @@ description: Every setting little has, its default, and where it's documented.
 # Settings
 
 Every setting goes in a `little.yml`: little's own, compiled into it, then
-the theme's, then the site's, each over the last, as [Configuring](../getting-started/configuring.md)
-explains. `little config` prints them, merged.
-
-Each `little.yml` merges over the one before key by key. So
-`markdown: { math: tex }` changes only `math`, and keeps the rest of
+the theme's, then the site's. Each merges over the one before it, key by
+key, so `markdown: { math: tex }` changes only `math`, and keeps the rest of
 `markdown`. Any other value, like a list, replaces the one beneath it.
+[`little config`](commands.md#little-config) prints them, merged.
 
 ## little's settings
 
@@ -23,14 +21,14 @@ or works them out. A theme or a site can change any of them:
 | --- | ------- | -------- |
 | `source` | `./docs` | the folder a site is [built from](../getting-started/configuring.md#choosing-folders) |
 | `destination` | `./dist` | the folder a site is [built into](../getting-started/configuring.md#choosing-folders) |
-| `theme` | `true`, the built-in theme | the [theme](../themes/choosing-a-theme.md) a site is built with, or the one a theme [builds on](../themes/choosing-a-theme.md#building-on-another-theme) |
+| `theme` | `true`, the built-in theme, for a site; none for a theme | the [theme](../themes/choosing-a-theme.md) a site is built with, or the one a theme [builds on](../themes/choosing-a-theme.md#building-on-another-theme) |
 | `url` | none | where the site's [published](../getting-started/publishing.md#choosing-the-sites-url), like `https://withlittle.github.io/little` |
 | `repo` | none | the [repository](../getting-started/configuring.md#choosing-the-sites-repository) its source is in |
 | `branch` | `main` | the branch its pages' files are [linked to](../getting-started/configuring.md#choosing-the-sites-repository) on |
 | `nav` | the source's pages and folders, [sorted by title](../writing/navigation.md#the-nav) | the site's [nav](../writing/navigation.md#writing-the-nav-yourself) |
 | `toc_min_depth` | `2`, for `##` | the level of heading a page's [table of contents](../writing/navigation.md#tables-of-contents) lists from |
-| `toc_max_depth` | `6`, for `######` | the level it lists down to |
-| `search` | `false` | whether the site's [indexed for search](../writing/search.md): `true`, `false`, or its settings, which turn it on |
+| `toc_max_depth` | `6`, for `######`; `3`, for `###`, in the built-in theme | the level it lists down to |
+| `search` | `false`; `true` in the built-in theme | whether the site's [indexed for search](../writing/search.md): `true`, `false`, or its settings, which turn it on |
 | `search.exclude` | none | the URLs of the pages [left out of search](../writing/search.md#leaving-pages-out), each with those under it |
 | `markdown` | GitHub's extensions | the [extensions to Markdown](../writing/markdown.md#choosing-markdowns-extensions) pages are written with |
 | `markdown.highlight` | `pygments` | the classes [code is highlighted](../writing/code.md#choosing-how-code-is-highlighted) with |
@@ -43,60 +41,17 @@ or works them out. A theme or a site can change any of them:
 | `port` | `8080` | the port it serves on |
 | `year` | the year the build starts in | the year a theme's [copyright notice](../themes/making-a-theme.md#a-copyright-notice) shows |
 
-- A path in `theme` or `plugins` is relative to the folder of the
-  `little.yml` that sets it, but `source` and `destination` are always
-  relative to the site's folder.
-- With `source: .`, everything in the site's folder that isn't
-  [hidden](../writing/pages-and-files.md#hidden-files) is published,
-  `little.yml` included, but not the destination.
-- Each build wipes the destination first. little leaves a `.little-build`
-  file in each folder it builds, and wipes only a folder that has one, or
-  is empty. Pointed at any other folder, a build stops.
-- `url` and `repo` must start with `https://` or `http://`, with nothing
-  after the path, like a `?` or `#`. Otherwise, every command stops, and
-  says why.
-- `url` doesn't change where files are built. The home page is still
-  `dist/index.html`, and the host serves it under the path.
-- `repo` needs a path after its host. It isn't the address you clone from,
-  so it doesn't end in `.git`.
-- Only a `repo` on github.com or gitlab.com gets links to each page's file.
-  One anywhere else, like a GitLab or Gitea of your own, gets `site.repo`,
-  but no `page.source_url` or `page.edit_url`.
-- Those links' paths start at the root of the repository: the nearest
-  folder with a `.git`, from the source up, else the site's folder. So a
-  site in `website/` links to `website/docs/guide/install.md`. A source
-  outside the repository gets no links to its files.
-- In `plugins`, only the site can set a plugin's `read`, the folders it can
-  read.
-- little works out `nav` and `year` as it builds, and, on a site with
-  [versions](../writing/versions.md), `version`, the title of the one it's
-  building, so `little config` doesn't print them, unless a `little.yml`
-  sets them, which replaces what little works out.
-
 ## The built-in theme's settings
 
 The built-in theme's
 [`little.yml`](https://github.com/withlittle/little/blob/main/theme/little.yml)
-goes over little's, and the site's goes over it:
-
-| Key | Default | Chooses… |
-| --- | ------- | -------- |
-| `name` | `Documentation` | the site's title, in the header and the browser's tab |
-| `description` | none | the meta description of a page without [its own](../writing/frontmatter.md) |
-| `lang` | `en` | each page's language, which [search](../writing/search.md) matches words in |
-| `font` | a system UI font stack | the text's `font-family` |
-| `toc_max_depth` | `3`, for `###` | the level a page's table of contents lists down to |
-| `search` | `true` | whether the site's indexed, for the search box in the header |
-
-It uses `repo` too, to link to the repository, and to each page's file in
-it. [Configuring](../getting-started/configuring.md#the-built-in-themes-settings)
-says more.
+goes over little's, with settings of its own, like `name` and `lang`, which
+[Configuring](../getting-started/configuring.md#the-built-in-themes-settings)
+lists.
 
 ## Your own settings
 
-Any other key reaches the theme as `site.<key>`, for a theme that shows it.
-So `announcement: "2.1 is out!"` is `site.announcement`.
-
-A key in a page's frontmatter reaches the theme as `page.<key>` instead,
-and changes only that page. See
-[Frontmatter](../writing/frontmatter.md#frontmatter-wins).
+Any other key reaches the theme as `site.<key>`, for a theme that shows it,
+like `announcement: "2.1 is out!"` as `site.announcement`. A key in a
+page's [frontmatter](../writing/frontmatter.md#frontmatter-wins) reaches it
+as `page.<key>` instead, and changes only that page.
