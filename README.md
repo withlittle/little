@@ -3,57 +3,26 @@
 The little static documentation site generator for big things. Put
 Markdown in `docs/`, and get a site.
 
-- **One binary.** No runtime, no `node_modules`, and no version managers.
-- **Config that cascades.** little has defaults, a theme sets its own, and
-  your site sets only what it changes.
-- **Themes own the markup.** little gives a theme its pages as data, and
-  writes no HTML of its own.
-- **Plugins for the rest.** They add pages from Jupyter notebooks, say, or
-  an API reference from your code.
-
-> **Status:** early development, versioned with
-> [Semantic Versioning](https://semver.org/). Expect breaking changes until
-> 1.0. See the [roadmap](./VISION.md#roadmap-thin-vertical-slices).
-
-## Install
-
 ```sh
 cargo install --locked little-docs
-```
-
-This needs [Rust](https://rustup.rs) 1.96 or later. The package is called
-`little-docs`, but the command is `little`. To install little without Rust,
-see [Install](./docs/getting-started/install.md#install-without-rust), in
-the manual.
-
-## Quick start
-
-```sh
 little init my-docs
 cd my-docs
 little serve
 ```
 
-Open <http://127.0.0.1:8080>, edit `docs/README.md`, and the page reloads
-itself.
+The [manual](https://withlittle.github.io/little) goes on from there. It
+says [why little](./docs/README.md#why-little), and how to
+[install it without Rust](./docs/getting-started/install.md#install-without-rust).
+
+> **Status:** early development, versioned with
+> [Semantic Versioning](https://semver.org/). Expect breaking changes until
+> 1.0. See the [roadmap](./VISION.md#roadmap-thin-vertical-slices).
 
 ## Documentation
 
-little's manual is a little site, in [`docs/`](./docs/README.md), published
-at <https://withlittle.github.io/little> from `main`. To read your changes
-to it as a site, run `little serve` (or `cargo run -- serve`) in a clone of
-this repository, and open <http://127.0.0.1:8080/little/>.
-
-- [Getting started](./docs/getting-started/install.md): install little,
-  start a site, configure it, and publish it.
-- [Writing](./docs/writing/pages-and-files.md): pages, Markdown, links,
-  code, math, diagrams, frontmatter, navigation, search, and versions.
-- [Themes](./docs/themes/choosing-a-theme.md): choose a theme, or make one.
-- [Plugins](./docs/plugins/using-plugins.md): use or write plugins, build
-  pages from Jupyter notebooks, AsciiDoc, Org mode, or reStructuredText, or
-  add an API reference from OpenAPI, Python, Rust, Go, or JavaScript.
-- [Reference](./docs/reference/commands.md): commands, settings, and the
-  data a theme's templates get.
+The manual is a little site, in [`docs/`](./docs/README.md), published from
+`main`. To read your changes to it as a site, run `cargo run -- serve` in a
+clone of this repository, and open <http://127.0.0.1:8080/little/>.
 
 ## Development
 
