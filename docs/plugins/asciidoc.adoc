@@ -1,15 +1,8 @@
 = AsciiDoc
 :description: Build each AsciiDoc file into a page, without Asciidoctor or Ruby, with the asciidoc plugin.
 
-https://github.com/withlittle/little/tree/main/plugins/asciidoc[`asciidoc`], a plugin in little's repository, makes each https://asciidoc.org[AsciiDoc] file (`.adoc` or `.asciidoc`) in `docs/` a page.
-It reads AsciiDoc itself, so it needs neither Asciidoctor nor Ruby, and you don't convert it first.
-
-This page is one, `docs/plugins/asciidoc.adoc`.
-A link to it from Markdown, like `+[AsciiDoc](asciidoc.adoc)+`, leads to its page.
-
-== Using it
-
-Name it in your site's `little.yml`, and each AsciiDoc file in `docs/` is a page:
+`asciidoc`, one of link:using-plugins.md#littles-own-plugins[little's own plugins], makes each https://asciidoc.org[AsciiDoc] file in `docs/`, `.adoc` or `.asciidoc`, a link:using-plugins.md#pages-in-other-formats[page], without Asciidoctor or Ruby.
+Name it in your site's link:using-plugins.md#naming-a-plugin[`plugins`]:
 
 [source,yaml]
 ----
@@ -19,70 +12,36 @@ plugins:
 ----
 
 It has no settings.
-Without it, an AsciiDoc file is copied into the site as it is, as any other file is.
-A folder's `README.adoc` is its page, as a `README.md` is.
-
-== Getting it
-
-Each version of `asciidoc` is released in little's repository, as a `.wasm` file, about 2.1 MB.
-A site names it by its URL, with the version in it, like `asciidoc-v0.1.0` above.
-
-little downloads it in the site's first build, and uses that copy from then on, as for link:using-plugins.md#naming-a-plugin[any plugin].
-So to update it, change the URL to a later version's.
-
-* Its releases, among https://github.com/withlittle/little/releases[little's], list what changed in each version, and the version of little's link:../reference/plugin-hooks.md[hooks] it's built for.
-* Each release carries a `THIRD-PARTY-NOTICES.md`, with the licences of the crates it's built from.
-* To build it yourself, see its https://github.com/withlittle/little/tree/main/plugins/asciidoc#building-it[README].
+This page is one AsciiDoc file, `docs/plugins/asciidoc.adoc`.
 
 == The header
 
-The document's title, `+= Title+`, is the page's title, and its `#` heading.
-Its `+:description:+` is the page's description.
-The author and revision lines under the title are left out, as little's themes have no place for them.
-Other attributes, like `+:imagesdir:+`, `+:sectnums:+`, or your own, work as they do in Asciidoctor.
-
-A page can start with link:../writing/frontmatter.md#in-another-format[frontmatter] too, between `+---+` lines, above its title, as a Markdown page can.
-It goes over the header, for any of little's keys, like `search: false`:
-
-[source,asciidoc]
-----
----
-search: false
----
-= Release notes
-:description: What changed in each version.
-----
+The document's title, `+= Title+`, is the page's title and its `#` heading, and its `+:description:+` is the page's description.
+The author and revision lines under the title are left out.
+A page can also start with link:../writing/frontmatter.md#in-another-format[frontmatter], above its title, which goes over the header.
 
 == Text
 
 AsciiDoc's markup is Markdown's where Markdown has it: *bold*, _italic_, `monospace`, and [.line-through]#struck through#.
-Where it hasn't, it's HTML: #highlighted# is `<mark>`, ^super^script `<sup>`, ~sub~script `<sub>`, and [.underline]#underlined# `<u>`.
-With the link:../writing/markdown.md#choosing-markdowns-extensions[extensions] for them on, like `mark`, they're Markdown.
-With neither those nor link:../writing/markdown.md#html[HTML], they're plain text, and warned of.
-Other roles, like `+[.lead]+`, on text or a block, are dropped, as Markdown has no classes, but the text is kept.
+Where it hasn't, it's HTML: #highlighted# is `<mark>`, ^super^script `<sup>`, ~sub~script `<sub>`, and [.underline]#underlined# `<u>`, or Markdown, where your site turns on the link:../writing/markdown.md#choosing-markdowns-extensions[extension] for it, like `mark`.
+Other roles, like `+[.lead]+`, are dropped, and their text is kept.
 
-Text shows as you write it, even where Markdown would read it as markup, like the * in 2 * 3, or :smile:.
-Attribute references, like `+{nbsp}+`, character references, like `+&#8594;+`, and replacements, like `+(C)+` for (C), show what Asciidoctor shows.
+Attribute references, like `+{nbsp}+` or one to your own attribute, character references, like `+&#8594;+`, and replacements, like `+(C)+` for (C), show what Asciidoctor shows.
 A line that ends in `{plus}`, or a paragraph marked `+[%hardbreaks]+`, keeps its line breaks.
+
+With `+:experimental:+` in the header, as in Asciidoctor, a key, `+kbd:[Ctrl+C]+`, is code, a button, `+btn:[Save]+`, is bold, and a menu, `+menu:File[Save]+`, is its names, joined by ›.
 
 == Sections and links
 
-A section's title, `+== Title+`, is a heading, with as many `#` as it has `=`.
-So `+==+` is `##`, and so on, to `+######+`.
-Its id leads to it, beside the `#fragment` little gives it.
-That's the id Asciidoctor works out from its title, like `+_using_it+`, or one you give it, with `+[#id]+` or `+[[id]]+`.
+A section's title, `+== Title+`, is a heading with as many `#` as it has `=`, from `##` to `######`.
 With `+:sectnums:+`, its title has its number, as Asciidoctor numbers it.
+Its id leads to it too: the one Asciidoctor works out from its title, like `+_the_header+`, or one you give it, with `+[#id]+` or `+[[id]]+`.
 
-A URL, like https://docs.asciidoctor.org, is a link.
-So is `+https://example.com[text]+`, `+link:file.pdf[text]+`, or `+mailto:you@example.com[]+`.
+A cross-reference, like `+<<_the_header>>+` or `+xref:_the_header[]+`, leads to the id on this page, and shows its section's title, as <<_the_header>> does.
+One to another page, like `+xref:guide.adoc#install[]+` or `+<<guide.adoc#install,Installing>>+`, leads to that page, as `+link:../writing/markdown.md[]+` leads to a Markdown page.
+An anchor, `+[[id]]+` or `+anchor:id[]+`, gives the place it's in an id to lead to, and a block's id leads to the block.
 
-A cross-reference, like `+<<_using_it>>+` or `+xref:_using_it[]+`, leads to the id on this page.
-It shows its section's title, as <<_using_it>> does.
-One to another page, like `+xref:guide.adoc#install[]+` or `+<<guide.adoc#install,Installing>>+`, leads to that page, as little leads a link to a page's file.
-So does `+link:../writing/markdown.md[]+`, to a Markdown page.
-
-An anchor, `+[[id]]+` or `+anchor:id[]+`, gives the place it's in an id to lead to.
-A block's id leads to the block.
+A URL, like https://docs.asciidoctor.org, is a link, as are `+https://example.com[text]+`, `+link:file.pdf[text]+`, and `+mailto:you@example.com[]+`.
 
 == Lists
 
@@ -91,16 +50,15 @@ Each of AsciiDoc's lists is the Markdown list nearest it:
 Bullets:: `+*+` or `+-+`, nested by the number of `+*+`, are a bulleted list.
 Numbers:: `+.+`, nested by the number of `+.+`, are a numbered list. It starts at 1, or where `+[start=4]+` says.
 Checklists:: `+* [x]+` and `+* [ ]+` are GitHub's task lists.
-Terms:: A term and what it means, like these, are a description list, in HTML, unless the `description_lists` extension is on.
+Terms:: A term and what it means, like these, are a description list.
 
 A numbered list's style, like `+[loweralpha]+`, is lost, as Markdown numbers lists only with numbers.
 
 == Code
 
-A listing block, `+----+`, is a code block, highlighted in the language its `+[source,lang]+` names.
+A listing block, `+----+`, is a code block, highlighted in the language its `+[source,lang]+` names, or `+:source-language:+` sets.
 A literal block, `+....+`, or an indented paragraph, is one with no language.
-Like a Markdown page's, a code block goes to link:using-plugins.md#code-blocks[plugins] that render its language.
-A `+[source,mermaid]+` block is a link:../writing/diagrams.md[diagram].
+A code block goes to link:using-plugins.md#code-blocks[plugins] that render its language, and a `+[source,mermaid]+` block is a link:../writing/diagrams.md[diagram].
 Callouts stay in the code, as you write them, and their list is a numbered list:
 
 [source,yaml]
@@ -116,7 +74,7 @@ NOTE: An admonition is the alert of its name, like this note.
 It's one of GitHub's five link:../writing/markdown.md#callouts[alerts]: `NOTE`, `TIP`, `IMPORTANT`, `WARNING`, or `CAUTION`.
 
 A block, `+[NOTE]+` over `+====+`, can hold lists and code too.
-Where your site turns the `alerts` extension off, an admonition is a quote that starts with its name, in bold.
+An admonition's title, `+.Title+`, is its alert's.
 
 == Other blocks
 
@@ -135,7 +93,7 @@ Where your site turns the `alerts` extension off, an admonition is a quote that 
 |What they hold
 
 |Passthrough, `pass:[++++]`
-|Its HTML, as it is, unless your site turns link:../writing/markdown.md#html[HTML] off
+|Its HTML, as it is
 
 |Thematic break, `+'''+`
 |A rule
@@ -150,31 +108,23 @@ Where your site turns the `alerts` extension off, an admonition is a quote that 
 |HTML's `<video>` and `<audio>`, or YouTube's or Vimeo's player
 |===
 
-A block's title, `+.Title+`, is a paragraph in italics above it, as this table's is.
-It has its number, as Asciidoctor numbers it.
-An image's title is below it.
+A block's title, `+.Title+`, is a paragraph in italics above it, numbered as Asciidoctor numbers it, like this table's.
 
 == Tables
 
 A table, `+|===+`, is one of GitHub's tables, with its header row, if it has one.
 Each column is aligned as `+cols+` says, with `+<+`, `+^+`, or `+>+`.
 A CSV or DSV table, `+,===+` or `+:===+`, is one too.
-A table without a header row has an empty one, as Markdown's tables need one, which the built-in theme hides.
 
-Markdown's tables can't merge cells, or hold blocks in them. So:
-
-* A cell that spans columns or rows is written in its first place, with empty cells after it.
-* An `+a|+` cell's blocks are run together, a line each.
-
+Markdown's tables can't merge cells, or hold blocks, so a cell that spans columns or rows is written in its first place, with empty cells after it, and an `+a|+` cell's blocks are run together, a line each.
 Each is warned of.
 
 == Images
 
 An image, `+image::file.png[Alt text]+`, is in a paragraph of its own, with its title below it.
 One in a line, `+image:file.png[Alt text]+`, is in the line.
-A relative path is in the folder `+:imagesdir:+` names, if it names one.
-An image with `+link=+` is a link.
-Without alt text, an image's alt text is its file's name, as in Asciidoctor.
+A relative path is in the folder `+:imagesdir:+` names, if it names one, and an image with `+link=+` is a link.
+Without alt text, an image's alt text is its file's name, like `my diagram` for `my-diagram.png`.
 
 == Footnotes
 
@@ -183,22 +133,14 @@ Name it, `+footnote:name[Its text.]+`, and `+footnote:name[]+` refers to it agai
 
 == Math
 
-Math is TeX, written as link:../writing/math.md#choosing-how-math-is-written[`markdown.math`] says.
-It's `+latexmath:[...]+` in a line, like latexmath:[e^{i\pi} + 1 = 0], or a `+[latexmath]+` block, on its own.
-So are `+stem:[...]+` and a `+[stem]+` block, once the header sets `+:stem: latexmath+`.
-Without that, they're AsciiMath, as is `+asciimath:[...]+`.
-AsciiMath stays code, and is warned of, as little writes only TeX.
+Math is TeX, written as link:../writing/math.md#choosing-how-math-is-written[`markdown.math`] says: `+latexmath:[...]+` in a line, like latexmath:[e^{i\pi} + 1 = 0], or a `+[latexmath]+` block, on its own.
+`+stem:[...]+` and a `+[stem]+` block are TeX too, once the header sets `+:stem: latexmath+`.
+Without that, they're AsciiMath, as is `+asciimath:[...]+`, which stays code, as little writes only TeX.
 
 == What's different
 
-The plugin reads AsciiDoc as Asciidoctor does, and leaves out what its HTML leaves out, like comments.
-But:
+The plugin reads AsciiDoc as Asciidoctor does, and leaves out what Asciidoctor's HTML leaves out, like comments, except that:
 
-* An include, `+include::file.adoc[]+`, isn't followed, as a plugin reads only the file it's given. It's warned of, and left out.
-* A macro the plugin doesn't read, like one from an extension of Asciidoctor's, is kept as text, and warned of, with its line.
-* `+kbd:[Ctrl+C]+`, `+btn:[Save]+`, and `+menu:File[Save]+` need `+:experimental:+` in the header, as in Asciidoctor. Else they're kept as text, and warned of. A key is code, a button bold, and a menu its names, joined by ›.
+* An include, `+include::file.adoc[]+`, isn't followed. It's left out, and warned of.
+* A macro the plugin doesn't read, like one from an extension of Asciidoctor's, is kept as text, and warned of.
 * A collapsible block, `+[%collapsible]+`, is open, and can't be folded.
-* The book doctype and its parts aren't read. Nor are a title underlined on the line below it, compatibility mode, `+{set:name:value}+`, or the menu shorthand, `+"File > Save"+`.
-
-The page is written as link:../writing/markdown.md[Markdown] is.
-So link:../themes/styling-markdown.md[Styling Markdown] shows the HTML it is, for a theme's CSS.
