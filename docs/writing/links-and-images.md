@@ -1,11 +1,11 @@
 ---
 title: Links and images
-description: Link to pages by their files, and show images, as on GitHub. little checks every link.
+description: Link to pages by their files, show images, and have little check every link.
 ---
 
 # Links and images
 
-Write links and images as on GitHub, relative to the file they're in:
+Write links and images relative to the file they're in:
 
 ```markdown
 <!-- guide/install.md -->
@@ -15,38 +15,33 @@ See [Usage](usage.md#options).
 ```
 
 A relative link or image leads from the folder of the file it's in,
-whatever URL its page is served at. So here, the image is
+whatever URL its page is served at, so here the image is
 `guide/images/setup.png`, and the link leads to the page built from
-`guide/usage.md`. They work on GitHub, and wherever the site is published.
-The picture on [Pages and files](pages-and-files.md#images-and-other-files)
-is shown this way.
+`guide/usage.md`. The same links work in the site and wherever else your
+Markdown is read, like in your repository.
 
 ## Links to pages' files
 
-Link to another page by its file, and the link leads to the page. So
-`usage.md#options` leads to `usage#options`, and `guide/README.md` to
-`guide/`. This manual's pages link to each other this way, so their links
-work on GitHub too.
+A link to a page's file leads to the page: `usage.md#options` leads to
+`usage#options`, and `guide/README.md` to `guide/`.
 
 - A link to a file that a
   [plugin](../plugins/using-plugins.md#pages-in-other-formats) reads leads
-  to its page too, like `[Analysis](analysis.ipynb#results)` for a
-  notebook.
-- A link to a page's URL, like `[Usage](usage)`, works too, but only in the
-  site.
-- A link from the root, like `/guide/install`, leads from the root of the
-  site. On GitHub, it leads from the root of the repository.
+  to its page too, like `analysis.ipynb#results` for a notebook.
+- A link to a page's URL works too, but only in the site, like
+  `[Usage](usage)`, or `/guide/install` from the root of the site.
 - If the site is published under a path, its
   [`url`](../getting-started/publishing.md#choosing-the-sites-url) adds the
   path to every link for you.
-- A link to a `.md` file that isn't there leads to a page that isn't there
-  either. little [warns of it](#checking-links).
+- A link or image in HTML, like `<a href="usage.md">`, or in a
+  [diagram](diagrams.md), is left as it is, so it leads where a browser
+  takes it.
 
 ## Checking links
 
-Once it's built the site, `little build` checks every link and image in it,
-the theme's too. It warns of each broken one: a page, file, or `#fragment`
-that isn't there, in the site or on another.
+`little build` checks every link and image in the built site, the theme's
+too, and warns of each broken one: a page, file, or `#fragment` that isn't
+there, in the site or on another.
 
 ```text
 $ little build
@@ -56,43 +51,24 @@ warning: broken link https://github.com/withlittle/litle in ./docs/about.md: Rej
 ```
 
 Each warning names the file to fix, and the link as it's written there, so
-you can search for it.
-
-`little build --strict` fails on a broken link, so CI can keep a broken
-site from being published. [`little build`](../reference/commands.md#little-build)
-lists everything else it fails on. `dist/` is written either way.
+you can search for it. A link in HTML, like one in the theme, is shown as
+the URL a browser follows, and one on many pages is a single warning that
+names a few and counts the rest. To fail the build on a broken link, use
+[`--strict`](../reference/commands.md#little-build).
 
 `little serve` checks only the links within the site, so a save doesn't
-wait for other sites.
+wait for other sites. `little build` checks links to other sites every
+time: without a network, each one warns, and a site that turns link
+checkers away can warn of a link that works.
 
-- Links to other sites are checked on every build. So without a network,
-  each one warns. A site that doesn't answer holds the build up until it
-  times out, which can take about a minute.
-- Some sites turn link checkers away, so a link to one can warn even though
-  it works. There's no way to skip one yet.
-- These aren't checked: links that only work on your computer or network,
-  like `http://localhost:8080/`; example domains, like `example.com`;
-  `mailto:` and `tel:` links; URLs in code; and links in
-  [diagrams](diagrams.md).
-- Links into the site's
+little doesn't check:
+
+- links that work only on your computer or network, like
+  `http://localhost:8080/`
+- example domains, like `example.com`
+- `mailto:` and `tel:` links
+- URLs in code, and links in diagrams
+- links into the site's
   [repository](../getting-started/configuring.md#choosing-the-sites-repository),
-  like the theme's links to edit each page, aren't checked either. A new
-  page's file isn't there until you push it, and a link checker can't see
-  the files in a private repository.
-- The site is checked as it's published. Under the path of its
-  [`url`](../getting-started/publishing.md#choosing-the-sites-url), a link
-  that leaves the path out is broken. A link to the site's own `url`, like
-  one a theme makes with `absolute_url`, is checked in `dist/`, so a new
-  page isn't broken before it's published.
-- A broken link in the theme, or in an HTML file in `docs/`, is shown as a
-  reader follows it, from the root of the domain. A link on many pages,
-  like one in the theme, is one warning, which names a few of the pages,
-  and counts the rest.
-- On a site with [versions](versions.md), every version's links within the
-  site are checked. A version from a git ref doesn't have its links to
-  other sites checked: they break as the web changes, and a tag can't be
-  fixed.
-- Only pages and other HTML files are checked, not CSS. A warning names the
-  file, not the line.
-- Links are checked with [lychee](https://lychee.cli.rs), which is built
-  into little, so there's nothing else to install.
+  like the theme's links to edit each page
+- links to other sites from a [version](versions.md) built from a git ref

@@ -5,12 +5,10 @@ description: GitHub's Markdown, with callouts, footnotes, emoji, and HTML, and t
 
 # Markdown
 
-little reads Markdown as GitHub does: CommonMark, with GitHub's extensions.
-So Markdown written for GitHub renders as it does there, with tables,
-~~strikethrough~~, task lists, autolinks, footnotes, callouts, emoji
-shortcodes, HTML, [math](math.md), and [diagrams](diagrams.md).
-
-Other extensions, like `==marked==` text, are off until you
+little reads Markdown as GitHub does, with tables, ~~strikethrough~~, task
+lists, autolinks, footnotes, callouts, emoji shortcodes, HTML,
+[math](math.md), and [diagrams](diagrams.md). Other extensions, like
+`==marked==` text, are off until you
 [turn them on](#choosing-markdowns-extensions).
 
 ## GitHub's extensions
@@ -22,8 +20,7 @@ Other extensions, like `==marked==` text, are off until you
 | `www.example.com` | www.example.com |
 | `\| a \| table \|`, with `\| --- \| --- \|` below | this table |
 
-A colon in the line below a table's headings aligns its column, as in this
-table:
+A colon in the line below a table's headings aligns its column:
 
 | Left | Centre | Right |
 | :--- | :----: | ----: |
@@ -40,9 +37,8 @@ the page.
 
 ## Callouts
 
-A callout makes a note or a warning stand out from the text around it.
-Write one as GitHub writes its alerts, as a quote whose first line is its
-kind:
+A callout makes a note or a warning stand out. Write it as a quote whose
+first line is its kind:
 
 ```markdown
 > [!TIP]
@@ -55,8 +51,7 @@ There are five kinds, each with its own colour in the built-in theme:
 > `[!NOTE]`, for something readers should know, even if they skim.
 
 > [!TIP]
-> `[!TIP]`, for a better way to do something, like `little serve`, which
-> rebuilds the site each time you save.
+> `[!TIP]`, for a better way to do something.
 
 > [!IMPORTANT]
 > `[!IMPORTANT]`, for something readers need to know to succeed.
@@ -67,9 +62,8 @@ There are five kinds, each with its own colour in the built-in theme:
 > [!CAUTION]
 > `[!CAUTION]`, for what could go wrong, like a build wiping a folder.
 
-- Where Markdown doesn't have them, an alert reads as a quote.
-- An alert can have a title of its own, after its kind, like
-  `> [!WARNING] Before you upgrade`. On GitHub, that's a quote.
+A callout can have a title of its own after its kind, like
+`> [!WARNING] Before you upgrade`.
 
 ## HTML
 
@@ -83,31 +77,26 @@ Only in Markdown you trust: see below.
 
 </details>
 
-- `<script>` is rendered as it is too, and so is the HTML a notebook's code
-  showed. A site built from Markdown or notebooks you don't trust should set
-  [`raw_html: false`](#choosing-markdowns-extensions), and `mermaid: false`
-  with it, as a diagram can carry HTML too.
-- A link or image in HTML leads where a browser takes it. little doesn't
-  lead it from the folder of the file it's in, or to a page from its `.md`
-  file, or under the path of the site's
-  [`url`](../getting-started/publishing.md#choosing-the-sites-url). It warns
-  of a broken one as a reader follows it.
+`<script>` is rendered as it is too, and so is the HTML in a notebook's
+outputs. For Markdown or notebooks you don't trust, set
+[`raw_html: false`](#choosing-markdowns-extensions) and `mermaid: false`,
+since a diagram can carry HTML too.
 
 ## Headings
 
-Every heading gets an `id`, as on GitHub, so you can link straight to a
-section, like [this one](#headings). From another page, link to the file,
-then the `id`, like `[Callouts](markdown.md#callouts)`. The built-in theme
-shows a `#` that links to a heading when you point at it.
-
-A page's `##` and `###` headings are its table of contents: see
-[Navigation](navigation.md#tables-of-contents).
+Every heading gets an `id` made from its text, like
+`#choosing-markdowns-extensions` for the last one on this page, so you can
+link straight to it: [this one](#headings), or
+`[Callouts](markdown.md#callouts)` from another page. The built-in theme
+shows a `#` beside a heading you point at, which links to it. A page's
+headings also make its
+[table of contents](navigation.md#tables-of-contents).
 
 ## Choosing Markdown's extensions
 
-`markdown` turns each of little's extensions to CommonMark on or off. To
-turn smart punctuation on, say, and HTML off, with the diagrams that can
-carry it:
+`markdown` turns each of little's extensions to CommonMark on or off, for
+every page. To turn smart punctuation on, say, and HTML off, with the
+diagrams that can carry it:
 
 ```yaml
 # little.yml
@@ -116,9 +105,6 @@ markdown:
   raw_html: false
   mermaid: false
 ```
-
-Set only those you change: the rest stay as they were. little turns on
-GitHub's, so Markdown written for GitHub renders as it does there:
 
 | Key | Default | Lets you write… |
 | --- | ------- | --------------- |
@@ -139,24 +125,8 @@ GitHub's, so Markdown written for GitHub renders as it does there:
 | `mark` | `false` | `==marked==` text |
 | `insert` | `false` | `++inserted++` text |
 | `description_lists` | `false` | a term, with `: its description` on the line below |
-| `inline_footnotes` | `false` | footnotes in the text, like `^[a note]`; needs `footnotes` |
+| `inline_footnotes` | `false` | footnotes in the text, like `^[a note]` |
 | `fenced_divs` | `false` | `:::name`, then a line `:::` below, for a `<div class="name">` |
-| `multiline_blockquotes` | `false` | a quote between two `>>>` lines, as on GitLab |
+| `multiline_blockquotes` | `false` | a quote between two `>>>` lines |
 | `hard_breaks` | `false` | a line break, kept wherever a paragraph has one |
 | `cjk_friendly_emphasis` | `false` | `**` and `*` beside Chinese, Japanese, and Korean punctuation |
-
-- A theme can set them in its `little.yml` too, like `math: tex` in a
-  theme that renders math itself. The site's `little.yml` has the last
-  word.
-- They're the same for every page. A page can't choose its own in its
-  frontmatter.
-- `math` is `mathml`, `tex`, or `false`. `mermaid` is `svg` or `false`.
-  `highlight` is `pygments`, `github`, or `false`.
-- The others must each be `true` or `false`, unquoted, as YAML reads `yes`
-  and `"true"` as text.
-- `inline_footnotes` needs `footnotes`, and `mermaid: svg` needs
-  `raw_html`.
-- A setting little doesn't have, like `tabels`, is an error, which lists
-  the ones it has.
-- If a setting breaks one of these rules, every command stops, and says
-  why.
