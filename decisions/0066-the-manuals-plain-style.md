@@ -1,6 +1,7 @@
 # 0066 — The manual's plain style
 
-- Status: accepted
+- Status: superseded by [0072](./0072-the-manuals-concise-style.md),
+  which lets a rewrite cut, and states each fact once
 - Date: 2026-11-04
 
 ## Context
