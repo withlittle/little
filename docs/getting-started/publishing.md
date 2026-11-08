@@ -5,37 +5,35 @@ description: Publish a site on any static host, or on GitHub Pages with a workfl
 
 # Publishing
 
-`little build` builds your site into `dist/`, as plain HTML. Any static
-host can serve it. On GitHub Pages, a
-[workflow](#publishing-on-github-pages) can publish it each time you push.
+```sh
+little build
+```
+
+This builds your site into `dist/`, which any static host can serve. On
+GitHub Pages, a [workflow](#publishing-on-github-pages) can
+publish it each time you push.
 
 ## Choosing the site's URL
 
-If your site is published under a path, like a GitHub Pages project site
-at `https://<owner>.github.io/<repo>`, set `url` to its address:
+If your site is published under a path, like `https://example.com/docs`,
+set `url` to its address:
 
 ```yaml
 # little.yml
-url: https://withlittle.github.io/little
+url: https://example.com/docs
 ```
 
-little then adds the path, here `/little`, to every link. Write links as
-usual: relative to the page, or from the root of the site, without the
-path.
+little adds the path, `/docs`, to every link, so write links without it.
+`little serve` serves the site under the path too, at
+<http://127.0.0.1:8080/docs/>, so you see it as it'll be published.
 
-`little serve` serves the site under the path too, like
-<http://127.0.0.1:8080/little/>. So a link that leaves the path out breaks
-while you write, not after you publish.
-
-A site at the root of its domain, like `https://docs.example.com`, doesn't
-need `url`. Set it anyway if your theme makes absolute links, like for link
-previews.
+A site at the root of its domain, like `https://docs.example.com`, needn't
+set `url`, unless its theme makes absolute links, like for link previews.
 
 ## A 404 page
 
-A theme's 404 page is built to `dist/404.html`, where GitHub Pages,
-Netlify, and most other hosts look for one. `little serve` uses it too. The
-built-in theme has one.
+A theme's 404 page is built to `dist/404.html`, where most hosts look for
+one, and `little serve` shows it too. The built-in theme has one.
 
 ## Checking it first
 
@@ -44,12 +42,8 @@ little build --strict
 ```
 
 This fails on anything [`little build`](../reference/commands.md#little-build)
-warns of, like a broken link. Use it in CI, so a broken site isn't
-published. `dist/` is written either way.
-
-Links to other sites are checked too. So if a site you link to is down, or
-turns link checkers away, the build fails until it's back, or you remove
-the link.
+warns of, like a broken link. Run it in CI, so a broken site isn't
+published.
 
 ## Publishing on GitHub Pages
 
@@ -102,13 +96,8 @@ To publish your site each time you push to `main`:
            uses: actions/deploy-pages@v5
    ```
 
-- The workflow downloads the version of little in `curl`'s URL, so every
-  build uses the same little. To update it, change the version to a newer
-  [release](https://github.com/withlittle/little/releases)'s.
-- Downloading little takes seconds. `cargo install` would build it from
-  source on every run, which takes minutes.
-- For a site in its own folder, like `website/`, run
-  `little -C website build --strict`, and upload `website/dist`.
-- A site with [versions](../writing/versions.md) needs
-  `fetch-depth: 0` in `actions/checkout`'s `with:`, to fetch each version's
-  tag or branch.
+The workflow downloads the version of little in its `curl` URL, so every
+build uses the same little until you change it to a newer
+[release](https://github.com/withlittle/little/releases). For a site in
+its own folder, like `website/`, run `little -C website build --strict`,
+and upload `website/dist`.
