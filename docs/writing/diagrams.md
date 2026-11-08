@@ -36,16 +36,16 @@ sequenceDiagram
   serve->>Browser: Reload the page
 ```
 
-A diagram can look a little different than Mermaid's own script would draw
-it. If little can't read one, like one with a typo in its type, it writes
-it as code, and warns of it:
+A diagram can look a little different from how Mermaid's own script would
+draw it. If little can't read one, like one with a typo in its type, it
+writes it as code, and warns of it:
 
 ```text
 warning: can't draw the diagram on line 12 of ./docs/guide.md: No diagram type detected
 ```
 
-A diagram is drawn the same in each build, so a gantt chart's line at
-today's date is at the day the site was built, in UTC, or at
+A diagram is drawn when the site is built, so a gantt chart's line at
+today's date marks the day it was built, in UTC, or that of
 [`SOURCE_DATE_EPOCH`](../themes/making-a-theme.md#a-copyright-notice). To
 leave the line out, write `todayMarker off` in the chart.
 
