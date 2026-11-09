@@ -55,9 +55,9 @@ labels. The built-in theme links to them below each page.
 ## Breadcrumbs
 
 A page's breadcrumbs are the items above it in the nav, from the top down:
-the home page, if it's at the top of the nav, then the sections the page
-is in, but not the page itself. The home page has none. The built-in theme
-shows them above each page's title.
+the home page, if it's at the top of the nav, then the sections and labels
+the page is in, but not the page itself. The home page has none. The
+built-in theme shows them above each page's title.
 
 ## Tables of contents
 
