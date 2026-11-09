@@ -1,6 +1,8 @@
 # 0065 — little's decisions are at the root of its repository
 
-- Status: accepted
+- Status: accepted; amended by
+  [0073](./0073-agents-md-points-to-whats-written-elsewhere.md), which has
+  `AGENTS.md` point to the records, rather than sum each up
 - Date: 2026-11-04
 - Supersedes: [0053](./0053-decisions-in-the-manual.md)
 - Amends: [0032](./0032-docs-are-the-manual.md),

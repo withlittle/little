@@ -1,4 +1,7 @@
-//! Helpers that the tests of little's modules share.
+//! Helpers that the tests of little's modules share: [`scratch`], a folder
+//! of files, deleted when it's dropped, so a test that fails leaves
+//! nothing; [`write`] and [`files_in`], to write files and list them; and
+//! [`render_at`], to render a page.
 
 use anyhow::Result;
 use std::fs;
