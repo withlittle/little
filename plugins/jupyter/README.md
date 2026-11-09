@@ -29,8 +29,8 @@ about 460 KB, which a site can name where it is, or copy.
 ## Using it
 
 [Jupyter notebooks](../../docs/plugins/jupyter.ipynb), in little's manual,
-says how a site names it in its `plugins`, what a notebook's page shows,
-and its limits.
+says how a site names it in its `plugins`, and what a notebook's page
+shows.
 
 ## Developing it
 

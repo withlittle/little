@@ -61,7 +61,7 @@ little's own plugins add:
 Each one's page gives the URL of its `.wasm` file. Its releases, among
 [little's](https://github.com/withlittle/little/releases), list what
 changed in each version, and the version of little's
-[hooks](../reference/plugin-hooks.md) it's built for, and each carries a
+[hooks](../reference/plugin-hooks.md) it's built for. Each carries a
 `THIRD-PARTY-NOTICES.md`, with the licences of the crates it's built from.
 To build one yourself, see its README, in
 [`plugins/`](https://github.com/withlittle/little/tree/main/plugins).
@@ -114,10 +114,11 @@ your site turns on, so it
 [looks](../themes/styling-markdown.md#asciidoc-org-mode-and-restructuredtext)
 like the rest of your site. What needs an extension that's off is written
 in HTML, or plainer Markdown, like an alert as a quote, with a warning
-where something is lost. HTML you write in a page needs `raw_html`, as do
-the ids its format gives anchors, and headings, beside the `#fragment`
-little gives each. Text shows as you write it, even where Markdown would
-read it as markup, like the `*` in 2 * 3, or `:smile:`.
+where something is lost. With `raw_html` on, you can write HTML in a page,
+and anchors and headings keep the ids their format gives them, beside the
+`#fragment` little gives each heading. Text shows as you write it, even
+where Markdown would read it as markup, like the `*` in 2 * 3, or
+`:smile:`.
 
 ## When a plugin fails
 

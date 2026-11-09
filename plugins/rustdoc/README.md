@@ -28,8 +28,7 @@ about 1.2 MB, which a site can name where it is, or copy.
 ## Using it
 
 [Rust docs](../../docs/plugins/rustdoc.md), in little's manual, says how
-to name it in a site's `little.yml`, what pages it adds, what they show,
-and its limits, for now.
+to name it in a site's `little.yml`, what pages it adds, and what they show.
 
 ## Developing it
 

@@ -28,7 +28,7 @@ A theme without a search box leaves search off. To add one to yours, see
 
 Each page's own content is indexed, under its title, so nothing the theme
 puts around it, like its header or nav, fills the results. Words match by
-their stem, in the site's
+their stem, in each page's language, which the built-in theme takes from
 [`lang`](../getting-started/configuring.md#the-built-in-themes-settings),
 so "installing" finds "install".
 

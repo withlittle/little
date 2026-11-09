@@ -28,8 +28,7 @@ about 520 KB, which a site can name where it is, or copy.
 ## Using it
 
 [Go docs](../../docs/plugins/godoc.md), in little's manual, says how to
-name it in a site's `little.yml`, what pages it adds, what they show, and
-its limits, for now.
+name it in a site's `little.yml`, what pages it adds, and what they show.
 
 ## Developing it
 
