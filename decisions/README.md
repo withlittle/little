@@ -82,3 +82,4 @@ made, and link to each other.
 - [0070 — little's API out of the manual](0070-littles-api-out-of-the-manual.md)
 - [0071 — Ordering and naming the manual's plugin pages](0071-ordering-and-naming-the-manuals-plugin-pages.md)
 - [0072 — The manual's concise style](0072-the-manuals-concise-style.md)
+- [0073 — `AGENTS.md` points to what's written elsewhere](0073-agents-md-points-to-whats-written-elsewhere.md)
