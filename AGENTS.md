@@ -4,6 +4,9 @@ Read this before making changes. **little** is a static documentation site
 generator written in Rust. Its mission is **authoring experience** — see
 [`VISION.md`](./VISION.md).
 
+Keep agents' instructions here, not in a `CLAUDE.md`: Claude Code reads
+this file only while there's no `CLAUDE.md` or `CLAUDE.local.md`.
+
 ## Commands
 ```sh
 cargo run -- build          # build little's manual (docs/) into dist/, and check its links
@@ -359,6 +362,10 @@ Content and theme live outside `src/`:
   `nav` in `little.yml`. Keep the README short: it links to the manual.
   `cargo run -- build --strict` checks the manual's links, as the Docs
   workflow does for each pull request.
+- "The little static documentation site generator for big things." is
+  little's tagline. Use it word for word, with its full stop, wherever
+  little describes itself to its users, like `Cargo.toml`,
+  `little --help`, and the READMEs.
 - Versions follow [Semantic Versioning](https://semver.org/): each
   component's, in its `Cargo.toml`, is raised as it's released, and
   `little:plugin`'s, in `wit/plugin.wit`, by the change that needs it.
@@ -390,8 +397,22 @@ Content and theme live outside `src/`:
   - Breaking: `!` before the `:`, and a footer,
     `BREAKING-CHANGE: <what to change>`, beside the co-author trailer;
     written `BREAKING CHANGE:`, with a space, git misses the trailer.
-  - Include the Copilot co-author trailer. Rebase a branch on `main`,
-    rather than merging `main` into it.
+  - A commit is one change, with its tests, manual pages, and ADR. A new
+    plugin is three: `feat(<plugin>)`, for its folder and `committed.toml`,
+    with its page in the manual if its tests read it; `ci:`, for its
+    workflows, commands here, and `RELEASING.md`; and `docs:`, for the
+    rest, like its ADR, nav, and summary here. A change to a workflow is a
+    `ci:` commit of its own, with `RELEASING.md`'s lines about it; a change
+    to `RELEASING.md` alone is `docs:`.
+  - Include your co-author trailer. Rebase a branch on `main`, rather
+    than merging `main` into it.
+- A pull request's title is a commit's first line: its main commit's, or
+  one that sums its commits up. Its body opens with a paragraph on what
+  it does and why, then has `## What changes`, a list by file or area;
+  `## What to know`, for what the diff doesn't show, like what was
+  checked by hand, or left as it was, and why; and `## Checks`, last, the
+  commands run, like `cargo clippy --all-targets` and
+  `cargo run -- build --strict`, and what they found.
 
 ## Writing the manual
 The manual is for people who use little. Write so they find what they
@@ -423,7 +444,12 @@ follows it where it's for them, and so do doc comments in `src/`.
 
 ## Decisions
 Record notable choices as short ADRs in `decisions/`, list each in its
-`README.md`, and sum it up here. Locked so far:
+`README.md`, and sum it up here. A record that changes an earlier one
+names it in its header, as `Amends:` or `Supersedes:`, and the earlier
+one's `Status:` names it back, with what it changed. The earlier one's
+summary here changes too: if it's superseded, it goes into the past
+tense, "superseded by NNNN. … was …, until NNNN …"; if it's amended, it
+says "since NNNN" or "until NNNN" where it changed. Locked so far:
 - **Language:** Rust — see [`decisions/0001-language-rust.md`](./decisions/0001-language-rust.md).
 - **Markdown:** comrak. **Templating:** minijinja. **Config:** cascading YAML.
 - **Themes:** `_templates/` + `_static/`, a template per type of page — see
