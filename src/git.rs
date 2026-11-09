@@ -96,8 +96,7 @@ impl Repository {
         if shallow {
             bail!(
                 "there's no tag, branch, or commit `{git_ref}` in {}, a shallow clone, with only \
-                 some of the repository's history: clone all of it, as `actions/checkout` does \
-                 with `fetch-depth: 0`",
+                 some of the repository's history: fetch the rest with `git fetch --unshallow`",
                 self.top.display()
             );
         }
@@ -436,8 +435,7 @@ pub(crate) mod tests {
             message,
             format!(
                 "there's no tag, branch, or commit `v1` in {}, a shallow clone, with only some \
-                 of the repository's history: clone all of it, as `actions/checkout` does with \
-                 `fetch-depth: 0`",
+                 of the repository's history: fetch the rest with `git fetch --unshallow`",
                 clone.display()
             )
         );
