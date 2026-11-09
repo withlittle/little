@@ -32,7 +32,8 @@ stylesheet then loads instead.
 
 A stylesheet that doesn't compile stops the build, and the error names its
 file, line, and column. little prints `@warn` and `@debug` messages with
-theirs too.
+theirs too, but [`--strict`](../reference/commands.md#little-build) doesn't
+fail on them.
 
 little compiles Sass as Dart Sass 1.54 does, so a newer `if()`, like
 Bootstrap 6's `if(sass($a > $b): $a; else: $b)`, stops the build with
