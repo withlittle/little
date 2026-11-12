@@ -1,6 +1,8 @@
 # 0076 — Rebuilding only what differs
 
-- Status: accepted
+- Status: accepted; amended by
+  [0077](./0077-checking-links-after-a-rebuild.md), which reads only the
+  files a rebuild wrote to check the site's links
 - Date: 2026-11-12
 
 ## Context
@@ -16,7 +18,7 @@ reach the browser, on an Apple silicon Mac:
 | With `nav_prune` | 3.5 s |
 
 Most of it is the theme rendering pages that come out as they were, and
-writing them again. Reading and parsing the pages takes about half a
+writing them again. Reading and parsing the pages takes most of a
 second, and indexing them about one.
 
 ## Options considered
@@ -56,7 +58,8 @@ second, and indexing them about one.
 ## Consequences
 - On the same site, a save to a page's text reloads in 2.4 seconds with
   the whole nav on every page, and in 2.3 with `nav_prune`. What's left
-  is indexing the site for search, and reading its files.
+  is indexing the site for search, and parsing its pages, most of which
+  is highlighting their code.
 - A change that reaches every page, like a page's title in the whole nav,
   or a template, renders every page, as before.
 - A rebuild leaves the destination as a build would, byte for byte, which

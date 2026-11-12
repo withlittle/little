@@ -11,7 +11,8 @@
 //!
 //! After each build, it warns of each broken link within the site. Links
 //! that leave it are left to `little build`, so a save never waits on the
-//! network.
+//! network. It keeps what it reads from each file, so after a rebuild it
+//! reads only the files that wrote, as [`Checker`] does.
 //!
 //! It rebuilds when anything a build reads changes: the site's config, its
 //! source, its themes, and its plugins, with the folders they read, but
@@ -38,7 +39,7 @@ use std::time::Duration;
 use tiny_http::{Header, Response, Server};
 
 use crate::config::Wasm;
-use crate::links::{self, Scope};
+use crate::links::{Checker, Scope};
 use crate::site::Built;
 use crate::theme::Location;
 use crate::{config, site};
@@ -55,7 +56,8 @@ pub fn serve(site_dir: &Path, host: Option<String>, port: Option<u16>) -> Result
     // The last build that worked. A rebuild can move its folder, or the path
     // it's served under.
     let built = site::build(&site_dir)?;
-    warn(&built);
+    let mut links = Checker::default();
+    warn(&built, &mut links);
     let home = match built.url.path.as_str() {
         "" => String::new(),
         path => format!("{path}/"),
@@ -64,7 +66,7 @@ pub fn serve(site_dir: &Path, host: Option<String>, port: Option<u16>) -> Result
     let built = Arc::new(Mutex::new(Arc::new(built)));
 
     let version = Arc::new(AtomicU64::new(1));
-    spawn_watcher(site_dir.clone(), built.clone(), version.clone());
+    spawn_watcher(site_dir.clone(), built.clone(), version.clone(), links);
 
     let addr = address(&host, port);
     let server =
@@ -93,12 +95,13 @@ fn address(host: &str, port: u16) -> String {
     }
 }
 
-/// Warn of what the site `built` warns of, and each broken link within it.
-fn warn(built: &Built) {
+/// Warn of what the site `built` warns of, and each broken link within it,
+/// which `links` checks, build after build.
+fn warn(built: &Built, links: &mut Checker) {
     for warning in &built.warnings {
         eprintln!("warning: {}", warning.message);
     }
-    match links::check(built, Scope::Internal) {
+    match links.check(built, Scope::Internal) {
         Ok(broken) => {
             for link in broken {
                 eprintln!("warning: {link}");
@@ -108,7 +111,12 @@ fn warn(built: &Built) {
     }
 }
 
-fn spawn_watcher(site_dir: PathBuf, last: Arc<Mutex<Arc<Built>>>, version: Arc<AtomicU64>) {
+fn spawn_watcher(
+    site_dir: PathBuf,
+    last: Arc<Mutex<Arc<Built>>>,
+    version: Arc<AtomicU64>,
+    mut links: Checker,
+) {
     std::thread::spawn(move || {
         let (tx, rx) = std::sync::mpsc::channel();
         let mut sources = match Sources::watch(&site_dir, tx) {
@@ -145,7 +153,7 @@ fn spawn_watcher(site_dir: PathBuf, last: Arc<Mutex<Arc<Built>>>, version: Arc<A
                     version.fetch_add(1, Ordering::SeqCst);
                     println!("rebuilt");
                     // Once browsers can reload, as it takes longer than building.
-                    warn(&built);
+                    warn(&built, &mut links);
                 }
                 Err(e) => eprintln!("build error: {e:#}"),
             }
