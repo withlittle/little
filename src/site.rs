@@ -28,6 +28,7 @@ use std::iter::Peekable;
 use std::mem;
 use std::path::{Component, Path, PathBuf};
 use std::slice;
+use std::sync::{Arc, Mutex};
 use time::OffsetDateTime;
 use walkdir::WalkDir;
 
@@ -211,6 +212,10 @@ pub struct Built {
     /// The path in the destination of each file it wrote, and didn't leave
     /// as the build before it wrote it, as a [`rebuild`] can.
     pub written: HashSet<PathBuf>,
+    /// What search read of each version's pages, by the folder the version
+    /// is written into, which a [`rebuild`] takes, to index only the pages
+    /// that differ.
+    pub indexes: Arc<Mutex<HashMap<PathBuf, search::Index>>>,
 }
 
 /// What a build wrote a file from.
@@ -533,6 +538,7 @@ fn build_after(site_dir: &Path, last: Option<&Built>) -> Result<Built> {
         from_refs: HashSet::new(),
         files: HashMap::new(),
         written: HashSet::new(),
+        indexes: Arc::default(),
     };
     // When every version is from a git ref, the site's plugins build none,
     // but may have warned as they started.
@@ -945,7 +951,7 @@ fn finish(
     }
     // A plugin's `html` hook can make anything of a page, from more than
     // what the theme gets, so its pages are rendered each time.
-    let last = last.filter(|_| !plugins.changes_html());
+    let rendered = last.filter(|_| !plugins.changes_html());
     let root = built.destination.clone();
 
     // The theme owns 100% of the markup; little only hands it structured
@@ -968,7 +974,7 @@ fn finish(
         let mut from = shared.clone();
         (page_type, url, &nav, &page).hash(&mut from);
         let from = from.finish();
-        let written = (last.zip(path.strip_prefix(&root).ok()))
+        let written = (rendered.zip(path.strip_prefix(&root).ok()))
             .and_then(|(last, in_root)| last.files.get(in_root))
             .filter(|wrote| wrote.from == from && path.is_file());
         if let Some(wrote) = written {
@@ -1110,7 +1116,12 @@ fn finish(
                 lang: lang.clone(),
             })
             .collect();
-        search::index(&pages)?
+        // A build that fails leaves the next no index, so that starts again.
+        let kept = last.and_then(|last| last.indexes.lock().unwrap().remove(&place.destination));
+        let (files, index) = search::index(&pages, kept)?;
+        let mut indexes = built.indexes.lock().unwrap();
+        indexes.insert(place.destination.clone(), index);
+        files
     } else {
         Vec::new()
     };

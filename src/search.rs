@@ -9,10 +9,16 @@
 //! with `<html lang>`, so in English, "installing" finds "install". The
 //! build gives it only the pages to find: not the 404 page, nor those the
 //! site's `search.exclude`, or a page's own `search`, leaves out.
+//!
+//! Reading a page takes Pagefind longer than indexing what it's read, so a
+//! build keeps its [`Index`], and the build after it, in `little serve`,
+//! gives Pagefind only the pages that differ.
 
 use anyhow::{Context, Result};
 use pagefind::api::PagefindIndex;
 use regex::Regex;
+use std::fmt;
+use std::hash::{DefaultHasher, Hash, Hasher};
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
 
@@ -21,6 +27,7 @@ use std::sync::LazyLock;
 pub const DIR: &str = "pagefind";
 
 /// A page to index.
+#[derive(Clone)]
 pub struct Page<'a> {
     /// Its URL from the root of the site, like `/guide/`, without the site's
     /// path: Pagefind puts that back, from where it finds the index.
@@ -40,29 +47,75 @@ pub struct File {
     pub contents: Vec<u8>,
 }
 
+/// The pages Pagefind has read, which a build keeps for the one after it.
+pub struct Index {
+    pagefind: PagefindIndex,
+    /// The URL of each page it's read, in the order it read them, and a
+    /// hash of what it read: the page's title, content, and language.
+    pages: Vec<(String, u64)>,
+}
+
+impl fmt::Debug for Index {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "Index of {} page(s)", self.pages.len())
+    }
+}
+
 /// Index `pages`, and return the files that hold the index and the scripts
-/// that search it.
-pub fn index(pages: &[Page]) -> Result<Vec<File>> {
+/// that search it, with what Pagefind read, to keep.
+///
+/// With `kept`, what it read for the build before, of the same pages, only
+/// those that differ are read again. Pagefind can't forget a page, and reads
+/// a new one after the rest, so for any other pages it starts again, and
+/// the files are the same either way.
+pub fn index(pages: &[Page], kept: Option<Index>) -> Result<(Vec<File>, Index)> {
+    let read = |page: &Page| {
+        let mut hasher = DefaultHasher::new();
+        (page.title, page.content, &page.lang).hash(&mut hasher);
+        (page.url.to_string(), hasher.finish())
+    };
+    let read: Vec<(String, u64)> = pages.iter().map(read).collect();
+    let same = |kept: &Index| {
+        kept.pages
+            .iter()
+            .map(|(url, _)| url)
+            .eq(read.iter().map(|(url, _)| url))
+    };
+    let kept = kept.filter(same);
     let runtime = tokio::runtime::Runtime::new().context("starting the search indexer")?;
-    let files = runtime.block_on(async {
-        // Built in like this, Pagefind prints nothing.
-        let mut pagefind = PagefindIndex::new(None).context("starting the search indexer")?;
-        for page in pages {
+    runtime.block_on(async {
+        let (mut pagefind, before) = match kept {
+            Some(kept) => (kept.pagefind, kept.pages),
+            // Built in like this, Pagefind prints nothing.
+            None => {
+                let pagefind = PagefindIndex::new(None).context("starting the search indexer")?;
+                (pagefind, Vec::new())
+            }
+        };
+        for (at, page) in pages.iter().enumerate() {
+            // A page Pagefind's read is replaced, where it was.
+            if before.get(at) == Some(&read[at]) {
+                continue;
+            }
             pagefind
                 .add_html_file(None, Some(page.url.to_string()), document(page))
                 .await
                 .with_context(|| format!("indexing {} for search", page.url))?;
         }
-        pagefind
+        let files = pagefind
             .get_files()
             .await
-            .context("building the search index")
-    })?;
-    let files = files.into_iter().map(|file| File {
-        path: Path::new(DIR).join(file.filename),
-        contents: file.contents,
-    });
-    Ok(files.collect())
+            .context("building the search index")?;
+        let files = files.into_iter().map(|file| File {
+            path: Path::new(DIR).join(file.filename),
+            contents: file.contents,
+        });
+        let index = Index {
+            pagefind,
+            pages: read,
+        };
+        Ok((files.collect(), index))
+    })
 }
 
 /// The language a page's theme gives it with `<html lang>`, like `en`, from
@@ -115,6 +168,39 @@ mod tests {
         ] {
             assert_eq!(lang(html).as_deref(), expected, "{html}");
         }
+    }
+
+    #[test]
+    fn a_kept_index_gives_the_files_a_new_one_would() {
+        let page = |url: &'static str, content: &'static str| Page {
+            url,
+            title: "A page",
+            content,
+            lang: Some("en".into()),
+        };
+        let files = |files: Vec<File>| -> Vec<(PathBuf, Vec<u8>)> {
+            let files = files.into_iter().map(|file| (file.path, file.contents));
+            files.collect()
+        };
+        let pages = [page("/", "<p>Home</p>"), page("/guide", "<p>First</p>")];
+        let (_, kept) = index(&pages, None).unwrap();
+
+        // A page changes, and only it is read again.
+        let pages = [page("/", "<p>Home</p>"), page("/guide", "<p>Second</p>")];
+        let (after, kept) = index(&pages, Some(kept)).unwrap();
+        assert_eq!(files(after), files(index(&pages, None).unwrap().0));
+        assert_eq!(kept.pages.len(), 2);
+
+        // A page comes, or goes, and they're all read again.
+        let more = [
+            pages[0].clone(),
+            page("/about", "<p>About</p>"),
+            pages[1].clone(),
+        ];
+        let (after, kept) = index(&more, Some(kept)).unwrap();
+        assert_eq!(files(after), files(index(&more, None).unwrap().0));
+        let (after, _) = index(&pages[..1], Some(kept)).unwrap();
+        assert_eq!(files(after), files(index(&pages[..1], None).unwrap().0));
     }
 
     #[test]

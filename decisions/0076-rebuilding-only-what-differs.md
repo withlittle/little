@@ -2,7 +2,9 @@
 
 - Status: accepted; amended by
   [0077](./0077-checking-links-after-a-rebuild.md), which reads only the
-  files a rebuild wrote to check the site's links
+  files a rebuild wrote to check the site's links, and by
+  [0078](./0078-keeping-the-search-index.md), which indexes only the
+  pages that differ for search
 - Date: 2026-11-12
 
 ## Context
