@@ -216,6 +216,9 @@ pub struct Built {
     /// is written into, which a [`rebuild`] takes, to index only the pages
     /// that differ.
     pub indexes: Arc<Mutex<HashMap<PathBuf, search::Index>>>,
+    /// Each Markdown page it parsed, by a hash of all it was parsed from,
+    /// which a [`rebuild`] parses again only if that differs.
+    pub parsed: Arc<HashMap<u64, render::Rendered>>,
 }
 
 /// What a build wrote a file from.
@@ -452,14 +455,32 @@ pub fn build(site_dir: &Path) -> Result<Built> {
 /// rendered again only if what its theme renders it from has changed, or the
 /// theme's templates have, and a file that's no longer built is deleted.
 ///
-/// Every file is still read, and every page parsed. If `last` went to
-/// another destination, or its files aren't there now, it's a [`build`].
+/// Every file is still read, but a Markdown page is parsed again only if
+/// its text, or the settings it's parsed with, have changed. If `last`
+/// went to another destination, or its files aren't there now, every page
+/// is rendered and written, as [`build`] does.
 pub fn rebuild(site_dir: &Path, last: &Built) -> Result<Built> {
     build_after(site_dir, Some(last))
 }
 
+/// The Markdown pages a build parses, by a hash of all each is parsed from:
+/// its text, the URL of its folder, and the site's settings.
+#[derive(Default)]
+struct Parses {
+    /// Those the build before it parsed.
+    before: Arc<HashMap<u64, render::Rendered>>,
+    /// Those this build has, parsed or taken from `before`.
+    kept: HashMap<u64, render::Rendered>,
+}
+
 /// [`build`], or, after `last`, [`rebuild`].
 fn build_after(site_dir: &Path, last: Option<&Built>) -> Result<Built> {
+    let mut parses = Parses {
+        before: last
+            .map(|last| Arc::clone(&last.parsed))
+            .unwrap_or_default(),
+        kept: HashMap::new(),
+    };
     let config = config::load(site_dir)?;
     // Once, so every page of a build has the same year, and every diagram
     // the same today, even at midnight.
@@ -509,12 +530,14 @@ fn build_after(site_dir: &Path, last: Option<&Built>) -> Result<Built> {
                 check_out(&config, repository, version, git_ref).and_then(|(checkout, config)| {
                     let plugins = Plugins::start(&config.plugins, site_dir, now)?;
                     let checkout = Some(checkout);
-                    read_source(site_dir, &config, checkout, plugins, &theme, place, now)
+                    let theme = (&theme, &mut parses);
+                    read_source(site_dir, &config, checkout, plugins, theme, place, now)
                 })
             }
             _ => {
                 let plugins = site_plugins.take().unwrap_or_default();
-                read_source(site_dir, &config, None, plugins, &theme, place, now)
+                let theme = (&theme, &mut parses);
+                read_source(site_dir, &config, None, plugins, theme, place, now)
             }
         };
         sources.push(in_version(source, version)?);
@@ -539,6 +562,7 @@ fn build_after(site_dir: &Path, last: Option<&Built>) -> Result<Built> {
         files: HashMap::new(),
         written: HashSet::new(),
         indexes: Arc::default(),
+        parsed: Arc::new(parses.kept),
     };
     // When every version is from a git ref, the site's plugins build none,
     // but may have warned as they started.
@@ -698,7 +722,7 @@ fn read_source(
     config: &Config,
     checkout: Option<git::Checkout>,
     mut plugins: Plugins,
-    theme: &ThemeFiles,
+    (theme, parses): (&ThemeFiles, &mut Parses),
     mut place: Place,
     now: OffsetDateTime,
 ) -> Result<Source> {
@@ -813,6 +837,13 @@ fn read_source(
     let markdown = (config.values.get("markdown").and_then(Value::as_mapping))
         .cloned()
         .unwrap_or_default();
+    // What every Markdown page of the version is parsed from, but its own
+    // text and folder. A plugin that renders code blocks can make anything
+    // of one, so its site's pages are parsed each time.
+    let mut settings = DefaultHasher::new();
+    let toc = (config.toc_depths.start(), config.toc_depths.end());
+    (&place.url, toc, &markdown, plugins.extensions()).hash(&mut settings);
+    let kept = !plugins.renders_blocks();
     let mut pages = Vec::new();
     for (rel, origin, added, text, format) in documents {
         let file = slashed(&source_in_site.join(&rel));
@@ -820,15 +851,32 @@ fn read_source(
         let folder = folder_url(&rel);
         let toc_depths = &config.toc_depths;
         let rendered = match format {
-            Format::Markdown => render::parse_document(
-                &text,
-                &folder,
-                toc_depths,
-                &place.url,
-                &config.markdown,
-                now,
-                &mut plugins.on(&file),
-            ),
+            Format::Markdown => {
+                // A diagram is drawn as of now, so its page is parsed each
+                // time: any page that names Mermaid, to be sure.
+                let key = (kept && !text.contains("mermaid")).then(|| {
+                    let mut key = settings.clone();
+                    (&text, &folder).hash(&mut key);
+                    key.finish()
+                });
+                let before = key.and_then(|key| parses.before.get(&key));
+                let rendered = match before {
+                    Some(rendered) => Ok(rendered.clone()),
+                    None => render::parse_document(
+                        &text,
+                        &folder,
+                        toc_depths,
+                        &place.url,
+                        &config.markdown,
+                        now,
+                        &mut plugins.on(&file),
+                    ),
+                };
+                if let (Some(key), Ok(rendered)) = (key, &rendered) {
+                    parses.kept.insert(key, rendered.clone());
+                }
+                rendered
+            }
             Format::Plugin => plugins.read(&file, &text, &markdown).and_then(|parts| {
                 parts::parse_parts(
                     parts,
@@ -4715,6 +4763,61 @@ mod tests {
         fs::write(&home, "left").unwrap();
         rebuild(&site, &built).unwrap();
         assert_eq!(fs::read_to_string(&home).unwrap(), "Home!");
+    }
+
+    #[test]
+    fn a_rebuild_parses_only_the_pages_that_differ() {
+        let (_tmp, site) = scratch(&[
+            ("little.yml", "theme: ./theme\n"),
+            ("docs/README.md", "# Home\n"),
+            ("docs/guide.md", "# Guide\n\nFirst.\n"),
+            ("docs/chart.md", "# Chart\n\n```mermaid\ngantt\n```\n"),
+            ("theme/_templates/default.html", "{{ page.content | safe }}"),
+        ]);
+        // How many pages a build keeps the parse of, and how many of those
+        // it had from the build before.
+        let kept = |built: &Built, last: &Built| {
+            let from_last = built
+                .parsed
+                .keys()
+                .filter(|key| last.parsed.contains_key(key));
+            (built.parsed.len(), from_last.count())
+        };
+        let built = build(&site).unwrap();
+        // A diagram is drawn as of now, so its page is parsed each time.
+        assert_eq!(built.parsed.len(), 2);
+
+        let rebuilt = rebuild(&site, &built).unwrap();
+        assert_eq!(kept(&rebuilt, &built), (2, 2));
+
+        // A page's text changes, and it's parsed again, alone.
+        write(&site, &[("docs/guide.md", "# Guide\n\nSecond.\n")]);
+        let built = rebuild(&site, &rebuilt).unwrap();
+        assert_eq!(kept(&built, &rebuilt), (2, 1));
+        let guide = fs::read_to_string(site.join("dist/guide/index.html")).unwrap();
+        assert!(guide.contains("<p>Second.</p>"), "{guide}");
+
+        // A page that moves leads its links from another folder.
+        fs::create_dir(site.join("docs/more")).unwrap();
+        fs::rename(site.join("docs/guide.md"), site.join("docs/more/guide.md")).unwrap();
+        let moved = rebuild(&site, &built).unwrap();
+        assert_eq!(kept(&moved, &built), (2, 1));
+
+        // The site's settings reach every page.
+        let config = "theme: ./theme\nmarkdown:\n  highlight: false\n";
+        write(&site, &[("little.yml", config)]);
+        let built = rebuild(&site, &moved).unwrap();
+        assert_eq!(kept(&built, &moved), (2, 0));
+
+        // A plugin that renders code blocks can make anything of a page.
+        let plugin = serde_json::json!({
+            "wasm": crate::plugin::tests::test_plugin(),
+            "languages": ["test"],
+        });
+        let config = format!("theme: ./theme\nplugins:\n  test: {plugin}\n");
+        write(&site, &[("little.yml", &config)]);
+        let hooked = rebuild(&site, &built).unwrap();
+        assert_eq!(hooked.parsed.len(), 0);
     }
 
     #[test]
