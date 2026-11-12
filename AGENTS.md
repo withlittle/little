@@ -34,6 +34,10 @@ cargo clippy --manifest-path plugins/markup/Cargo.toml --all-targets
 # the third-party notices releases carry, with cargo-about 0.9.2
 # (cargo install --locked cargo-about@0.9.2)
 scripts/notices.sh little target/notices/little.md # or any plugin, like pydoc
+
+# time a build of a large site, before and after a change to how fast it is
+scripts/bench.sh                # 2,000 pages, or as many as you give it
+cargo build --profile profiling # target/profiling/little, for a profiler
 ```
 
 The manual uses the plugins its `little.yml` names, from where Cargo
