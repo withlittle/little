@@ -92,3 +92,11 @@ dunce = "1.0.5"
 # no smaller, and fat LTO a further 30% smaller, but many times as slow.
 [profile.release]
 strip = true
+
+# The release build with its symbols, and the line each frame is on, for a
+# profiler to name where a build's time goes: `cargo build --profile
+# profiling` builds target/profiling/little.
+[profile.profiling]
+inherits = "release"
+strip = false
+debug = "line-tables-only"
