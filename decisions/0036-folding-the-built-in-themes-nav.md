@@ -1,6 +1,8 @@
 # 0036 — Folding the built-in theme's nav
 
-- Status: accepted
+- Status: accepted; amended by [0074](./0074-pruning-the-nav.md), which,
+  with `nav_prune`, gives each page a nav of its own, where a folder the
+  page isn't in is a link, with nothing in it to fold
 - Date: 2026-10-10
 - Amends: [0033](./0033-the-built-in-themes-design.md),
   [0034](./0034-the-built-in-themes-script.md)

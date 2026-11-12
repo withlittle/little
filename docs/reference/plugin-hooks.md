@@ -254,6 +254,8 @@ It gives back the `site` the theme gets. Its `nav` must still be a list of
 URLs are as the theme gets them, with the path of the site's
 [`url`](../getting-started/publishing.md#choosing-the-sites-url) before
 them, like `/little/guide/install`, so a URL the hook adds needs it, too.
+With [`nav_prune`](../writing/navigation.md#pruning-the-nav), little prunes
+the nav it gives back, for each page.
 
 ## page
 

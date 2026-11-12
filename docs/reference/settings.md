@@ -26,6 +26,7 @@ or works them out. A theme or a site can change any of them:
 | `repo` | none | the [repository](../getting-started/configuring.md#choosing-the-sites-repository) its source is in |
 | `branch` | `main` | the branch its pages' files are [linked to](../getting-started/configuring.md#choosing-the-sites-repository) on |
 | `nav` | the source's pages and folders, [sorted by title](../writing/navigation.md#the-nav) | the site's [nav](../writing/navigation.md#writing-the-nav-yourself) |
+| `nav_prune` | `false` | whether each page's nav lists [only the folders the page is in](../writing/navigation.md#pruning-the-nav) |
 | `toc_min_depth` | `2`, for `##` | the level of heading a page's [table of contents](../writing/navigation.md#tables-of-contents) lists from |
 | `toc_max_depth` | `6`, for `######`; `3`, for `###`, in the built-in theme | the level it lists down to |
 | `search` | `false`; `true` in the built-in theme | whether the site's [indexed for search](../writing/search.md): `true`, `false`, or its settings, which turn it on |

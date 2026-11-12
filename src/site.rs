@@ -273,6 +273,9 @@ struct Source {
     values: Mapping,
     /// What it indexes for search, if anything.
     search: Option<config::Search>,
+    /// Whether each page's nav lists what's in a folder only if the page is
+    /// in it.
+    nav_prune: bool,
     /// Its theme, which writes URLs under the version's.
     theme: Theme,
     pages: Vec<Page>,
@@ -757,6 +760,7 @@ fn read_source(
         git_ref: checkout.as_ref().map(|checkout| checkout.git_ref.clone()),
         values: config.values.clone(),
         search: config.search.clone(),
+        nav_prune: config.nav_prune,
         theme,
         pages,
         files,
@@ -783,6 +787,7 @@ fn finish(
         git_ref,
         values,
         search,
+        nav_prune,
         theme,
         pages,
         files,
@@ -827,6 +832,14 @@ fn finish(
     let site_value = MjValue::from_serialize(&site);
     let neighbours = neighbours_in(&nav);
     let trails = breadcrumbs_in(&nav, &place.url.link("/"));
+    // With `nav_prune`, each page gets a nav of its own, pruned from the
+    // whole one, which its breadcrumbs, `prev`, and `next` still follow.
+    let pruned = nav_prune
+        .then(|| {
+            let urls = (pages.iter()).map(|page| place.url.link(&page.url).into_owned());
+            PrunedNav::new(&site, urls)
+        })
+        .flatten();
 
     // The theme owns 100% of the markup; little only hands it structured
     // data, which plugins can change, then change what the theme makes of it.
@@ -844,10 +857,11 @@ fn finish(
             ),
         };
         let searched = (text("title"), text("content"), listed);
-        let html = theme.render(
-            page_type,
-            context! { site => site_value.clone(), page => page },
-        )?;
+        let site = match &pruned {
+            Some(pruned) => pruned.site(url),
+            None => site_value.clone(),
+        };
+        let html = theme.render(page_type, context! { site => site, page => page })?;
         let html = html.map(|html| plugins.html(url, on, html));
         anyhow::Ok(html.map(|html| (html, searched)))
     };
@@ -1653,6 +1667,162 @@ fn push_trails<'a>(
     }
 }
 
+/// A version's nav, pruned for each of its pages, for `nav_prune`: a page's
+/// nav lists what's in a folder only if the page is in it, or is the
+/// folder's own page, so it's as long as the page's way down the nav, not as
+/// the site.
+///
+/// A folder the page isn't in is a link, without its items: to its own page,
+/// or, if it's a label, to the first page in it. One that leads nowhere in
+/// the site keeps its items, as a reader couldn't reach them otherwise: a
+/// folder whose `url` isn't a page's, like a link to another site, and a
+/// label with no page in it.
+struct PrunedNav<'a> {
+    /// `site`, as the theme gets it, but with no items in its nav.
+    site: Mapping,
+    /// The whole nav, as the theme would get it.
+    nav: &'a [Value],
+    /// The URL of each of the version's pages, as the nav links to it.
+    pages: HashSet<String>,
+    /// Where each item with a URL is in the nav, by its URL: the index of
+    /// each item it's in, from the top down, then its own. A page listed
+    /// twice is at the last place, where its breadcrumbs lead.
+    places: HashMap<&'a str, Vec<usize>>,
+}
+
+impl<'a> PrunedNav<'a> {
+    /// The nav in `site`, what the theme gets as `site`, ready to prune for
+    /// each page. `pages` holds each page's URL, as the nav links to it.
+    /// `None` if `site` has no nav.
+    fn new(site: &'a Mapping, pages: impl IntoIterator<Item = String>) -> Option<Self> {
+        let nav = site.get("nav")?.as_sequence()?;
+        // Each page puts its own nav where the whole one was.
+        let emptied = site.iter().map(|(key, value)| match key.as_str() {
+            Some("nav") => (key.clone(), Value::Sequence(Vec::new())),
+            _ => (key.clone(), value.clone()),
+        });
+        let mut places = HashMap::new();
+        find_places(nav, &mut Vec::new(), &mut places);
+        Some(PrunedNav {
+            site: emptied.collect(),
+            nav,
+            pages: pages.into_iter().collect(),
+            places,
+        })
+    }
+
+    /// `site`, as the theme gets it for the page at `url`, as the nav links
+    /// to it, with the page's own nav.
+    fn site(&self, url: &str) -> MjValue {
+        let mut site = self.site.clone();
+        site.insert("nav".into(), Value::Sequence(self.at(url)));
+        MjValue::from_serialize(&site)
+    }
+
+    /// The nav of the page at `url`, as the nav links to it. A page that
+    /// isn't in the nav, like the 404 page, is in none of its folders.
+    fn at(&self, url: &str) -> Vec<Value> {
+        let place = self.places.get(url).map_or(&[][..], Vec::as_slice);
+        self.prune(self.nav, place)
+    }
+
+    /// `items`, for a page at `place` in them: the index of each item it's
+    /// in, from here down, then its own. It's empty for a page that isn't in
+    /// them.
+    fn prune(&self, items: &[Value], place: &[usize]) -> Vec<Value> {
+        let (here, below) = match place {
+            [here, below @ ..] => (Some(*here), below),
+            [] => (None, place),
+        };
+        (items.iter().enumerate())
+            .map(|(index, item)| {
+                let within = items_in(item);
+                if within.is_empty() {
+                    return item.clone();
+                }
+                // The page is in the folder, or is the folder's own.
+                if here == Some(index) {
+                    return relisted(item, Some(self.prune(within, below)), None);
+                }
+                let own = url_of(item);
+                let first = (own.is_none().then(|| self.first_page(within))).flatten();
+                match (own, first) {
+                    (Some(url), _) if self.pages.contains(url) => relisted(item, None, None),
+                    (None, Some(first)) => relisted(item, None, Some(first)),
+                    // It leads nowhere in the site, so it keeps its items.
+                    _ => relisted(item, Some(self.prune(within, &[])), None),
+                }
+            })
+            .collect()
+    }
+
+    /// The URL of the first page in `items`, in the nav's order, where an
+    /// item comes before the items in it.
+    fn first_page<'v>(&self, items: &'v [Value]) -> Option<&'v str> {
+        items.iter().find_map(|item| {
+            (url_of(item).filter(|url| self.pages.contains(*url)))
+                .or_else(|| self.first_page(items_in(item)))
+        })
+    }
+}
+
+/// Note where each of `items` with a URL is in the nav, and each item in
+/// them, in `places`. `above` holds the index of each item `items` are in,
+/// from the top down.
+fn find_places<'a>(
+    items: &'a [Value],
+    above: &mut Vec<usize>,
+    places: &mut HashMap<&'a str, Vec<usize>>,
+) {
+    for (index, item) in items.iter().enumerate() {
+        above.push(index);
+        if let Some(url) = url_of(item) {
+            places.insert(url, above.clone());
+        }
+        find_places(items_in(item), above, places);
+        above.pop();
+    }
+}
+
+/// The `url` of `item`, an item in a nav, unless it's a label.
+fn url_of(item: &Value) -> Option<&str> {
+    item.get("url").and_then(Value::as_str)
+}
+
+/// The items in `item`, an item in a nav: none, unless it's a folder.
+fn items_in(item: &Value) -> &[Value] {
+    let items = item.get("children").and_then(Value::as_sequence);
+    items.map_or(&[], Vec::as_slice)
+}
+
+/// `item`, a folder in a nav, with `items` in place of its own, or, with
+/// none, as a link: to `url`, if it has none of its own. Its other keys,
+/// like an `icon` for a theme, stay as they are.
+fn relisted(item: &Value, mut items: Option<Vec<Value>>, url: Option<&str>) -> Value {
+    let Value::Mapping(folder) = item else {
+        return item.clone();
+    };
+    let mut relisted = Mapping::with_capacity(folder.len() + 1);
+    for (key, value) in folder {
+        match key.as_str() {
+            Some("children") => {
+                if let Some(items) = items.take() {
+                    relisted.insert(key.clone(), Value::Sequence(items));
+                }
+            }
+            // A label's `url`, left blank, which its link takes the place of.
+            Some("url") if url.is_some() => {}
+            _ => {
+                relisted.insert(key.clone(), value.clone());
+            }
+        }
+    }
+    if let Some(url) = url {
+        relisted.insert("url".into(), url.into());
+    }
+    Value::Mapping(relisted)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1747,6 +1917,14 @@ mod tests {
             .map(|crumb| format!("{} {}", crumb.title, crumb.url.unwrap_or("(label)")))
             .collect::<Vec<_>>()
             .join(" > ")
+    }
+
+    /// The nav of the page at `url`, pruned from the nav in `site`, whose
+    /// pages are at `pages`: its titles and URLs, nested like the nav.
+    fn pruned_at(site: &Mapping, pages: &[&str], url: &str) -> Vec<String> {
+        let pages = pages.iter().map(|page| page.to_string());
+        let nav = PrunedNav::new(site, pages).unwrap().at(url);
+        outline(&serde_yaml::from_value::<Vec<NavItem>>(Value::Sequence(nav)).unwrap())
     }
 
     #[test]
@@ -2133,6 +2311,220 @@ mod tests {
         let trails = breadcrumbs_in(&nav, "/");
         assert_eq!(trail(&trails["/"]), "Docs (label)");
         assert_eq!(trail(&trails["/guide/"]), "Docs (label)");
+    }
+
+    #[test]
+    fn a_pruned_nav_lists_only_the_folders_a_page_is_in() {
+        let site: Mapping = serde_yaml::from_str(
+            "nav:\n\
+             - { title: Home, url: / }\n\
+             - { title: Guide, url: /guide/, children: [\
+                 { title: Install, url: /guide/install },\
+                 { title: Advanced, url: /guide/advanced/, children: [\
+                     { title: Tuning, url: /guide/advanced/tuning },\
+                     { title: Deep, children: [\
+                         { title: Limits, url: /guide/advanced/deep/limits }] }] },\
+                 { title: Recipes, children: [\
+                     { title: Bake, url: /guide/recipes/bake },\
+                     { title: Roast, url: /guide/recipes/roast }] }] }\n\
+             - { title: Reference, children: [\
+                 { title: Commands, url: /reference/commands },\
+                 { title: Settings, url: /reference/settings }] }\n\
+             - { title: API, url: /api/, children: [{ title: Errors, url: /api/errors }] }\n",
+        )
+        .unwrap();
+        let pages = [
+            "/",
+            "/guide/",
+            "/guide/install",
+            "/guide/advanced/",
+            "/guide/advanced/tuning",
+            "/guide/advanced/deep/limits",
+            "/guide/recipes/bake",
+            "/guide/recipes/roast",
+            "/reference/commands",
+            "/reference/settings",
+            "/api/",
+            "/api/errors",
+        ];
+        let at = |url: &str| pruned_at(&site, &pages, url);
+
+        // Each folder a page is in lists what's in it, down to the page. Any
+        // other is a link: to its own page, or, for a label, to the first
+        // page in it.
+        assert_eq!(
+            at("/guide/advanced/deep/limits"),
+            [
+                "Home /",
+                "Guide /guide/",
+                "  Install /guide/install",
+                "  Advanced /guide/advanced/",
+                "    Tuning /guide/advanced/tuning",
+                "    Deep (label)",
+                "      Limits /guide/advanced/deep/limits",
+                "  Recipes /guide/recipes/bake",
+                "Reference /reference/commands",
+                "API /api/",
+            ]
+        );
+        // A folder's own page lists what's in it, but not what's in the
+        // folders there.
+        assert_eq!(
+            at("/guide/"),
+            [
+                "Home /",
+                "Guide /guide/",
+                "  Install /guide/install",
+                "  Advanced /guide/advanced/",
+                "  Recipes /guide/recipes/bake",
+                "Reference /reference/commands",
+                "API /api/",
+            ]
+        );
+        // A label is still one on the pages in it.
+        assert_eq!(
+            at("/reference/settings"),
+            [
+                "Home /",
+                "Guide /guide/",
+                "Reference (label)",
+                "  Commands /reference/commands",
+                "  Settings /reference/settings",
+                "API /api/",
+            ]
+        );
+        // The top of the nav is always whole: it's all a page at the top
+        // gets, or one that isn't in the nav, like the 404 page.
+        for url in ["/", "/404.html", "/drafts/notes"] {
+            assert_eq!(
+                at(url),
+                [
+                    "Home /",
+                    "Guide /guide/",
+                    "Reference /reference/commands",
+                    "API /api/",
+                ],
+                "{url}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_pruned_nav_keeps_what_a_reader_couldnt_reach() {
+        let site: Mapping = serde_yaml::from_str(
+            "name: Docs\n\
+             nav:\n\
+             - { title: Home, url: / }\n\
+             - { title: Elsewhere, url: \"https://example.com/\", children: [\
+                 { title: One, url: /one },\
+                 { title: More, url: /more/, children: [{ title: Two, url: /more/two }] }] }\n\
+             - { title: Typo, url: /guide, children: [{ title: Install, url: /guide/install }] }\n\
+             - { title: Links, children: [\
+                 { title: GitHub, url: \"https://github.com/withlittle/little\" }] }\n\
+             - { title: Tools, icon: wrench, url: , children: [\
+                 { title: Old, children: [{ title: Site, url: \"https://example.com/old\" }] },\
+                 { title: New, children: [{ title: Lint, url: /tools/lint }] }] }\n\
+             - { title: Guide, url: /guide/, icon: book, children: [\
+                 { title: Setup, url: /guide/setup }] }\n\
+             version: \"1.4\"\n",
+        )
+        .unwrap();
+        let pages = [
+            "/",
+            "/one",
+            "/more/",
+            "/more/two",
+            "/guide/",
+            "/guide/install",
+            "/guide/setup",
+            "/tools/lint",
+        ];
+
+        // A folder whose link isn't to one of the site's pages keeps what's
+        // in it, as does a label with no page in it: following either would
+        // never show its items. The folders in them are still pruned. A
+        // label's first page can be in a folder within it.
+        assert_eq!(
+            pruned_at(&site, &pages, "/"),
+            [
+                "Home /",
+                "Elsewhere https://example.com/",
+                "  One /one",
+                "  More /more/",
+                "Typo /guide",
+                "  Install /guide/install",
+                "Links (label)",
+                "  GitHub https://github.com/withlittle/little",
+                "Tools /tools/lint",
+                "Guide /guide/",
+            ]
+        );
+        assert_eq!(
+            pruned_at(&site, &pages, "/more/two"),
+            [
+                "Home /",
+                "Elsewhere https://example.com/",
+                "  One /one",
+                "  More /more/",
+                "    Two /more/two",
+                "Typo /guide",
+                "  Install /guide/install",
+                "Links (label)",
+                "  GitHub https://github.com/withlittle/little",
+                "Tools /tools/lint",
+                "Guide /guide/",
+            ]
+        );
+
+        // A folder keeps its other keys, like a theme's `icon`, and a label
+        // gets a `url` in place of one left blank. The rest of `site` is as
+        // it was, in its order.
+        let pruned = PrunedNav::new(&site, pages.iter().map(|page| page.to_string())).unwrap();
+        let nav = pruned.at("/");
+        let item = |index: usize| serde_yaml::to_string(&nav[index]).unwrap();
+        assert_eq!(item(4), "title: Tools\nicon: wrench\nurl: /tools/lint\n");
+        assert_eq!(item(5), "title: Guide\nurl: /guide/\nicon: book\n");
+        let keys: Vec<_> = pruned.site.keys().filter_map(Value::as_str).collect();
+        assert_eq!(keys, ["name", "nav", "version"]);
+        assert_eq!(pruned.site.get("version"), site.get("version"));
+
+        // A site with no nav has none to prune.
+        let site: Mapping = serde_yaml::from_str("name: Docs\n").unwrap();
+        assert!(PrunedNav::new(&site, Vec::new()).is_none());
+    }
+
+    #[test]
+    fn a_pruned_nav_follows_a_page_to_the_last_place_its_listed() {
+        let site: Mapping = serde_yaml::from_str(
+            "nav:\n\
+             - { title: Tutorials, children: [\
+                 { title: Setup, url: /guide/install },\
+                 { title: First Steps, url: /getting-started }] }\n\
+             - { title: Guide, url: /guide/, children: [\
+                 { title: Install, url: /guide/install }] }\n",
+        )
+        .unwrap();
+        let pages = ["/guide/", "/guide/install", "/getting-started"];
+
+        // As for its breadcrumbs, a page listed twice is in the folder it's
+        // last listed in, so the other is a link, here to the page itself.
+        assert_eq!(
+            pruned_at(&site, &pages, "/guide/install"),
+            [
+                "Tutorials /guide/install",
+                "Guide /guide/",
+                "  Install /guide/install",
+            ]
+        );
+        assert_eq!(
+            pruned_at(&site, &pages, "/getting-started"),
+            [
+                "Tutorials (label)",
+                "  Setup /guide/install",
+                "  First Steps /getting-started",
+                "Guide /guide/",
+            ]
+        );
     }
 
     #[test]
@@ -3323,6 +3715,37 @@ mod tests {
                 "{path}"
             );
         }
+
+        // With `nav_prune`, a folder the current page isn't in is a link,
+        // with nothing to fold: to its own page, or, for a label, to the
+        // first page in it. The folders the page is in are as before.
+        fs::write(site.join("little.yml"), "nav_prune: true\n").unwrap();
+        build(&site).unwrap();
+        assert_eq!(
+            sidebar("guide/advanced/deep/limits/index.html"),
+            [
+                r#"<a href="/">Home</a>"#,
+                r#"<a href="/api/reference">Api</a>"#,
+                r#"<a href="/guide/">Guide</a>"#,
+                r#"<a href="/guide/advanced/">Advanced</a>"#,
+                "<details open>",
+                r#"<summary><span class="visually-hidden">Advanced</span></summary>"#,
+                "<details open>",
+                r#"<summary class="nav-label">Deep</summary>"#,
+                r#"<a href="/guide/advanced/deep/limits" aria-current="page">Limits</a>"#,
+                r#"<a href="/guide/advanced/tuning">Tuning</a>"#,
+                r#"<a href="/guide/install">Install</a>"#,
+                r#"<a href="/guide/recipes/bake">Recipes</a>"#,
+            ]
+        );
+        assert_eq!(
+            sidebar("index.html"),
+            [
+                r#"<a href="/" aria-current="page">Home</a>"#,
+                r#"<a href="/api/reference">Api</a>"#,
+                r#"<a href="/guide/">Guide</a>"#,
+            ]
+        );
     }
 
     #[test]
@@ -3666,6 +4089,84 @@ mod tests {
             let message = format!("{:#}", build(&site).unwrap_err());
             let expected = "`nav` in little.yml must be a list of links";
             assert!(message.starts_with(expected), "{message}");
+        }
+    }
+
+    #[test]
+    fn nav_prune_gives_each_page_a_nav_of_its_own() {
+        let nav = "{% for item in site.nav recursive %}{{ item.title }}\
+                   {% if item.url %} {{ item.url | safe }}{% endif %}\
+                   {% if item.children %} [{{ loop(item.children) }}]{% endif %}; {% endfor %}";
+        let template = format!(
+            "{nav}| {{% for crumb in page.breadcrumbs %}}{{{{ crumb.title }}}} > {{% endfor %}}\
+             | {{% if page.prev %}}{{{{ page.prev.url | safe }}}}{{% endif %}} \
+             < {{{{ page.title }}}} > \
+             {{% if page.next %}}{{{{ page.next.url | safe }}}}{{% endif %}}"
+        );
+        let (_tmp, site) = scratch(&[
+            ("little.yml", "theme: ./theme\nnav_prune: true\n"),
+            ("docs/README.md", "# Home\n"),
+            ("docs/guide/README.md", "# Guide\n"),
+            ("docs/guide/install.md", "# Install\n"),
+            ("docs/guide/advanced/tuning.md", "# Tuning\n"),
+            ("docs/api/reference.md", "# Reference\n"),
+            ("theme/_templates/default.html", &template),
+            ("theme/_templates/404.html", nav),
+        ]);
+        let read = |path: &str| fs::read_to_string(site.join("dist").join(path)).unwrap();
+
+        build(&site).unwrap();
+
+        // A page's nav lists what's in the folders it's in. Its breadcrumbs,
+        // `prev`, and `next` follow the whole nav, as without `nav_prune`.
+        assert_eq!(
+            read("guide/advanced/tuning/index.html"),
+            "Home /; Api /api/reference; \
+             Guide /guide/ [Advanced [Tuning /guide/advanced/tuning; ]; Install /guide/install; ]; \
+             | Home > Guide > Advanced > | /guide/ < Tuning > /guide/install"
+        );
+        assert_eq!(
+            read("api/reference/index.html"),
+            "Home /; Api [Reference /api/reference; ]; Guide /guide/; \
+             | Home > Api > | / < Reference > /guide/"
+        );
+        // A folder's own page lists what's in it, with each folder there a
+        // link. The home page, and the 404 page, get the top of the nav.
+        assert_eq!(
+            read("guide/index.html"),
+            "Home /; Api /api/reference; \
+             Guide /guide/ [Advanced /guide/advanced/tuning; Install /guide/install; ]; \
+             | Home > | /api/reference < Guide > /guide/advanced/tuning"
+        );
+        let top = "Home /; Api /api/reference; Guide /guide/; ";
+        assert_eq!(
+            read("index.html"),
+            format!("{top}| |  < Home > /api/reference")
+        );
+        assert_eq!(read(NOT_FOUND_FILE), top);
+
+        // Its links have the path of the site's `url`, a label's too.
+        let site_cfg =
+            "theme: ./theme\nnav_prune: true\nurl: https://withlittle.github.io/little\n";
+        fs::write(site.join("little.yml"), site_cfg).unwrap();
+        build(&site).unwrap();
+        assert_eq!(
+            read(NOT_FOUND_FILE),
+            "Home /little/; Api /little/api/reference; Guide /little/guide/; "
+        );
+        assert!(read("guide/install/index.html").starts_with(
+            "Home /little/; Api /little/api/reference; Guide /little/guide/ \
+             [Advanced /little/guide/advanced/tuning; Install /little/guide/install; ]; "
+        ));
+
+        // Without it, as little has it, every page gets the whole nav.
+        fs::write(site.join("little.yml"), "theme: ./theme\n").unwrap();
+        build(&site).unwrap();
+        let whole = "Home /; Api [Reference /api/reference; ]; \
+                     Guide /guide/ [Advanced [Tuning /guide/advanced/tuning; ]; \
+                     Install /guide/install; ]; ";
+        for path in ["index.html", "guide/install/index.html", NOT_FOUND_FILE] {
+            assert!(read(path).starts_with(whole), "{path}");
         }
     }
 
