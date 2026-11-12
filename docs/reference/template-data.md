@@ -17,7 +17,7 @@ both work.
 | -------- | -------- |
 | `site` | The site's config, merged, with each of its [settings](settings.md), like `site.url`, and [your own](settings.md#your-own-settings) |
 | `site.markdown` | The site's [`markdown` settings](../writing/markdown.md#choosing-markdowns-extensions), like `site.markdown.math`, so a theme can [load a script](../themes/styling-markdown.md#loading-a-script-a-site-needs) only for a site that needs it |
-| `site.nav` | The [nav](../writing/navigation.md#the-nav), a list of `{ title, url, children }`, where a label has no `url` |
+| `site.nav` | The [nav](../writing/navigation.md#the-nav), a list of `{ title, url, children }`, where a label has no `url`. With [`nav_prune`](../writing/navigation.md#pruning-the-nav), each page gets its own |
 | `site.version` | On a site with [versions](../writing/versions.md), the `title` of the one being built, like `1.4`. A `version` in `little.yml` replaces it |
 | `site.versions` | Each entry in `versions`, as it's written, with its home page's `url`, and `root`, for a [menu of versions](../themes/making-a-theme.md#a-menu-of-versions) |
 | `site.year` | The year the site is built in, like `2026`, for a [copyright notice](../themes/making-a-theme.md#a-copyright-notice) |

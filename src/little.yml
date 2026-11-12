@@ -18,6 +18,13 @@ theme: true
 toc_min_depth: 2
 toc_max_depth: 6
 
+# Whether each page's nav lists what's in a folder only if the page is in it,
+# or is the folder's own. A folder it isn't in is then a link: to its own
+# page, or, without one, to the first page in it. On a site of thousands of
+# pages, a nav that lists them all is most of every page, so `true` keeps
+# each page small, and the site quick to build.
+nav_prune: false
+
 # Where `little serve` serves the site while you write it: a host name or IP
 # address, and a port. `little serve --host` and `--port` override them for a
 # single run.

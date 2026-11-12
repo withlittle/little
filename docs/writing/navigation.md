@@ -1,6 +1,6 @@
 ---
 title: Navigation
-description: The sidebar, previous and next pages, breadcrumbs, and tables of contents, and writing the nav yourself.
+description: The sidebar, previous and next pages, breadcrumbs, and tables of contents, writing the nav yourself, and pruning it on a big site.
 ---
 
 # Navigation
@@ -45,6 +45,27 @@ without a `url` is a label.
 
 A page you leave out of your nav is still built, and search finds it, but
 it has no breadcrumbs, or previous and next pages.
+
+## Pruning the nav
+
+On a site of thousands of pages, a nav that lists every page is most of
+each page, so the site is big, and slow to build. To list only the folders
+each page is in, set `nav_prune`:
+
+```yaml
+# little.yml
+nav_prune: true
+```
+
+A page's nav then lists what's in a folder only if the page is in that
+folder, or is the folder's own page. Every other folder is a link, without
+its pages: a section links to its own page, and a label to the first page
+in it. The top of the nav is always whole.
+
+In a nav you [wrote yourself](#writing-the-nav-yourself), a folder whose
+`url` isn't one of your site's pages, like a link to another site, keeps
+its pages, as its link doesn't lead to them. Previous and next pages, and
+breadcrumbs, follow the whole nav.
 
 ## Previous and next pages
 

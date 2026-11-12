@@ -14,6 +14,10 @@
 //! `toc_min_depth` and `toc_max_depth` are the levels of heading, from 1 for
 //! `#` to 6, that each page's table of contents lists.
 //!
+//! `nav_prune` is whether each page's nav lists what's in a folder only if
+//! the page is in it (see `site`): little leaves it off, for a site of
+//! thousands of pages to turn on.
+//!
 //! `host` and `port` are where `little serve` serves the site, unless its
 //! `--host` and `--port` say otherwise.
 //!
@@ -89,6 +93,9 @@ pub struct Config {
     /// The levels of heading each page's table of contents lists, from
     /// `toc_min_depth` to `toc_max_depth`.
     pub toc_depths: RangeInclusive<u8>,
+    /// Whether each page's nav lists what's in a folder only if the page is
+    /// in it, from `nav_prune`.
+    pub nav_prune: bool,
     /// The host `little serve` serves at, like `127.0.0.1`.
     pub host: String,
     /// The port `little serve` serves at, like 8080.
@@ -581,6 +588,7 @@ fn settle(
     let source_dir = folder(site_dir, &values, "source")?;
     let destination_dir = folder(site_dir, &values, "destination")?;
     let toc_depths = toc_depths(&values)?;
+    let nav_prune = nav_prune(&values)?;
     let host = host(&values)?;
     let port = port(&values)?;
     let url = site_url(&values)?;
@@ -595,6 +603,7 @@ fn settle(
         source_dir,
         destination_dir,
         toc_depths,
+        nav_prune,
         host,
         port,
         url,
@@ -674,6 +683,19 @@ fn heading_level(values: &Mapping, key: &str) -> Result<u8> {
     match values.get(key).and_then(Value::as_u64) {
         Some(level @ 1..=6) => Ok(level as u8),
         _ => bail!("`{key}` must be a heading level from 1 to 6, like 3 for `###`"),
+    }
+}
+
+/// Whether each page's nav lists what's in a folder only if the page is in
+/// it, from `nav_prune`. YAML reads `yes` and `"true"` as text, not `true`,
+/// so they're errors rather than a guess, as for `search`.
+fn nav_prune(values: &Mapping) -> Result<bool> {
+    match values.get("nav_prune") {
+        Some(Value::Bool(prune)) => Ok(*prune),
+        _ => bail!(
+            "`nav_prune` must be `true`, for each page's nav to list what's in a folder only \
+             if the page is in it, or `false`"
+        ),
     }
 }
 
@@ -1000,13 +1022,14 @@ fn read_error(name: &str) -> anyhow::Error {
 /// little's settings that are the site's, for every version, so an entry in
 /// `versions` can't set them, though one from a ref can set its own
 /// `source`, `nav`, and `plugins`.
-const SITES_SETTINGS: [&str; 13] = [
+const SITES_SETTINGS: [&str; 14] = [
     "destination",
     "theme",
     "repo",
     "branch",
     "toc_min_depth",
     "toc_max_depth",
+    "nav_prune",
     "search",
     "markdown",
     "mermaid",
@@ -1401,6 +1424,7 @@ mod tests {
              theme: ./company\n\
              toc_min_depth: 2\n\
              toc_max_depth: 6\n\
+             nav_prune: false\n\
              host: 127.0.0.1\n\
              port: 8080\n\
              branch: main\n\
@@ -1648,6 +1672,41 @@ mod tests {
             error(&site, "toc_min_depth: 4\n"),
             "`toc_min_depth` (4) can't be more than `toc_max_depth` (3)"
         );
+    }
+
+    #[test]
+    fn nav_prune_cascades() {
+        let (_tmp, site) = scratch(&[
+            ("theme/_templates/default.html", ""),
+            ("big/_templates/default.html", ""),
+            ("big/little.yml", "nav_prune: true\n"),
+        ]);
+        let prune = |site_cfg: &str| {
+            std::fs::write(site.join(CONFIG_FILE), site_cfg).unwrap();
+            load(&site).unwrap().nav_prune
+        };
+
+        // little gives each page the whole nav, as does the built-in theme.
+        // A theme can prune it, and a site has the last word.
+        assert!(!prune("theme: ./theme\n"));
+        assert!(!prune(""));
+        assert!(prune("nav_prune: true\n"));
+        assert!(prune("theme: ./big\n"));
+        assert!(!prune("theme: ./big\nnav_prune: false\n"));
+    }
+
+    #[test]
+    fn a_bad_nav_prune_explains_itself() {
+        let (_tmp, site) = scratch(&[]);
+        // YAML reads `yes` and a quoted `"true"` as text, not `true`.
+        for value in [" yes", " \"true\"", " 1", "", " {}"] {
+            let message = error(&site, &format!("nav_prune:{value}\n"));
+            assert_eq!(
+                message,
+                "`nav_prune` must be `true`, for each page's nav to list what's in a folder \
+                 only if the page is in it, or `false`"
+            );
+        }
     }
 
     #[test]
@@ -2351,6 +2410,8 @@ mod tests {
         assert_eq!(cfg.get("port").and_then(Value::as_u64), Some(8080));
         // Search is a theme's to turn on, with a box to search in.
         assert_eq!(cfg.get("search"), Some(&Value::Bool(false)));
+        // Each page gets the whole nav, unless a big site prunes it.
+        assert_eq!(cfg.get("nav_prune"), Some(&Value::Bool(false)));
         // A site's name, language, and look are the theme's to default.
         for key in ["name", "lang", "mermaid"] {
             assert_eq!(cfg.get(key), None, "little shouldn't default `{key}`");
@@ -2818,6 +2879,7 @@ mod tests {
             ("branch", "old"),
             ("toc_min_depth", "1"),
             ("toc_max_depth", "3"),
+            ("nav_prune", "true"),
             ("search", "false"),
             ("markdown", "{ math: false }"),
             ("mermaid", "{ theme: forest }"),

@@ -129,10 +129,11 @@
         <a class="brand" href="{{ '/' | url }}">{{ site.name }}</a>
         <button class="icon-button" type="button" popovertarget="_nav" popovertargetaction="hide" aria-label="Close menu">{{ icon("close") }}</button>
       </div>
-      {# site.nav is shared across pages; the current page is the one whose url
-         matches page.url. A folder without a README is a plain label, and
-         each top-level folder is a group. A folder within one folds up, but
-         for the folders the current page is in. #}
+      {# The current page is the item of site.nav whose url matches page.url.
+         A folder without a README is a plain label, and each top-level
+         folder is a group. A folder within one folds up, but for the folders
+         the current page is in. With nav_prune, site.nav lists only what's
+         in those, and every other folder is a link, with nothing to fold. #}
       <ul class="nav">
         {% for item in site.nav recursive %}
         {#- A folder's items are written before the folder, to find out if
