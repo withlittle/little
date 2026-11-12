@@ -87,3 +87,4 @@ made, and link to each other.
 - [0075 — Finding anchors in the site's pages](0075-finding-anchors-in-the-sites-pages.md)
 - [0076 — Rebuilding only what differs](0076-rebuilding-only-what-differs.md)
 - [0077 — Checking links after a rebuild](0077-checking-links-after-a-rebuild.md)
+- [0078 — Keeping the search index](0078-keeping-the-search-index.md)
