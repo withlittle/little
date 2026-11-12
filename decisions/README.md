@@ -85,3 +85,4 @@ made, and link to each other.
 - [0073 — `AGENTS.md` points to what's written elsewhere](0073-agents-md-points-to-whats-written-elsewhere.md)
 - [0074 — Pruning the nav](0074-pruning-the-nav.md)
 - [0075 — Finding anchors in the site's pages](0075-finding-anchors-in-the-sites-pages.md)
+- [0076 — Rebuilding only what differs](0076-rebuilding-only-what-differs.md)

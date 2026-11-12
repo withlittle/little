@@ -8,6 +8,10 @@
 //! own `source`, too, and its own settings for the site's plugins. The
 //! theme's files are written once, for the version at the root, and the
 //! others link to them there.
+//!
+//! [`build`] builds a site from nothing, and [`rebuild`] after the build
+//! before it, for `little serve`: it reads the site as [`build`] does, but
+//! renders and writes only what differs.
 
 use anyhow::{Context, Result, bail};
 use minijinja::{Value as MjValue, context};
@@ -18,6 +22,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::env;
 use std::ffi::OsString;
 use std::fs;
+use std::hash::{DefaultHasher, Hash, Hasher};
 use std::io::ErrorKind;
 use std::iter::Peekable;
 use std::mem;
@@ -155,7 +160,11 @@ struct Output {
     path: PathBuf,
     /// Its URL from the root of the site, like `/guide/`.
     url: String,
-    html: String,
+    /// As the theme renders it, or `None` if it's what the last build wrote
+    /// there, so a rebuild leaves it.
+    html: Option<String>,
+    /// What it's rendered from.
+    wrote: Wrote,
     /// Which page it is, for an error: "the page built from docs/README.md".
     name: String,
     /// What it's built from, for a warning: "docs/README.md".
@@ -196,6 +205,32 @@ pub struct Built {
     /// the site from a git ref, whose links to other sites aren't checked,
     /// as a tag can't be fixed.
     pub from_refs: HashSet<PathBuf>,
+    /// What each file it wrote was written from, by its path in the
+    /// destination, so a [`rebuild`] writes only those that differ.
+    pub files: HashMap<PathBuf, Wrote>,
+}
+
+/// What a build wrote a file from.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Wrote {
+    /// A hash of it: for a page, of all the theme renders it from, and the
+    /// theme's templates, and for any other file, of its contents.
+    from: u64,
+    /// The language a page's theme gives it, like `en`, which search indexes
+    /// it in.
+    lang: Option<String>,
+}
+
+impl Wrote {
+    /// What a file with `contents` is written from.
+    fn contents(contents: &[u8]) -> Wrote {
+        let mut hasher = DefaultHasher::new();
+        contents.hash(&mut hasher);
+        Wrote {
+            from: hasher.finish(),
+            lang: None,
+        }
+    }
 }
 
 /// Something a build warns of.
@@ -379,6 +414,19 @@ struct Ready {
     search_files: Vec<search::File>,
 }
 
+impl Ready {
+    /// The path of each file it writes, from `root`, the destination.
+    fn paths<'a>(&'a self, root: &'a Path) -> impl Iterator<Item = PathBuf> + 'a {
+        let pages = self.outputs.iter().map(|output| output.path.clone());
+        let files = (self.static_files.iter().map(|file| &file.path))
+            .chain(self.search_files.iter().map(|file| &file.path))
+            .map(|path| self.destination.join(path));
+        pages
+            .chain(files)
+            .filter_map(move |path| Some(path.strip_prefix(root).ok()?.to_path_buf()))
+    }
+}
+
 /// Build the site rooted at `site_dir`: each of its `versions`, or, if it
 /// has none, its files as they are.
 ///
@@ -387,6 +435,23 @@ struct Ready {
 /// has the path of the version's URL before them, like `/my-project/guide/`,
 /// or `/my-project/1.4/guide/`.
 pub fn build(site_dir: &Path) -> Result<Built> {
+    build_after(site_dir, None)
+}
+
+/// Build the site rooted at `site_dir` again, after `last`, the build before
+/// it, as `little serve` does on each save. The destination ends up as
+/// [`build`] would leave it, but only what differs is written: a page is
+/// rendered again only if what its theme renders it from has changed, or the
+/// theme's templates have, and a file that's no longer built is deleted.
+///
+/// Every file is still read, and every page parsed. If `last` went to
+/// another destination, or its files aren't there now, it's a [`build`].
+pub fn rebuild(site_dir: &Path, last: &Built) -> Result<Built> {
+    build_after(site_dir, Some(last))
+}
+
+/// [`build`], or, after `last`, [`rebuild`].
+fn build_after(site_dir: &Path, last: Option<&Built>) -> Result<Built> {
     let config = config::load(site_dir)?;
     // Once, so every page of a build has the same year, and every diagram
     // the same today, even at midnight.
@@ -414,6 +479,13 @@ pub fn build(site_dir: &Path) -> Result<Built> {
     let theme_urls = (theme_files.iter())
         .map(|file| file_url(&file.path))
         .collect();
+    // Only a destination the last build left its marker in still holds what
+    // it wrote there.
+    let destination = &config.destination_dir;
+    let last = last
+        .filter(|last| last.destination == *destination && destination.join(MARKER_FILE).is_file());
+    let mut templates = DefaultHasher::new();
+    theme.hash_templates(&mut templates);
 
     // Every version is read, and every page rendered, before the destination
     // is touched, so a build that fails leaves the last one in place. The
@@ -456,6 +528,7 @@ pub fn build(site_dir: &Path) -> Result<Built> {
         repo: config.repo.clone(),
         warnings: Vec::new(),
         from_refs: HashSet::new(),
+        files: HashMap::new(),
     };
     // When every version is from a git ref, the site's plugins build none,
     // but may have warned as they started.
@@ -480,15 +553,27 @@ pub fn build(site_dir: &Path) -> Result<Built> {
     }
     let mut ready = Vec::new();
     for (source, &version) in sources.into_iter().zip(&versions) {
-        let finished = finish(source, every.as_ref(), &theme_files, now, &mut built);
+        let theme = (theme_files.as_slice(), &templates);
+        let finished = finish(source, every.as_ref(), theme, now, last, &mut built);
         ready.push(in_version(finished, version)?);
     }
 
     let pages: usize = ready.iter().map(|version| version.pages).sum();
-    let destination = &config.destination_dir;
-    clear_destination(destination)?;
+    match last {
+        None => clear_destination(destination)?,
+        // Before anything's written, as on a disk that ignores case, a file
+        // renamed `guide.md` from `Guide.md` is written where it was.
+        Some(last) => {
+            let written: HashSet<PathBuf> = (ready.iter())
+                .flat_map(|version| version.paths(destination))
+                .collect();
+            for path in last.files.keys().filter(|path| !written.contains(*path)) {
+                remove_file(destination, path)?;
+            }
+        }
+    }
     for version in ready {
-        write_version(version, destination, &mut built)?;
+        write_version(version, destination, last, &mut built)?;
     }
     match config.versions.len() {
         0 => println!("built {pages} page(s) -> {}", destination.display()),
@@ -775,11 +860,16 @@ fn read_source(
 /// theme's, `theme_files`, which every version links to there, and index it
 /// for search. The version at the root has the 404 page, too. What's warned
 /// of is noted in `built`.
+///
+/// After `last`, the build before it, a page is left as that wrote it, not
+/// rendered, if all the theme would render it from hashes as it did then,
+/// with `templates`, a hash of the theme's.
 fn finish(
     source: Source,
     versions: Option<&Versions>,
-    theme_files: &[StaticFile],
+    (theme_files, templates): (&[StaticFile], &DefaultHasher),
     now: OffsetDateTime,
+    last: Option<&Built>,
     built: &mut Built,
 ) -> Result<Ready> {
     let Source {
@@ -830,6 +920,11 @@ fn finish(
     })?;
     let nav = nav_in(&site).context("`nav` must be a list of links")?;
     let site_value = MjValue::from_serialize(&site);
+    // What every page of the version is rendered from: the theme's
+    // templates, the URL their filters link under, and `site`, but for a
+    // pruned nav, which is each page's own.
+    let mut shared = templates.clone();
+    place.url.hash(&mut shared);
     let neighbours = neighbours_in(&nav);
     let trails = breadcrumbs_in(&nav, &place.url.link("/"));
     // With `nav_prune`, each page gets a nav of its own, pruned from the
@@ -840,10 +935,18 @@ fn finish(
             PrunedNav::new(&site, urls)
         })
         .flatten();
+    match &pruned {
+        Some(pruned) => pruned.site.hash(&mut shared),
+        None => site.hash(&mut shared),
+    }
+    // A plugin's `html` hook can make anything of a page, from more than
+    // what the theme gets, so its pages are rendered each time.
+    let last = last.filter(|_| !plugins.changes_html());
+    let root = built.destination.clone();
 
     // The theme owns 100% of the markup; little only hands it structured
     // data, which plugins can change, then change what the theme makes of it.
-    let mut render = |page_type: PageType, page: Mapping, url: &str, on: &str| {
+    let mut render = |page_type: PageType, page: Mapping, url: &str, on: &str, path: &Path| {
         let page = plugins.page(on, page);
         // Search indexes the page's own content and title, as plugins leave
         // them, not the theme's markup around it; its own `search`, if it
@@ -857,13 +960,26 @@ fn finish(
             ),
         };
         let searched = (text("title"), text("content"), listed);
-        let site = match &pruned {
-            Some(pruned) => pruned.site(url),
-            None => site_value.clone(),
+        let nav = pruned.as_ref().map(|pruned| pruned.at(url));
+        let mut from = shared.clone();
+        (page_type, url, &nav, &page).hash(&mut from);
+        let from = from.finish();
+        let written = (last.zip(path.strip_prefix(&root).ok()))
+            .and_then(|(last, in_root)| last.files.get(in_root))
+            .filter(|wrote| wrote.from == from && path.is_file());
+        if let Some(wrote) = written {
+            return Ok(Some((None, wrote.clone(), searched)));
+        }
+        let site = match (&pruned, nav) {
+            (Some(pruned), Some(nav)) => pruned.site(nav),
+            _ => site_value.clone(),
         };
         let html = theme.render(page_type, context! { site => site, page => page })?;
         let html = html.map(|html| plugins.html(url, on, html));
-        anyhow::Ok(html.map(|html| (html, searched)))
+        anyhow::Ok(html.map(|html| {
+            let lang = search::lang(&html);
+            (Some(html), Wrote { from, lang }, searched)
+        }))
     };
     // A page from a git ref links to its file at the ref's commit, which
     // can't be edited.
@@ -898,9 +1014,9 @@ fn finish(
             versions: in_versions.as_deref(),
         };
         let rendered = page_value(&data, &page.frontmatter, &place.url)
-            .and_then(|value| render(page.page_type, value, &url, &page.origin))
+            .and_then(|value| render(page.page_type, value, &url, &page.origin, &page.out_path))
             .with_context(|| format!("rendering {}", page.origin))?;
-        if let Some((html, (title, content, listed))) = rendered {
+        if let Some((html, wrote, (title, content, listed))) = rendered {
             // In the language the theme gives it, at its URL from the root
             // of its version, beside its index, unless it's left out: by its
             // own `search`, else by the site's `exclude`.
@@ -909,7 +1025,7 @@ fn finish(
             if indexed {
                 let title = title.unwrap_or_else(|| page.title.clone());
                 let content = content.unwrap_or_else(|| page.html.clone());
-                searched.push((&page.url, title, content, search::lang(&html)));
+                searched.push((&page.url, title, content, wrote.lang.clone()));
             }
             let origin = page.origin.clone();
             built.warnings.extend_from_slice(&page.warnings);
@@ -917,6 +1033,7 @@ fn finish(
                 path: page.out_path.clone(),
                 url: format!("{}{}", place.prefix, page.url),
                 html,
+                wrote,
                 name: format!("the page built from {origin}"),
                 origin,
                 links: page.links.clone(),
@@ -946,17 +1063,19 @@ fn finish(
             versions: homes.as_deref(),
         };
         let name = "the 404 page".to_string();
+        let path = place.destination.join(NOT_FOUND_FILE);
         let rendered = page_value(&data, &Mapping::new(), &place.url)
             .and_then(|value| {
                 let url = place.url.link(&not_found_url);
-                render(PageType::NotFound, value, &url, &name)
+                render(PageType::NotFound, value, &url, &name, &path)
             })
             .context("rendering the 404 page")?;
-        if let Some((html, _)) = rendered {
+        if let Some((html, wrote, _)) = rendered {
             outputs.push(Output {
-                path: place.destination.join(NOT_FOUND_FILE),
+                path,
                 url: not_found_url.clone(),
                 html,
+                wrote,
                 origin: name.clone(),
                 name,
                 links: Vec::new(),
@@ -1047,8 +1166,14 @@ fn finish(
 }
 
 /// Write `version` of a site into the destination, `root`, noting what each
-/// file is built from, and, for a page, its URL and links, in `built`.
-fn write_version(version: Ready, root: &Path, built: &mut Built) -> Result<()> {
+/// file is built from, and, for a page, its URL and links, in `built`. After
+/// `last`, the build before it, a file that's there as that wrote it is left.
+fn write_version(
+    version: Ready,
+    root: &Path,
+    last: Option<&Built>,
+    built: &mut Built,
+) -> Result<()> {
     let Ready {
         destination,
         from_ref,
@@ -1057,10 +1182,21 @@ fn write_version(version: Ready, root: &Path, built: &mut Built) -> Result<()> {
         search_files,
         ..
     } = version;
+    // Whether a file with `contents` needs writing, which it's noted with.
+    let differs = |path: &Path, contents: &[u8], built: &mut Built| {
+        let wrote = Wrote::contents(contents);
+        let in_root = path.strip_prefix(root)?.to_path_buf();
+        let same = last.and_then(|last| last.files.get(&in_root)) == Some(&wrote);
+        built.files.insert(in_root, wrote);
+        anyhow::Ok(!(same && path.is_file()))
+    };
     let mut written = Vec::new();
     for output in outputs {
-        write_file(&output.path, output.html.as_bytes())?;
+        if let Some(html) = &output.html {
+            write_file(&output.path, html.as_bytes())?;
+        }
         let path = output.path.strip_prefix(root)?.to_path_buf();
+        built.files.insert(path.clone(), output.wrote);
         built.origins.insert(path.clone(), output.origin);
         built.urls.insert(path.clone(), output.url);
         built.links.insert(path.clone(), output.links);
@@ -1071,13 +1207,18 @@ fn write_version(version: Ready, root: &Path, built: &mut Built) -> Result<()> {
     // serve` would rebuild forever. A build must only ever read its sources.
     for file in static_files {
         let path = destination.join(&file.path);
-        write_file(&path, &file.contents)?;
+        if differs(&path, &file.contents, built)? {
+            write_file(&path, &file.contents)?;
+        }
         let path = path.strip_prefix(root)?.to_path_buf();
         built.origins.insert(path.clone(), file.origin);
         written.push(path);
     }
     for file in search_files {
-        write_file(&destination.join(&file.path), &file.contents)?;
+        let path = destination.join(&file.path);
+        if differs(&path, &file.contents, built)? {
+            write_file(&path, &file.contents)?;
+        }
     }
     if from_ref {
         built.from_refs.extend(written);
@@ -1297,6 +1438,26 @@ fn clear_destination(destination: &Path) -> Result<()> {
         "Built by little, which wipes this folder on every build.\n",
     )
     .with_context(|| format!("writing {}", marker.display()))
+}
+
+/// Delete the file at `path` in `destination`, which a build no longer
+/// writes, and each folder that leaves empty.
+fn remove_file(destination: &Path, path: &Path) -> Result<()> {
+    let file = destination.join(path);
+    match fs::remove_file(&file) {
+        Err(e) if e.kind() != ErrorKind::NotFound => {
+            return Err(e).with_context(|| format!("deleting {}", file.display()));
+        }
+        _ => {}
+    }
+    // A folder with anything in it can't be removed, so stays.
+    let folders = path.ancestors().skip(1);
+    for folder in folders.take_while(|folder| !folder.as_os_str().is_empty()) {
+        if fs::remove_dir(destination.join(folder)).is_err() {
+            break;
+        }
+    }
+    Ok(())
 }
 
 /// Fail if two files in the source would be the same page, like `guide.md`
@@ -1711,11 +1872,11 @@ impl<'a> PrunedNav<'a> {
         })
     }
 
-    /// `site`, as the theme gets it for the page at `url`, as the nav links
-    /// to it, with the page's own nav.
-    fn site(&self, url: &str) -> MjValue {
+    /// `site`, as the theme gets it for a page, with `nav`, the page's own,
+    /// from [`PrunedNav::at`].
+    fn site(&self, nav: Vec<Value>) -> MjValue {
         let mut site = self.site.clone();
-        site.insert("nav".into(), Value::Sequence(self.at(url)));
+        site.insert("nav".into(), Value::Sequence(nav));
         MjValue::from_serialize(&site)
     }
 
@@ -4341,6 +4502,199 @@ mod tests {
             "{message}"
         );
         assert_eq!(fs::read_to_string(&home).unwrap(), "Home");
+    }
+
+    /// Each file in `dist`, with its contents.
+    fn contents_of(dist: &Path) -> BTreeMap<String, Vec<u8>> {
+        (files_in(dist).into_iter())
+            .map(|file| {
+                let contents = fs::read(dist.join(&file)).unwrap();
+                (file, contents)
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_rebuild_leaves_what_a_build_would() {
+        // With the built-in theme, so with search, and each kind of nav.
+        for nav_prune in [false, true] {
+            let (_tmp, site) = scratch(&[
+                (
+                    "little.yml",
+                    &format!("name: Test\nnav_prune: {nav_prune}\n"),
+                ),
+                (
+                    "docs/README.md",
+                    "# Home\n\nTo [install](guide/install.md).\n",
+                ),
+                ("docs/guide/README.md", "# Guide\n"),
+                ("docs/guide/install.md", "# Install\n\nFirst.\n"),
+                ("docs/guide/old.md", "# Old\n"),
+                ("docs/guide/images/diagram.png", "png"),
+                ("docs/notes", "A file with no extension.\n"),
+                ("docs/api/reference.md", "# Reference\n"),
+            ]);
+            let dist = site.join("dist");
+            let check = |rebuilt: &Built, edit: &str| {
+                let left = contents_of(&dist);
+                let built = build(&site).unwrap();
+                let fresh = contents_of(&dist);
+                let names = |files: &BTreeMap<String, Vec<u8>>| -> Vec<String> {
+                    files.keys().cloned().collect()
+                };
+                assert_eq!(names(&left), names(&fresh), "{edit}");
+                for (file, contents) in &fresh {
+                    assert!(left[file] == *contents, "{file} differs, {edit}");
+                }
+                assert_eq!(rebuilt.files, built.files, "{edit}");
+                assert_eq!(rebuilt.origins, built.origins, "{edit}");
+                assert_eq!(rebuilt.urls, built.urls, "{edit}");
+                built
+            };
+            let built = build(&site).unwrap();
+
+            // A page's text changes.
+            write(
+                &site,
+                &[("docs/guide/install.md", "# Install\n\nSecond.\n")],
+            );
+            let built = check(&rebuild(&site, &built).unwrap(), "after an edit");
+
+            // A page gets another title, so the nav changes; a page and a
+            // folder go, and a page comes; and a file changes.
+            write(
+                &site,
+                &[
+                    ("docs/guide/install.md", "# Installing\n\nSecond.\n"),
+                    ("docs/guide/new.md", "# New\n"),
+                    ("docs/guide/images/diagram.png", "another png"),
+                ],
+            );
+            fs::remove_file(site.join("docs/guide/old.md")).unwrap();
+            fs::remove_dir_all(site.join("docs/api")).unwrap();
+            let built = check(&rebuild(&site, &built).unwrap(), "after pages change");
+
+            // A file gives way to a folder of pages, and a page to a file.
+            fs::remove_file(site.join("docs/notes")).unwrap();
+            fs::remove_file(site.join("docs/guide/new.md")).unwrap();
+            write(
+                &site,
+                &[
+                    ("docs/notes/README.md", "# Notes\n"),
+                    ("docs/guide/new", "A file with no extension.\n"),
+                ],
+            );
+            let built = check(&rebuild(&site, &built).unwrap(), "after files move");
+
+            // The config changes, and so the theme's files.
+            let config = format!("name: Renamed\nnav_prune: {nav_prune}\nsearch: false\n");
+            write(&site, &[("little.yml", &config)]);
+            check(&rebuild(&site, &built).unwrap(), "after the config changes");
+        }
+    }
+
+    #[test]
+    fn a_rebuild_writes_only_what_differs() {
+        let template = "{{ page.title }}: {{ page.content | safe }} \
+                        [{% for item in site.nav %}{{ item.title }} {% endfor %}]";
+        let (_tmp, site) = scratch(&[
+            ("little.yml", "theme: ./theme\n"),
+            ("docs/README.md", "# Home\n"),
+            ("docs/guide.md", "# Guide\n\nFirst.\n"),
+            ("docs/about.md", "# About\n"),
+            ("docs/logo.svg", "<svg/>"),
+            ("theme/_templates/default.html", template),
+        ]);
+        let dist = site.join("dist");
+        let files = [
+            "index.html",
+            "guide/index.html",
+            "about/index.html",
+            "logo.svg",
+        ];
+        // Each file that's left as it was, of those a build writes, found by
+        // writing over them all first.
+        let left = |last: &Built| {
+            for file in files {
+                fs::write(dist.join(file), "left").unwrap();
+            }
+            let built = rebuild(&site, last).unwrap();
+            let left: Vec<_> = (files.into_iter())
+                .filter(|file| fs::read(dist.join(file)).is_ok_and(|read| read == b"left"))
+                .collect();
+            (built, left)
+        };
+        let built = build(&site).unwrap();
+
+        // Nothing's written when nothing's changed.
+        let (built, unwritten) = left(&built);
+        assert_eq!(unwritten, files);
+
+        // A page whose text changes is rendered again, alone.
+        write(&site, &[("docs/guide.md", "# Guide\n\nSecond.\n")]);
+        let (built, unwritten) = left(&built);
+        assert_eq!(unwritten, ["index.html", "about/index.html", "logo.svg"]);
+        let guide = fs::read_to_string(dist.join("guide/index.html")).unwrap();
+        assert!(guide.contains("<p>Second.</p>"), "{guide}");
+
+        // Its title is in the nav, so in every page.
+        write(&site, &[("docs/guide.md", "# Guiding\n\nSecond.\n")]);
+        let (built, unwritten) = left(&built);
+        assert_eq!(unwritten, ["logo.svg"]);
+
+        // So is the theme's template, but a file is only itself.
+        let theme = site.join("theme/_templates/default.html");
+        fs::write(&theme, "{{ page.title }}").unwrap();
+        fs::write(site.join("docs/logo.svg"), "<svg></svg>").unwrap();
+        let (built, unwritten) = left(&built);
+        assert_eq!(unwritten, [""; 0]);
+        assert_eq!(fs::read(dist.join("logo.svg")).unwrap(), b"<svg></svg>");
+
+        // A page that's gone from the source goes, with its folder, and one
+        // that's gone from the destination is written again.
+        fs::remove_file(site.join("docs/about.md")).unwrap();
+        let built = rebuild(&site, &built).unwrap();
+        assert!(!dist.join("about").exists());
+        fs::remove_file(dist.join("guide/index.html")).unwrap();
+        let built = rebuild(&site, &built).unwrap();
+        assert_eq!(
+            fs::read_to_string(dist.join("guide/index.html")).unwrap(),
+            "Guiding"
+        );
+
+        // Without its destination, or after a build into another, it's a
+        // build.
+        fs::remove_dir_all(&dist).unwrap();
+        let built = rebuild(&site, &built).unwrap();
+        assert_eq!(fs::read_to_string(dist.join("index.html")).unwrap(), "Home");
+        let config = "theme: ./theme\ndestination: ./public\n";
+        write(&site, &[("little.yml", config)]);
+        rebuild(&site, &built).unwrap();
+        let public = fs::read_to_string(site.join("public/index.html")).unwrap();
+        assert_eq!(public, "Home");
+    }
+
+    #[test]
+    fn a_rebuild_renders_every_page_for_a_plugins_html_hook() {
+        let plugin = serde_json::json!({
+            "wasm": crate::plugin::tests::test_plugin(),
+            "html": { "append": "!" },
+        });
+        let (_tmp, site) = scratch(&[
+            (
+                "little.yml",
+                &format!("theme: ./theme\nplugins:\n  test: {plugin}\n"),
+            ),
+            ("docs/README.md", "# Home\n"),
+            ("theme/_templates/default.html", "{{ page.title }}"),
+        ]);
+        let built = build(&site).unwrap();
+        let home = site.join("dist/index.html");
+        assert_eq!(fs::read_to_string(&home).unwrap(), "Home!");
+
+        fs::write(&home, "left").unwrap();
+        rebuild(&site, &built).unwrap();
+        assert_eq!(fs::read_to_string(&home).unwrap(), "Home!");
     }
 
     #[test]

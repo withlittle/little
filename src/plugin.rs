@@ -560,6 +560,12 @@ impl Plugins {
         }
     }
 
+    /// Whether a plugin has an `html` hook, which changes each page as the
+    /// theme renders it.
+    pub fn changes_html(&self) -> bool {
+        (self.plugins.iter()).any(|plugin| plugin.pre.exports.html.is_some())
+    }
+
     /// Whether a plugin's `formats` hook reads files with `extension`, like
     /// `ipynb`.
     pub fn reads(&self, extension: &str) -> bool {
