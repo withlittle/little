@@ -3016,6 +3016,7 @@ dependencies = [
  "flate2",
  "futures",
  "grass",
+ "html5gum",
  "lychee-lib",
  "math-core",
  "merman",

@@ -8,6 +8,11 @@
 //! from it into the destination, so a link that leaves the path out is
 //! broken here, as it would be on the web.
 //!
+//! An anchor in one of the site's own files, like the `#usage` of
+//! `guide/#usage`, little looks for itself, among the file's `id`s: lychee
+//! checks that the file's there, and little reads each file once, where
+//! lychee would read it once for each link into it.
+//!
 //! A broken link in a page's Markdown is shown as it's written there, so an
 //! author can find it, and any other, like one in the theme, as a reader
 //! follows it.
@@ -23,10 +28,11 @@
 
 use anyhow::{Context, Result, anyhow};
 use futures::StreamExt;
+use html5gum::{Token, Tokenizer};
 use lychee_lib::remap::Remaps;
 use lychee_lib::{
-    BaseInfo, Client, ClientBuilder, Collector, FileType, FragmentCheckerOptions, Input,
-    InputSource, Request, RequestError, ResolvedInputSource, Uri,
+    BaseInfo, Client, ClientBuilder, Collector, ErrorKind, FileType, FragmentCheckerOptions, Input,
+    InputSource, Request, RequestError, ResolvedInputSource, Status, Uri,
 };
 use percent_encoding::percent_decode_str;
 use regex::{Regex, RegexSet};
@@ -135,7 +141,25 @@ async fn check_site(site: &Site<'_>, scope: Scope) -> Result<Vec<Broken>> {
     }
 
     let client = site.client(scope)?;
-    let checked: Vec<_> = futures::stream::iter(links.into_values())
+    // A link to somewhere in one of the site's pages, like `guide/#usage`,
+    // is checked in two steps: lychee checks that the page is there, once
+    // for all the links to it, and little that the page has the anchor,
+    // reading each page once, as lychee would read it once for each link.
+    let mut plain = Vec::new();
+    let mut anchored = Vec::new();
+    let mut pages: BTreeMap<String, Request> = BTreeMap::new();
+    for (request, files) in links.into_values() {
+        match Anchor::of(&client, &request) {
+            Some(anchor) => {
+                let mut page = request.clone();
+                page.uri = Uri::from(anchor.page.clone());
+                pages.entry(anchor.page.to_string()).or_insert(page);
+                anchored.push((request.uri, anchor, files));
+            }
+            None => plain.push((request, files)),
+        }
+    }
+    let checked: Vec<_> = futures::stream::iter(plain)
         .map(|(request, files)| {
             let client = &client;
             async move {
@@ -154,7 +178,53 @@ async fn check_site(site: &Site<'_>, scope: Scope) -> Result<Vec<Broken>> {
         .buffer_unordered(AT_ONCE)
         .collect()
         .await;
-    for (shown, reason, files) in checked.into_iter().flatten() {
+    // Why each page a link leads into can't be reached, or else its file, if
+    // it's one with anchors to find.
+    let pages: HashMap<String, Result<Option<PathBuf>, String>> = futures::stream::iter(pages)
+        .map(|(url, request)| {
+            let client = &client;
+            async move {
+                let file = match client.check(request).await {
+                    Ok(response) if response.status().is_error() => {
+                        Err(response.status().to_string())
+                    }
+                    Ok(response) if response.status().is_success() => Ok(html_file(&url)),
+                    Ok(_) => Ok(None),
+                    Err(error) => Err(error.to_string()),
+                };
+                (url, file)
+            }
+        })
+        .buffer_unordered(AT_ONCE)
+        .collect()
+        .await;
+    let files: BTreeSet<PathBuf> = (pages.values().flatten().flatten().cloned()).collect();
+    let threads = std::thread::available_parallelism().map_or(1, usize::from);
+    let anchors: HashMap<PathBuf, Option<HashSet<String>>> = futures::stream::iter(files)
+        .map(|file| async move {
+            let read = file.clone();
+            let anchors = tokio::task::spawn_blocking(move || anchors_in(&read)).await;
+            (file, anchors.ok().flatten())
+        })
+        .buffer_unordered(threads)
+        .collect()
+        .await;
+    let checked = checked.into_iter().flatten();
+    let anchored = anchored.into_iter().filter_map(|(link, anchor, files)| {
+        let reason = match pages.get(anchor.page.as_str())? {
+            Err(reason) => reason.clone(),
+            Ok(file) => {
+                // A file that can't be read is passed over, as lychee does.
+                let anchors = anchors.get(file.as_ref()?)?.as_ref()?;
+                if anchor.is_in(anchors) {
+                    return None;
+                }
+                Status::from(ErrorKind::InvalidFragment(anchor.link.clone())).to_string()
+            }
+        };
+        Some((site.shown(&link, &anchor.link), reason, files))
+    });
+    for (shown, reason, files) in checked.chain(anchored) {
         for (file, written) in files {
             let url = written.unwrap_or_else(|| shown.clone());
             broken
@@ -174,6 +244,82 @@ async fn check_site(site: &Site<'_>, scope: Scope) -> Result<Vec<Broken>> {
         .collect();
     broken.sort();
     Ok(broken)
+}
+
+/// A link to an anchor in a file, like `guide/#usage`, which little looks
+/// for itself.
+struct Anchor {
+    /// The link, as lychee would check it: led into the destination, if
+    /// it's to the site's own `url`, or from the root of the domain.
+    link: Uri,
+    /// The link without its fragment: the file, or its folder.
+    page: Url,
+    /// The fragment, as the link writes it, and, if it's encoded, like
+    /// `caf%C3%A9`, decoded too: a page's `id` can be either.
+    names: Vec<String>,
+}
+
+impl Anchor {
+    /// The anchor `request` links to, if little's to look for it: one in a
+    /// file, that isn't `#top`, which every page has. A link to text in a
+    /// page, like `#:~:text=words`, or into a Markdown file, which has no
+    /// `id`s, is left to lychee, as is any that `client` leaves out.
+    fn of(client: &Client, request: &Request) -> Option<Self> {
+        let mut link = request.uri.clone();
+        client.remap(&mut link).ok()?;
+        let url = Url::parse(link.as_str()).ok()?;
+        let fragment = url.fragment()?;
+        let checked = link.is_file()
+            && !client.is_excluded(&link)
+            && !fragment.is_empty()
+            && !fragment.eq_ignore_ascii_case("top")
+            && !fragment.contains(":~:")
+            && FileType::from(url.path()) != FileType::Markdown;
+        if !checked {
+            return None;
+        }
+        let mut names = vec![fragment.to_string()];
+        let decoded = percent_decode_str(fragment).decode_utf8().ok()?;
+        if decoded != fragment {
+            names.push(decoded.into_owned());
+        }
+        let mut page = url.clone();
+        page.set_fragment(None);
+        Some(Self { link, page, names })
+    }
+
+    /// Whether it's one of a file's `anchors`.
+    fn is_in(&self, anchors: &HashSet<String>) -> bool {
+        self.names.iter().any(|name| anchors.contains(name))
+    }
+}
+
+/// The HTML file a browser shows at `url`, a `file` URL of a file or folder
+/// that's there: the file, or its folder's `index.html`. `None` for any
+/// other file, like an image, which has no anchors to find.
+fn html_file(url: &str) -> Option<PathBuf> {
+    let mut path = Url::parse(url).ok()?.to_file_path().ok()?;
+    if path.is_dir() {
+        path.push("index.html");
+    }
+    (FileType::from(&path) == FileType::Html).then_some(path)
+}
+
+/// Each anchor in the HTML `file`: the `id` or `name` of any of its
+/// elements, as lychee finds them. `None` if it can't be read.
+fn anchors_in(file: &Path) -> Option<HashSet<String>> {
+    let html = std::fs::read_to_string(file).ok()?;
+    let mut anchors = HashSet::new();
+    for token in Tokenizer::new(&html).flatten() {
+        if let Token::StartTag(tag) = token {
+            for name in ["id", "name"] {
+                if let Some(value) = tag.attributes.get(name.as_bytes()) {
+                    anchors.insert(String::from_utf8_lossy(value).into_owned());
+                }
+            }
+        }
+    }
+    Some(anchors)
 }
 
 /// A file a link is in, by what it was built from, and the link as the
@@ -600,6 +746,41 @@ mod tests {
                 "broken link /guide/install#nope in docs/old.html: Cannot find fragment",
                 "broken link /images/ in docs/old.html: Cannot find index file within directory",
                 "broken link /old.html#café in docs/old.html: Cannot find fragment",
+            ]
+        );
+    }
+
+    #[test]
+    fn finds_an_anchor_by_its_id_or_name_encoded_or_not() {
+        let broken = broken_links(
+            Scope::Internal,
+            &[
+                BARE_THEME[0],
+                BARE_THEME[1],
+                // Copied as it is. Its links to anchors that are there, to
+                // the top of a page, to text in one, and to a file with no
+                // anchors, aren't broken.
+                (
+                    "docs/old.html",
+                    "<h2 id=\"café\">Café</h2> <a name=\"named\"></a> \
+                     <a href=\"#café\">Café</a> <a href=\"#caf%C3%A9\">Café</a> \
+                     <a href=\"#named\">Named</a> <a href=\"#top\">Top</a> \
+                     <a href=\"/guide/#TOP\">Top</a> <a href=\"/guide/#:~:text=Guide\">Text</a> \
+                     <a href=\"/logo.png#here\">Logo</a> <a href=\"/guide/#Guide\">Guide</a> \
+                     <a href=\"/images/#here\">Images</a> <a href=\"/nowhere#here\">Nowhere</a>",
+                ),
+                ("docs/README.md", "# Home\n"),
+                ("docs/guide/README.md", "# Guide\n"),
+                ("docs/logo.png", "png"),
+                ("docs/images/logo.png", "png"),
+            ],
+        );
+        assert_eq!(
+            broken,
+            [
+                "broken link /guide/#Guide in docs/old.html: Cannot find fragment",
+                "broken link /images/#here in docs/old.html: Cannot find index file within directory",
+                format!("broken link /nowhere#here in docs/old.html: {NOT_FOUND}").as_str(),
             ]
         );
     }
