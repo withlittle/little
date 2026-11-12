@@ -4,7 +4,9 @@
   [0077](./0077-checking-links-after-a-rebuild.md), which reads only the
   files a rebuild wrote to check the site's links, and by
   [0078](./0078-keeping-the-search-index.md), which indexes only the
-  pages that differ for search
+  pages that differ for search, and by
+  [0079](./0079-keeping-each-pages-parse.md), which parses only the
+  pages that differ
 - Date: 2026-11-12
 
 ## Context

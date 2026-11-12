@@ -31,6 +31,7 @@ pub struct TocItem {
 
 /// The result of rendering one document: a Markdown file, or a file a
 /// plugin reads.
+#[derive(Clone, Debug)]
 pub struct Rendered {
     /// The frontmatter's settings: none when a page has no frontmatter.
     pub frontmatter: Mapping,

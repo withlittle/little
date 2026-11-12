@@ -560,6 +560,18 @@ impl Plugins {
         }
     }
 
+    /// Whether a plugin renders code blocks, as it parses a page.
+    pub fn renders_blocks(&self) -> bool {
+        !self.languages.is_empty()
+    }
+
+    /// Each extension a plugin reads, without its `.`, sorted.
+    pub fn extensions(&self) -> Vec<&str> {
+        let mut extensions: Vec<&str> = self.extensions.keys().map(String::as_str).collect();
+        extensions.sort_unstable();
+        extensions
+    }
+
     /// Whether a plugin has an `html` hook, which changes each page as the
     /// theme renders it.
     pub fn changes_html(&self) -> bool {
