@@ -13,6 +13,10 @@
 //! checks that the file's there, and little reads each file once, where
 //! lychee would read it once for each link into it.
 //!
+//! [`check`] checks a build from nothing, as `little build` does. A
+//! [`Checker`] checks build after build, as `little serve` does, keeping
+//! what it read from each file, so it reads only those a rebuild wrote.
+//!
 //! A broken link in a page's Markdown is shown as it's written there, so an
 //! author can find it, and any other, like one in the theme, as a reader
 //! follows it.
@@ -89,161 +93,276 @@ impl fmt::Display for Broken {
 
 /// The broken links in `built`, sorted by the files they're in.
 pub fn check(built: &Built, scope: Scope) -> Result<Vec<Broken>> {
-    tokio::runtime::Runtime::new()
-        .context("starting the link checker")?
-        .block_on(check_site(&Site::new(built)?, scope))
+    Checker::default().check(built, scope)
 }
 
-async fn check_site(site: &Site<'_>, scope: Scope) -> Result<Vec<Broken>> {
-    // Each link is checked once, however many files it's in, each with how
-    // its Markdown writes it, if it does.
-    let mut links: BTreeMap<String, (Request, BTreeSet<Found>)> = BTreeMap::new();
-    // The files each broken link is in, by the link as it's shown and why
-    // it's broken: one written alike in many files is one warning, as are
-    // two that look alike once shown, like `/guide/#usage` and
-    // `/guide/index.html#usage`, as a reader looks for one.
-    let mut broken: BTreeMap<(String, String), BTreeSet<String>> = BTreeMap::new();
-    let input = Input {
-        source: InputSource::FsPath(site.destination.clone()),
-        file_type_hint: None,
-    };
-    let requests = Collector::new(Some(site.root.clone()), BaseInfo::none())?
-        // A destination git ignores, as `dist/` usually is, is still checked.
-        .skip_ignored(false)
-        .collect_links_from_file_types(HashSet::from([input]), FileType::html_extensions());
-    let mut requests = std::pin::pin!(requests);
-    while let Some(request) = requests.next().await {
-        match request {
-            Ok(request) => {
-                if site.elsewhere_from_ref(&request) {
+/// A site's links, checked build after build, as `little serve` checks
+/// them. It keeps the links it finds in each file, and each file's anchors,
+/// so after a [`site::rebuild`](crate::site::rebuild) it reads only the
+/// files that wrote. Every link is still checked each time, as one in a
+/// file that hasn't changed can lead to one that has.
+#[derive(Default)]
+pub struct Checker {
+    /// The destination of the builds it's read, as an absolute path, or
+    /// `None` if it's read none, or its last check failed.
+    destination: Option<PathBuf>,
+    /// Each link it's found, once, and where each is in `links`, by its URL.
+    links: Vec<Request>,
+    ids: HashMap<String, usize>,
+    /// The links in each HTML file, by its path in the destination.
+    files: HashMap<PathBuf, Links>,
+    /// The anchors in each HTML file a link leads into, by its path, or
+    /// `None` for one that can't be read.
+    anchors: HashMap<PathBuf, Option<HashSet<String>>>,
+}
+
+/// The links in a file.
+#[derive(Default)]
+struct Links {
+    /// Where each is in [`Checker::links`].
+    found: Vec<u32>,
+    /// Each that isn't a URL at all, like `https://exa mple.com`, as it's
+    /// written, and why it isn't.
+    not_urls: Vec<(String, String)>,
+}
+
+impl Checker {
+    /// The broken links in `built`, sorted by the files they're in. After
+    /// the first, `built` must be the build after the one it last checked.
+    pub fn check(&mut self, built: &Built, scope: Scope) -> Result<Vec<Broken>> {
+        let broken = tokio::runtime::Runtime::new()
+            .context("starting the link checker")
+            .and_then(|runtime| runtime.block_on(self.check_site(&Site::new(built)?, scope)));
+        // What it's read may be half of a build, so the next reads it all.
+        if broken.is_err() {
+            *self = Self::default();
+        }
+        broken
+    }
+
+    /// Read the links in the files of `site` that its build wrote, or in
+    /// all of them, the first time, and forget the files it didn't leave.
+    async fn read(&mut self, site: &Site<'_>) -> Result<()> {
+        let built = site.built;
+        let file = |path: PathBuf| Input {
+            source: InputSource::FsPath(path),
+            file_type_hint: None,
+        };
+        let inputs: HashSet<Input> = if self.destination.as_ref() == Some(&site.destination) {
+            let kept =
+                |file: &Path| built.files.contains_key(file) && !built.written.contains(file);
+            self.files.retain(|file, _| kept(file));
+            self.anchors
+                .retain(|file, _| file.strip_prefix(&site.destination).is_ok_and(kept));
+            // Only the files lychee would read in the folder: HTML, and not
+            // hidden.
+            (built.written.iter())
+                .filter(|path| FileType::from(path) == FileType::Html)
+                .filter(|path| !crate::site::is_hidden(path))
+                .map(|path| file(site.destination.join(path)))
+                .collect()
+        } else {
+            *self = Self {
+                destination: Some(site.destination.clone()),
+                ..Self::default()
+            };
+            HashSet::from([file(site.destination.clone())])
+        };
+        if inputs.is_empty() {
+            return Ok(());
+        }
+        let requests = Collector::new(Some(site.root.clone()), BaseInfo::none())?
+            // A destination git ignores, as `dist/` usually is, is still checked.
+            .skip_ignored(false)
+            .collect_links_from_file_types(inputs, FileType::html_extensions());
+        let mut requests = std::pin::pin!(requests);
+        while let Some(request) = requests.next().await {
+            match request {
+                Ok(request) => {
+                    let Some(file) = site.in_destination(&request.source) else {
+                        continue;
+                    };
+                    let id = match self.ids.get(request.uri.as_str()) {
+                        Some(id) => *id,
+                        None => {
+                            let id = self.links.len();
+                            self.ids.insert(request.uri.as_str().to_string(), id);
+                            self.links.push(request.clone());
+                            id
+                        }
+                    };
+                    let links = self.files.entry(file.to_path_buf()).or_default();
+                    links
+                        .found
+                        .push(u32::try_from(id).context("counting the site's links")?);
+                }
+                Err(RequestError::CreateRequestItem(link, source, error)) => {
+                    if let Some(file) = site.in_destination(&source) {
+                        let links = self.files.entry(file.to_path_buf()).or_default();
+                        links.not_urls.push((link.text, error.to_string()));
+                    }
+                }
+                Err(error) => return Err(error).context("reading the built site's links"),
+            }
+        }
+        Ok(())
+    }
+
+    async fn check_site(&mut self, site: &Site<'_>, scope: Scope) -> Result<Vec<Broken>> {
+        self.read(site).await?;
+        // Each link is checked once, however many files it's in, but for
+        // one to another site from a version of the site from a git ref.
+        let mut elsewhere: Vec<Option<bool>> = vec![None; self.links.len()];
+        let links = &self.links;
+        let mut checked = |from_ref: bool, id: u32| {
+            let id = id as usize;
+            !(from_ref && *elsewhere[id].get_or_insert_with(|| site.elsewhere(&links[id].uri)))
+        };
+        let mut found = vec![false; self.links.len()];
+        for (file, links) in &self.files {
+            let from_ref = site.built.from_refs.contains(file);
+            for &id in &links.found {
+                if checked(from_ref, id) {
+                    found[id as usize] = true;
+                }
+            }
+        }
+        let found = (found.iter().enumerate()).filter_map(|(id, found)| found.then_some(id));
+
+        let client = site.client(scope)?;
+        // A link to somewhere in one of the site's pages, like `guide/#usage`,
+        // is checked in two steps: lychee checks that the page is there, once
+        // for all the links to it, and little that the page has the anchor,
+        // reading each page once, as lychee would read it once for each link.
+        let mut plain = Vec::new();
+        let mut anchored = Vec::new();
+        let mut pages: BTreeMap<String, Request> = BTreeMap::new();
+        for id in found {
+            let request = self.links[id].clone();
+            match Anchor::of(&client, &request) {
+                Some(anchor) => {
+                    let mut page = request.clone();
+                    page.uri = Uri::from(anchor.page.clone());
+                    pages.entry(anchor.page.to_string()).or_insert(page);
+                    anchored.push((id, request.uri, anchor));
+                }
+                None => plain.push((id, request)),
+            }
+        }
+        let checked_plain: Vec<_> = futures::stream::iter(plain)
+            .map(|(id, request)| {
+                let client = &client;
+                async move {
+                    let link = request.uri.clone();
+                    let (checked, reason) = match client.check(request).await {
+                        Ok(response) => {
+                            let status = response.status();
+                            let reason = status.is_error().then(|| status.to_string());
+                            (response.body().uri.clone(), reason)
+                        }
+                        Err(error) => (link.clone(), Some(error.to_string())),
+                    };
+                    Some((id, (site.shown(&link, &checked), reason?)))
+                }
+            })
+            .buffer_unordered(AT_ONCE)
+            .collect()
+            .await;
+        // Why each page a link leads into can't be reached, or else its file,
+        // if it's one with anchors to find.
+        let pages: HashMap<String, Result<Option<PathBuf>, String>> = futures::stream::iter(pages)
+            .map(|(url, request)| {
+                let client = &client;
+                async move {
+                    let file = match client.check(request).await {
+                        Ok(response) if response.status().is_error() => {
+                            Err(response.status().to_string())
+                        }
+                        Ok(response) if response.status().is_success() => Ok(html_file(&url)),
+                        Ok(_) => Ok(None),
+                        Err(error) => Err(error.to_string()),
+                    };
+                    (url, file)
+                }
+            })
+            .buffer_unordered(AT_ONCE)
+            .collect()
+            .await;
+        let files: BTreeSet<PathBuf> = (pages.values().flatten().flatten())
+            .filter(|file| !self.anchors.contains_key(*file))
+            .cloned()
+            .collect();
+        let threads = std::thread::available_parallelism().map_or(1, usize::from);
+        let read: Vec<_> = futures::stream::iter(files)
+            .map(|file| async move {
+                let read = file.clone();
+                let anchors = tokio::task::spawn_blocking(move || anchors_in(&read)).await;
+                (file, anchors.ok().flatten())
+            })
+            .buffer_unordered(threads)
+            .collect()
+            .await;
+        self.anchors.extend(read);
+        let anchors = &self.anchors;
+        let anchored = anchored.into_iter().filter_map(|(id, link, anchor)| {
+            let reason = match pages.get(anchor.page.as_str())? {
+                Err(reason) => reason.clone(),
+                Ok(file) => {
+                    // A file that can't be read is passed over, as lychee does.
+                    let anchors = anchors.get(file.as_ref()?)?.as_ref()?;
+                    if anchor.is_in(anchors) {
+                        return None;
+                    }
+                    Status::from(ErrorKind::InvalidFragment(anchor.link.clone())).to_string()
+                }
+            };
+            Some((id, (site.shown(&link, &anchor.link), reason)))
+        });
+        // Each broken link, as it's shown, and why it's broken.
+        let reasons: HashMap<usize, (String, String)> =
+            (checked_plain.into_iter().flatten().chain(anchored)).collect();
+
+        // The files each broken link is in, by the link as it's shown and why
+        // it's broken: one written alike in many files is one warning, as are
+        // two that look alike once shown, like `/guide/#usage` and
+        // `/guide/index.html#usage`, as a reader looks for one.
+        let mut broken: BTreeMap<(String, String), BTreeSet<String>> = BTreeMap::new();
+        for (file, links) in &self.files {
+            for (link, reason) in &links.not_urls {
+                for (origin, written) in site.found(file, link) {
+                    let url = written.unwrap_or_else(|| link.clone());
+                    (broken.entry((url, reason.clone())).or_default()).insert(origin);
+                }
+            }
+            if reasons.is_empty() {
+                continue;
+            }
+            let from_ref = site.built.from_refs.contains(file);
+            for &id in &links.found {
+                let Some((shown, reason)) = reasons.get(&(id as usize)) else {
+                    continue;
+                };
+                if !checked(from_ref, id) {
                     continue;
                 }
-                let key = request.uri.as_str().to_string();
-                let found = site.found(&request.source, &key);
-                let (_, files) = links
-                    .entry(key)
-                    .or_insert_with(|| (request, BTreeSet::new()));
-                files.extend(found);
-            }
-            // A link that isn't a URL at all, like `https://exa mple.com`.
-            Err(RequestError::CreateRequestItem(link, source, error)) => {
-                let reason = error.to_string();
-                for (file, written) in site.found(&source, &link.text) {
-                    let url = written.unwrap_or_else(|| link.text.clone());
-                    broken
-                        .entry((url, reason.clone()))
-                        .or_default()
-                        .insert(file);
+                for (origin, written) in site.found(file, self.links[id as usize].uri.as_str()) {
+                    let url = written.unwrap_or_else(|| shown.clone());
+                    (broken.entry((url, reason.clone())).or_default()).insert(origin);
                 }
             }
-            Err(error) => return Err(error).context("reading the built site's links"),
         }
-    }
 
-    let client = site.client(scope)?;
-    // A link to somewhere in one of the site's pages, like `guide/#usage`,
-    // is checked in two steps: lychee checks that the page is there, once
-    // for all the links to it, and little that the page has the anchor,
-    // reading each page once, as lychee would read it once for each link.
-    let mut plain = Vec::new();
-    let mut anchored = Vec::new();
-    let mut pages: BTreeMap<String, Request> = BTreeMap::new();
-    for (request, files) in links.into_values() {
-        match Anchor::of(&client, &request) {
-            Some(anchor) => {
-                let mut page = request.clone();
-                page.uri = Uri::from(anchor.page.clone());
-                pages.entry(anchor.page.to_string()).or_insert(page);
-                anchored.push((request.uri, anchor, files));
-            }
-            None => plain.push((request, files)),
-        }
+        let mut broken: Vec<_> = broken
+            .into_iter()
+            .map(|((url, reason), files)| Broken {
+                files: files.into_iter().collect(),
+                url,
+                reason,
+            })
+            .collect();
+        broken.sort();
+        Ok(broken)
     }
-    let checked: Vec<_> = futures::stream::iter(plain)
-        .map(|(request, files)| {
-            let client = &client;
-            async move {
-                let link = request.uri.clone();
-                let (checked, reason) = match client.check(request).await {
-                    Ok(response) => {
-                        let status = response.status();
-                        let reason = status.is_error().then(|| status.to_string());
-                        (response.body().uri.clone(), reason)
-                    }
-                    Err(error) => (link.clone(), Some(error.to_string())),
-                };
-                Some((site.shown(&link, &checked), reason?, files))
-            }
-        })
-        .buffer_unordered(AT_ONCE)
-        .collect()
-        .await;
-    // Why each page a link leads into can't be reached, or else its file, if
-    // it's one with anchors to find.
-    let pages: HashMap<String, Result<Option<PathBuf>, String>> = futures::stream::iter(pages)
-        .map(|(url, request)| {
-            let client = &client;
-            async move {
-                let file = match client.check(request).await {
-                    Ok(response) if response.status().is_error() => {
-                        Err(response.status().to_string())
-                    }
-                    Ok(response) if response.status().is_success() => Ok(html_file(&url)),
-                    Ok(_) => Ok(None),
-                    Err(error) => Err(error.to_string()),
-                };
-                (url, file)
-            }
-        })
-        .buffer_unordered(AT_ONCE)
-        .collect()
-        .await;
-    let files: BTreeSet<PathBuf> = (pages.values().flatten().flatten().cloned()).collect();
-    let threads = std::thread::available_parallelism().map_or(1, usize::from);
-    let anchors: HashMap<PathBuf, Option<HashSet<String>>> = futures::stream::iter(files)
-        .map(|file| async move {
-            let read = file.clone();
-            let anchors = tokio::task::spawn_blocking(move || anchors_in(&read)).await;
-            (file, anchors.ok().flatten())
-        })
-        .buffer_unordered(threads)
-        .collect()
-        .await;
-    let checked = checked.into_iter().flatten();
-    let anchored = anchored.into_iter().filter_map(|(link, anchor, files)| {
-        let reason = match pages.get(anchor.page.as_str())? {
-            Err(reason) => reason.clone(),
-            Ok(file) => {
-                // A file that can't be read is passed over, as lychee does.
-                let anchors = anchors.get(file.as_ref()?)?.as_ref()?;
-                if anchor.is_in(anchors) {
-                    return None;
-                }
-                Status::from(ErrorKind::InvalidFragment(anchor.link.clone())).to_string()
-            }
-        };
-        Some((site.shown(&link, &anchor.link), reason, files))
-    });
-    for (shown, reason, files) in checked.chain(anchored) {
-        for (file, written) in files {
-            let url = written.unwrap_or_else(|| shown.clone());
-            broken
-                .entry((url, reason.clone()))
-                .or_default()
-                .insert(file);
-        }
-    }
-
-    let mut broken: Vec<_> = broken
-        .into_iter()
-        .map(|((url, reason), files)| Broken {
-            files: files.into_iter().collect(),
-            url,
-            reason,
-        })
-        .collect();
-    broken.sort();
-    Ok(broken)
 }
 
 /// A link to an anchor in a file, like `guide/#usage`, which little looks
@@ -415,13 +534,11 @@ impl<'a> Site<'a> {
         Ok(Remaps::new(remaps))
     }
 
-    /// Whether `request` is a link to another site from a file of a version
-    /// of the site from a git ref, which isn't checked.
-    fn elsewhere_from_ref(&self, request: &Request) -> bool {
-        let from_ref = (self.in_destination(&request.source))
-            .is_some_and(|path| self.built.from_refs.contains(path));
-        let own = |own: &Regex| own.is_match(request.uri.as_str());
-        from_ref && !request.uri.is_file() && !self.own.as_ref().is_some_and(own)
+    /// Whether `link` is to another site, which isn't checked from a file
+    /// of a version of the site from a git ref.
+    fn elsewhere(&self, link: &Uri) -> bool {
+        let own = |own: &Regex| own.is_match(link.as_str());
+        !link.is_file() && !self.own.as_ref().is_some_and(own)
     }
 
     /// `link`, which lychee checked as `checked`, as a reader follows it: a
@@ -469,22 +586,18 @@ impl<'a> Site<'a> {
         shown().unwrap_or_else(|| link.to_string())
     }
 
-    /// What `source`, a file lychee read, was built from.
-    fn origin(&self, source: &ResolvedInputSource) -> String {
-        self.in_destination(source)
-            .and_then(|rel| self.built.origins.get(rel))
-            .cloned()
-            .unwrap_or_else(|| source.to_string())
+    /// What the file at `rel` in the destination was built from.
+    fn origin(&self, rel: &Path) -> String {
+        (self.built.origins.get(rel).cloned())
+            .unwrap_or_else(|| self.destination.join(rel).display().to_string())
     }
 
-    /// The file `link` is in, which lychee read as `source`, once for each
+    /// The file `link` is in, at `rel` in the destination, once for each
     /// way its Markdown writes the link, or once if it doesn't. `link` is
     /// the URL lychee made of it, or, if it isn't a URL, its text.
-    fn found(&self, source: &ResolvedInputSource, link: &str) -> Vec<Found> {
-        let file = self.origin(source);
-        let written = self
-            .in_destination(source)
-            .and_then(|rel| self.written.get(rel)?.get(link));
+    fn found(&self, rel: &Path, link: &str) -> Vec<Found> {
+        let file = self.origin(rel);
+        let written = self.written.get(rel).and_then(|written| written.get(link));
         match written {
             Some(written) => written
                 .iter()
@@ -606,6 +719,72 @@ mod tests {
                 link.to_string()
             })
             .collect()
+    }
+
+    #[test]
+    fn a_checker_finds_what_a_check_would_build_after_build() {
+        let (_tmp, site) = scratch(&[
+            BARE_THEME[0],
+            BARE_THEME[1],
+            (
+                "docs/README.md",
+                "[Usage](guide.md#usage), and [about](about.md).\n",
+            ),
+            ("docs/guide.md", "# Guide\n\n## Usage\n"),
+            ("docs/about.md", "# About\n"),
+        ]);
+        let mut checker = Checker::default();
+        // The links the checker finds broken, which a check of the same
+        // build, from nothing, must find too.
+        let mut broken = |built: &Built| {
+            let broken = checker.check(built, Scope::Internal).unwrap();
+            assert_eq!(broken, check(built, Scope::Internal).unwrap());
+            let shown = broken
+                .iter()
+                .map(|link| format!("{}: {}", link.url, link.reason));
+            shown.collect::<Vec<_>>()
+        };
+        let write = |file: &str, text: &str| fs::write(site.join(file), text).unwrap();
+        let built = site::build(&site).unwrap();
+        assert_eq!(broken(&built), [""; 0]);
+
+        // A heading goes from a page, which a page that's as it was links to.
+        write("docs/guide.md", "# Guide\n\n## Using\n");
+        let built = site::rebuild(&site, &built).unwrap();
+        assert!(!built.written.contains(Path::new("index.html")));
+        assert_eq!(
+            broken(&built),
+            ["guide.md#usage: Cannot find fragment".to_string()]
+        );
+
+        // It comes back, and a page goes, as another comes with links of
+        // its own, one of them not a URL.
+        write("docs/guide.md", "# Guide\n\n## Usage\n");
+        fs::remove_file(site.join("docs/about.md")).unwrap();
+        write(
+            "docs/new.md",
+            "[Nowhere](nowhere.md), and [not a URL](<https://exa mple.com>).\n",
+        );
+        let built = site::rebuild(&site, &built).unwrap();
+        let found = broken(&built);
+        assert_eq!(found.len(), 3, "{found:?}");
+        assert!(found[0].starts_with("about.md: "), "{found:?}");
+        assert!(found[1].starts_with("https://exa mple.com: "), "{found:?}");
+        assert!(found[2].starts_with("nowhere.md: "), "{found:?}");
+
+        // The new page goes, with its links, and the other comes back.
+        fs::remove_file(site.join("docs/new.md")).unwrap();
+        write("docs/about.md", "# About\n");
+        let built = site::rebuild(&site, &built).unwrap();
+        assert_eq!(broken(&built), [""; 0]);
+
+        // A file the build didn't write isn't read again.
+        let built = site::rebuild(&site, &built).unwrap();
+        assert!(built.written.is_empty());
+        let home = site.join("dist/index.html");
+        fs::write(&home, "<a href=\"nowhere\">Nowhere</a>").unwrap();
+        assert_eq!(checker.check(&built, Scope::Internal).unwrap(), []);
+        assert_eq!(check(&built, Scope::Internal).unwrap().len(), 1);
     }
 
     #[test]

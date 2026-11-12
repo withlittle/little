@@ -1,6 +1,8 @@
 # 0076 — Rebuilding only what differs
 
-- Status: accepted
+- Status: accepted; amended by
+  [0077](./0077-checking-links-after-a-rebuild.md), which reads only the
+  files a rebuild wrote to check the site's links
 - Date: 2026-11-12
 
 ## Context

@@ -208,6 +208,9 @@ pub struct Built {
     /// What each file it wrote was written from, by its path in the
     /// destination, so a [`rebuild`] writes only those that differ.
     pub files: HashMap<PathBuf, Wrote>,
+    /// The path in the destination of each file it wrote, and didn't leave
+    /// as the build before it wrote it, as a [`rebuild`] can.
+    pub written: HashSet<PathBuf>,
 }
 
 /// What a build wrote a file from.
@@ -529,6 +532,7 @@ fn build_after(site_dir: &Path, last: Option<&Built>) -> Result<Built> {
         warnings: Vec::new(),
         from_refs: HashSet::new(),
         files: HashMap::new(),
+        written: HashSet::new(),
     };
     // When every version is from a git ref, the site's plugins build none,
     // but may have warned as they started.
@@ -1187,15 +1191,20 @@ fn write_version(
         let wrote = Wrote::contents(contents);
         let in_root = path.strip_prefix(root)?.to_path_buf();
         let same = last.and_then(|last| last.files.get(&in_root)) == Some(&wrote);
+        let differs = !(same && path.is_file());
+        if differs {
+            built.written.insert(in_root.clone());
+        }
         built.files.insert(in_root, wrote);
-        anyhow::Ok(!(same && path.is_file()))
+        anyhow::Ok(differs)
     };
     let mut written = Vec::new();
     for output in outputs {
+        let path = output.path.strip_prefix(root)?.to_path_buf();
         if let Some(html) = &output.html {
             write_file(&output.path, html.as_bytes())?;
+            built.written.insert(path.clone());
         }
-        let path = output.path.strip_prefix(root)?.to_path_buf();
         built.files.insert(path.clone(), output.wrote);
         built.origins.insert(path.clone(), output.origin);
         built.urls.insert(path.clone(), output.url);
