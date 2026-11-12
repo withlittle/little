@@ -18,6 +18,10 @@
 //! those that are built in or downloaded, which don't change. Each rebuild
 //! builds every version of the site, but a version's git ref isn't watched:
 //! a new commit on its branch is built at the next save, or the next start.
+//!
+//! A rebuild reads the whole site, but writes only what differs from the
+//! build before it, as [`site::rebuild`] does, so a save to one page of a
+//! large site doesn't wait for the theme to render the rest.
 
 use anyhow::{Result, anyhow};
 use mime_guess::{Mime, mime};
@@ -115,6 +119,9 @@ fn spawn_watcher(site_dir: PathBuf, last: Arc<Mutex<Arc<Built>>>, version: Arc<A
             }
         };
 
+        // A build that fails as it writes leaves some of the destination
+        // newer than the last build that worked, so the next builds it all.
+        let mut failed = false;
         // Debounce: wake on the first event, then swallow the burst.
         while rx.recv().is_ok() {
             std::thread::sleep(Duration::from_millis(150));
@@ -125,7 +132,13 @@ fn spawn_watcher(site_dir: PathBuf, last: Arc<Mutex<Arc<Built>>>, version: Arc<A
                 eprintln!("watcher error: {e}");
             }
 
-            match site::build(&site_dir) {
+            let before = Arc::clone(&last.lock().unwrap());
+            let built = match failed {
+                true => site::build(&site_dir),
+                false => site::rebuild(&site_dir, &before),
+            };
+            failed = built.is_err();
+            match built {
                 Ok(built) => {
                     let built = Arc::new(built);
                     *last.lock().unwrap() = Arc::clone(&built);

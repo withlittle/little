@@ -187,7 +187,7 @@ pub struct Read {
 
 /// Where a site is published, from its `url`. A site that doesn't set one is
 /// at the root of whichever domain serves it.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct SiteUrl {
     /// The scheme and host, like `https://example.github.io`; empty if the
     /// site doesn't set `url`.
@@ -202,7 +202,7 @@ pub struct SiteUrl {
 
 /// The theme's files, which a site with versions writes once, for the
 /// version at its root, for every version to share.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Shared {
     /// The path of the site's root, like `/my-project`, as `SiteUrl::path`.
     pub path: String,

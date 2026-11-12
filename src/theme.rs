@@ -26,6 +26,7 @@ use minijinja::{AutoEscape, Environment, ErrorKind, HtmlEscape, State, Value};
 use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt;
+use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
@@ -307,6 +308,14 @@ impl ThemeFiles {
             })
             .collect();
         Ok(ThemeFiles { files })
+    }
+
+    /// Hash its templates, by their names, into `state`: all of it a page is
+    /// rendered from.
+    pub fn hash_templates(&self, state: &mut impl Hasher) {
+        for (name, file) in self.in_folder(TEMPLATES_DIR) {
+            (name, &file.contents).hash(state);
+        }
     }
 
     /// The theme's static files, by their path from `_static/`, and so from
