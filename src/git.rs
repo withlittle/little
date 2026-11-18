@@ -33,8 +33,8 @@ impl Repository {
                 let folder = std::path::absolute(site_dir)
                     .map_or_else(|_| site_dir.to_path_buf(), |dir| normalize(&dir));
                 format!(
-                    "the site's `versions` are built from git refs, so its folder, {}, must be in \
-                     a git repository",
+                    "the site's `site.versions` are built from git refs, so its folder, {}, must \
+                     be in a git repository",
                     folder.display()
                 )
             })?;
@@ -321,8 +321,8 @@ pub(crate) mod tests {
         // its folder is named, tidied.
         let (_lone, lone) = scratch(&[("little.yml", ""), ("sub/little.yml", "")]);
         let not_in_one = format!(
-            "the site's `versions` are built from git refs, so its folder, {}, must be in a git \
-             repository: git rev-parse failed: fatal: not a git repository",
+            "the site's `site.versions` are built from git refs, so its folder, {}, must be in a \
+             git repository: git rev-parse failed: fatal: not a git repository",
             lone.display()
         );
         for site_dir in [lone.clone(), lone.join("sub").join("..")] {
@@ -336,7 +336,7 @@ pub(crate) mod tests {
         // Many projects keep their docs out of the archives git makes of
         // them, but not out of their checkouts.
         let (_tmp, root) = repository(&[
-            ("docs/little.yml", "name: Old\n"),
+            ("docs/little.yml", "site: { name: Old }\n"),
             ("docs/guide.md", "# Old\n"),
             ("docs/a b/[c].md", "# C\n"),
             ("src/lib.py", "x = 1\n"),

@@ -64,26 +64,27 @@ enum Commands {
     /// Build the site into its destination folder (dist/ by default), and
     /// warn of each formula it can't render, each diagram it can't draw,
     /// each code block a plugin can't render, each warning from a plugin,
-    /// each URL in search.exclude that matches no page, and each broken
-    /// link
+    /// each URL in site.search.exclude that matches no page, and each
+    /// broken link
     Build {
         /// Fail on a formula that can't be rendered, a diagram that can't be
         /// drawn, a code block a plugin can't render, a warning from a
-        /// plugin, a URL in search.exclude that matches no page, or a broken
-        /// link, rather than warn of it, as for CI
+        /// plugin, a URL in site.search.exclude that matches no page, or a
+        /// broken link, rather than warn of it, as for CI
         #[arg(long)]
         strict: bool,
     },
     /// Serve the site locally with live reload
     Serve {
-        /// Host to serve at, overriding the config's `host`
+        /// Host to serve at, overriding the config's `site.serve.host`
         #[arg(long)]
         host: Option<String>,
-        /// Port to serve at, overriding the config's `port`
+        /// Port to serve at, overriding the config's `site.serve.port`
         #[arg(long, value_parser = clap::value_parser!(u16).range(1..))]
         port: Option<u16>,
     },
-    /// Print the site's config: little's, its theme's, and its own, merged
+    /// Print the site's config, its `site` and `page`: little's, its
+    /// theme's, and its own, merged
     Config,
 }
 
@@ -131,7 +132,7 @@ fn main() -> Result<()> {
         Commands::Serve { host, port } => server::serve(&cli.dir, host, port)?,
         Commands::Config => {
             let cfg = config::load(&cli.dir)?;
-            print!("{}", serde_yaml::to_string(&cfg.values)?);
+            print!("{}", serde_yaml::to_string(&cfg.groups())?);
         }
     }
     Ok(())

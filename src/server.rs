@@ -760,11 +760,14 @@ mod tests {
 
     /// The files of a throwaway site, with every kind of file a build reads.
     const SITE: [(&str, &str); 7] = [
-        ("little.yml", "theme: ./theme\nname: Test\n"),
+        (
+            "little.yml",
+            "site:\n  theme:\n    source: ./theme\n  name: Test\n",
+        ),
         ("docs/README.md", "# Home\n"),
         ("docs/guide/install.md", "# Install\n"),
         ("docs/guide/images/diagram.png", "png"),
-        ("theme/little.yml", "font: serif\n"),
+        ("theme/little.yml", "site: { footer: Thanks }\n"),
         ("theme/_templates/default.html", "{{ page.content | safe }}"),
         ("theme/_static/style.css", "body {}\n"),
     ];
@@ -806,7 +809,7 @@ mod tests {
     #[test]
     fn a_source_can_hold_the_destination() {
         let (_tmp, site_dir) = scratch(&SITE);
-        let site_cfg = "theme: ./theme\ndestination: ./docs/_build\n";
+        let site_cfg = "site:\n  theme:\n    source: ./theme\n  destination: ./docs/_build\n";
         std::fs::write(site_dir.join("little.yml"), site_cfg).unwrap();
         assert_only_edits_wake(&site_dir, &site_dir.join("docs/guide/install.md"));
     }
@@ -814,11 +817,13 @@ mod tests {
     #[test]
     fn the_watcher_watches_every_theme_in_the_chain() {
         let (_tmp, site_dir) = scratch(&SITE);
-        std::fs::write(site_dir.join("little.yml"), "theme: ./company\n").unwrap();
+        let in_company = "site:\n  theme:\n    source: ./company\n";
+        std::fs::write(site_dir.join("little.yml"), in_company).unwrap();
         let company = site_dir.join("company");
         std::fs::create_dir_all(&company).unwrap();
         let company_cfg = company.join("little.yml");
-        std::fs::write(&company_cfg, "theme: ../theme\nfont: mono\n").unwrap();
+        let on_theme = "site:\n  theme:\n    source: ../theme\n  footer: Company\n";
+        std::fs::write(&company_cfg, on_theme).unwrap();
 
         // The theme it builds on, and its own config. That edit breaks the
         // config, so it goes last.
@@ -831,10 +836,12 @@ mod tests {
         // A company's theme that builds on a downloaded one...
         let (_tmp, site_dir) = scratch(&SITE);
         let url = "https://example.invalid/fancy-1.0.zip";
-        std::fs::write(site_dir.join("little.yml"), "theme: ./company\n").unwrap();
+        let in_company = "site:\n  theme:\n    source: ./company\n";
+        std::fs::write(site_dir.join("little.yml"), in_company).unwrap();
         let company = site_dir.join("company");
         std::fs::create_dir_all(company.join("_static")).unwrap();
-        std::fs::write(company.join("little.yml"), format!("theme: {url}\n")).unwrap();
+        let on_fancy = format!("site:\n  theme:\n    source: {url}\n");
+        std::fs::write(company.join("little.yml"), on_fancy).unwrap();
         let company_css = company.join("_static/company.css");
         std::fs::write(&company_css, "body {}\n").unwrap();
         // ...kept where it would be once downloaded, so the test needn't
@@ -855,8 +862,8 @@ mod tests {
     #[test]
     fn the_watcher_watches_each_plugin_and_the_folders_it_reads() {
         let (_tmp, site_dir) = scratch(&SITE);
-        let site_cfg =
-            "theme: ./theme\nplugins:\n  test:\n    wasm: ./plugins/test.wasm\n    read: data\n";
+        let site_cfg = "site:\n  theme:\n    source: ./theme\n  plugins:\n    test:\n      \
+                        wasm: ./plugins/test.wasm\n      read: data\n";
         std::fs::write(site_dir.join("little.yml"), site_cfg).unwrap();
         let wasm = site_dir.join("plugins/test.wasm");
         std::fs::create_dir_all(wasm.parent().unwrap()).unwrap();
@@ -876,9 +883,10 @@ mod tests {
         // it, so the site's destination is inside the watched theme: beside
         // the site's docs, or anywhere else in the theme.
         for destination in ["./dist", "../site"] {
-            let demo_cfg = format!("theme: ..\ndestination: {destination}\n");
+            let demo_cfg =
+                format!("site:\n  theme:\n    source: ..\n  destination: {destination}\n");
             let (_tmp, theme_dir) = scratch(&[
-                ("little.yml", "font: serif\n"),
+                ("little.yml", "site: { footer: Thanks }\n"),
                 ("_templates/default.html", "{{ page.content | safe }}"),
                 ("_static/style.css", "body {}\n"),
                 ("demo/little.yml", &demo_cfg),
@@ -922,7 +930,7 @@ mod tests {
         );
         assert_follows(
             &site_dir,
-            "theme: ./other\n",
+            "site:\n  theme:\n    source: ./other\n",
             "theme/_static/style.css",
             "other/_static/style.css",
         );
@@ -935,7 +943,7 @@ mod tests {
         std::fs::write(site_dir.join("pages/README.md"), "# Home\n").unwrap();
         assert_follows(
             &site_dir,
-            "theme: ./theme\nsource: ./pages\n",
+            "site:\n  theme:\n    source: ./theme\n  source: ./pages\n",
             "docs/README.md",
             "pages/README.md",
         );
@@ -964,7 +972,7 @@ mod tests {
         std::fs::write(site_dir.join(".docs/README.md"), "# Home\n").unwrap();
         assert_follows(
             &site_dir,
-            "theme: ./theme\nsource: ./.docs\n",
+            "site:\n  theme:\n    source: ./theme\n  source: ./.docs\n",
             "docs/README.md",
             ".docs/README.md",
         );

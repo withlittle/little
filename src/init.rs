@@ -24,19 +24,20 @@ const IGNORED: &str = "/dist/";
 /// built-in theme's.
 const NAMELESS: &str = "Documentation";
 
-/// The top of the `little.yml` `little init` writes, above the site's name.
+/// The top of the `little.yml` `little init` writes, above its `site`,
+/// which holds the site's name.
 const CONFIG_TOP: &str = "\
 # The site's settings, over its theme's and little's own. See
 # https://withlittle.github.io/little/getting-started/configuring
 ";
 
 /// The rest of the `little.yml` `little init` writes, below the site's
-/// name: what a site sets next, ready to uncomment.
-const CONFIG_REST: &str = "\
-# description: What these docs are for
-# Where the site's published, and the repository it's in, on GitHub:
-# url: https://<owner>.github.io/<repo>
-# repo: https://github.com/<owner>/<repo>
+/// name, in its `site`: what a site sets next, ready to uncomment.
+const CONFIG_REST: &str = "  # description: What these docs are for
+  # Where the site's published, and the repository it's in, on GitHub:
+  # url: https://<owner>.github.io/<repo>
+  # repository:
+  #   url: https://github.com/<owner>/<repo>
 ";
 
 /// The home page `little init` writes, unless the site has one. It has no
@@ -188,12 +189,12 @@ fn name_of(dir: &Path) -> Result<String> {
 }
 
 /// The `little.yml` of a site called `name`, with the name written as YAML,
-/// so one like `yes` or `#1` is read back as it is.
+/// in its `site`, so one like `yes` or `#1` is read back as it is.
 fn config_for(name: &str) -> Result<String> {
-    let mut values = Mapping::new();
-    values.insert("name".into(), Value::from(name));
-    let name = serde_yaml::to_string(&values).context("writing the site's name")?;
-    Ok(format!("{CONFIG_TOP}{name}{CONFIG_REST}"))
+    let site = Mapping::from_iter([("name".into(), Value::from(name))]);
+    let groups = Mapping::from_iter([("site".into(), Value::Mapping(site))]);
+    let named = serde_yaml::to_string(&groups).context("writing the site's name")?;
+    Ok(format!("{CONFIG_TOP}{named}{CONFIG_REST}"))
 }
 
 /// Writes `contents` to a new file at `path`, which mustn't be there.
@@ -217,7 +218,7 @@ mod tests {
 
     /// The site's name, as little reads it.
     fn name(dir: &Path) -> Value {
-        config::load(dir).unwrap().values["name"].clone()
+        config::load(dir).unwrap().site["name"].clone()
     }
 
     #[test]
@@ -253,7 +254,7 @@ mod tests {
     #[test]
     fn wont_start_a_site_over_another() {
         let (_tmp, dir) = scratch(&[]);
-        fs::write(dir.join("little.yml"), "name: Mine\n").unwrap();
+        fs::write(dir.join("little.yml"), "site:\n  name: Mine\n").unwrap();
 
         let error = init(&dir).unwrap_err().to_string();
 
@@ -265,7 +266,7 @@ mod tests {
         );
         assert_eq!(
             fs::read_to_string(dir.join("little.yml")).unwrap(),
-            "name: Mine\n"
+            "site:\n  name: Mine\n"
         );
         // It wrote nothing else.
         assert_eq!(fs::read_dir(&dir).unwrap().count(), 1);

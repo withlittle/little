@@ -89,7 +89,7 @@ A [diagram](../writing/diagrams.md#choosing-how-diagrams-are-drawn) is an
 `<svg>` with the id `mermaid-1`, `mermaid-2`, and so on, in the order
 they're in the page. Its own styles are scoped to that id, so they outweigh
 your CSS: give diagrams your theme's colours and font with
-[`mermaid`](../writing/diagrams.md#choosing-how-diagrams-look) in its
+[`theme.mermaid`](../writing/diagrams.md#choosing-how-diagrams-look) in its
 `little.yml` instead.
 
 A diagram is as wide as it's drawn, but no wider than the page. The

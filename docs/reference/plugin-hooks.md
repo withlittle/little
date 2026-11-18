@@ -74,7 +74,7 @@ setup: func(settings: string) -> result<_, string>;
 
 Called as the plugin starts, before any other hook, with its settings from
 `little.yml`, as a JSON object, like `{"read":["src"],"style":"google"}`.
-They don't have `wasm`, and `read` is always a list.
+They don't have `wasm` or `enabled`, and `read` is always a list.
 
 ## config
 
@@ -83,11 +83,12 @@ config: func(config: string) -> result<string, string>;
 ```
 
 Called once, with the site's config, as
-[`little config`](commands.md#little-config) prints it. It gives back the
-config the build goes on with, so it can change any setting, like
-`markdown`, or add one for the theme, like `announcement`, but not `theme`,
-`plugins`, `source`, `destination`, `host`, or `port`, which little reads
-before plugins start.
+[`little config`](commands.md#little-config) prints it: an object with
+`site` and `page`. It gives back the config the build goes on with, so it
+can change any setting, like `site.markdown`, or add one for the theme,
+like `site.announcement`. It can't change `site.theme.enabled`,
+`site.theme.source`, `site.plugins`, `site.source`, `site.destination`, or
+`site.serve`, which little reads before plugins start.
 
 ## theme
 
@@ -245,17 +246,17 @@ site: func(site: string) -> result<string, string>;
 
 Called once, after every page is read, with
 [`site`](template-data.md#site), as the theme gets it: the config's
-settings, with `nav` and `year`, and, on a site with versions, `version`
-and `versions`.
+`site`, with `navigation.items` and `year`, and, on a site with versions,
+`version` and `versions`.
 
-It gives back the `site` the theme gets. Its `nav` must still be a list of
-`{ title, url, children }`, and `page.prev`, `page.next`, and
+It gives back the `site` the theme gets. Its `navigation.items` must still
+be a list of `{ title, url, children }`, and `page.prev`, `page.next`, and
 `page.breadcrumbs` follow it, so they agree with the theme's sidebar. Its
 URLs are as the theme gets them, with the path of the site's
 [`url`](../getting-started/publishing.md#choosing-the-sites-url) before
 them, like `/little/guide/install`, so a URL the hook adds needs it, too.
-With [`nav_prune`](../writing/navigation.md#pruning-the-nav), little prunes
-the nav it gives back, for each page.
+With [`navigation.prune`](../writing/navigation.md#pruning-the-nav), little
+prunes the nav it gives back, for each page.
 
 ## page
 

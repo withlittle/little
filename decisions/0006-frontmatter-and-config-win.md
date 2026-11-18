@@ -1,6 +1,9 @@
 # 0006 — Frontmatter and config have the last word
 
-- Status: accepted
+- Status: accepted; amended by
+  [0080](./0080-settings-in-groups-under-site-and-page.md), which puts
+  `page`, in a `little.yml`, beneath each page's frontmatter, has little
+  act on a page's `enabled`, and writes `nav` as `site.navigation.items`
 - Date: 2026-09-29
 
 ## Context

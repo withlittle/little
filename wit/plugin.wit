@@ -5,8 +5,8 @@
 /// A plugin exports only the hooks it needs, and little calls each as the
 /// build reaches it, in the order they're written here. Each gets what the
 /// build has made so far, and gives back what the build goes on with. A
-/// site's plugins are called in the order its `plugins` names them, each
-/// with what the one before it gave back.
+/// site's plugins are called in the order its `site.plugins` names them,
+/// each with what the one before it gave back.
 package little:plugin@0.2.1;
 
 /// What a plugin can tell little, from any hook.
@@ -20,18 +20,20 @@ interface warnings {
 /// Sets the plugin up.
 interface setup {
     /// Called as the plugin starts, before any other hook, with its settings
-    /// from `little.yml`, as a JSON object, without `wasm`, and with `read`
-    /// always a list. Called again if the plugin crashes, before the next
-    /// hook, as it starts afresh. An error stops the build.
+    /// from `little.yml`, as a JSON object, without `wasm` and `enabled`,
+    /// and with `read` always a list. Called again if the plugin crashes,
+    /// before the next hook, as it starts afresh. An error stops the build.
     setup: func(settings: string) -> result<_, string>;
 }
 
 /// Changes the site's config.
 interface config {
     /// Called once, with the site's config, as `little config` prints it, as
-    /// a JSON object. Gives back the config the build goes on with, which
-    /// can change any setting but `theme`, `plugins`, `source`,
-    /// `destination`, `host`, and `port`. An error stops the build.
+    /// a JSON object, with its two groups, `site` and `page`. Gives back the
+    /// config the build goes on with, which can change any setting but
+    /// `site.theme.enabled`, `site.theme.source`, `site.plugins`,
+    /// `site.source`, `site.destination`, and `site.serve`. An error stops
+    /// the build.
     config: func(config: string) -> result<string, string>;
 }
 
@@ -130,7 +132,7 @@ interface formats {
     /// Called for each file in one of the plugin's extensions, in place of
     /// reading it as Markdown, after `source`, with its file, from the
     /// site's folder, like `docs/analysis.ipynb`, its text, and the site's
-    /// `markdown` settings, as `little config` prints them, as a JSON
+    /// `site.markdown` settings, as `little config` prints them, as a JSON
     /// object. Gives back the page's parts, in order, which little writes as
     /// it writes Markdown's: its file is a page as a Markdown file is, at
     /// the URL of its name. An error stops the build.
@@ -187,13 +189,13 @@ interface content {
 /// Changes what the theme gets as `site`.
 interface site {
     /// Called once, after every page is read, with `site`, as the theme gets
-    /// it, as a JSON object: the config's settings, with `nav`, `year`, and,
-    /// for a site with versions, `version` and `versions`. A URL in it from
-    /// the root of the site has the path of the site's `url` before it, as
-    /// a reader follows it, so one a plugin adds needs it, too. Gives back
-    /// the `site` the theme gets, whose `nav` is still a list of `{ title,
-    /// url, children }`, which `page.prev`, `page.next`, and
-    /// `page.breadcrumbs` follow. An error stops the build.
+    /// it, as a JSON object: the config's `site`, with `navigation.items`,
+    /// `year`, and, for a site with versions, `version` and `versions`. A
+    /// URL in it from the root of the site has the path of the site's `url`
+    /// before it, as a reader follows it, so one a plugin adds needs it,
+    /// too. Gives back the `site` the theme gets, whose `navigation.items`
+    /// is still a list of `{ title, url, children }`, which `page.prev`,
+    /// `page.next`, and `page.breadcrumbs` follow. An error stops the build.
     site: func(site: string) -> result<string, string>;
 }
 

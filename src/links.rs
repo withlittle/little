@@ -671,7 +671,8 @@ fn under(url: &Url) -> Result<Regex> {
 /// What matches a link to `repo`, or to anything in it, as lychee writes the
 /// link: with its host in lowercase, say.
 fn into_repo(repo: &Repo) -> Result<RegexSet> {
-    let url = Url::parse(&repo.url).with_context(|| format!("reading `repo`, {}", repo.url))?;
+    let url = Url::parse(&repo.url)
+        .with_context(|| format!("reading `site.repository.url`, {}", repo.url))?;
     let pattern = format!("^{}([/?#]|$)", regex::escape(trimmed(&url)));
     Ok(RegexSet::new([pattern])?)
 }
@@ -680,13 +681,13 @@ fn into_repo(repo: &Repo) -> Result<RegexSet> {
 mod tests {
     use super::*;
     use crate::site;
-    use crate::testing::scratch;
+    use crate::testing::{IN_THEME, scratch};
     use std::fs;
 
     /// A theme that shows only each page's content, so a test sees only the
     /// links it writes.
     const BARE_THEME: [(&str, &str); 2] = [
-        ("little.yml", "theme: ./theme\n"),
+        ("little.yml", IN_THEME),
         ("theme/_templates/default.html", "{{ page.content | safe }}"),
     ];
 
@@ -832,7 +833,8 @@ mod tests {
             &[
                 (
                     "little.yml",
-                    "theme: ./theme\nurl: https://withlittle.github.io/little\n",
+                    "site:\n  theme:\n    source: ./theme\n  \
+                     url: https://withlittle.github.io/little\n",
                 ),
                 BARE_THEME[1],
                 (
@@ -869,7 +871,8 @@ mod tests {
             &[
                 (
                     "little.yml",
-                    "theme: ./theme\nurl: https://withlittle.github.io/little\n",
+                    "site:\n  theme:\n    source: ./theme\n  \
+                     url: https://withlittle.github.io/little\n",
                 ),
                 BARE_THEME[1],
                 // Each way a link is written is a warning, which names each
@@ -971,7 +974,8 @@ mod tests {
             &[
                 (
                     "little.yml",
-                    "theme: ./theme\nurl: https://withlittle.github.io/little\n",
+                    "site:\n  theme:\n    source: ./theme\n  \
+                     url: https://withlittle.github.io/little\n",
                 ),
                 // The second stylesheet leaves out the site's path.
                 (
@@ -1062,7 +1066,10 @@ mod tests {
         let broken = broken_links(
             Scope::All,
             &[
-                ("little.yml", &format!("repo: {repo}/\n")),
+                (
+                    "little.yml",
+                    &format!("site:\n  repository:\n    url: {repo}/\n"),
+                ),
                 (
                     "docs/README.md",
                     &format!(
@@ -1119,8 +1126,8 @@ mod tests {
         init(&site);
         commit_all(&site);
         git_in(&site, &["tag", "v1.4"]);
-        let site_cfg = "theme: ./theme\nurl: https://example.com/proj\nversions:\n  \
-                        - { title: \"2.0\", url: / }\n  \
+        let site_cfg = "site:\n  theme:\n    source: ./theme\n  url: https://example.com/proj\n  \
+                        versions:\n    - { title: \"2.0\", url: / }\n    \
                         - { title: \"1.4\", url: /1.4, ref: v1.4 }\n";
         fs::write(site.join("little.yml"), site_cfg).unwrap();
         fs::write(site.join("docs/README.md"), "# Home\n").unwrap();
@@ -1142,7 +1149,7 @@ mod tests {
 
     #[test]
     fn finds_no_broken_links_in_the_built_in_theme() {
-        for config in ["", "url: https://withlittle.github.io/little\n"] {
+        for config in ["", "site:\n  url: https://withlittle.github.io/little\n"] {
             let broken = broken_links(
                 Scope::Internal,
                 &[

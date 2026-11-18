@@ -50,8 +50,9 @@ colours each class. `markdown.highlight` chooses which classes:
 
 ```yaml
 # little.yml
-markdown:
-  highlight: github
+site:
+  markdown:
+    highlight: github
 ```
 
 | Value | Classes |

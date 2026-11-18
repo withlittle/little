@@ -1,6 +1,8 @@
 # 0003 — Choosing themes, and themes that build on others
 
-- Status: accepted
+- Status: accepted; amended by
+  [0080](./0080-settings-in-groups-under-site-and-page.md), which writes
+  `theme` as `site.theme.enabled` and `site.theme.source`
 - Date: 2026-09-28
 - Amends: [0002](./0002-theme-structure.md)
 - Amended by: [0004](./0004-downloading-themes.md),

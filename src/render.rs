@@ -70,7 +70,7 @@ pub struct WrittenLink {
 /// `plugins` render rendered, its math written, its diagrams drawn, as of
 /// `now`, and its code highlighted as `markdown` chooses, and outline, which
 /// lists its headings at the levels in `toc_depths` (the config's
-/// `toc_min_depth` to `toc_max_depth`).
+/// `site.toc_min_depth` to `site.toc_max_depth`).
 /// Links and images relative to the document, like `images/logo.png`, lead
 /// from `folder`, the URL of the folder it's in, like `/guide/`; those from
 /// the root of the site get the path of the site's `url`. A link to a page's

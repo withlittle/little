@@ -367,7 +367,7 @@ mod tests {
 
     /// A theme's files, text and not.
     const FILES: &[(&str, &[u8])] = &[
-        ("little.yml", b"font: Inter\n"),
+        ("little.yml", b"site: { footer: Thanks }\n"),
         ("_templates/default.html", b"{{ page.content }}"),
         (
             "_static/img/logo.png",
@@ -543,7 +543,10 @@ mod tests {
         assert!(!site.join(CACHE_DIR).exists());
 
         // Files and folders side by side, or nothing at all.
-        let loose = zip(&[("little.yml", &b"font: Inter\n"[..]), ("_templates/", &[])]);
+        let loose = zip(&[
+            ("little.yml", &b"site: { footer: Thanks }\n"[..]),
+            ("_templates/", &[]),
+        ]);
         let expected = "little couldn't unpack it: it should hold a single folder, not `_templates/`, `little.yml`";
         assert_eq!(error(&site, loose), expected);
         let expected = "little couldn't unpack it: it's empty";

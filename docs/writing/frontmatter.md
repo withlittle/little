@@ -51,6 +51,20 @@ It changes only what the theme sees: `url` doesn't move the page, `type`
 doesn't choose its template, and a page can't change the site's settings,
 like its [Markdown](markdown.md#choosing-markdowns-extensions).
 
+## For every page
+
+To set a key for every page, put it under `page` in `little.yml`:
+
+```yaml
+# little.yml
+page:
+  toc: false
+```
+
+It does what it would in each page's frontmatter, so here no page has a
+table of contents. A page's own frontmatter goes over it, and a theme's
+`little.yml` can set `page` too, beneath the site's.
+
 ## In another format
 
 A notebook's frontmatter goes in a raw or Markdown cell at its top: see

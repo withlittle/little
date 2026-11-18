@@ -19,12 +19,13 @@ the folder your package is in:
 
 ```yaml
 # little.yml
-plugins:
-  pydoc:
-    wasm: https://github.com/withlittle/little/releases/download/pydoc-v0.1.0/little_pydoc.wasm
-    read: ./mypackage
-    title: API reference
-    url: /
+site:
+  plugins:
+    pydoc:
+      wasm: https://github.com/withlittle/little/releases/download/pydoc-v0.1.0/little_pydoc.wasm
+      read: ./mypackage
+      title: API reference
+      url: /
 ```
 
 - `read` names the folders it documents, like `./mypackage`, or

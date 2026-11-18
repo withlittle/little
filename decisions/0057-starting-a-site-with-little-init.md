@@ -2,7 +2,9 @@
 
 - Status: accepted; amended by [0060](./0060-other-formats-in-plugins.md),
   under which a `README.ipynb` isn't a new site's home page, as no plugin
-  reads it yet
+  reads it yet, and by
+  [0080](./0080-settings-in-groups-under-site-and-page.md), under which
+  it writes `name` under `site`, and `repo` as `repository.url`
 - Date: 2026-10-19
 
 ## Context

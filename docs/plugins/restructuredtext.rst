@@ -11,8 +11,10 @@ Name it in your site's `plugins <using-plugins.md#naming-a-plugin>`__:
 .. code:: yaml
 
    # little.yml
-   plugins:
-     restructuredtext: https://github.com/withlittle/little/releases/download/restructuredtext-v0.1.0/little_restructuredtext.wasm
+   site:
+     plugins:
+       restructuredtext:
+         wasm: https://github.com/withlittle/little/releases/download/restructuredtext-v0.1.0/little_restructuredtext.wasm
 
 It has no settings.
 This page is one reStructuredText file, ``docs/plugins/restructuredtext.rst``.

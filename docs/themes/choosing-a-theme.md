@@ -6,17 +6,19 @@ description: Build a site with little's built-in theme, a theme in a folder, or 
 # Choosing a theme
 
 A theme owns all of a site's HTML, and its look. little builds your site
-with its [built-in theme](#the-built-in-theme), unless you set `theme` in
-`little.yml`:
+with its [built-in theme](#the-built-in-theme), unless you set
+`theme.source` in `little.yml`:
 
 ```yaml
 # little.yml
-theme: ../shared/my-theme
+site:
+  theme:
+    source: ../shared/my-theme
 ```
 
-| `theme` | The site is built with… |
-| ------- | ----------------------- |
-| `true` (the default) | little's [built-in theme](#the-built-in-theme) |
+| `theme.source` | The site is built with… |
+| -------------- | ----------------------- |
+| none (the default) | little's [built-in theme](#the-built-in-theme) |
 | a path, like `../shared/my-theme` | the theme in that folder |
 | a URL, like `https://example.com/my-theme-1.0.tar.gz` | the theme in that archive, [downloaded](#downloading-a-theme) |
 
@@ -66,12 +68,14 @@ changes it everywhere, and each colour is a pair for light and dark, like
 
 ## Downloading a theme
 
-Set `theme` to the URL of a theme's `.zip` or `.tar.gz` archive, and the
-first build downloads it:
+Set `theme.source` to the URL of a theme's `.zip` or `.tar.gz` archive, and
+the first build downloads it:
 
 ```yaml
 # little.yml
-theme: https://example.com/my-theme-1.0.tar.gz
+site:
+  theme:
+    source: https://example.com/my-theme-1.0.tar.gz
 ```
 
 The archive must hold the theme in a single folder, like the archive a git
@@ -82,23 +86,24 @@ another version, change the URL. To download the same URL again, like a
 branch's archive, which changes, delete `.little/`.
 
 A download stops if it takes over 5 minutes, or is over 200 MB. On a slow
-connection, download and unpack the archive yourself, and set `theme` to
-the theme's folder.
+connection, download and unpack the archive yourself, and set
+`theme.source` to the theme's folder.
 
 ## Building on another theme
 
-A theme's own `little.yml` can set `theme` too, to build on another theme,
-like `theme: true` for the built-in one; a theme that doesn't set it builds
-on none. Its settings go over that theme's, and its files replace that
-theme's, so it needs only what it changes. A company
+A theme's own `little.yml` can set `theme.source` too, to build on another
+theme, or `theme.enabled: true`, to build on the built-in one; a theme that
+sets neither builds on none. Its settings go over that theme's, and its
+files replace that theme's, so it needs only what it changes. A company
 theme can be just a `little.yml` that builds on a downloaded one:
 
 ```yaml
 # company-theme/little.yml
-theme: https://example.com/my-theme-1.0.tar.gz
-font: "Inter, sans-serif"
-colors:
-  accent: navy
+site:
+  theme:
+    source: https://example.com/my-theme-1.0.tar.gz
+    fonts:
+      body: "Inter, sans-serif"
 ```
 
 A site that uses it cascades **little → my-theme → company-theme → site**.

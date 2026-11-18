@@ -1,11 +1,15 @@
 # The built-in theme's config — its defaults. little leaves a site's name,
 # language, and look to the theme, and the site's little.yml can still override
 # any of it. This theme is compiled into little, so it builds on nothing: don't
-# set `theme` here.
-name: "Documentation"
-lang: en
-font: "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif"
-# List just the `##` and `###` headings in each page's table of contents.
-toc_max_depth: 3
-# This theme has a search box, so index each site for it.
-search: true
+# set `theme.enabled` or `theme.source` here.
+site:
+  name: "Documentation"
+  language: en
+  theme:
+    fonts:
+      body: "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif"
+  # List just the `##` and `###` headings in each page's table of contents.
+  toc_max_depth: 3
+  # This theme has a search box, so index each site for it.
+  search:
+    enabled: true

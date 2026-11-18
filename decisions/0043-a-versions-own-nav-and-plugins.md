@@ -1,6 +1,9 @@
 # 0043 — A version's own nav, and its plugins' settings
 
-- Status: accepted
+- Status: accepted; amended by
+  [0080](./0080-settings-in-groups-under-site-and-page.md), which renames
+  an entry's `nav` to `navigation.items`, and turns a plugin off there
+  with `enabled: false`
 - Date: 2026-10-14
 - Amends: [0042](./0042-versions-share-the-sites-config-and-theme-files.md)
 

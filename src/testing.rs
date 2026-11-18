@@ -1,6 +1,7 @@
 //! Helpers that the tests of little's modules share: [`scratch`], a folder
 //! of files, deleted when it's dropped, so a test that fails leaves
-//! nothing; [`write`] and [`files_in`], to write files and list them; and
+//! nothing; [`write`] and [`files_in`], to write files and list them;
+//! [`IN_THEME`], a `little.yml` for a site with a theme of its own; and
 //! [`render_at`], to render a page.
 
 use anyhow::Result;
@@ -13,6 +14,11 @@ use walkdir::WalkDir;
 use crate::config::{Markdown, SiteUrl};
 use crate::plugin::PagePlugins;
 use crate::render::{Rendered, parse_document};
+
+/// A `little.yml` that chooses the theme in `./theme`, whose templates say
+/// what a test builds. A test adds its site's other settings to it, under
+/// its `site`, each after two spaces.
+pub(crate) const IN_THEME: &str = "site:\n  theme:\n    source: ./theme\n";
 
 /// A fresh scratch folder holding `files`, each a (path, contents) pair.
 /// It's deleted when the [`TempDir`] is dropped, so a test keeps it, as

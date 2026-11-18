@@ -124,8 +124,10 @@ path from the site's `little.yml`:
 
 ```yaml
 # little.yml
-plugins:
-  links: ../links/target/wasm32-wasip2/release/links.wasm
+site:
+  plugins:
+    links:
+      wasm: ../links/target/wasm32-wasip2/release/links.wasm
 ```
 
 Build the site, or [serve](../reference/commands.md#little-serve) it to

@@ -22,7 +22,8 @@
 //!   `"given"`;
 //! - `config`, `site`, and `page` give back `give`, as it is, if it's
 //!   there, else set the key `echo` names to the JSON they're given, then
-//!   set each key in `merge`;
+//!   set each key in `merge`, or, where it's an object in both, each key in
+//!   that;
 //! - `theme` and `files` leave out each file `remove` lists, then add each
 //!   in `add`, `{ "path": …, "text": … }`, or `{ "path": …, "read": … }` for
 //!   the file it reads, and one at `list` listing the paths they're given;
@@ -110,10 +111,23 @@ fn object(hook: &str, json: String) -> Result<String, String> {
     if let Some(key) = settings.get("echo").and_then(Value::as_str) {
         object.insert(key.to_string(), Value::String(json));
     }
-    if let Some(Value::Object(merge)) = settings.get("merge") {
-        object.extend(merge.clone());
+    if let Some(Value::Object(over)) = settings.get("merge") {
+        merge(&mut object, over);
     }
     serde_json::to_string(&object).map_err(|e| e.to_string())
+}
+
+/// Set each key of `over` in `object`, or, where it's an object in both,
+/// each key of that, as little merges settings.
+fn merge(object: &mut Map<String, Value>, over: &Map<String, Value>) {
+    for (key, value) in over {
+        match (object.get_mut(key), value) {
+            (Some(Value::Object(below)), Value::Object(above)) => merge(below, above),
+            _ => {
+                object.insert(key.clone(), value.clone());
+            }
+        }
+    }
 }
 
 /// The files `settings` add: each in `add`, then one at `list`, listing

@@ -5,7 +5,9 @@
   [0029](./0029-plugins-that-render-code-blocks.md), which downloads a
   plugin's `.wasm` file the same way, into `.little/plugins/`, and by
   [0045](./0045-limits-on-downloads.md), which stops a download that takes
-  too long or is too big, and an archive that unpacks to too much
+  too long or is too big, and an archive that unpacks to too much, and by
+  [0080](./0080-settings-in-groups-under-site-and-page.md), which writes a
+  theme's URL as `site.theme.source`
 - Date: 2026-09-28
 - Amends: [0003](./0003-choosing-and-layering-themes.md)
 

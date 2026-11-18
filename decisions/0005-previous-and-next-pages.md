@@ -1,6 +1,8 @@
 # 0005 — Previous and next pages
 
-- Status: accepted
+- Status: accepted; amended by
+  [0080](./0080-settings-in-groups-under-site-and-page.md), which renames
+  `page.prev` to `page.previous`, and turns either off with its `enabled`
 - Date: 2026-09-29
 
 ## Context

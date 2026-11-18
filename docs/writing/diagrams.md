@@ -55,8 +55,9 @@ leave the line out, write `todayMarker off` in the chart.
 
 ```yaml
 # little.yml
-markdown:
-  mermaid: false
+site:
+  markdown:
+    mermaid: false
 ```
 
 | Value | A diagram is written… |
@@ -66,7 +67,7 @@ markdown:
 
 ## Choosing how diagrams look
 
-`mermaid` holds
+`theme.mermaid` holds
 [Mermaid's own config](https://mermaid.js.org/config/schema-docs/config.html),
 the settings you'd pass to `mermaid.initialize()`, in Mermaid's own names.
 Each diagram little draws starts from it. little and the built-in theme set
@@ -77,16 +78,18 @@ To give diagrams your colours, start from Mermaid's `base` theme, and
 
 ```yaml
 # little.yml
-mermaid:
-  theme: base
-  themeVariables:
-    primaryColor: "#f3eefc"
-    primaryBorderColor: "#6f42c1"
-    lineColor: "#6f42c1"
-    fontFamily: Inter, sans-serif
+site:
+  theme:
+    mermaid:
+      theme: base
+      themeVariables:
+        primaryColor: "#f3eefc"
+        primaryBorderColor: "#6f42c1"
+        lineColor: "#6f42c1"
+        fontFamily: Inter, sans-serif
 ```
 
-- `theme` is one of Mermaid's: `default`, `base`, `dark`, `forest`,
+- Mermaid's `theme` is one of its own: `default`, `base`, `dark`, `forest`,
   `neutral`, `neo`, `neo-dark`, `redux`, `redux-dark`, `redux-color`, or
   `redux-dark-color`.
 - `themeVariables` change only `base`. Mermaid works out the colours you
@@ -101,8 +104,8 @@ mermaid:
 
 Each diagram is drawn in one look, so it doesn't turn dark in dark mode.
 The built-in theme shows each on a light card there, and a dark theme can
-set `theme: dark`.
+set `mermaid: { theme: dark }`.
 
 With [`markdown.mermaid: false`](#choosing-how-diagrams-are-drawn), the
 theme's script draws diagrams, and can read these settings as
-`site.mermaid`.
+`site.theme.mermaid`.

@@ -2,7 +2,10 @@
 
 - Status: accepted; amended by [0060](./0060-other-formats-in-plugins.md),
   which adds a hook, `formats`, after `source`, in `little:plugin@0.2.1`,
-  for files in other formats, whose errors stop the build
+  for files in other formats, whose errors stop the build, and by
+  [0080](./0080-settings-in-groups-under-site-and-page.md), which gives
+  `config` both groups, `site` and `page`, and names what it can't change
+  by where it is now, like `site.serve`
 - Date: 2026-10-15
 - Amends: [0019](./0019-site-search.md),
   [0029](./0029-plugins-that-render-code-blocks.md),

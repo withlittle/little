@@ -223,7 +223,7 @@ impl ThemeFiles {
     /// `_templates/default.html`.
     pub fn read(themes: &[Location]) -> Result<ThemeFiles> {
         let Some(top) = themes.first() else {
-            bail!("little can't build a site without a theme (`theme: false`) yet");
+            bail!("little can't build a site without a theme (`site.theme.enabled: false`) yet");
         };
         let mut files = BTreeMap::new();
         let mut published = HashSet::new();

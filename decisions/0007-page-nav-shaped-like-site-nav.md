@@ -2,7 +2,9 @@
 
 - Status: accepted; amended by [0008](./0008-page-toc.md), which renames
   `page.nav` to `page.toc`, and by [0009](./0009-toc-depth-in-config.md),
-  which lets the config choose which levels of heading it lists
+  which lets the config choose which levels of heading it lists, and by
+  [0080](./0080-settings-in-groups-under-site-and-page.md), which holds
+  the list as `page.outline.items`
 - Date: 2026-09-29
 
 ## Context

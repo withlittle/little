@@ -2,110 +2,135 @@
 # It's compiled into the binary, and the theme and the site can override any
 # of it. Only settings little itself owns belong here: a site's name, language,
 # and look are the theme's to default and the site's to set.
+#
+# A little.yml holds two groups, and nothing else: `site`, the site's
+# settings, and `page`, settings for every page, which each page's
+# frontmatter goes over.
+site:
+  # The folder of Markdown files a site is built from, and the folder it's
+  # built into, which every build wipes. Wherever they're set, they're
+  # relative to the site's folder.
+  source: ./docs
+  destination: ./dist
 
-# The folder of Markdown files a site is built from, and the folder it's built
-# into, which every build wipes. Wherever they're set, they're relative to the
-# site's folder.
-source: ./docs
-destination: ./dist
+  # The theme a site is built with: little's built-in theme, unless `source`
+  # is the path to another's folder, or the URL of its archive. `enabled` is
+  # `false` for none. The rest of `theme` is how the site looks, which is the
+  # theme's to choose, and the site's to change, so it has no defaults. Its
+  # `mermaid` is how diagrams look: Mermaid's own config, in Mermaid's own
+  # names, like `theme: forest`, or `theme: base` with `themeVariables`, each
+  # colour in quotes, like "#6f42c1".
+  theme:
+    enabled: true
 
-# The theme a site is built with: `true` for little's built-in theme, `false`
-# for none, the path to a theme's folder, or the URL of a theme's archive.
-theme: true
+  # The headings each page's table of contents lists, by level, from `##` (2)
+  # to `######` (6): all but a page's `#` heading, its title.
+  toc_min_depth: 2
+  toc_max_depth: 6
 
-# The headings each page's table of contents lists, by level, from `##` (2) to
-# `######` (6): all but a page's `#` heading, its title.
-toc_min_depth: 2
-toc_max_depth: 6
+  navigation:
+    # Whether each page's nav lists what's in a folder only if the page is in
+    # it, or is the folder's own. A folder it isn't in is then a link: to its
+    # own page, or, without one, to the first page in it. On a site of
+    # thousands of pages, a nav that lists them all is most of every page, so
+    # `true` keeps each page small, and the site quick to build.
+    prune: false
+    # `items`, the site's nav, has no default: little lists the source's
+    # pages, by their folders, unless a site lists its own.
 
-# Whether each page's nav lists what's in a folder only if the page is in it,
-# or is the folder's own. A folder it isn't in is then a link: to its own
-# page, or, without one, to the first page in it. On a site of thousands of
-# pages, a nav that lists them all is most of every page, so `true` keeps
-# each page small, and the site quick to build.
-nav_prune: false
+  # Where `little serve` serves the site while you write it: a host name or
+  # IP address, and a port. `little serve --host` and `--port` override them
+  # for a single run.
+  serve:
+    host: 127.0.0.1
+    port: 8080
 
-# Where `little serve` serves the site while you write it: a host name or IP
-# address, and a port. `little serve --host` and `--port` override them for a
-# single run.
-host: 127.0.0.1
-port: 8080
+  # `url`, where the site is published, like
+  # https://example.github.io/my-project, has no default: only the site knows.
+  # Its path goes before every URL little gives the theme, and `little serve`
+  # serves the site under it.
 
-# `url`, where the site is published, like
-# https://example.github.io/my-project, has no default: only the site knows.
-# Its path goes before every URL little gives the theme, and `little serve`
-# serves the site under it.
+  # The repository the site's source is in. Its `url`, like
+  # https://github.com/example/my-project, has no default either. With it,
+  # the theme can link to the repository and, on GitHub or GitLab, to each
+  # page's file in it, on this branch, to view or edit it there.
+  repository:
+    branch: main
 
-# `repo`, the repository the site's source is in, like
-# https://github.com/example/my-project, has no default either. With it, the
-# theme can link to the repository and, on GitHub or GitLab, to each page's
-# file in it, on this branch, to view or edit it there.
-branch: main
+  # Whether each build indexes the site into the destination's `pagefind/`
+  # folder, so readers can search it. It's off unless the theme has a search
+  # box to use the index, and a site can still turn it off. `exclude` leaves
+  # out the page at each URL it lists, and those under it, like
+  # `exclude: [/changelog]`.
+  search:
+    enabled: false
+    exclude: []
 
-# Whether each build indexes the site into the destination's `pagefind/` folder,
-# so readers can search it. It's off unless the theme has a search box to use
-# the index, and a site can still turn it off. Its settings turn it on too:
-# `search: { exclude: [/changelog] }` leaves out the page at each URL, and
-# those under it.
-search: false
+  # The title and description of the 404 page, which its template gets as
+  # `page.title` and `page.description`.
+  error:
+    title: Page not found
+    description: The page you are looking for could not be found.
 
-# The extensions to CommonMark each page is written with: GitHub's are on, as
-# authors know them, and the rest are off, so their syntax can't catch anyone
-# out. A theme or a site can turn any of them on or off, like `mark: true`.
-markdown:
-  # As on GitHub.
-  tables: true
-  strikethrough: true          # ~~struck~~
-  autolinks: true              # www.example.com and https://example.com, without <>
-  task_lists: true             # - [x] done
-  footnotes: true              # a note[^1], and below, [^1]: the note
-  alerts: true                 # callouts: > [!NOTE], [!TIP], [!IMPORTANT], [!WARNING], or [!CAUTION]
-  emoji: true                  # :tada:
-  # HTML in Markdown, like <details>, as it's written, scripts and all: turn it
-  # off for Markdown you don't trust, and `mermaid` with it.
-  raw_html: true
-  # Math, in $x$, $$x$$, $`x`$, and ```math blocks, written as `mathml`, which
-  # browsers show as it is, as `tex`, marked with `data-math-style`, for a
-  # theme that renders math itself, or `false`, for none, so $ is a dollar.
-  math: mathml
-  # Diagrams, in ```mermaid blocks, drawn as `svg` as each page is built, or
-  # `false`, to leave them as code, for a theme that draws them itself. A
-  # diagram can carry HTML, so `svg` needs `raw_html`. `mermaid`, below,
-  # chooses how one drawn as `svg` looks.
-  mermaid: svg
-  # Beyond GitHub.
-  smart_punctuation: false     # "curly quotes", -- and --- for dashes, and ... for …
-  superscript: false           # x^2^
-  subscript: false             # H~2~O, so only ~~ strikes through
-  mark: false                  # ==marked==
-  insert: false                # ++inserted++
-  description_lists: false     # a term, then a line of `: its definition`
-  inline_footnotes: false      # a note^[the note], with `footnotes` on
-  fenced_divs: false           # :::name, then a line of :::, around a <div class="name">
-  multiline_blockquotes: false # >>>, then a line of >>>, around a quote
-  hard_breaks: false           # a <br> for every line break in a paragraph
-  cjk_friendly_emphasis: false # ** and * beside Chinese, Japanese, and Korean punctuation
-  # The classes code is highlighted with, as little builds each page, for the
-  # theme to colour: `pygments`, like `k` for a keyword and `s2` for a string,
-  # `github`, like `pl-k` and `pl-s`, or `false`, for a theme that highlights
-  # code itself.
-  highlight: pygments
+  # The extensions to CommonMark each page is written with: GitHub's are on,
+  # as authors know them, and the rest are off, so their syntax can't catch
+  # anyone out. A theme or a site can turn any of them on or off, like
+  # `mark: true`.
+  markdown:
+    # As on GitHub.
+    tables: true
+    strikethrough: true          # ~~struck~~
+    autolinks: true              # www.example.com and https://example.com, without <>
+    task_lists: true             # - [x] done
+    footnotes: true              # a note[^1], and below, [^1]: the note
+    alerts: true                 # callouts: > [!NOTE], [!TIP], [!IMPORTANT], [!WARNING], or [!CAUTION]
+    emoji: true                  # :tada:
+    # HTML in Markdown, like <details>, as it's written, scripts and all: turn
+    # it off for Markdown you don't trust, and `mermaid` with it.
+    raw_html: true
+    # Math, in $x$, $$x$$, $`x`$, and ```math blocks, written as `mathml`,
+    # which browsers show as it is, as `tex`, marked with `data-math-style`,
+    # for a theme that renders math itself, or `false`, for none, so $ is a
+    # dollar.
+    math: mathml
+    # Diagrams, in ```mermaid blocks, drawn as `svg` as each page is built, or
+    # `false`, to leave them as code, for a theme that draws them itself. A
+    # diagram can carry HTML, so `svg` needs `raw_html`. `theme.mermaid`,
+    # above, chooses how one drawn as `svg` looks.
+    mermaid: svg
+    # Beyond GitHub.
+    smart_punctuation: false     # "curly quotes", -- and --- for dashes, and ... for …
+    superscript: false           # x^2^
+    subscript: false             # H~2~O, so only ~~ strikes through
+    mark: false                  # ==marked==
+    insert: false                # ++inserted++
+    description_lists: false     # a term, then a line of `: its definition`
+    inline_footnotes: false      # a note^[the note], with `footnotes` on
+    fenced_divs: false           # :::name, then a line of :::, around a <div class="name">
+    multiline_blockquotes: false # >>>, then a line of >>>, around a quote
+    hard_breaks: false           # a <br> for every line break in a paragraph
+    cjk_friendly_emphasis: false # ** and * beside Chinese, Japanese, and Korean punctuation
+    # The classes code is highlighted with, as little builds each page, for
+    # the theme to colour: `pygments`, like `k` for a keyword and `s2` for a
+    # string, `github`, like `pl-k` and `pl-s`, or `false`, for a theme that
+    # highlights code itself.
+    highlight: pygments
 
-# `mermaid`, how diagrams look, has no default: that's the theme's to choose,
-# and the site's to change. It holds Mermaid's own config, in Mermaid's own
-# names, like `theme: forest`, or `theme: base` with `themeVariables`, each
-# colour in quotes, like "#6f42c1".
+  # `plugins`, whose hooks little calls as it builds a site, has no default
+  # either. It names each plugin, with its settings: `wasm`, its `.wasm`
+  # file, by a path or an https:// URL, like
+  # `csv: { wasm: ./plugins/little_csv.wasm }`; `read`, the folders it can
+  # read, which only the site can set; `enabled`, which is `false` to turn a
+  # theme's plugin off; and those the plugin reads itself.
 
-# `plugins`, whose hooks little calls as it builds a site, has no default
-# either. It names each plugin and its `.wasm` file, by a path or an
-# https:// URL, like `csv: ./plugins/little_csv.wasm`, or gives the file as
-# `wasm`, beside settings the plugin reads itself, and `read`, the folders it
-# can read, which only the site can set. `csv: false` turns a theme's off.
+  # `versions`, the versions of a site, has no default: a site has just the
+  # one. It lists them as the menu does, the latest first, each with a
+  # `title`, like "1.4", in quotes, the `url` it's published at, like /1.4,
+  # from the root of the site, and the git `ref` it's built from, like v1.4.
+  # One is at `/`, and one, at most, has no `ref`, and is built from the
+  # site's files as they are. One with a `ref` can set its own `source`,
+  # `navigation.items`, and `plugins`' settings; every other setting is the
+  # site's.
 
-# `versions`, the versions of a site, has no default: a site has just the one.
-# It lists them as the menu does, the latest first, each with a `title`, like
-# "1.4", in quotes, the `url` it's published at, like /1.4, from the root of
-# the site, and the git `ref` it's built from, like v1.4. One is at `/`, and
-# one, at most, has no `ref`, and is built from the site's files as they are.
-# One with a `ref` can set its own `source`, `nav`, and `plugins`' settings;
-# every other setting is the site's.
+# `page` has no defaults: its keys are those a page's frontmatter sets, like
+# `description`, and a theme or a site sets one here for every page.

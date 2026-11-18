@@ -7,8 +7,10 @@ Name it in your site's [[file:using-plugins.md::#naming-a-plugin][=plugins=]]:
 
 #+BEGIN_SRC yaml
 # little.yml
-plugins:
-  orgmode: https://github.com/withlittle/little/releases/download/orgmode-v0.1.0/little_orgmode.wasm
+site:
+  plugins:
+    orgmode:
+      wasm: https://github.com/withlittle/little/releases/download/orgmode-v0.1.0/little_orgmode.wasm
 #+END_SRC
 
 It has no settings.

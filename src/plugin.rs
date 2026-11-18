@@ -422,7 +422,7 @@ impl Plugins {
                 continue;
             }
             let name = plugin.name.clone();
-            let values = (to_json(&config.values, "the config"))
+            let groups = (to_json(&config.groups(), "the config"))
                 .and_then(|json| {
                     plugin.call(&mut self.warnings, |store, hooks| {
                         hook(&hooks.config).call_config(store, &json)
@@ -430,7 +430,7 @@ impl Plugins {
                 })
                 .and_then(|json| from_json(&json, "a config"))
                 .map_err(|reason| anyhow!("plugin `{name}`'s `config` hook failed: {reason}"))?;
-            config = (config.hooked(site_dir, values))
+            config = (config.hooked(site_dir, groups))
                 .map_err(|e| anyhow!("plugin `{name}`'s `config` hook {e:#}"))?;
         }
         Ok(config)
@@ -1683,10 +1683,13 @@ pub(crate) mod tests {
 
     #[test]
     fn each_plugin_changes_what_the_one_before_gives_back() {
-        let (_tmp, site) = scratch(&[("little.yml", "title: Docs\n")]);
+        let (_tmp, site) = scratch(&[("little.yml", "site: { title: Docs }\n")]);
         let config = config::load(&site).unwrap();
         let first = json!({
-            "config": { "merge": { "title": "First", "description": "Hooked" } },
+            "config": { "merge": {
+                "site": { "title": "First", "description": "Hooked" },
+                "page": { "author": "First" },
+            } },
             "source": { "append": " first" },
             "content": { "replace": ["A", "B"] },
             "site": { "merge": { "title": "Site" } },
@@ -1695,7 +1698,7 @@ pub(crate) mod tests {
         });
         let second = json!({
             "languages": [],
-            "config": { "merge": { "title": "Second" } },
+            "config": { "merge": { "site": { "title": "Second" } } },
             "source": { "append": " second" },
             "content": { "replace": ["B", "C"] },
             "site": { "echo": "given" },
@@ -1708,9 +1711,11 @@ pub(crate) mod tests {
         .unwrap();
 
         let config = plugins.config(config, &site).unwrap();
-        let value = |key: &str| config.values.get(key).and_then(serde_yaml::Value::as_str);
+        let value = |key: &str| config.site.get(key).and_then(serde_yaml::Value::as_str);
         assert_eq!(value("title"), Some("Second"));
         assert_eq!(value("description"), Some("Hooked"));
+        let author = config.page.get("author");
+        assert_eq!(author.and_then(serde_yaml::Value::as_str), Some("First"));
         let text = plugins.source("docs/a.md", "docs/a.md", "A".to_string());
         assert_eq!(text, "A first second");
         assert_eq!(
@@ -1748,7 +1753,7 @@ pub(crate) mod tests {
 
     #[test]
     fn a_plugins_config_hook_cant_change_what_little_reads_before_it_starts() {
-        let (_tmp, site) = scratch(&[("little.yml", "title: Docs\n")]);
+        let (_tmp, site) = scratch(&[("little.yml", "site: { title: Docs }\n")]);
         let error = |settings: serde_json::Value| {
             let config = config::load(&site).unwrap();
             let mut plugins = started(&json!({ "config": settings }).to_string());
@@ -1764,17 +1769,24 @@ pub(crate) mod tests {
              object: invalid type: sequence, expected a YAML mapping at line 1 column 0"
         );
         assert_eq!(
-            error(json!({ "merge": { "source": "./elsewhere" } })),
-            "plugin `test`'s `config` hook changes `source`, but plugins can't change \
-             `theme`, `plugins`, `source`, `destination`, `host`, or `port`"
+            error(json!({ "merge": { "site": { "source": "./elsewhere" } } })),
+            "plugin `test`'s `config` hook changes `site.source`, but plugins can't change \
+             `site.theme.enabled`, `site.theme.source`, `site.plugins`, `site.source`, \
+             `site.destination`, or `site.serve`"
         );
-        let message = error(json!({ "merge": { "toc_max_depth": 9 } }));
-        assert!(
-            message.starts_with(
-                "plugin `test`'s `config` hook gives back a config little can't use: "
-            ),
-            "{message}"
-        );
+        // A setting little can't use, or one beside `site` and `page`.
+        for merge in [
+            json!({ "site": { "toc_max_depth": 9 } }),
+            json!({ "title": "Hooked" }),
+        ] {
+            let message = error(json!({ "merge": merge }));
+            assert!(
+                message.starts_with(
+                    "plugin `test`'s `config` hook gives back a config little can't use: "
+                ),
+                "{message}"
+            );
+        }
     }
 
     #[test]

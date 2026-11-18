@@ -19,13 +19,14 @@ the folder your package's code is in, and the package's name:
 
 ```yaml
 # little.yml
-plugins:
-  jsdoc:
-    wasm: https://github.com/withlittle/little/releases/download/jsdoc-v0.1.1/little_jsdoc.wasm
-    read: ./src
-    package: my-lib
-    title: API reference
-    url: /api
+site:
+  plugins:
+    jsdoc:
+      wasm: https://github.com/withlittle/little/releases/download/jsdoc-v0.1.1/little_jsdoc.wasm
+      read: ./src
+      package: my-lib
+      title: API reference
+      url: /api
 ```
 
 - `read` names the folder of the code you write, in TypeScript or
@@ -47,15 +48,16 @@ another entry under `plugins`, with another name, and the same `wasm`:
 
 ```yaml
 # little.yml
-plugins:
-  core_api:
-    wasm: https://github.com/withlittle/little/releases/download/jsdoc-v0.1.1/little_jsdoc.wasm
-    read: ./packages/core/src
-    package: "@my-org/core"
-  cli_api:
-    wasm: https://github.com/withlittle/little/releases/download/jsdoc-v0.1.1/little_jsdoc.wasm
-    read: ./packages/cli/src
-    package: "@my-org/cli"
+site:
+  plugins:
+    core_api:
+      wasm: https://github.com/withlittle/little/releases/download/jsdoc-v0.1.1/little_jsdoc.wasm
+      read: ./packages/core/src
+      package: "@my-org/core"
+    cli_api:
+      wasm: https://github.com/withlittle/little/releases/download/jsdoc-v0.1.1/little_jsdoc.wasm
+      read: ./packages/cli/src
+      package: "@my-org/cli"
 ```
 
 ## Its pages

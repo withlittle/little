@@ -8,7 +8,7 @@
 //! nothing to mark. Each page is indexed in the language its theme gives it
 //! with `<html lang>`, so in English, "installing" finds "install". The
 //! build gives it only the pages to find: not the 404 page, nor those the
-//! site's `search.exclude`, or a page's own `search`, leaves out.
+//! site's `site.search.exclude`, or a page's own `search`, leaves out.
 //!
 //! Reading a page takes Pagefind longer than indexing what it's read, so a
 //! build keeps its [`Index`], and the build after it, in `little serve`,

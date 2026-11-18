@@ -19,12 +19,13 @@ the folder of your module's `go.mod`:
 
 ```yaml
 # little.yml
-plugins:
-  godoc:
-    wasm: https://github.com/withlittle/little/releases/download/godoc-v0.1.0/little_godoc.wasm
-    read: .
-    title: API reference
-    url: /api
+site:
+  plugins:
+    godoc:
+      wasm: https://github.com/withlittle/little/releases/download/godoc-v0.1.0/little_godoc.wasm
+      read: .
+      title: API reference
+      url: /api
 ```
 
 - `read` names the folder of the module's `go.mod`: `.` where the module is
@@ -45,13 +46,14 @@ add another entry under `plugins`, with another name, and the same `wasm`:
 
 ```yaml
 # little.yml
-plugins:
-  core_api:
-    wasm: https://github.com/withlittle/little/releases/download/godoc-v0.1.0/little_godoc.wasm
-    read: ./core
-  cli_api:
-    wasm: https://github.com/withlittle/little/releases/download/godoc-v0.1.0/little_godoc.wasm
-    read: ./cli
+site:
+  plugins:
+    core_api:
+      wasm: https://github.com/withlittle/little/releases/download/godoc-v0.1.0/little_godoc.wasm
+      read: ./core
+    cli_api:
+      wasm: https://github.com/withlittle/little/releases/download/godoc-v0.1.0/little_godoc.wasm
+      read: ./cli
 ```
 
 ## Its pages

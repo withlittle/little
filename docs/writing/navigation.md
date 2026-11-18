@@ -24,17 +24,19 @@ an order of your own, number their titles, or
 
 ## Writing the nav yourself
 
-Set `nav` in `little.yml` to a list of `{ title, url, children }`. It
-replaces the nav little works out:
+Set `navigation.items` in `little.yml` to a list of
+`{ title, url, children }`. It replaces the nav little works out:
 
 ```yaml
 # little.yml
-nav:
-  - { title: Home, url: / }
-  - title: Guide
-    url: /guide/
-    children:
-      - { title: Install, url: /guide/install }
+site:
+  navigation:
+    items:
+      - { title: Home, url: / }
+      - title: Guide
+        url: /guide/
+        children:
+          - { title: Install, url: /guide/install }
 ```
 
 Write each URL as little builds the page, from the root of the site, like
@@ -50,11 +52,13 @@ it has no breadcrumbs, or previous and next pages.
 
 On a site of thousands of pages, a nav that lists every page is most of
 each page, so the site is big, and slow to build. To list only the folders
-each page is in, set `nav_prune`:
+each page is in, set `navigation.prune`:
 
 ```yaml
 # little.yml
-nav_prune: true
+site:
+  navigation:
+    prune: true
 ```
 
 A page's nav then lists what's in a folder only if the page is in that
@@ -88,7 +92,8 @@ A page's headings make its table of contents, with each `###` under the
 
 ```yaml
 # little.yml
-toc_max_depth: 4
+site:
+  toc_max_depth: 4
 ```
 
 | Key | Default | Lists headings… |
