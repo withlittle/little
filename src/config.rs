@@ -3843,10 +3843,11 @@ mod tests {
         let version = config.for_version(&v14, &old, file).unwrap();
         assert_eq!(value(&version.site, "navigation.items"), Some(&own_nav));
         assert_eq!(version.plugins, std::slice::from_ref(&ann));
+        // Each path as little writes it: on Windows, with `\` throughout.
         let plugins: Value = serde_yaml::from_str(&format!(
             "{{ bob: {{ wasm: '{}', enabled: false }}, \
              ann: {{ wasm: '{}', read: [./src, lib] }} }}",
-            site.join("theme/bob.wasm").display(),
+            site.join("theme").join("bob.wasm").display(),
             site.join("ann.wasm").display()
         ))
         .unwrap();
