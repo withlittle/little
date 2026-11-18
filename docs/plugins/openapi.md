@@ -18,11 +18,12 @@ the folder your documents are in:
 
 ```yaml
 # little.yml
-plugins:
-  openapi:
-    wasm: https://github.com/withlittle/little/releases/download/openapi-v0.1.0/little_openapi.wasm
-    read: api
-    url: /api
+site:
+  plugins:
+    openapi:
+      wasm: https://github.com/withlittle/little/releases/download/openapi-v0.1.0/little_openapi.wasm
+      read: api
+      url: /api
 ```
 
 - `read` names the folder your documents are in, like `api`, or a list of
@@ -55,15 +56,16 @@ Read `api` instead, or give each folder an entry of its own under
 
 ```yaml
 # little.yml
-plugins:
-  v1_api:
-    wasm: https://github.com/withlittle/little/releases/download/openapi-v0.1.0/little_openapi.wasm
-    read: api/v1
-    url: /v1
-  v2_api:
-    wasm: https://github.com/withlittle/little/releases/download/openapi-v0.1.0/little_openapi.wasm
-    read: api/v2
-    url: /v2
+site:
+  plugins:
+    v1_api:
+      wasm: https://github.com/withlittle/little/releases/download/openapi-v0.1.0/little_openapi.wasm
+      read: api/v1
+      url: /v1
+    v2_api:
+      wasm: https://github.com/withlittle/little/releases/download/openapi-v0.1.0/little_openapi.wasm
+      read: api/v2
+      url: /v2
 ```
 
 ## What a page shows

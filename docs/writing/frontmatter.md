@@ -18,9 +18,9 @@ description: A page's own settings, in YAML at its top.
 The built-in theme makes `description` the page's meta description, for
 search engines and link previews, and gives a page without one the site's
 [`description`](../getting-started/configuring.md#the-built-in-themes-settings).
-`search: false` leaves a page out of [search](search.md#leaving-pages-out).
-Any key of your own reaches the theme as `page.<key>`, for a theme that
-shows it.
+`search: { enabled: false }` leaves a page out of
+[search](search.md#leaving-pages-out). Any key of your own reaches the theme
+as `page.<key>`, for a theme that shows it.
 
 ## A page's title
 
@@ -35,21 +35,48 @@ show the title you give the page there instead.
 
 ## Frontmatter wins
 
-Frontmatter has the last word on what the theme gets as `page`, even over
-what little works out, so you can change or remove what the theme shows
-around a page:
+little works out what a theme shows around a page, each in a group of its
+own. To remove one from a page, set its `enabled` to `false`:
 
-| Frontmatter | Does |
-| ----------- | ---- |
-| `prev: { title: Start here }` | renames the link to the [previous page](navigation.md#previous-and-next-pages), keeping its URL |
-| `next: false` | removes the link to the next page |
-| `toc: false` | removes the [table of contents](navigation.md#tables-of-contents) |
-| `breadcrumbs: false` | removes the [breadcrumbs](navigation.md#breadcrumbs) |
-| `edit_url: false` | removes the link to [edit the page](../getting-started/configuring.md#choosing-the-sites-repository) |
+```markdown
+---
+outline:
+  enabled: false
+---
+```
+
+| Group | The page's… |
+| ----- | ----------- |
+| `outline` | [table of contents](navigation.md#tables-of-contents) |
+| `breadcrumb` | [breadcrumbs](navigation.md#breadcrumbs) |
+| `previous` | link to the [page before it](navigation.md#previous-and-next-pages) |
+| `next` | link to the page after it |
+| `repository` | links to [view and edit its file](../getting-started/configuring.md#choosing-the-sites-repository) |
+
+Frontmatter has the last word on what the theme gets as `page`, even over
+what little works out, so you can change it, too:
+`previous: { title: Start here }` renames the link to the previous page,
+and keeps its URL.
 
 It changes only what the theme sees: `url` doesn't move the page, `type`
 doesn't choose its template, and a page can't change the site's settings,
 like its [Markdown](markdown.md#choosing-markdowns-extensions).
+
+## For every page
+
+To set a key for every page, put it under `page` in `little.yml`:
+
+```yaml
+# little.yml
+page:
+  breadcrumb:
+    enabled: false
+```
+
+It does what it would in each page's frontmatter, so here no page has
+breadcrumbs. A page's own frontmatter goes over it, so one page gets them
+back with `breadcrumb: { enabled: true }`. A theme's `little.yml` can set
+`page` too, beneath the site's.
 
 ## In another format
 

@@ -1,6 +1,7 @@
 //! Helpers that the tests of little's modules share: [`scratch`], a folder
 //! of files, deleted when it's dropped, so a test that fails leaves
-//! nothing; [`write`] and [`files_in`], to write files and list them; and
+//! nothing; [`write`] and [`files_in`], to write files and list them;
+//! [`IN_THEME`], a `little.yml` for a site with a theme of its own; and
 //! [`render_at`], to render a page.
 
 use anyhow::Result;
@@ -13,6 +14,11 @@ use walkdir::WalkDir;
 use crate::config::{Markdown, SiteUrl};
 use crate::plugin::PagePlugins;
 use crate::render::{Rendered, parse_document};
+
+/// A `little.yml` that chooses the theme in `./theme`, whose templates say
+/// what a test builds. A test adds its site's other settings to it, under
+/// its `site`, each after two spaces.
+pub(crate) const IN_THEME: &str = "site:\n  theme:\n    source: ./theme\n";
 
 /// A fresh scratch folder holding `files`, each a (path, contents) pair.
 /// It's deleted when the [`TempDir`] is dropped, so a test keeps it, as
@@ -55,8 +61,7 @@ pub(crate) fn files_in(dir: &Path) -> Vec<String> {
 }
 
 /// Render `md`, a page in the folder at `folder`, like `/guide/`, of a site
-/// at `url`, with `markdown`, and no plugins. Its table of contents has
-/// little's levels, every heading but the title. It's built at the start of
+/// at `url`, with `markdown`, and no plugins. It's built at the start of
 /// 2026, for its diagrams.
 pub(crate) fn render_at(
     md: &str,
@@ -65,15 +70,7 @@ pub(crate) fn render_at(
     markdown: &Markdown,
 ) -> Result<Rendered> {
     let now = OffsetDateTime::from_unix_timestamp(1_767_225_600).unwrap();
-    parse_document(
-        md,
-        folder,
-        &(2..=6),
-        url,
-        markdown,
-        now,
-        &mut PagePlugins::none(),
-    )
+    parse_document(md, folder, url, markdown, now, &mut PagePlugins::none())
 }
 
 /// Where little's manual is published: under a path, `/little`.

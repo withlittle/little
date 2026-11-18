@@ -3,7 +3,10 @@
 - Status: accepted; amended by
   [0043](./0043-a-versions-own-nav-and-plugins.md), which lets a version's
   entry with a `ref` set its own `nav`, and its plugins' settings, and
-  stops the build on any other setting of little's there
+  stops the build on any other setting of little's there, and by
+  [0080](./0080-settings-in-groups-under-site-and-page.md), under which
+  only `site.source` and `site.navigation.items` count, of a ref's
+  `little.yml`
 - Date: 2026-10-14
 - Amends: [0014](./0014-site-url-and-its-path.md),
   [0040](./0040-versions-from-git-refs.md)

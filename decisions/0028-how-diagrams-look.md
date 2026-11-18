@@ -1,6 +1,8 @@
 # 0028 — How diagrams look
 
-- Status: accepted
+- Status: accepted; amended by
+  [0080](./0080-settings-in-groups-under-site-and-page.md), which moves
+  `mermaid` to `site.theme.mermaid`
 - Date: 2026-10-06
 - Amends: [0027](./0027-drawing-mermaid-diagrams.md)
 

@@ -32,7 +32,7 @@ use std::sync::{Arc, Mutex};
 use time::OffsetDateTime;
 use walkdir::WalkDir;
 
-use crate::config::{Config, Repo, Shared, SiteUrl};
+use crate::config::{Config, PageSettings, Repo, Shared, SiteUrl};
 use crate::plugin::{Plugins, Warned};
 use crate::theme::{PageType, StaticFile, Theme, ThemeFiles};
 use crate::{config, git, parts, render, search};
@@ -61,12 +61,16 @@ struct Page {
     /// Output file on disk (`dist/guide/install/index.html`).
     out_path: PathBuf,
     title: String,
-    /// The page's frontmatter, less any key left blank.
-    frontmatter: Mapping,
+    /// The page's settings: every page's, from `page` in the config, with
+    /// its frontmatter over them, less any key left blank.
+    settings: Mapping,
+    /// What its settings say of what little works out for it.
+    wants: PageSettings,
     html: String,
-    /// In-page table of contents: the page's headings from `toc_min_depth` to
-    /// `toc_max_depth`, nested like `site.nav`.
-    toc: Vec<NavItem>,
+    /// Its table of contents: its headings at the levels its
+    /// `outline.depth` lists, nested like `site.navigation.items`. It has
+    /// none if its `outline` is off.
+    outline: Vec<NavItem>,
     page_type: PageType,
     /// The links and images in its Markdown, as they're written.
     links: Vec<render::WrittenLink>,
@@ -76,9 +80,11 @@ struct Page {
     warnings: Vec<Warning>,
 }
 
-/// What little works out for `page`, beneath the page's frontmatter (see
+/// What little works out for `page`, beneath the page's settings (see
 /// `page_value`). Anything a page doesn't have is left out rather than set to
-/// null, which a template would print as "None".
+/// null, which a template would print as "None". Each group but `previous`
+/// and `next` is always there, so a template can read `page.outline.items`
+/// on any page.
 #[derive(Serialize)]
 struct PageData<'a> {
     #[serde(rename = "type")]
@@ -88,35 +94,54 @@ struct PageData<'a> {
     title: Option<&'a str>,
     #[serde(skip_serializing_if = "Option::is_none")]
     content: Option<&'a str>,
-    /// The page's table of contents, shaped like `site.nav`.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    toc: Option<&'a [NavItem]>,
     /// A home or section page's branch of the nav: what's in its folder.
     #[serde(skip_serializing_if = "Option::is_none")]
     children: Option<&'a [NavItem]>,
-    /// What's above this page in the nav, from the top down.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    breadcrumbs: Option<&'a [Breadcrumb<'a>]>,
-    /// The page before this one in the nav, unless it's the first.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    prev: Option<Link<'a>>,
-    /// The page after this one in the nav, unless it's the last.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    next: Option<Link<'a>>,
-    /// Where to view the page's file in the site's repository.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    source_url: Option<&'a str>,
-    /// Where to edit the page's file in the site's repository.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    edit_url: Option<&'a str>,
     /// Each of the site's versions, with the `url` of this page in it, or,
     /// if it's not there, of its home page.
     #[serde(skip_serializing_if = "Option::is_none")]
     versions: Option<&'a [Mapping]>,
+    /// Whether search indexes the page.
+    search: Enabled,
+    /// The page's table of contents, shaped like `site.navigation.items`.
+    outline: Items<&'a [NavItem]>,
+    /// What's above this page in the nav, from the top down.
+    breadcrumb: Items<&'a [Breadcrumb<'a>]>,
+    /// The page before this one in the nav, unless it's the first.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    previous: Option<Link<'a>>,
+    /// The page after this one in the nav, unless it's the last.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    next: Option<Link<'a>>,
+    /// Where to view and to edit the page's file in the site's repository.
+    repository: FileLinks<'a>,
 }
 
-/// A link to another page: what a template sees as `page.prev` or
-/// `page.next`.
+/// Whether a page has something: what a template sees as `page.search`.
+#[derive(Serialize)]
+struct Enabled {
+    enabled: bool,
+}
+
+/// A list a page has: what a template sees as `page.outline` or
+/// `page.breadcrumb`, beside the group's settings.
+#[derive(Serialize)]
+struct Items<T> {
+    items: T,
+}
+
+/// Where to view and to edit a page's file in the site's repository: what a
+/// template sees as `page.repository`, beside its settings.
+#[derive(Serialize)]
+struct FileLinks<'a> {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    source_url: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    edit_url: Option<&'a str>,
+}
+
+/// A link to another page: what a template sees as `page.previous` or
+/// `page.next`, beside the group's settings.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize)]
 struct Link<'a> {
     title: &'a str,
@@ -124,7 +149,7 @@ struct Link<'a> {
 }
 
 /// A page above another in the nav, or a folder without a `README.md`, which
-/// has no `url`: what a template sees in `page.breadcrumbs`.
+/// has no `url`: what a template sees in `page.breadcrumb.items`.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize)]
 struct Breadcrumb<'a> {
     title: &'a str,
@@ -141,13 +166,13 @@ impl<'a> From<&'a NavItem> for Breadcrumb<'a> {
     }
 }
 
-/// One node in the site-wide navigation tree (see `build_nav`), in a `nav`
-/// that the config sets instead, or in a page's table of contents (see
-/// `nest_headings`).
+/// One node in the site-wide navigation tree (see `build_nav`), in a nav
+/// that the config sets instead, as `site.navigation.items`, or in a page's
+/// table of contents (see `nest_headings`).
 #[derive(Clone, Debug, Deserialize, Serialize)]
 struct NavItem {
     title: String,
-    /// A page's path, a heading's `#fragment`, or in a config's `nav`, any
+    /// A page's path, a heading's `#fragment`, or in a config's nav, any
     /// URL: so `url`, not `path`.
     /// `None` for a section folder that has no `README.md` (a plain label).
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -195,12 +220,12 @@ pub struct Built {
     /// The repository the site's source is in, if it says, whose links
     /// aren't checked.
     pub repo: Option<Repo>,
-    /// What it warns of, as it happened: each URL in `search.exclude` that
-    /// matches no page, each formula in its pages that couldn't be rendered,
-    /// so is shown as its TeX, each diagram that couldn't be drawn, so is
-    /// shown as code, each code block a plugin couldn't render, so is left
-    /// as it was, and what each plugin warned of, and each of its hooks that
-    /// failed, so the build went on without its change.
+    /// What it warns of, as it happened: each URL in `site.search.exclude`
+    /// that matches no page, each formula in its pages that couldn't be
+    /// rendered, so is shown as its TeX, each diagram that couldn't be drawn,
+    /// so is shown as code, each code block a plugin couldn't render, so is
+    /// left as it was, and what each plugin warned of, and each of its hooks
+    /// that failed, so the build went on without its change.
     pub warnings: Vec<Warning>,
     /// The path in the destination of each file written for a version of
     /// the site from a git ref, whose links to other sites aren't checked,
@@ -315,10 +340,17 @@ struct Source {
     place: Place,
     /// The git ref it's read from, like `v1.4`, if it's from one.
     git_ref: Option<String>,
-    /// Its config, merged, which the theme gets as `site`.
-    values: Mapping,
-    /// What it indexes for search, if anything.
-    search: Option<config::Search>,
+    /// Its `site` settings, merged, which the theme gets as `site`.
+    site: Mapping,
+    /// Every page's settings, merged, which each page's frontmatter goes
+    /// over.
+    page: Mapping,
+    /// What they say of what little works out for a page.
+    page_settings: PageSettings,
+    /// The repository the site's source is in, if it says.
+    repo: Option<Repo>,
+    /// What it indexes for search.
+    search: config::Search,
     /// Whether each page's nav lists what's in a folder only if the page is
     /// in it.
     nav_prune: bool,
@@ -543,7 +575,7 @@ fn build_after(site_dir: &Path, last: Option<&Built>) -> Result<Built> {
         sources.push(in_version(source, version)?);
     }
     let every = (!config.versions.is_empty()).then(|| {
-        let entries = match config.values.get("versions") {
+        let entries = match config.site.get("versions") {
             Some(Value::Sequence(entries)) => entries.as_slice(),
             _ => &[],
         };
@@ -569,18 +601,20 @@ fn build_after(site_dir: &Path, last: Option<&Built>) -> Result<Built> {
     if let Some(mut plugins) = site_plugins {
         built.warnings.extend(warned(&mut plugins, None));
     }
-    // A URL in `search.exclude` that leaves out no page, in any version, is
-    // likely a typo, or a page that's moved, as a broken link would be.
+    // A URL in `site.search.exclude` that leaves out no page, in any version,
+    // is likely a typo, or a page that's moved, as a broken link would be.
     let urls: Vec<&str> = (sources.iter())
         .flat_map(|source| &source.pages)
         .map(|page| page.url.as_str())
         .collect();
-    for entry in config.search.iter().flat_map(|search| &search.exclude) {
+    let excluded = config.search.exclude.iter();
+    for entry in excluded.filter(|_| config.search.enabled) {
         if !urls.iter().any(|url| config::leaves_out(entry, url)) {
             built.warnings.push(Warning {
-                kind: "URL(s) in `search.exclude` that match no page",
+                kind: "URL(s) in `site.search.exclude` that match no page",
                 message: format!(
-                    "`search.exclude` lists {entry}, but there's no page at that URL, or under it"
+                    "`site.search.exclude` lists {entry}, but there's no page at that URL, or \
+                     under it"
                 ),
             });
         }
@@ -651,10 +685,10 @@ fn warned(plugins: &mut Plugins, git_ref: Option<&str>) -> Vec<Warning> {
 
 /// Check out `version` of the site, as it was at its ref, `git_ref`, in
 /// `repository`, and its config: the site's, `config`, but with its own
-/// pages, nav, and plugins' settings, from its entry in `versions`, or its
-/// own little.yml there, if it has one. Only the files it reads are checked
-/// out, apart from the site's own, and they're deleted once the checkout is
-/// dropped.
+/// pages, nav, and plugins' settings, from its entry in `site.versions`, or
+/// its own little.yml there, if it has one. Only the files it reads are
+/// checked out, apart from the site's own, and they're deleted once the
+/// checkout is dropped.
 fn check_out(
     config: &Config,
     repository: &git::Repository,
@@ -675,8 +709,8 @@ fn check_out(
     // Each is named as git names it, not by where it's checked out.
     if !config.source_dir.is_dir() {
         bail!(
-            "there's no source folder at {}: set the version's `source`, in `versions`, to the \
-             folder its pages are in at {git_ref}",
+            "there's no source folder at {}: set the version's `source`, in `site.versions`, to \
+             the folder its pages are in at {git_ref}",
             checkout.describe(&config.source_dir)
         );
     }
@@ -686,8 +720,8 @@ fn check_out(
         if let Some(read) = plugin.read.iter().find(missing) {
             bail!(
                 "plugin `{name}` reads {}, but there's no folder there: set its `read`, in the \
-                 version's `plugins`, in `versions`, to the folders it reads at {git_ref}, or \
-                 turn it off there, with `{name}: false`",
+                 version's `plugins`, in `site.versions`, to the folders it reads at {git_ref}, \
+                 or turn it off there, with `enabled: false`",
                 checkout.describe(&read.folder),
                 name = plugin.name,
             );
@@ -834,22 +868,20 @@ fn read_source(
     let source_in_site = source_dir.strip_prefix(version_dir).unwrap_or(source_dir);
 
     // The settings as the site writes them, for the plugins that read pages.
-    let markdown = (config.values.get("markdown").and_then(Value::as_mapping))
+    let markdown = (config.site.get("markdown").and_then(Value::as_mapping))
         .cloned()
         .unwrap_or_default();
     // What every Markdown page of the version is parsed from, but its own
     // text and folder. A plugin that renders code blocks can make anything
     // of one, so its site's pages are parsed each time.
     let mut settings = DefaultHasher::new();
-    let toc = (config.toc_depths.start(), config.toc_depths.end());
-    (&place.url, toc, &markdown, plugins.extensions()).hash(&mut settings);
+    (&place.url, &markdown, plugins.extensions()).hash(&mut settings);
     let kept = !plugins.renders_blocks();
     let mut pages = Vec::new();
     for (rel, origin, added, text, format) in documents {
         let file = slashed(&source_in_site.join(&rel));
         let text = plugins.source(&file, &origin, text);
         let folder = folder_url(&rel);
-        let toc_depths = &config.toc_depths;
         let rendered = match format {
             Format::Markdown => {
                 // A diagram is drawn as of now, so its page is parsed each
@@ -865,7 +897,6 @@ fn read_source(
                     None => render::parse_document(
                         &text,
                         &folder,
-                        toc_depths,
                         &place.url,
                         &config.markdown,
                         now,
@@ -881,7 +912,6 @@ fn read_source(
                 parts::parse_parts(
                     parts,
                     &folder,
-                    toc_depths,
                     &place.url,
                     &config.markdown,
                     now,
@@ -891,7 +921,10 @@ fn read_source(
         };
         let mut rendered = rendered.with_context(|| format!("rendering {origin}"))?;
         rendered.html = plugins.content(&file, &origin, mem::take(&mut rendered.html));
-        pages.push(page_from(rel, origin, added, rendered, &place.destination));
+        let every_page = &config.page;
+        let destination = &place.destination;
+        let page = page_from(rel, origin, added, rendered, every_page, destination)?;
+        pages.push(page);
     }
 
     // Deterministic output order (nav has its own ordering), and so a
@@ -901,7 +934,10 @@ fn read_source(
     Ok(Source {
         place,
         git_ref: checkout.as_ref().map(|checkout| checkout.git_ref.clone()),
-        values: config.values.clone(),
+        site: config.site.clone(),
+        page: config.page.clone(),
+        page_settings: config.page_settings.clone(),
+        repo: config.repo.clone(),
         search: config.search.clone(),
         nav_prune: config.nav_prune,
         theme,
@@ -933,7 +969,10 @@ fn finish(
     let Source {
         place,
         git_ref,
-        values,
+        site: values,
+        page: every_page,
+        page_settings: every_page_wants,
+        repo,
         search,
         nav_prune,
         theme,
@@ -945,14 +984,27 @@ fn finish(
     } = source;
 
     // What little works out is the bottom of the cascade: the nav it builds
-    // from the folders, the year, and the version go beneath the config, so
-    // a theme or site that sets `nav`, `year`, or `version` replaces it.
+    // from the folders, the year, the version, and the owner and name of the
+    // repository go beneath the config, so a theme or site that sets
+    // `navigation.items`, `year`, `version`, or `repository.owner` replaces
+    // it.
     let tree = build_tree(&pages);
     let mut site = Mapping::new();
-    site.insert("nav".into(), serde_yaml::to_value(build_nav(&tree))?);
+    let items = serde_yaml::to_value(build_nav(&tree))?;
+    let navigation = Mapping::from_iter([("items".into(), items)]);
+    site.insert("navigation".into(), Value::Mapping(navigation));
     site.insert("year".into(), now.year().into());
     if let Some(title) = &place.title {
         site.insert("version".into(), title.as_str().into());
+    }
+    if let Some(repo) = &repo {
+        let (owner, name) = repo.owner_and_name();
+        let mut repository = Mapping::new();
+        if let Some(owner) = owner {
+            repository.insert("owner".into(), owner.into());
+        }
+        repository.insert("name".into(), name.into());
+        site.insert("repository".into(), Value::Mapping(repository));
     }
     config::merge(&mut site, values);
     // Each entry of `versions`, as it's written, with the URL of its home.
@@ -960,23 +1012,25 @@ fn finish(
         let entries = versions.at(None).into_iter().map(Value::Mapping);
         site.insert("versions".into(), Value::Sequence(entries.collect()));
     }
-    nav_in(&site)
-        .context("`nav` in little.yml must be a list of links, each `{ title, url, children }`")?;
-    if let Some(nav) = site.get_mut("nav") {
+    nav_in(&site).context(
+        "`site.navigation.items` in little.yml must be a list of links, each \
+         `{ title, url, children }`",
+    )?;
+    if let Some(nav) = nav_mut(&mut site) {
         link_items(nav, &place.url);
     }
-    // Plugins get `site` as the theme does, and `page.breadcrumbs`,
-    // `page.prev`, and `page.next` follow the nav they leave it with, so
+    // Plugins get `site` as the theme does, and `page.breadcrumb`,
+    // `page.previous`, and `page.next` follow the nav they leave it with, so
     // they agree with the theme's sidebar.
     let site = plugins.site(site, |name, site| {
         nav_in(site).map(drop).with_context(|| {
             format!(
-                "plugin `{name}`'s `site` hook gives back a `nav` that isn't a list of links, \
-                 each `{{ title, url, children }}`"
+                "plugin `{name}`'s `site` hook gives back a `navigation.items` that isn't a \
+                 list of links, each `{{ title, url, children }}`"
             )
         })
     })?;
-    let nav = nav_in(&site).context("`nav` must be a list of links")?;
+    let nav = nav_in(&site).context("`site.navigation.items` must be a list of links")?;
     let site_value = MjValue::from_serialize(&site);
     // What every page of the version is rendered from: the theme's
     // templates, the URL their filters link under, and `site`, but for a
@@ -985,8 +1039,9 @@ fn finish(
     place.url.hash(&mut shared);
     let neighbours = neighbours_in(&nav);
     let trails = breadcrumbs_in(&nav, &place.url.link("/"));
-    // With `nav_prune`, each page gets a nav of its own, pruned from the
-    // whole one, which its breadcrumbs, `prev`, and `next` still follow.
+    // With `site.navigation.prune`, each page gets a nav of its own, pruned
+    // from the whole one, which its breadcrumbs, `previous`, and `next`
+    // still follow.
     let pruned = nav_prune
         .then(|| {
             let urls = (pages.iter()).map(|page| place.url.link(&page.url).into_owned());
@@ -1007,14 +1062,14 @@ fn finish(
     let mut render = |page_type: PageType, page: Mapping, url: &str, on: &str, path: &Path| {
         let page = plugins.page(on, page);
         // Search indexes the page's own content and title, as plugins leave
-        // them, not the theme's markup around it; its own `search`, if it
-        // has one, says whether it's indexed at all.
+        // them, not the theme's markup around it; its `search.enabled`, as
+        // they leave it, says whether it's indexed at all.
         let text = |key: &str| page.get(key).and_then(Value::as_str).map(str::to_string);
-        let listed = match page.get("search") {
-            None | Some(Value::Null) => None,
-            Some(Value::Bool(listed)) => Some(*listed),
-            Some(_) => bail!(
-                "`search` must be `true`, to index the page for search, or `false`, to leave it out"
+        let listed = match page.get("search").and_then(|search| search.get("enabled")) {
+            Some(Value::Bool(listed)) => *listed,
+            _ => bail!(
+                "`search.enabled` must be `true`, to index the page for search, or `false`, to \
+                 leave it out"
             ),
         };
         let searched = (text("title"), text("content"), listed);
@@ -1047,12 +1102,18 @@ fn finish(
     for page in &pages {
         let url = place.url.link(&page.url);
         let children = is_readme(&page.rel).then(|| children_of(&tree, &page.rel));
-        let (prev, next) = neighbours.get(&*url).copied().unwrap_or_default();
+        // little acts on each group's `enabled`, so a theme shows only what
+        // it's given, and a page turns something off whatever its theme.
+        let wants = &page.wants;
+        let (previous, next) = neighbours.get(&*url).copied().unwrap_or_default();
         // A page that isn't in the nav has nothing above it there.
-        let breadcrumbs = (trails.get(&*url)).map(Vec::as_slice).unwrap_or_default();
+        let breadcrumbs = (trails.get(&*url))
+            .filter(|_| wants.breadcrumb)
+            .map(Vec::as_slice)
+            .unwrap_or_default();
         // A page a plugin adds has no file in the site's repository.
         let file_urls = (in_repo.as_ref())
-            .filter(|_| !page.added)
+            .filter(|_| !page.added && wants.repository)
             .and_then(|in_repo| in_repo.repo.file_urls(&in_repo.folder.join(&page.rel)));
         let in_versions = versions.map(|versions| versions.at(Some(&page.url)));
         let data = PageData {
@@ -1060,27 +1121,33 @@ fn finish(
             url: &page.url,
             title: Some(&page.title),
             content: Some(&page.html),
-            toc: Some(&page.toc),
             children: children.as_deref(),
-            breadcrumbs: Some(breadcrumbs),
-            prev,
-            next,
-            source_url: file_urls.as_ref().map(|urls| urls.source.as_str()),
-            edit_url: (file_urls.as_ref())
-                .filter(|_| editable)
-                .map(|urls| urls.edit.as_str()),
             versions: in_versions.as_deref(),
+            // Its own `search.enabled` says, else `site.search.exclude`.
+            search: Enabled {
+                enabled: (wants.search).unwrap_or_else(|| !search.excludes(&page.url)),
+            },
+            outline: Items {
+                items: &page.outline,
+            },
+            breadcrumb: Items { items: breadcrumbs },
+            previous: previous.filter(|_| wants.previous),
+            next: next.filter(|_| wants.next),
+            repository: FileLinks {
+                source_url: file_urls.as_ref().map(|urls| urls.source.as_str()),
+                edit_url: (file_urls.as_ref())
+                    .filter(|_| editable)
+                    .map(|urls| urls.edit.as_str()),
+            },
         };
-        let rendered = page_value(&data, &page.frontmatter, &place.url)
+        let rendered = page_value(&data, &page.settings, wants, &place.url)
             .and_then(|value| render(page.page_type, value, &url, &page.origin, &page.out_path))
             .with_context(|| format!("rendering {}", page.origin))?;
         if let Some((html, wrote, (title, content, listed))) = rendered {
             // In the language the theme gives it, at its URL from the root
-            // of its version, beside its index, unless it's left out: by its
-            // own `search`, else by the site's `exclude`.
-            let indexed = (search.as_ref())
-                .is_some_and(|search| listed.unwrap_or_else(|| !search.excludes(&page.url)));
-            if indexed {
+            // of its version, beside its index, unless its `search.enabled`
+            // leaves it out.
+            if search.enabled && listed {
                 let title = title.unwrap_or_else(|| page.title.clone());
                 let content = content.unwrap_or_else(|| page.html.clone());
                 searched.push((&page.url, title, content, wrote.lang.clone()));
@@ -1100,9 +1167,12 @@ fn finish(
     }
 
     // A 404 page has no content, or file: all `page` has is its type and
-    // URL, and the home of each version. Only the version at the root of
-    // the site has one, at the root of the destination, where static hosts
-    // look for it, and only if its theme has a template for it.
+    // URL, the home of each version, what every page has, from `page` in the
+    // config, and its title and description, from `site.error`. Each of its
+    // groups is there, for its template, with nothing little works out in
+    // it. Only the version at the root of the site has one, at the root of
+    // the destination, where static hosts look for it, and only if its theme
+    // has a template for it.
     if place.is_root() && theme.renders(PageType::NotFound) {
         let not_found_url = format!("/{NOT_FOUND_FILE}");
         let homes = versions.map(|versions| versions.at(None));
@@ -1111,18 +1181,30 @@ fn finish(
             url: &not_found_url,
             title: None,
             content: None,
-            toc: None,
             children: None,
-            breadcrumbs: None,
-            prev: None,
-            next: None,
-            source_url: None,
-            edit_url: None,
             versions: homes.as_deref(),
+            search: Enabled { enabled: false },
+            outline: Items { items: &[] },
+            breadcrumb: Items { items: &[] },
+            previous: None,
+            next: None,
+            repository: FileLinks {
+                source_url: None,
+                edit_url: None,
+            },
         };
         let name = "the 404 page".to_string();
         let path = place.destination.join(NOT_FOUND_FILE);
-        let rendered = page_value(&data, &Mapping::new(), &place.url)
+        let mut settings = every_page.clone();
+        for key in ["title", "description"] {
+            let text = site.get("error").and_then(|error| error.get(key));
+            if let Some(text) = text.and_then(Value::as_str) {
+                settings.insert(key.into(), text.into());
+            }
+        }
+        // Search never indexes it, whatever every page's settings say.
+        settings.shift_remove("search");
+        let rendered = page_value(&data, &settings, &every_page_wants, &place.url)
             .and_then(|value| {
                 let url = place.url.link(&not_found_url);
                 render(PageType::NotFound, value, &url, &name, &path)
@@ -1155,7 +1237,7 @@ fn finish(
 
     // Every page the theme rendered is searchable, but the 404 page, which
     // isn't one to find, and those left out.
-    let search_files = if search.is_some() {
+    let search_files = if search.enabled {
         let pages: Vec<_> = (searched.iter())
             .map(|(url, title, content, lang)| search::Page {
                 url,
@@ -1296,21 +1378,31 @@ fn write_version(
 
 /// The page built from what `rendered` was rendered from, at `rel` in the
 /// source, and what it's built from, `origin`, whether a plugin `added` it,
-/// to be written to `destination`.
+/// to be written to `destination`. Its frontmatter goes over `every_page`,
+/// the settings every page has, from `page` in the config. Settings little
+/// can't read, like an `outline` that isn't its settings, are an error.
 fn page_from(
     rel: PathBuf,
     origin: String,
     added: bool,
     rendered: render::Rendered,
+    every_page: &Mapping,
     destination: &Path,
-) -> Page {
+) -> Result<Page> {
     // A key left blank is as good as not there: a page never holds null,
     // and `title:` shouldn't wipe out the title little finds.
     let mut frontmatter = rendered.frontmatter;
     frontmatter.retain(|_, value| !value.is_null());
+    let mut settings = every_page.clone();
+    config::merge(&mut settings, frontmatter);
+    let wants = PageSettings::read(&settings, "").with_context(|| format!("rendering {origin}"))?;
+    // Its table of contents lists its headings at the levels it chooses.
+    let listed = (rendered.headings.iter())
+        .filter(|heading| wants.outline && wants.depths.contains(&heading.depth));
+    let outline = nest_headings(listed);
 
-    // Title: frontmatter `title` -> first <h1> -> filename/folder-derived.
-    let title = frontmatter
+    // Title: its settings' `title` -> first <h1> -> filename/folder-derived.
+    let title = settings
         .get("title")
         .and_then(Value::as_str)
         .map(str::to_string)
@@ -1352,20 +1444,21 @@ fn page_from(
     });
     let warnings = math.chain(diagrams).chain(blocks).collect();
 
-    Page {
+    Ok(Page {
         rel,
         origin,
         added,
         url,
         out_path,
         title,
-        frontmatter,
+        settings,
+        wants,
         html: rendered.html,
-        toc: nest_headings(&rendered.toc),
+        outline,
         page_type,
         links: rendered.links,
         warnings,
-    }
+    })
 }
 
 /// Where the source folder is in the site's repository, like `docs`: from
@@ -1406,53 +1499,101 @@ fn time_of_build(source_date_epoch: Option<OsString>) -> Result<OffsetDateTime> 
 }
 
 /// What a template sees as `page`: what little works out for it, `data`,
-/// with the page's frontmatter merged over it the way each level of the
-/// config merges over the one beneath, so the author has the last word. It
-/// changes only what the theme sees: a page is built at its own URL, with
-/// the template for its own type, whatever its frontmatter says.
+/// with the page's `settings` merged over it the way each level of the
+/// config merges over the one beneath, so the author has the last word:
+/// every page's settings, from `page` in the config, and the page's own
+/// frontmatter. They change only what the theme sees: a page is built at
+/// its own URL, with the template for its own type, whatever they say.
+///
+/// little acts on what the settings turn off, as `wants` has it, so a theme
+/// shows only what it's given: a group that's off has no `items`, and no
+/// URLs, whatever the settings write there, and `previous` and `next` are
+/// left out, as they are without a page to link to.
 ///
 /// Each of the page's links gets the path of the site's `url`, whoever
 /// wrote it, as do the links in its Markdown, unless it's to another site,
-/// like its file in the site's repository. Those in `page.breadcrumbs`,
-/// `page.prev`, and `page.next` have it already, from the nav the theme
+/// like its file in the site's repository. Those in `page.breadcrumb`,
+/// `page.previous`, and `page.next` have it already, from the nav the theme
 /// gets.
-fn page_value(data: &PageData, frontmatter: &Mapping, url: &SiteUrl) -> Result<Mapping> {
+fn page_value(
+    data: &PageData,
+    settings: &Mapping,
+    wants: &PageSettings,
+    url: &SiteUrl,
+) -> Result<Mapping> {
     let Value::Mapping(mut page) = serde_yaml::to_value(data)? else {
         unreachable!("a struct serializes to a mapping");
     };
     link(page.get_mut("url"), url);
-    for key in ["children", "toc"] {
-        if let Some(items) = page.get_mut(key) {
+    if let Some(items) = page.get_mut("children") {
+        link_items(items, url);
+    }
+    if let Some(items) = within(page.get_mut("outline"), "items") {
+        link_items(items, url);
+    }
+    let mut settings = settings.clone();
+    link(settings.get_mut("url"), url);
+    for key in ["source_url", "edit_url"] {
+        link(within(settings.get_mut("repository"), key), url);
+    }
+    for group in ["previous", "next"] {
+        link(within(settings.get_mut(group), "url"), url);
+    }
+    for group in ["breadcrumb", "outline"] {
+        if let Some(items) = within(settings.get_mut(group), "items") {
             link_items(items, url);
         }
     }
-    let mut frontmatter = frontmatter.clone();
-    for key in ["url", "source_url", "edit_url"] {
-        link(frontmatter.get_mut(key), url);
+    if let Some(items) = settings.get_mut("children") {
+        link_items(items, url);
     }
-    for key in ["prev", "next"] {
-        if let Some(Value::Mapping(item)) = frontmatter.get_mut(key) {
-            link(item.get_mut("url"), url);
+    config::merge(&mut page, settings);
+
+    for (group, on) in [("outline", wants.outline), ("breadcrumb", wants.breadcrumb)] {
+        if let (false, Some(Value::Mapping(group))) = (on, page.get_mut(group)) {
+            group.insert("items".into(), Value::Sequence(Vec::new()));
         }
     }
-    for key in ["breadcrumbs", "children", "toc"] {
-        if let Some(items) = frontmatter.get_mut(key) {
-            link_items(items, url);
+    for (group, on) in [("previous", wants.previous), ("next", wants.next)] {
+        // All it has is its settings, without a page to link to, from the
+        // nav or its own.
+        let links = matches!(
+            page.get(group),
+            Some(Value::Mapping(link)) if link.keys().any(|key| key.as_str() != Some("enabled"))
+        );
+        if !(on && links) {
+            page.shift_remove(group);
         }
     }
-    config::merge(&mut page, frontmatter);
+    if let (false, Some(Value::Mapping(repository))) =
+        (wants.repository, page.get_mut("repository"))
+    {
+        repository.shift_remove("source_url");
+        repository.shift_remove("edit_url");
+    }
     Ok(page)
 }
 
-/// The nav in `site`, what the theme gets as `site.nav`, or why it isn't
-/// one.
+/// The setting at `key` in `group`, a group of a page's settings, to change,
+/// if it's there.
+fn within<'a>(group: Option<&'a mut Value>, key: &str) -> Option<&'a mut Value> {
+    group?.get_mut(key)
+}
+
+/// The nav in `site`, what the theme gets as `site.navigation.items`, or
+/// why it isn't one.
 fn nav_in(site: &Mapping) -> Result<Vec<NavItem>, serde_yaml::Error> {
-    let nav = site.get("nav").cloned();
-    serde_yaml::from_value(nav.unwrap_or(Value::Sequence(Vec::new())))
+    let nav = (site.get("navigation")).and_then(|navigation| navigation.get("items"));
+    serde_yaml::from_value(nav.cloned().unwrap_or(Value::Sequence(Vec::new())))
+}
+
+/// The nav in `site`, its `navigation.items`, to change, if it has one.
+fn nav_mut(site: &mut Mapping) -> Option<&mut Value> {
+    site.get_mut("navigation")?.get_mut("items")
 }
 
 /// Put the site's path before the `url` of each of `items`, a list shaped
-/// like `site.nav`, and of each of their `children`.
+/// like `site.navigation.items`, and of each of their `children`.
 fn link_items(items: &mut Value, url: &SiteUrl) {
     let Value::Sequence(items) = items else {
         return;
@@ -1804,19 +1945,20 @@ fn section_item(name: &str, node: &DirNode) -> NavItem {
     }
 }
 
-/// A page's table of contents, shaped like `site.nav`: each heading links to
-/// its `#fragment`, and goes in the `children` of the nearest heading above it
-/// with fewer `#`s, so a `####` goes under the `###` above it, or under the
-/// `##` if there's no `###` between them. A heading with nothing above it,
-/// like a `###` before the first `##`, goes at the top.
-fn nest_headings(headings: &[render::TocItem]) -> Vec<NavItem> {
-    nest_under(&mut headings.iter().peekable(), 0)
+/// A page's table of contents, shaped like `site.navigation.items`, from the
+/// `headings` it lists: each heading links to its `#fragment`, and goes in
+/// the `children` of the nearest heading above it with fewer `#`s, so a
+/// `####` goes under the `###` above it, or under the `##` if there's no
+/// `###` between them. A heading with nothing above it, like a `###` before
+/// the first `##`, goes at the top.
+fn nest_headings<'a>(headings: impl Iterator<Item = &'a render::Heading>) -> Vec<NavItem> {
+    nest_under(&mut headings.peekable(), 0)
 }
 
 /// The headings that come next, up to the first that isn't deeper than
 /// `depth`, each holding the deeper ones that follow it.
-fn nest_under(
-    headings: &mut Peekable<slice::Iter<'_, render::TocItem>>,
+fn nest_under<'a>(
+    headings: &mut Peekable<impl Iterator<Item = &'a render::Heading>>,
     depth: u8,
 ) -> Vec<NavItem> {
     let mut items = Vec::new();
@@ -1830,7 +1972,7 @@ fn nest_under(
     items
 }
 
-/// The pages before and after each page, by its URL: its `page.prev` and
+/// The pages before and after each page, by its URL: its `page.previous` and
 /// `page.next`. They follow the nav from top to bottom, so they agree with the
 /// sidebar: a section's own page, then what's in it, then on to the next item.
 /// A folder without a `README.md` has no page, so it's passed over.
@@ -1862,12 +2004,13 @@ fn push_links<'a>(items: &'a [NavItem], links: &mut Vec<Link<'a>>) {
     }
 }
 
-/// What's above each page in the nav, by its URL: its `page.breadcrumbs`. They
-/// follow the nav from the top down, so they agree with the sidebar: each item
-/// the page is in, as the nav titles it. The nav lists the home page, at
-/// `home`, beside the items at its top, but it's above them, so their trails
-/// start with it. A page listed twice gets the trail to the last place, where
-/// its `page.prev` and `page.next` come from too.
+/// What's above each page in the nav, by its URL: its
+/// `page.breadcrumb.items`. They follow the nav from the top down, so they
+/// agree with the sidebar: each item the page is in, as the nav titles it.
+/// The nav lists the home page, at `home`, beside the items at its top, but
+/// it's above them, so their trails start with it. A page listed twice gets
+/// the trail to the last place, where its `page.previous` and `page.next`
+/// come from too.
 fn breadcrumbs_in<'a>(nav: &'a [NavItem], home: &str) -> HashMap<&'a str, Vec<Breadcrumb<'a>>> {
     let is_home = |item: &NavItem| item.url.as_deref() == Some(home);
     let home = nav.iter().find(|item| is_home(item)).map(Breadcrumb::from);
@@ -1896,10 +2039,10 @@ fn push_trails<'a>(
     }
 }
 
-/// A version's nav, pruned for each of its pages, for `nav_prune`: a page's
-/// nav lists what's in a folder only if the page is in it, or is the
-/// folder's own page, so it's as long as the page's way down the nav, not as
-/// the site.
+/// A version's nav, pruned for each of its pages, for
+/// `site.navigation.prune`: a page's nav lists what's in a folder only if
+/// the page is in it, or is the folder's own page, so it's as long as the
+/// page's way down the nav, not as the site.
 ///
 /// A folder the page isn't in is a link, without its items: to its own page,
 /// or, if it's a label, to the first page in it. One that leads nowhere in
@@ -1924,10 +2067,16 @@ impl<'a> PrunedNav<'a> {
     /// each page. `pages` holds each page's URL, as the nav links to it.
     /// `None` if `site` has no nav.
     fn new(site: &'a Mapping, pages: impl IntoIterator<Item = String>) -> Option<Self> {
-        let nav = site.get("nav")?.as_sequence()?;
+        let navigation = site.get("navigation")?.as_mapping()?;
+        let nav = navigation.get("items")?.as_sequence()?;
         // Each page puts its own nav where the whole one was.
+        let emptied = navigation.iter().map(|(key, value)| match key.as_str() {
+            Some("items") => (key.clone(), Value::Sequence(Vec::new())),
+            _ => (key.clone(), value.clone()),
+        });
+        let emptied = Value::Mapping(emptied.collect());
         let emptied = site.iter().map(|(key, value)| match key.as_str() {
-            Some("nav") => (key.clone(), Value::Sequence(Vec::new())),
+            Some("navigation") => (key.clone(), emptied.clone()),
             _ => (key.clone(), value.clone()),
         });
         let mut places = HashMap::new();
@@ -1944,7 +2093,9 @@ impl<'a> PrunedNav<'a> {
     /// from [`PrunedNav::at`].
     fn site(&self, nav: Vec<Value>) -> MjValue {
         let mut site = self.site.clone();
-        site.insert("nav".into(), Value::Sequence(nav));
+        if let Some(items) = nav_mut(&mut site) {
+            *items = Value::Sequence(nav);
+        }
         MjValue::from_serialize(&site)
     }
 
@@ -2055,7 +2206,7 @@ fn relisted(item: &Value, mut items: Option<Vec<Value>>, url: Option<&str>) -> V
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::testing::{files_in, render_at, scratch, write};
+    use crate::testing::{IN_THEME, files_in, render_at, scratch, write};
     use std::io::Read;
     use tempfile::TempDir;
 
@@ -2072,9 +2223,18 @@ mod tests {
             url,
             out_path,
             title: title.to_string(),
-            frontmatter: Mapping::new(),
+            settings: Mapping::new(),
+            wants: PageSettings {
+                outline: true,
+                depths: 2..=6,
+                breadcrumb: true,
+                previous: true,
+                next: true,
+                repository: true,
+                search: None,
+            },
             html: String::new(),
-            toc: Vec::new(),
+            outline: Vec::new(),
             page_type,
             links: Vec::new(),
             warnings: Vec::new(),
@@ -2401,18 +2561,18 @@ mod tests {
     }
 
     #[test]
-    fn a_page_toc_nests_its_headings() {
+    fn a_pages_outline_nests_its_headings() {
         let md = "### Before\n\n### Also Before\n\n## One\n\n### One A\n\n#### One A i\n\n\
                   ### One B\n\n## Two\n\n#### Two i\n";
-        let toc = render_at(md, "/", &SiteUrl::default(), &config::Markdown::default())
+        let headings = render_at(md, "/", &SiteUrl::default(), &config::Markdown::default())
             .unwrap()
-            .toc;
+            .headings;
 
         // A heading goes under the nearest one above it with fewer `#`s, even
         // two levels up; before the first `##`, it goes at the top, beside the
         // others.
         assert_eq!(
-            outline(&nest_headings(&toc)),
+            outline(&nest_headings(headings.iter())),
             [
                 "Before #before",
                 "Also Before #also-before",
@@ -2520,7 +2680,7 @@ mod tests {
         let trails = breadcrumbs_in(&nav, "/");
 
         // The trails use the nav's titles. A page listed twice gets the trail
-        // to the last place, where its `prev` and `next` come from too.
+        // to the last place, where its `previous` and `next` come from too.
         for (page, expected) in [
             ("/", ""),
             ("/getting-started", "Start / > Tutorials (label)"),
@@ -2545,8 +2705,8 @@ mod tests {
     #[test]
     fn a_pruned_nav_lists_only_the_folders_a_page_is_in() {
         let site: Mapping = serde_yaml::from_str(
-            "nav:\n\
-             - { title: Home, url: / }\n\
+            "navigation:\n  items:\n  \
+             - { title: Home, url: / }\n  \
              - { title: Guide, url: /guide/, children: [\
                  { title: Install, url: /guide/install },\
                  { title: Advanced, url: /guide/advanced/, children: [\
@@ -2555,10 +2715,10 @@ mod tests {
                          { title: Limits, url: /guide/advanced/deep/limits }] }] },\
                  { title: Recipes, children: [\
                      { title: Bake, url: /guide/recipes/bake },\
-                     { title: Roast, url: /guide/recipes/roast }] }] }\n\
+                     { title: Roast, url: /guide/recipes/roast }] }] }\n  \
              - { title: Reference, children: [\
                  { title: Commands, url: /reference/commands },\
-                 { title: Settings, url: /reference/settings }] }\n\
+                 { title: Settings, url: /reference/settings }] }\n  \
              - { title: API, url: /api/, children: [{ title: Errors, url: /api/errors }] }\n",
         )
         .unwrap();
@@ -2642,17 +2802,17 @@ mod tests {
     fn a_pruned_nav_keeps_what_a_reader_couldnt_reach() {
         let site: Mapping = serde_yaml::from_str(
             "name: Docs\n\
-             nav:\n\
-             - { title: Home, url: / }\n\
+             navigation:\n  prune: true\n  items:\n  \
+             - { title: Home, url: / }\n  \
              - { title: Elsewhere, url: \"https://example.com/\", children: [\
                  { title: One, url: /one },\
-                 { title: More, url: /more/, children: [{ title: Two, url: /more/two }] }] }\n\
-             - { title: Typo, url: /guide, children: [{ title: Install, url: /guide/install }] }\n\
+                 { title: More, url: /more/, children: [{ title: Two, url: /more/two }] }] }\n  \
+             - { title: Typo, url: /guide, children: [{ title: Install, url: /guide/install }] }\n  \
              - { title: Links, children: [\
-                 { title: GitHub, url: \"https://github.com/withlittle/little\" }] }\n\
+                 { title: GitHub, url: \"https://github.com/withlittle/little\" }] }\n  \
              - { title: Tools, icon: wrench, url: , children: [\
                  { title: Old, children: [{ title: Site, url: \"https://example.com/old\" }] },\
-                 { title: New, children: [{ title: Lint, url: /tools/lint }] }] }\n\
+                 { title: New, children: [{ title: Lint, url: /tools/lint }] }] }\n  \
              - { title: Guide, url: /guide/, icon: book, children: [\
                  { title: Setup, url: /guide/setup }] }\n\
              version: \"1.4\"\n",
@@ -2707,28 +2867,32 @@ mod tests {
 
         // A folder keeps its other keys, like a theme's `icon`, and a label
         // gets a `url` in place of one left blank. The rest of `site` is as
-        // it was, in its order.
+        // it was, in its order, as is the rest of its `navigation`.
         let pruned = PrunedNav::new(&site, pages.iter().map(|page| page.to_string())).unwrap();
         let nav = pruned.at("/");
         let item = |index: usize| serde_yaml::to_string(&nav[index]).unwrap();
         assert_eq!(item(4), "title: Tools\nicon: wrench\nurl: /tools/lint\n");
         assert_eq!(item(5), "title: Guide\nurl: /guide/\nicon: book\n");
         let keys: Vec<_> = pruned.site.keys().filter_map(Value::as_str).collect();
-        assert_eq!(keys, ["name", "nav", "version"]);
+        assert_eq!(keys, ["name", "navigation", "version"]);
         assert_eq!(pruned.site.get("version"), site.get("version"));
+        let navigation = serde_yaml::to_string(&pruned.site["navigation"]).unwrap();
+        assert_eq!(navigation, "prune: true\nitems: []\n");
 
         // A site with no nav has none to prune.
-        let site: Mapping = serde_yaml::from_str("name: Docs\n").unwrap();
-        assert!(PrunedNav::new(&site, Vec::new()).is_none());
+        for site in ["name: Docs\n", "navigation: { prune: true }\n"] {
+            let site: Mapping = serde_yaml::from_str(site).unwrap();
+            assert!(PrunedNav::new(&site, Vec::new()).is_none());
+        }
     }
 
     #[test]
     fn a_pruned_nav_follows_a_page_to_the_last_place_its_listed() {
         let site: Mapping = serde_yaml::from_str(
-            "nav:\n\
+            "navigation:\n  items:\n  \
              - { title: Tutorials, children: [\
                  { title: Setup, url: /guide/install },\
-                 { title: First Steps, url: /getting-started }] }\n\
+                 { title: First Steps, url: /getting-started }] }\n  \
              - { title: Guide, url: /guide/, children: [\
                  { title: Install, url: /guide/install }] }\n",
         )
@@ -2759,13 +2923,16 @@ mod tests {
     #[test]
     fn builds_with_a_local_theme() {
         let (_tmp, site) = scratch(&[
-            ("little.yml", "theme: ./path/to/my/theme\n"),
+            (
+                "little.yml",
+                "site:\n  theme:\n    source: ./path/to/my/theme\n",
+            ),
             ("docs/README.md", "# Home\n"),
             (
                 "path/to/my/theme/_templates/default.html",
                 "{{ site.greeting }} from my theme",
             ),
-            ("path/to/my/theme/little.yml", "greeting: Hello\n"),
+            ("path/to/my/theme/little.yml", "site: { greeting: Hello }\n"),
             ("path/to/my/theme/_static/style.css", "body {}\n"),
         ]);
         let png: &[u8] = &[0x89, b'P', b'N', b'G', 0x00, 0xff];
@@ -2811,7 +2978,7 @@ mod tests {
     #[test]
     fn a_site_can_turn_off_the_built_in_themes_search() {
         let (_tmp, site) = scratch(&[
-            ("little.yml", "search: false\n"),
+            ("little.yml", "site: { search: { enabled: false } }\n"),
             ("docs/README.md", "# Home\n"),
         ]);
 
@@ -2826,12 +2993,18 @@ mod tests {
     #[test]
     fn builds_with_a_theme_that_builds_on_another() {
         let (_tmp, site) = scratch(&[
-            ("little.yml", "theme: ./company\nname: My Docs\n"),
+            (
+                "little.yml",
+                "site:\n  theme:\n    source: ./company\n  name: My Docs\n",
+            ),
             ("docs/README.md", "# Home\n"),
-            ("company/little.yml", "theme: ../base\ngreeting: Hi\n"),
+            (
+                "company/little.yml",
+                "site:\n  theme:\n    source: ../base\n  greeting: Hi\n",
+            ),
             ("company/_templates/partials/brand.html", "company"),
             ("company/_static/logo.svg", "company logo"),
-            ("base/little.yml", "greeting: Hello\nname: Base\n"),
+            ("base/little.yml", "site: { greeting: Hello, name: Base }\n"),
             (
                 "base/_templates/default.html",
                 r#"{% include "partials/brand.html" %}: {{ site.greeting }} from {{ site.name }}"#,
@@ -2852,9 +3025,9 @@ mod tests {
     #[test]
     fn builds_with_a_theme_that_builds_on_a_downloaded_one() {
         let url = "https://example.invalid/fancy-1.0.zip";
-        let company_cfg = format!("theme: {url}\ngreeting: Hi\n");
+        let company_cfg = format!("site:\n  theme:\n    source: {url}\n  greeting: Hi\n");
         let (_tmp, site) = scratch(&[
-            ("little.yml", "theme: ./company\n"),
+            ("little.yml", "site:\n  theme:\n    source: ./company\n"),
             ("docs/README.md", "# Home\n"),
             ("company/little.yml", &company_cfg),
             ("company/_static/logo.svg", "company logo"),
@@ -2864,7 +3037,7 @@ mod tests {
         write(
             &fancy,
             &[
-                ("little.yml", "greeting: Hello\n"),
+                ("little.yml", "site: { greeting: Hello }\n"),
                 (
                     "_templates/default.html",
                     "{{ site.greeting }} from {{ page.title }}",
@@ -2894,7 +3067,7 @@ mod tests {
 
     #[test]
     fn a_build_needs_a_source_folder_and_a_theme() {
-        let (_tmp, site) = scratch(&[("little.yml", "name: My Docs\n")]);
+        let (_tmp, site) = scratch(&[("little.yml", "site: { name: My Docs }\n")]);
         let message = format!("{:#}", build(&site).unwrap_err());
         let expected = format!(
             "there's no source folder at {}",
@@ -2903,9 +3076,11 @@ mod tests {
         assert_eq!(message, expected);
 
         fs::create_dir_all(site.join("docs")).unwrap();
-        fs::write(site.join("little.yml"), "theme: false\n").unwrap();
+        let no_theme = "site: { theme: { enabled: false } }\n";
+        fs::write(site.join("little.yml"), no_theme).unwrap();
         let message = format!("{:#}", build(&site).unwrap_err());
-        let expected = "little can't build a site without a theme (`theme: false`) yet";
+        let expected =
+            "little can't build a site without a theme (`site.theme.enabled: false`) yet";
         assert_eq!(message, expected);
         assert!(!site.join("dist").exists());
     }
@@ -2915,7 +3090,8 @@ mod tests {
         let (_tmp, site) = scratch(&[
             (
                 "little.yml",
-                "theme: ./theme\nsource: ./content\ndestination: ./public\n",
+                "site:\n  theme:\n    source: ./theme\n  source: ./content\n  \
+                 destination: ./public\n",
             ),
             ("content/README.md", "# Home\n"),
             ("content/guide/install.md", "# Install\n"),
@@ -2936,7 +3112,7 @@ mod tests {
     fn hidden_files_and_folders_are_left_out() {
         // Like Jupyter's checkpoints, an editor's swap files, or drafts.
         let (_tmp, site) = scratch(&[
-            ("little.yml", "theme: ./theme\n"),
+            ("little.yml", IN_THEME),
             ("docs/README.md", "# Home\n"),
             ("docs/.draft.md", "# Draft\n"),
             (
@@ -2954,7 +3130,7 @@ mod tests {
                 "theme/_templates/default.html",
                 "{% macro list(items) %}{% for item in items %}\
                      [{{ item.title }}{% if item.children %} {{ list(item.children) }}{% endif %}]\
-                     {% endfor %}{% endmacro %}{{ list(site.nav) }}",
+                     {% endfor %}{% endmacro %}{{ list(site.navigation.items) }}",
             ),
             ("theme/_static/.nojekyll", ""),
         ]);
@@ -2980,7 +3156,10 @@ mod tests {
     fn only_hidden_names_inside_the_source_count() {
         // So the source can be a hidden folder, and the site can be in one.
         let (_tmp, root) = scratch(&[
-            (".site/little.yml", "theme: ./theme\nsource: ./.github\n"),
+            (
+                ".site/little.yml",
+                "site:\n  theme:\n    source: ./theme\n  source: ./.github\n",
+            ),
             (".site/README.md", "# Site\n"),
             (".site/.github/README.md", "# Home\n"),
             (".site/.github/ISSUE_TEMPLATE/bug.md", "# Bug\n"),
@@ -3002,7 +3181,8 @@ mod tests {
         // `.little/` isn't a page. Everything else is published, its config
         // and theme too, but for the destination, which a build never copies
         // into itself.
-        fs::write(site.join("little.yml"), "theme: ./theme\nsource: .\n").unwrap();
+        let site_cfg = format!("{IN_THEME}  source: .\n");
+        fs::write(site.join("little.yml"), site_cfg).unwrap();
         build(&site).unwrap();
 
         let built = [
@@ -3026,7 +3206,7 @@ mod tests {
         let (_tmp, root) = scratch(&files);
         let site = root.join("site");
         let build_into = |destination: &str| {
-            let site_cfg = format!("theme: ./theme\ndestination: {destination}\n");
+            let site_cfg = format!("{IN_THEME}  destination: {destination}\n");
             fs::write(site.join("little.yml"), site_cfg).unwrap();
             build(&site)
         };
@@ -3055,7 +3235,7 @@ mod tests {
     #[test]
     fn every_other_file_in_the_source_is_copied() {
         let (_tmp, site) = scratch(&[
-            ("little.yml", "theme: ./theme\n"),
+            ("little.yml", IN_THEME),
             ("docs/README.md", "# Home\n"),
             ("docs/logo.svg", "<svg/>"),
             ("docs/guide/install.md", "# Install\n"),
@@ -3096,7 +3276,7 @@ mod tests {
     #[test]
     fn sass_in_the_theme_is_compiled_and_in_the_source_copied() {
         let (_tmp, site) = scratch(&[
-            ("little.yml", "theme: ./theme\n"),
+            ("little.yml", IN_THEME),
             ("docs/README.md", "# Home\n"),
             ("docs/examples/button.scss", "$x: 1;"),
             ("docs/examples/_mixins.scss", "$y: 2;"),
@@ -3148,7 +3328,7 @@ mod tests {
         ]);
         // However its path is written. The second build finds the first's.
         for destination in ["./docs/_build", "./docs/../docs/_build"] {
-            let site_cfg = format!("theme: ./theme\ndestination: {destination}\n");
+            let site_cfg = format!("{IN_THEME}  destination: {destination}\n");
             fs::write(site.join("little.yml"), site_cfg).unwrap();
             build(&site).unwrap();
             build(&site).unwrap();
@@ -3165,7 +3345,8 @@ mod tests {
         let (_tmp, site) = scratch(&[
             (
                 "little.yml",
-                "theme: ./theme\nurl: https://withlittle.github.io/little\n",
+                "site:\n  theme:\n    source: ./theme\n  \
+                 url: https://withlittle.github.io/little\n",
             ),
             ("docs/README.md", "![Logo](assets/logo.svg)\n"),
             (
@@ -3207,7 +3388,7 @@ mod tests {
     /// files with the extension `test`.
     fn reading_tests() -> String {
         format!(
-            "theme: ./theme\nplugins:\n  test:\n    wasm: {}\n    extensions: [test]\n",
+            "{IN_THEME}  plugins:\n    test:\n      wasm: {}\n      extensions: [test]\n",
             crate::plugin::tests::test_plugin().display()
         )
     }
@@ -3371,7 +3552,8 @@ mod tests {
     }
 
     /// A site's config that has the test plugin, as `api`, beside `config`,
-    /// adding the files `add` lists to the source, and warning of `warn`.
+    /// which holds its `site`'s other settings, adding the files `add` lists
+    /// to the source, and warning of `warn`.
     fn adding_files(config: &str, add: serde_json::Value, warn: Option<&str>) -> String {
         let mut plugin = serde_json::json!({
             "wasm": crate::plugin::tests::test_plugin(),
@@ -3380,7 +3562,7 @@ mod tests {
         if let Some(warn) = warn {
             plugin["warn"] = warn.into();
         }
-        format!("{config}plugins:\n  api: {plugin}\n")
+        format!("{config}  plugins:\n    api: {plugin}\n")
     }
 
     #[test]
@@ -3397,7 +3579,7 @@ mod tests {
             },
         ]);
         let site_cfg = adding_files(
-            "theme: ./theme\nrepo: https://github.com/withlittle/little\n",
+            &format!("{IN_THEME}  repository:\n    url: https://github.com/withlittle/little\n"),
             pages,
             Some("can't read pkg/broken.py"),
         );
@@ -3410,9 +3592,9 @@ mod tests {
             ),
             (
                 "theme/_templates/default.html",
-                "{{ page.title }} | {{ 'source_url' in page }} | \
-                     {{ page.breadcrumbs | map(attribute='title') | join(', ') }} | \
-                     {{ page.prev.title if page.prev }} | {{ page.next.title if page.next }}\n\
+                "{{ page.title }} | {{ 'source_url' in page.repository }} | \
+                     {{ page.breadcrumb.items | map(attribute='title') | join(', ') }} | \
+                     {{ page.previous.title if page.previous }} | {{ page.next.title if page.next }}\n\
                      {{ page.content | safe }}",
             ),
         ]);
@@ -3471,7 +3653,7 @@ mod tests {
     #[test]
     fn a_plugins_page_cant_be_the_same_page_as_another() {
         let clash = |files: &[(&str, &str)], pages: serde_json::Value| {
-            let site_cfg = adding_files("theme: ./theme\n", pages, None);
+            let site_cfg = adding_files(IN_THEME, pages, None);
             let mut files = files.to_vec();
             files.push(("little.yml", &site_cfg));
             files.push(("theme/_templates/default.html", "{{ page.content | safe }}"));
@@ -3505,7 +3687,7 @@ mod tests {
     fn plugins_hook_into_each_step_of_the_build() {
         let plugin = serde_json::json!({
             "wasm": crate::plugin::tests::test_plugin(),
-            "config": { "merge": { "title": "Hooked" } },
+            "config": { "merge": { "site": { "title": "Hooked" } } },
             "files": {
                 "remove": ["old.md"],
                 "add": [{ "path": "added.md", "text": "# Added\n\nHello, world.\n" }],
@@ -3518,12 +3700,12 @@ mod tests {
             "destination": { "list": "files.txt" },
         });
         let site_cfg =
-            format!("theme: ./theme\nurl: https://example.com/docs\nplugins:\n  test: {plugin}\n");
+            format!("{IN_THEME}  url: https://example.com/docs\n  plugins:\n    test: {plugin}\n");
         let (_tmp, site) = scratch(&[
             ("little.yml", &site_cfg),
             ("docs/README.md", "# Home\n\nHello, world.\n"),
             ("docs/old.md", "# Old\n"),
-            ("theme/little.yml", "search: true\n"),
+            ("theme/little.yml", "site: { search: { enabled: true } }\n"),
             (
                 "theme/_templates/default.html",
                 "<html lang=\"en\">{{ site.title }} | {{ site.motto }} | {{ page.badge }} | \
@@ -3606,7 +3788,7 @@ mod tests {
         ]);
         let with = |mut plugin: serde_json::Value| {
             plugin["wasm"] = serde_json::json!(crate::plugin::tests::test_plugin());
-            let site_cfg = format!("theme: ./theme\nplugins:\n  test: {plugin}\n");
+            let site_cfg = format!("{IN_THEME}  plugins:\n    test: {plugin}\n");
             fs::write(site.join("little.yml"), site_cfg).unwrap();
             build(&site)
         };
@@ -3640,11 +3822,12 @@ mod tests {
             error(serde_json::json!({ "files": { "error": "boom" } })),
             "plugin `test`'s `files` hook failed: boom"
         );
-        let message = error(serde_json::json!({ "site": { "merge": { "nav": "nowhere" } } }));
+        let nowhere = serde_json::json!({ "navigation": { "items": "nowhere" } });
+        let message = error(serde_json::json!({ "site": { "merge": nowhere } }));
         assert!(
             message.starts_with(
-                "plugin `test`'s `site` hook gives back a `nav` that isn't a list of links, each \
-                 `{ title, url, children }`: "
+                "plugin `test`'s `site` hook gives back a `navigation.items` that isn't a list \
+                 of links, each `{ title, url, children }`: "
             ),
             "{message}"
         );
@@ -3670,7 +3853,7 @@ mod tests {
     fn each_type_of_page_gets_its_template_and_data() {
         // Each template says which it is, and what `page` holds.
         let (_tmp, site) = scratch(&[
-            ("little.yml", "theme: ./theme\n"),
+            ("little.yml", IN_THEME),
             ("docs/README.md", "# Home\n"),
             (
                 "docs/guide/README.md",
@@ -3696,42 +3879,130 @@ mod tests {
 
         let dist = site.join("dist");
         let read = |path: &str| fs::read_to_string(dist.join(path)).unwrap();
-        // The first page has no `prev`, and the last no `next`.
+        // The first page has no `previous`, and the last no `next`. Each
+        // other group is on every page.
+        let groups = "outline repository search title type url";
         assert_eq!(
             read("index.html"),
-            "home with default.html: breadcrumbs children content next title toc type url"
+            format!("home with default.html: breadcrumb children content next {groups}")
         );
         assert_eq!(
             read("guide/index.html"),
-            "section with section.html: breadcrumbs children content description next prev title toc type url"
+            "section with section.html: breadcrumb children content description next \
+             outline previous repository search title type url"
         );
         assert_eq!(
             read("guide/install/index.html"),
-            "page with default.html: breadcrumbs content prev title toc type url"
+            "page with default.html: breadcrumb content outline previous repository search \
+             title type url"
         );
         // A folder without a README gets no page of its own.
         assert!(!dist.join("api/index.html").exists());
         assert_eq!(
             read("api/reference/index.html"),
-            "page with default.html: breadcrumbs content next prev title toc type url"
+            "page with default.html: breadcrumb content next outline previous repository \
+             search title type url"
         );
-        // A 404 page has no content of its own.
+        // A 404 page has no content of its own, but a title and a
+        // description, from `site.error`, and each group, for its template.
         assert_eq!(
             read(NOT_FOUND_FILE),
-            "404 with 404.html: type url = /404.html"
+            format!("404 with 404.html: breadcrumb description {groups} = /404.html")
         );
+    }
+
+    #[test]
+    fn every_page_gets_the_settings_under_page() {
+        let (_tmp, site) = scratch(&[
+            (
+                "little.yml",
+                "site:\n  theme:\n    source: ./theme\npage:\n  author: Site\n  \
+                 hero:\n    image: /site.png\n  breadcrumb:\n    enabled: false\n",
+            ),
+            ("docs/README.md", "# Home\n"),
+            ("docs/api/errors.md", "# Errors\n"),
+            (
+                "docs/guide.md",
+                "---\nauthor: Ada\nhero:\n  alt: A guide\nbreadcrumb:\n  enabled: true\n\
+                 ---\n# Guide\n",
+            ),
+            (
+                "theme/little.yml",
+                "page:\n  author: Theme\n  layout: wide\n",
+            ),
+            (
+                "theme/_templates/default.html",
+                "{{ page.title }}: {{ page.author }}, {{ page.layout }}, \
+                 {{ page.hero.image | safe }}, {{ page.hero.alt }}, \
+                 {{ page.breadcrumb.items | length }} above",
+            ),
+            (
+                "theme/_templates/404.html",
+                "{{ page.title }}: {{ page.author }}, {{ page.layout }}, \
+                 {{ page.breadcrumb.items | length }} above",
+            ),
+        ]);
+
+        build(&site).unwrap();
+
+        let read = |path: &str| fs::read_to_string(site.join("dist").join(path)).unwrap();
+        // A key under `page`, in the theme's little.yml or the site's, is in
+        // every page's `page`, as if each page's frontmatter set it, so here
+        // no page has breadcrumbs.
+        assert_eq!(
+            read("api/errors/index.html"),
+            "Errors: Site, wide, /site.png, , 0 above"
+        );
+        // A page's own frontmatter goes over it, key by key.
+        assert_eq!(
+            read("guide/index.html"),
+            "Guide: Ada, wide, /site.png, A guide, 1 above"
+        );
+        // The 404 page has them too, with its title, from `site.error`.
+        assert_eq!(read(NOT_FOUND_FILE), "Page not found: Site, wide, 0 above");
+    }
+
+    #[test]
+    fn the_404_page_has_the_title_and_description_the_site_sets() {
+        let (_tmp, site) = scratch(&[("docs/README.md", "# Home\n")]);
+        let not_found = || {
+            build(&site).unwrap();
+            fs::read_to_string(site.join("dist").join(NOT_FOUND_FILE)).unwrap()
+        };
+
+        // little's own, as the built-in theme shows them...
+        let page = not_found();
+        for shown in [
+            "<title>Page not found · Documentation</title>",
+            "<h1>Page not found</h1>",
+            "<p>The page you are looking for could not be found.</p>",
+        ] {
+            assert!(page.contains(shown), "{shown} in {page}");
+        }
+        // ...or the site's.
+        let site_cfg = "site:\n  error:\n    title: Lost?\n    description: Try the search box.\n";
+        fs::write(site.join("little.yml"), site_cfg).unwrap();
+        let page = not_found();
+        for shown in [
+            "<title>Lost? · Documentation</title>",
+            r#"<meta name="description" content="Try the search box.">"#,
+            "<h1>Lost?</h1>",
+            "<p>Try the search box.</p>",
+        ] {
+            assert!(page.contains(shown), "{shown} in {page}");
+        }
     }
 
     #[test]
     fn each_page_links_to_the_pages_before_and_after_it() {
         let (_tmp, site) = scratch(&[
-            ("little.yml", "theme: ./theme\n"),
+            ("little.yml", IN_THEME),
             ("docs/README.md", "# Home\n"),
             ("docs/guide/README.md", "# Guide\n"),
             ("docs/guide/install.md", "# Install\n"),
             (
                 "theme/_templates/default.html",
-                "{% if page.prev %}{{ page.prev.title }} {{ page.prev.url | safe }} {% endif %}\
+                "{% if page.previous %}{{ page.previous.title }} {{ page.previous.url | safe }} {% endif %}\
                      < {{ page.title }} >\
                      {% if page.next %} {{ page.next.title }} {{ page.next.url | safe }}{% endif %}",
             ),
@@ -3754,22 +4025,23 @@ mod tests {
     #[test]
     fn each_page_lists_the_pages_above_it() {
         let (_tmp, site) = scratch(&[
-            ("little.yml", "theme: ./theme\n"),
+            ("little.yml", IN_THEME),
             ("docs/README.md", "# Home\n"),
             ("docs/guide/README.md", "# Guide\n"),
             ("docs/guide/install.md", "# Install\n"),
             ("docs/api/reference.md", "# Reference\n"),
             (
                 "docs/api/errors.md",
-                "---\nbreadcrumbs: false\n---\n# Errors\n",
+                "---\nbreadcrumb:\n  enabled: false\n---\n# Errors\n",
             ),
             (
                 "docs/api/limits.md",
-                "---\nbreadcrumbs:\n  - { title: Reference, url: /api/reference }\n---\n# Limits\n",
+                "---\nbreadcrumb:\n  items:\n    - { title: Reference, url: /api/reference }\n\
+                 ---\n# Limits\n",
             ),
             (
                 "theme/_templates/default.html",
-                "{% if page.breadcrumbs %}{% for crumb in page.breadcrumbs %}\
+                "{% if page.breadcrumb.items %}{% for crumb in page.breadcrumb.items %}\
                      {{ crumb.title }} {{ crumb.url | default('(label)') | safe }} > \
                      {% endfor %}{% endif %}{{ page.title }}",
             ),
@@ -3788,8 +4060,8 @@ mod tests {
             read("api/reference/index.html"),
             "Home / > Api (label) > Reference"
         );
-        // Frontmatter has the last word: `breadcrumbs: false` turns them off,
-        // and a list replaces them.
+        // Frontmatter has the last word: `breadcrumb.enabled` turns them off,
+        // and its `items` replace them.
         assert_eq!(read("api/errors/index.html"), "Errors");
         assert_eq!(
             read("api/limits/index.html"),
@@ -3797,8 +4069,8 @@ mod tests {
         );
 
         // They follow a nav set by hand, so a page that isn't in it has none.
-        let site_cfg = "theme: ./theme\nnav:\n\
-                        - { title: Start, url: / }\n\
+        let site_cfg = "site:\n  theme:\n    source: ./theme\n  navigation:\n    items:\n      \
+                        - { title: Start, url: / }\n      \
                         - { title: Install, url: /guide/install }\n";
         fs::write(site.join("little.yml"), site_cfg).unwrap();
         build(&site).unwrap();
@@ -3815,7 +4087,7 @@ mod tests {
             ("docs/api/reference.md", "# Reference\n"),
             (
                 "docs/api/errors.md",
-                "---\nbreadcrumbs: false\n---\n# Errors\n",
+                "---\nbreadcrumb:\n  enabled: false\n---\n# Errors\n",
             ),
         ]);
 
@@ -3945,10 +4217,11 @@ mod tests {
             );
         }
 
-        // With `nav_prune`, a folder the current page isn't in is a link,
-        // with nothing to fold: to its own page, or, for a label, to the
-        // first page in it. The folders the page is in are as before.
-        fs::write(site.join("little.yml"), "nav_prune: true\n").unwrap();
+        // With `site.navigation.prune`, a folder the current page isn't in
+        // is a link, with nothing to fold: to its own page, or, for a label,
+        // to the first page in it. The folders the page is in are as before.
+        let pruned = "site: { navigation: { prune: true } }\n";
+        fs::write(site.join("little.yml"), pruned).unwrap();
         build(&site).unwrap();
         assert_eq!(
             sidebar("guide/advanced/deep/limits/index.html"),
@@ -3979,12 +4252,14 @@ mod tests {
 
     #[test]
     fn each_page_links_to_its_file_in_the_repo() {
-        let template = "{{ site.repo | safe }} \
-                        | {% if page.source_url %}{{ page.source_url | safe }}{% endif %} \
-                        | {% if page.edit_url %}{{ page.edit_url | safe }}{% endif %}";
+        let template = "{{ site.repository.url | safe }} \
+                        | {% if page.repository.source_url %}{{ page.repository.source_url | safe }}{% endif %} \
+                        | {% if page.repository.edit_url %}{{ page.repository.edit_url | safe }}{% endif %}";
         let repo = "https://github.com/withlittle/little";
-        let site_cfg =
-            format!("theme: ./theme\nurl: https://withlittle.github.io/little\nrepo: {repo}\n");
+        let site_cfg = format!(
+            "{IN_THEME}  url: https://withlittle.github.io/little\n  \
+             repository:\n    url: {repo}\n"
+        );
         let (_tmp, root) = scratch(&[
             (".git/HEAD", "ref: refs/heads/main\n"),
             ("site/little.yml", &site_cfg),
@@ -3992,7 +4267,11 @@ mod tests {
             ("site/docs/guide/install.md", "# Install\n"),
             (
                 "site/docs/guide/reference.md",
-                "---\nsource_url: /api/\nedit_url: false\n---\n# Reference\n",
+                "---\nrepository:\n  source_url: /api/\n---\n# Reference\n",
+            ),
+            (
+                "site/docs/guide/generated.md",
+                "---\nrepository:\n  enabled: false\n  source_url: /api/\n---\n# Generated\n",
             ),
             ("site/theme/_templates/default.html", template),
             ("site/theme/_templates/404.html", template),
@@ -4009,17 +4288,19 @@ mod tests {
             links("main/site/docs/guide/install.md")
         );
         // A page's frontmatter has the last word, and a link from the root of
-        // the site gets its path. The 404 page isn't built from a file.
+        // the site gets its path. `repository.enabled` turns both links off,
+        // whatever else it sets. The 404 page isn't built from a file.
         assert_eq!(
             read("guide/reference/index.html"),
-            format!("{repo} | /little/api/ | ")
+            format!("{repo} | /little/api/ | {repo}/edit/main/site/docs/guide/reference.md")
         );
+        assert_eq!(read("guide/generated/index.html"), format!("{repo} |  | "));
         assert_eq!(read(NOT_FOUND_FILE), format!("{repo} |  | "));
 
         // In a worktree, `.git` is a file. A site can link to another branch.
         fs::remove_dir_all(root.join(".git")).unwrap();
         fs::write(root.join(".git"), "gitdir: /elsewhere\n").unwrap();
-        let branch_cfg = format!("{site_cfg}branch: release/2.0\n");
+        let branch_cfg = format!("{site_cfg}    branch: release/2.0\n");
         fs::write(site.join("little.yml"), branch_cfg).unwrap();
         build(&site).unwrap();
         assert_eq!(read("index.html"), links("release/2.0/site/docs/README.md"));
@@ -4046,9 +4327,15 @@ mod tests {
         let repo = "https://github.com/withlittle/little";
         let (_tmp, site) = scratch(&[
             (".git/HEAD", "ref: refs/heads/main\n"),
-            ("little.yml", &format!("repo: {repo}\n")),
+            (
+                "little.yml",
+                &format!("site:\n  repository:\n    url: {repo}\n"),
+            ),
             ("docs/README.md", "# Home\n"),
-            ("docs/guide.md", "---\nedit_url: false\n---\n# Guide\n"),
+            (
+                "docs/guide.md",
+                "---\nrepository:\n  enabled: false\n---\n# Guide\n",
+            ),
         ]);
 
         build(&site).unwrap();
@@ -4066,10 +4353,10 @@ mod tests {
         ] {
             assert!(home.contains(&link), "{link} in {home}");
         }
-        // A page can turn either link off, and the 404 page has neither.
+        // A page can turn its links off, and the 404 page has neither.
         let guide = read("guide/index.html");
         assert!(!guide.contains("Edit this page"), "{guide}");
-        assert!(guide.contains("View source of this page"), "{guide}");
+        assert!(!guide.contains("View source of this page"), "{guide}");
         let not_found = read(NOT_FOUND_FILE);
         assert!(not_found.contains(&repo_link), "{not_found}");
         assert!(
@@ -4086,9 +4373,42 @@ mod tests {
     }
 
     #[test]
+    fn a_site_gets_its_repositorys_owner_and_name() {
+        let repository = |settings: &str| format!("{IN_THEME}  repository:\n{settings}");
+        let (_tmp, site) = scratch(&[
+            (
+                "little.yml",
+                &repository("    url: https://gitlab.com/withlittle/docs/little\n"),
+            ),
+            ("docs/README.md", "# Home\n"),
+            (
+                "theme/_templates/default.html",
+                "{{ site.repository.owner | safe }} | {{ site.repository.name }} \
+                 | {{ site.repository.branch }}",
+            ),
+        ]);
+        let home = || {
+            build(&site).unwrap();
+            fs::read_to_string(site.join("dist/index.html")).unwrap()
+        };
+
+        // From its `url`: the last part of its path is its name, and what's
+        // before it its owner, here a group within another.
+        assert_eq!(home(), "withlittle/docs | little | main");
+        // A site that sets either has the last word.
+        let site_cfg =
+            repository("    url: https://github.com/withlittle/little\n    owner: With Little\n");
+        fs::write(site.join("little.yml"), site_cfg).unwrap();
+        assert_eq!(home(), "With Little | little | main");
+        // Without a `url`, it has neither.
+        fs::write(site.join("little.yml"), IN_THEME).unwrap();
+        assert_eq!(home(), " |  | main");
+    }
+
+    #[test]
     fn the_builtin_theme_gives_a_page_without_a_description_the_sites() {
         let (_tmp, site) = scratch(&[
-            ("little.yml", "description: Docs that just work\n"),
+            ("little.yml", "site: { description: Docs that just work }\n"),
             ("docs/README.md", "# Home\n"),
             (
                 "docs/guide.md",
@@ -4118,7 +4438,7 @@ mod tests {
     fn a_page_toc_is_shaped_like_the_site_nav() {
         // So one macro can list both.
         let (_tmp, site) = scratch(&[
-            ("little.yml", "theme: ./theme\n"),
+            ("little.yml", IN_THEME),
             (
                 "docs/README.md",
                 "# Home\n\n## Setup\n\n### Requirements\n\n## Usage\n",
@@ -4130,7 +4450,7 @@ mod tests {
                 "{% macro list(items) %}{% for item in items %}\
                      [{{ item.title }} {{ item.url | safe }}{% if item.children %} {{ list(item.children) }}{% endif %}]\
                      {% endfor %}{% endmacro %}\
-                     {{ list(site.nav) }} / {{ list(page.toc) }}",
+                     {{ list(site.navigation.items) }} / {{ list(page.outline.items) }}",
             ),
         ]);
 
@@ -4142,19 +4462,19 @@ mod tests {
             read("index.html"),
             format!("{nav} / [Setup #setup [Requirements #requirements]][Usage #usage]")
         );
-        // A page without headings has an empty `page.toc`.
+        // A page without headings has an empty `page.outline.items`.
         assert_eq!(read("guide/install/index.html"), format!("{nav} / "));
     }
 
     #[test]
     fn a_page_can_turn_off_its_toc() {
-        // `toc: false` replaces the table of contents, and the built-in theme
-        // lists one only `{% if page.toc %}`.
+        // `outline.enabled: false` empties the table of contents, and the
+        // built-in theme lists one only `{% if page.outline.items %}`.
         let (_tmp, site) = scratch(&[
             ("docs/README.md", "# Home\n\n## Setup\n"),
             (
                 "docs/guide.md",
-                "---\ntoc: false\n---\n# Guide\n\n## Setup\n",
+                "---\noutline:\n  enabled: false\n---\n# Guide\n\n## Setup\n",
             ),
         ]);
 
@@ -4167,26 +4487,156 @@ mod tests {
     }
 
     #[test]
+    fn a_page_turns_off_what_little_works_out_for_it() {
+        // A theme that shows all it's given.
+        let template = "{{ page.outline.items | map(attribute='title') | join(', ') }} \
+                        | {{ page.breadcrumb.items | map(attribute='title') | join(', ') }} \
+                        | {{ page.previous.title if page.previous }} \
+                        | {{ page.next.title if page.next }} \
+                        | {{ page.repository.source_url | safe }} \
+                        {{ page.repository.edit_url | safe }}";
+        let repo = "https://github.com/withlittle/little";
+        let (_tmp, site) = scratch(&[
+            (".git/HEAD", "ref: refs/heads/main\n"),
+            (
+                "little.yml",
+                &format!("{IN_THEME}  repository:\n    url: {repo}\n"),
+            ),
+            ("docs/README.md", "# Home\n"),
+            ("docs/guide/README.md", "# Guide\n\n## Setup\n"),
+            ("docs/guide/usage.md", "# Usage\n"),
+            ("theme/_templates/default.html", template),
+        ]);
+        let page = site.join(native("docs/guide/README.md"));
+        let guide = |frontmatter: &str| {
+            fs::write(
+                &page,
+                format!("---\n{frontmatter}---\n# Guide\n\n## Setup\n"),
+            )
+            .unwrap();
+            build(&site).map(|_| fs::read_to_string(site.join("dist/guide/index.html")).unwrap())
+        };
+        let file = "main/docs/guide/README.md";
+        let links = format!("{repo}/blob/{file} {repo}/edit/{file}");
+
+        // Each is on, as little sets it.
+        assert_eq!(
+            guide("").unwrap(),
+            format!("Setup | Home | Home | Usage | {links}")
+        );
+        // Each group's `enabled` turns its own off, whatever the theme.
+        let off = "outline:\n  enabled: false\nbreadcrumb:\n  enabled: false\n\
+                   previous:\n  enabled: false\nnext:\n  enabled: false\n\
+                   repository:\n  enabled: false\n";
+        assert_eq!(guide(off).unwrap(), " |  |  |  |  ");
+        for (group, shown) in [
+            ("outline", format!(" | Home | Home | Usage | {links}")),
+            ("breadcrumb", format!("Setup |  | Home | Usage | {links}")),
+            ("previous", format!("Setup | Home |  | Usage | {links}")),
+            ("next", format!("Setup | Home | Home |  | {links}")),
+            ("repository", "Setup | Home | Home | Usage |  ".to_string()),
+        ] {
+            let frontmatter = format!("{group}:\n  enabled: false\n");
+            assert_eq!(guide(&frontmatter).unwrap(), shown, "{group}");
+        }
+        // What it turns off, it can't give the theme itself, either.
+        let off = "outline:\n  enabled: false\n  items: [{ title: Mine, url: \"#mine\" }]\n\
+                   previous:\n  enabled: false\n  title: Mine\n";
+        assert_eq!(guide(off).unwrap(), format!(" | Home |  | Usage | {links}"));
+
+        // A value where a group's settings go, like `false`, stops the
+        // build, naming the page.
+        for group in ["outline", "breadcrumb", "previous", "next", "repository"] {
+            let message = format!("{:#}", guide(&format!("{group}: false\n")).unwrap_err());
+            let expected = format!(
+                "rendering {}: `{group}` must be its settings, like `enabled: false`",
+                page.display()
+            );
+            assert_eq!(message, expected);
+        }
+        let message = format!("{:#}", guide("next:\n  enabled: no\n").unwrap_err());
+        let expected = format!(
+            "rendering {}: `next.enabled` must be `true` or `false`",
+            page.display()
+        );
+        assert_eq!(message, expected);
+    }
+
+    #[test]
+    fn a_page_chooses_the_headings_its_own_toc_lists() {
+        let headings = "## Setup\n\n### Install\n\n#### From source\n";
+        let (_tmp, site) = scratch(&[
+            (
+                "little.yml",
+                &format!("{IN_THEME}page:\n  outline:\n    depth:\n      max: 3\n"),
+            ),
+            ("docs/README.md", &format!("# Home\n\n{headings}")),
+            (
+                "docs/deep.md",
+                &format!("---\noutline:\n  depth:\n    max: 4\n---\n# Deep\n\n{headings}"),
+            ),
+            (
+                "docs/whole.md",
+                &format!(
+                    "---\noutline: {{ depth: {{ min: 1, max: 2 }} }}\n---\n# Whole\n\n{headings}"
+                ),
+            ),
+            (
+                "theme/_templates/default.html",
+                "{% for item in page.outline.items recursive %}{{ item.title }}\
+                 {% if item.children %} [{{ loop(item.children) }}]{% endif %}; {% endfor %}\
+                 from {{ page.outline.depth.min }} to {{ page.outline.depth.max }}",
+            ),
+        ]);
+
+        build(&site).unwrap();
+
+        // The site's levels, for every page, unless a page sets its own, in
+        // its frontmatter, which the theme gets beside its headings.
+        let read = |path: &str| fs::read_to_string(site.join("dist").join(path)).unwrap();
+        assert_eq!(read("index.html"), "Setup [Install; ]; from 2 to 3");
+        assert_eq!(
+            read("deep/index.html"),
+            "Setup [Install [From source; ]; ]; from 2 to 4"
+        );
+        assert_eq!(read("whole/index.html"), "Whole [Setup; ]; from 1 to 2");
+
+        // Levels a page can't have stop the build, naming the page.
+        let page = site.join("docs").join("deep.md");
+        fs::write(&page, "---\noutline:\n  depth:\n    min: 4\n---\n# Deep\n").unwrap();
+        let message = format!("{:#}", build(&site).unwrap_err());
+        let expected = format!(
+            "rendering {}: `outline.depth.min` (4) can't be more than `outline.depth.max` (3)",
+            page.display()
+        );
+        assert_eq!(message, expected);
+    }
+
+    #[test]
     fn a_page_toc_lists_the_headings_its_config_chooses() {
         // little lists every heading but the title, the built-in theme's
         // `little.yml` only `##` and `###`, and a site can choose otherwise.
         let page = "# Home\n\n## Setup\n\n### Install\n\n#### From Source\n";
         for (label, site_cfg, listed) in [
             ("toc-theme", "", &["#setup", "#install"][..]),
-            ("toc-max-2", "toc_max_depth: 2\n", &["#setup"]),
+            (
+                "toc-max-2",
+                "page: { outline: { depth: { max: 2 } } }\n",
+                &["#setup"],
+            ),
             (
                 "toc-max-4",
-                "toc_max_depth: 4\n",
+                "page: { outline: { depth: { max: 4 } } }\n",
                 &["#setup", "#install", "#from-source"],
             ),
             (
                 "toc-min-1",
-                "toc_min_depth: 1\n",
+                "page: { outline: { depth: { min: 1 } } }\n",
                 &["#home", "#setup", "#install"],
             ),
             (
                 "toc-min-3",
-                "toc_min_depth: 3\ntoc_max_depth: 4\n",
+                "page: { outline: { depth: { min: 3, max: 4 } } }\n",
                 &["#install", "#from-source"],
             ),
         ] {
@@ -4210,7 +4660,7 @@ mod tests {
     #[test]
     fn every_frontmatter_key_reaches_the_page() {
         let (_tmp, site) = scratch(&[
-            ("little.yml", "theme: ./theme\n"),
+            ("little.yml", IN_THEME),
             (
                 "docs/README.md",
                 "---\nauthor: Ada\ntags: [setup, cli]\nhero:\n  image: hero.png\ntitle:\ndraft:\n---\n# Home\n",
@@ -4239,17 +4689,18 @@ mod tests {
     #[test]
     fn frontmatter_has_the_last_word_on_the_page() {
         let (_tmp, site) = scratch(&[
-            ("little.yml", "theme: ./theme\n"),
+            ("little.yml", IN_THEME),
             ("docs/README.md", "# Home\n"),
             (
                 "docs/guide.md",
-                "---\ntype: tutorial\nurl: /elsewhere\nprev:\n  title: Start here\nnext: false\n---\n# Guide\n",
+                "---\ntype: tutorial\nurl: /elsewhere\nprevious:\n  title: Start here\n\
+                 next:\n  enabled: false\n---\n# Guide\n",
             ),
             ("docs/reference.md", "# Reference\n"),
             (
                 "theme/_templates/default.html",
                 "{{ page.type }} {{ page.url | safe }}: \
-                     {% if page.prev %}{{ page.prev.title }} {{ page.prev.url | safe }} {% endif %}\
+                     {% if page.previous %}{{ page.previous.title }} {{ page.previous.url | safe }} {% endif %}\
                      < {{ page.title }} >\
                      {% if page.next %} {{ page.next.title }} {{ page.next.url | safe }}{% endif %}",
             ),
@@ -4259,8 +4710,8 @@ mod tests {
         build(&site).unwrap();
 
         let read = |path: &str| fs::read_to_string(site.join("dist").join(path)).unwrap();
-        // Settings merge key by key, so `prev` keeps its URL; anything else,
-        // like `next: false`, replaces what little works out.
+        // Settings merge key by key, so `previous` keeps its URL, and `next`
+        // is turned off.
         assert_eq!(
             read("guide/index.html"),
             "tutorial /elsewhere: Start here / < Guide >"
@@ -4277,9 +4728,9 @@ mod tests {
 
     #[test]
     fn a_nav_in_the_config_replaces_littles() {
-        let site_cfg = "theme: ./theme\nnav:\n\
-                        - { title: Start, url: /guide/install }\n\
-                        - { title: Home, url: /, icon: house }\n\
+        let site_cfg = "site:\n  theme:\n    source: ./theme\n  navigation:\n    items:\n      \
+                        - { title: Start, url: /guide/install }\n      \
+                        - { title: Home, url: /, icon: house }\n      \
                         - { title: GitHub, url: \"https://github.com/withlittle/little\" }\n";
         let (_tmp, site) = scratch(&[
             ("little.yml", site_cfg),
@@ -4288,8 +4739,8 @@ mod tests {
             ("docs/guide/install.md", "# Install\n"),
             (
                 "theme/_templates/default.html",
-                "{% for item in site.nav %}{{ item.title }}{% if item.icon %} ({{ item.icon }}){% endif %}; {% endfor %}\
-                     {% if page.prev %}{{ page.prev.url | safe }} {% endif %}\
+                "{% for item in site.navigation.items %}{{ item.title }}{% if item.icon %} ({{ item.icon }}){% endif %}; {% endfor %}\
+                     {% if page.previous %}{{ page.previous.url | safe }} {% endif %}\
                      < {{ page.title }} >\
                      {% if page.next %} {{ page.next.url | safe }}{% endif %}",
             ),
@@ -4297,8 +4748,8 @@ mod tests {
 
         build(&site).unwrap();
 
-        // The theme gets the nav as the config sets it, and `prev` and `next`
-        // follow it. A page that isn't in it has neither.
+        // The theme gets the nav as the config sets it, and `previous` and
+        // `next` follow it. A page that isn't in it has neither.
         let read = |path: &str| fs::read_to_string(site.join("dist").join(path)).unwrap();
         let nav = "Start; Home (house); GitHub; ";
         assert_eq!(
@@ -4312,28 +4763,31 @@ mod tests {
         assert_eq!(read("guide/index.html"), format!("{nav}< Guide >"));
 
         // A nav that isn't a list of links stops the build.
-        for nav in ["nav: { style: tabs }\n", "nav:\n  - url: /\n"] {
-            let site_cfg = format!("theme: ./theme\n{nav}");
+        for nav in ["items: { style: tabs }\n", "items:\n      - url: /\n"] {
+            let site_cfg = format!("{IN_THEME}  navigation:\n    {nav}");
             fs::write(site.join("little.yml"), site_cfg).unwrap();
             let message = format!("{:#}", build(&site).unwrap_err());
-            let expected = "`nav` in little.yml must be a list of links";
+            let expected = "`site.navigation.items` in little.yml must be a list of links";
             assert!(message.starts_with(expected), "{message}");
         }
     }
 
     #[test]
     fn nav_prune_gives_each_page_a_nav_of_its_own() {
-        let nav = "{% for item in site.nav recursive %}{{ item.title }}\
+        let nav = "{% for item in site.navigation.items recursive %}{{ item.title }}\
                    {% if item.url %} {{ item.url | safe }}{% endif %}\
                    {% if item.children %} [{{ loop(item.children) }}]{% endif %}; {% endfor %}";
         let template = format!(
-            "{nav}| {{% for crumb in page.breadcrumbs %}}{{{{ crumb.title }}}} > {{% endfor %}}\
-             | {{% if page.prev %}}{{{{ page.prev.url | safe }}}}{{% endif %}} \
+            "{nav}| {{% for crumb in page.breadcrumb.items %}}{{{{ crumb.title }}}} > {{% endfor %}}\
+             | {{% if page.previous %}}{{{{ page.previous.url | safe }}}}{{% endif %}} \
              < {{{{ page.title }}}} > \
              {{% if page.next %}}{{{{ page.next.url | safe }}}}{{% endif %}}"
         );
         let (_tmp, site) = scratch(&[
-            ("little.yml", "theme: ./theme\nnav_prune: true\n"),
+            (
+                "little.yml",
+                "site:\n  theme:\n    source: ./theme\n  navigation:\n    prune: true\n",
+            ),
             ("docs/README.md", "# Home\n"),
             ("docs/guide/README.md", "# Guide\n"),
             ("docs/guide/install.md", "# Install\n"),
@@ -4347,7 +4801,8 @@ mod tests {
         build(&site).unwrap();
 
         // A page's nav lists what's in the folders it's in. Its breadcrumbs,
-        // `prev`, and `next` follow the whole nav, as without `nav_prune`.
+        // `previous`, and `next` follow the whole nav, as they do without
+        // `prune`.
         assert_eq!(
             read("guide/advanced/tuning/index.html"),
             "Home /; Api /api/reference; \
@@ -4375,8 +4830,8 @@ mod tests {
         assert_eq!(read(NOT_FOUND_FILE), top);
 
         // Its links have the path of the site's `url`, a label's too.
-        let site_cfg =
-            "theme: ./theme\nnav_prune: true\nurl: https://withlittle.github.io/little\n";
+        let site_cfg = "site:\n  theme:\n    source: ./theme\n  navigation:\n    prune: true\n  \
+                        url: https://withlittle.github.io/little\n";
         fs::write(site.join("little.yml"), site_cfg).unwrap();
         build(&site).unwrap();
         assert_eq!(
@@ -4389,7 +4844,7 @@ mod tests {
         ));
 
         // Without it, as little has it, every page gets the whole nav.
-        fs::write(site.join("little.yml"), "theme: ./theme\n").unwrap();
+        fs::write(site.join("little.yml"), IN_THEME).unwrap();
         build(&site).unwrap();
         let whole = "Home /; Api [Reference /api/reference; ]; \
                      Guide /guide/ [Advanced [Tuning /guide/advanced/tuning; ]; \
@@ -4403,7 +4858,10 @@ mod tests {
     fn every_page_gets_the_year_of_the_build() {
         let template = "&copy; {{ site.year }} {{ site.name }}";
         let (_tmp, site) = scratch(&[
-            ("little.yml", "theme: ./theme\nname: Little\n"),
+            (
+                "little.yml",
+                "site:\n  theme:\n    source: ./theme\n  name: Little\n",
+            ),
             ("docs/README.md", "# Home\n"),
             ("docs/guide.md", "# Guide\n"),
             ("theme/_templates/default.html", template),
@@ -4421,7 +4879,7 @@ mod tests {
         }
 
         // It's beneath the config, like the nav, so a `year` there replaces it.
-        let site_cfg = "theme: ./theme\nname: Little\nyear: 2019–2026\n";
+        let site_cfg = "site:\n  theme:\n    source: ./theme\n  name: Little\n  year: 2019–2026\n";
         fs::write(site.join("little.yml"), site_cfg).unwrap();
         build(&site).unwrap();
         assert_eq!(read("index.html"), "&copy; 2019–2026 Little");
@@ -4455,7 +4913,8 @@ mod tests {
 
     #[test]
     fn a_url_puts_every_link_under_the_sites_path() {
-        let site_cfg = "theme: ./theme\nurl: https://withlittle.github.io/little\n";
+        let site_cfg = "site:\n  theme:\n    source: ./theme\n  \
+                        url: https://withlittle.github.io/little\n";
         let (_tmp, site) = scratch(&[
             ("little.yml", site_cfg),
             (
@@ -4465,19 +4924,19 @@ mod tests {
             ("docs/guide/README.md", "# Guide\n\n## Steps\n"),
             (
                 "docs/guide/install.md",
-                "---\nprev: { url: /start/ }\nlogo: /logo.png\n---\n# Install\n",
+                "---\nprevious: { url: /start/ }\nlogo: /logo.png\n---\n# Install\n",
             ),
             ("theme/_templates/home.html", "{{ page.content | safe }}"),
             (
                 "theme/_templates/default.html",
-                "{% for item in site.nav recursive %}{{ item.url | safe }} \
+                "{% for item in site.navigation.items recursive %}{{ item.url | safe }} \
                      {% if item.children %}{{ loop(item.children) }}{% endif %}{% endfor %}\
                      | {{ page.url | safe }} \
-                     | {% if page.prev %}{{ page.prev.url | safe }}{% endif %} \
+                     | {% if page.previous %}{{ page.previous.url | safe }}{% endif %} \
                      {% if page.next %}{{ page.next.url | safe }}{% endif %} \
-                     | {% for crumb in page.breadcrumbs %}{{ crumb.url | safe }} {% endfor %}\
+                     | {% for crumb in page.breadcrumb.items %}{{ crumb.url | safe }} {% endfor %}\
                      | {% for item in page.children %}{{ item.url | safe }} {% endfor %}\
-                     | {% for item in page.toc %}{{ item.url | safe }} {% endfor %}\
+                     | {% for item in page.outline.items %}{{ item.url | safe }} {% endfor %}\
                      | {{ page.logo | safe }}",
             ),
             (
@@ -4503,8 +4962,8 @@ mod tests {
                  | /little/guide/install | #steps | "
             )
         );
-        // So does one the author writes where little would, like `prev`, but
-        // not a setting of the theme's own, like `logo`.
+        // So does one the author writes where little would, like `previous`,
+        // but not a setting of the theme's own, like `logo`.
         assert_eq!(
             read("guide/install/index.html"),
             format!(
@@ -4527,8 +4986,8 @@ mod tests {
 
         // A nav in the config gets it too, but for links to other sites.
         let site_cfg = format!(
-            "{site_cfg}nav:\n\
-             - {{ title: Start, url: /guide/install }}\n\
+            "{site_cfg}  navigation:\n    items:\n      \
+             - {{ title: Start, url: /guide/install }}\n      \
              - {{ title: GitHub, url: \"https://github.com/withlittle/little\" }}\n"
         );
         fs::write(site.join("little.yml"), site_cfg).unwrap();
@@ -4546,7 +5005,7 @@ mod tests {
     #[test]
     fn a_failed_build_leaves_the_last_one() {
         let (_tmp, site) = scratch(&[
-            ("little.yml", "theme: ./theme\n"),
+            ("little.yml", IN_THEME),
             ("docs/README.md", "# Home\n"),
             ("theme/_templates/default.html", "{{ page.title }}"),
         ]);
@@ -4589,7 +5048,7 @@ mod tests {
             let (_tmp, site) = scratch(&[
                 (
                     "little.yml",
-                    &format!("name: Test\nnav_prune: {nav_prune}\n"),
+                    &format!("site:\n  name: Test\n  navigation:\n    prune: {nav_prune}\n"),
                 ),
                 (
                     "docs/README.md",
@@ -4655,7 +5114,10 @@ mod tests {
             let built = check(&rebuild(&site, &built).unwrap(), "after files move");
 
             // The config changes, and so the theme's files.
-            let config = format!("name: Renamed\nnav_prune: {nav_prune}\nsearch: false\n");
+            let config = format!(
+                "site:\n  name: Renamed\n  navigation:\n    prune: {nav_prune}\n  \
+                 search:\n    enabled: false\n"
+            );
             write(&site, &[("little.yml", &config)]);
             check(&rebuild(&site, &built).unwrap(), "after the config changes");
         }
@@ -4664,9 +5126,9 @@ mod tests {
     #[test]
     fn a_rebuild_writes_only_what_differs() {
         let template = "{{ page.title }}: {{ page.content | safe }} \
-                        [{% for item in site.nav %}{{ item.title }} {% endfor %}]";
+                        [{% for item in site.navigation.items %}{{ item.title }} {% endfor %}]";
         let (_tmp, site) = scratch(&[
-            ("little.yml", "theme: ./theme\n"),
+            ("little.yml", IN_THEME),
             ("docs/README.md", "# Home\n"),
             ("docs/guide.md", "# Guide\n\nFirst.\n"),
             ("docs/about.md", "# About\n"),
@@ -4735,8 +5197,8 @@ mod tests {
         fs::remove_dir_all(&dist).unwrap();
         let built = rebuild(&site, &built).unwrap();
         assert_eq!(fs::read_to_string(dist.join("index.html")).unwrap(), "Home");
-        let config = "theme: ./theme\ndestination: ./public\n";
-        write(&site, &[("little.yml", config)]);
+        let config = format!("{IN_THEME}  destination: ./public\n");
+        write(&site, &[("little.yml", &config)]);
         rebuild(&site, &built).unwrap();
         let public = fs::read_to_string(site.join("public/index.html")).unwrap();
         assert_eq!(public, "Home");
@@ -4751,7 +5213,7 @@ mod tests {
         let (_tmp, site) = scratch(&[
             (
                 "little.yml",
-                &format!("theme: ./theme\nplugins:\n  test: {plugin}\n"),
+                &format!("{IN_THEME}  plugins:\n    test: {plugin}\n"),
             ),
             ("docs/README.md", "# Home\n"),
             ("theme/_templates/default.html", "{{ page.title }}"),
@@ -4768,7 +5230,7 @@ mod tests {
     #[test]
     fn a_rebuild_parses_only_the_pages_that_differ() {
         let (_tmp, site) = scratch(&[
-            ("little.yml", "theme: ./theme\n"),
+            ("little.yml", IN_THEME),
             ("docs/README.md", "# Home\n"),
             ("docs/guide.md", "# Guide\n\nFirst.\n"),
             ("docs/chart.md", "# Chart\n\n```mermaid\ngantt\n```\n"),
@@ -4803,18 +5265,25 @@ mod tests {
         let moved = rebuild(&site, &built).unwrap();
         assert_eq!(kept(&moved, &built), (2, 1));
 
+        // What every page has, under `page`, is read once a page is parsed,
+        // so a change to it parses none again.
+        let config = format!("{IN_THEME}page:\n  outline:\n    depth:\n      max: 2\n");
+        write(&site, &[("little.yml", &config)]);
+        let outlined = rebuild(&site, &moved).unwrap();
+        assert_eq!(kept(&outlined, &moved), (2, 2));
+
         // The site's settings reach every page.
-        let config = "theme: ./theme\nmarkdown:\n  highlight: false\n";
-        write(&site, &[("little.yml", config)]);
-        let built = rebuild(&site, &moved).unwrap();
-        assert_eq!(kept(&built, &moved), (2, 0));
+        let config = format!("{IN_THEME}  markdown:\n    highlight: false\n");
+        write(&site, &[("little.yml", &config)]);
+        let built = rebuild(&site, &outlined).unwrap();
+        assert_eq!(kept(&built, &outlined), (2, 0));
 
         // A plugin that renders code blocks can make anything of a page.
         let plugin = serde_json::json!({
             "wasm": crate::plugin::tests::test_plugin(),
             "languages": ["test"],
         });
-        let config = format!("theme: ./theme\nplugins:\n  test: {plugin}\n");
+        let config = format!("{IN_THEME}  plugins:\n    test: {plugin}\n");
         write(&site, &[("little.yml", &config)]);
         let hooked = rebuild(&site, &built).unwrap();
         assert_eq!(hooked.parsed.len(), 0);
@@ -4823,7 +5292,7 @@ mod tests {
     #[test]
     fn static_files_cannot_take_the_place_of_pages() {
         let (_tmp, site) = scratch(&[
-            ("little.yml", "theme: ./theme\n"),
+            ("little.yml", IN_THEME),
             ("docs/README.md", "# Home\n"),
             ("docs/guide/install.md", "# Install\n"),
             ("theme/_templates/default.html", "{{ page.title }}"),
@@ -4863,7 +5332,7 @@ mod tests {
     #[test]
     fn pages_cannot_take_each_others_place() {
         let (_tmp, site) = scratch(&[
-            ("little.yml", "theme: ./theme\n"),
+            ("little.yml", IN_THEME),
             ("docs/README.md", "# Home\n"),
             ("docs/guide/README.md", "# Guide\n"),
             ("theme/_templates/default.html", "{{ page.title }}"),
@@ -4890,14 +5359,14 @@ mod tests {
         let (_tmp, site) = scratch(&[
             (
                 "little.yml",
-                "theme: ./theme\nurl: https://example.com/docs\n",
+                "site:\n  theme:\n    source: ./theme\n  url: https://example.com/docs\n",
             ),
             ("docs/README.md", "# Home\n\nWelcome aboard.\n"),
             (
                 "docs/guide/install.md",
                 "---\ntitle: Installing\n---\n# Install\n\n## From source\n\nRun cargo.\n",
             ),
-            ("theme/little.yml", "search: true\n"),
+            ("theme/little.yml", "site: { search: { enabled: true } }\n"),
             (
                 "theme/_templates/default.html",
                 "<html lang=\"fr\"><header>Theme header</header>{{ page.content }}</html>",
@@ -4938,7 +5407,7 @@ mod tests {
         }
 
         // A site can go without.
-        let site_cfg = "theme: ./theme\nsearch: false\n";
+        let site_cfg = format!("{IN_THEME}  search:\n    enabled: false\n");
         fs::write(site.join("little.yml"), site_cfg).unwrap();
         build(&site).unwrap();
         assert!(dist.join("index.html").is_file());
@@ -4947,16 +5416,24 @@ mod tests {
 
     #[test]
     fn a_site_or_a_page_can_leave_pages_out_of_search() {
-        let site_cfg = |exclude: &str| format!("theme: ./theme\nsearch:\n  exclude: {exclude}\n");
+        let site_cfg = |exclude: &str| {
+            format!("{IN_THEME}  search:\n    enabled: true\n    exclude: {exclude}\n")
+        };
         let (_tmp, site) = scratch(&[
             ("little.yml", &site_cfg("[/other/, /this/old, /typo/]")),
             ("docs/README.md", "# Home\n"),
             ("docs/this/old.md", "# Old\n"),
             ("docs/this/new.md", "# New\n"),
-            ("docs/this/secret.md", "---\nsearch: false\n---\n# Secret\n"),
+            (
+                "docs/this/secret.md",
+                "---\nsearch:\n  enabled: false\n---\n# Secret\n",
+            ),
             ("docs/other/README.md", "# Other\n"),
             ("docs/other/a.md", "# A\n"),
-            ("docs/other/deep/b.md", "---\nsearch: true\n---\n# B\n"),
+            (
+                "docs/other/deep/b.md",
+                "---\nsearch:\n  enabled: true\n---\n# B\n",
+            ),
             ("docs/others.md", "# Others\n"),
             ("theme/_templates/default.html", "{{ page.content }}"),
         ]);
@@ -4965,7 +5442,8 @@ mod tests {
 
         // Each page is built, but search leaves out the page at each URL in
         // `exclude`, and those under it, but not one that only starts with
-        // the same letters, and a page's own `search` has the last word.
+        // the same letters, and a page's own `search.enabled` has the last
+        // word.
         assert!(dist.join("other/a/index.html").is_file());
         let urls = indexed_urls(&dist);
         assert_eq!(urls, ["/", "/other/deep/b", "/others", "/this/new"]);
@@ -4973,7 +5451,7 @@ mod tests {
         // A URL that leaves out no page is warned of, as it may be a typo.
         assert_eq!(
             warnings_of(&built),
-            ["`search.exclude` lists /typo/, but there's no page at that URL, or under it"]
+            ["`site.search.exclude` lists /typo/, but there's no page at that URL, or under it"]
         );
 
         // `/` leaves out every page, but one whose own `search` is `true`...
@@ -4990,30 +5468,93 @@ mod tests {
         assert!(entry.contains(r#""languages":{}"#), "{entry}");
         assert!(dist.join("pagefind/pagefind.js").is_file());
 
-        // A page's `search` must be `true` or `false`, even with search off...
-        fs::write(site.join("little.yml"), "theme: ./theme\n").unwrap();
+        // A page's `search.enabled` must be `true` or `false`, even with
+        // search off, and its `search` its settings, not either of them...
+        fs::write(site.join("little.yml"), IN_THEME).unwrap();
         let page = site.join(native("docs/this/new.md"));
-        fs::write(&page, "---\nsearch: no\n---\n# New\n").unwrap();
+        fs::write(&page, "---\nsearch:\n  enabled: no\n---\n# New\n").unwrap();
         let message = format!("{:#}", build(&site).unwrap_err());
         let expected = format!(
-            "rendering {}: `search` must be `true`, to index the page for search, or `false`, \
-             to leave it out",
+            "rendering {}: `search.enabled` must be `true`, to index the page for search, or \
+             `false`, to leave it out",
+            page.display()
+        );
+        assert_eq!(message, expected);
+        fs::write(&page, "---\nsearch: false\n---\n# New\n").unwrap();
+        let message = format!("{:#}", build(&site).unwrap_err());
+        let expected = format!(
+            "rendering {}: `search` must be its settings, like `enabled: false`",
             page.display()
         );
         assert_eq!(message, expected);
 
         // ...and can't turn it on for a site that has it off.
-        fs::write(&page, "---\nsearch: true\n---\n# New\n").unwrap();
+        fs::write(&page, "---\nsearch:\n  enabled: true\n---\n# New\n").unwrap();
         build(&site).unwrap();
         assert!(!dist.join("pagefind").exists());
+
+        // Nor can `exclude`, whose URLs aren't checked while it's off.
+        let site_cfg = format!("{IN_THEME}  search:\n    exclude: [/typo/]\n");
+        fs::write(site.join("little.yml"), site_cfg).unwrap();
+        let built = build(&site).unwrap();
+        assert!(!dist.join("pagefind").exists());
+        assert_eq!(warnings_of(&built), Vec::<String>::new());
+    }
+
+    #[test]
+    fn each_page_knows_whether_search_indexes_it() {
+        let site_cfg = format!("{IN_THEME}  search:\n    enabled: true\n    exclude: [/old/]\n");
+        let (_tmp, site) = scratch(&[
+            ("little.yml", &site_cfg),
+            ("docs/README.md", "# Home\n"),
+            ("docs/old/README.md", "# Old\n"),
+            (
+                "docs/old/kept.md",
+                "---\nsearch:\n  enabled: true\n---\n# Kept\n",
+            ),
+            (
+                "docs/secret.md",
+                "---\nsearch:\n  enabled: false\n---\n# Secret\n",
+            ),
+            (
+                "theme/_templates/default.html",
+                "<html lang=\"en\">{{ page.search.enabled }}</html>",
+            ),
+            (
+                "theme/_templates/404.html",
+                "<html lang=\"en\">{{ page.search.enabled }}</html>",
+            ),
+        ]);
+
+        build(&site).unwrap();
+
+        // `page.search.enabled` is `false` for a page under a URL in
+        // `site.search.exclude`, unless the page's own says otherwise, and
+        // for the 404 page, which search never indexes. MiniJinja writes a
+        // boolean as Jinja2 does.
+        let read = |path: &str| fs::read_to_string(site.join("dist").join(path)).unwrap();
+        for (path, enabled) in [
+            ("index.html", "True"),
+            ("old/index.html", "False"),
+            ("old/kept/index.html", "True"),
+            ("secret/index.html", "False"),
+            (NOT_FOUND_FILE, "False"),
+        ] {
+            assert_eq!(
+                read(path),
+                format!("<html lang=\"en\">{enabled}</html>"),
+                "{path}"
+            );
+        }
+        assert_eq!(indexed_urls(&site.join("dist")), ["/", "/old/kept"]);
     }
 
     #[test]
     fn nothing_can_take_the_place_of_search_files() {
         let (_tmp, site) = scratch(&[
-            ("little.yml", "theme: ./theme\n"),
+            ("little.yml", IN_THEME),
             ("docs/README.md", "# Home\n"),
-            ("theme/little.yml", "search: true\n"),
+            ("theme/little.yml", "site: { search: { enabled: true } }\n"),
             ("theme/_templates/default.html", "{{ page.title }}"),
         ]);
         // A page at /pagefind, or a file beside search's files, is fine...
@@ -5085,18 +5626,22 @@ mod tests {
         let template = "{{ site.name }} {{ site.version }} \
                         | {% for v in site.versions %}{{ v.title }}{{ '*' if v.root }} {{ v.url | safe }} {% endfor %}\
                         | {% for v in page.versions %}{{ v.title }}{{ '*' if v.root }} {{ v.url | safe }} {% endfor %}\
-                        | {{ page.source_url | safe if page.source_url }} \
-                        | {{ page.edit_url | safe if page.edit_url }}\n{{ page.content | safe }}";
+                        | {{ page.repository.source_url | safe if page.repository.source_url }} \
+                        | {{ page.repository.edit_url | safe if page.repository.edit_url }}\n{{ page.content | safe }}";
         let site_cfg = |versions: &str| {
             format!(
-                "theme: ./theme\nname: New\nurl: https://example.com/proj\n\
-                 repo: https://github.com/o/r\nversions:\n{versions}"
+                "{IN_THEME}  name: New\n  url: https://example.com/proj\n  \
+                 repository:\n    url: https://github.com/o/r\n  versions:\n{versions}"
             )
         };
         let (_tmp, site) = versioned_site(
             &[
-                // Of its own settings, only its `source` and `nav` count.
-                ("little.yml", "name: Old\nurl: https://example.com/old\n"),
+                // Of its own settings, only its `source` and
+                // `navigation.items` count.
+                (
+                    "little.yml",
+                    "site:\n  name: Old\n  url: https://example.com/old\n",
+                ),
                 ("docs/README.md", "# Home\n\nSee [the old page](old.md).\n"),
                 ("docs/guide/README.md", "# Guide\n"),
                 ("docs/old.md", "# Old\n"),
@@ -5105,7 +5650,7 @@ mod tests {
                 (
                     "little.yml",
                     &site_cfg(
-                        "  - { title: \"2.0\", url: / }\n  \
+                        "    - { title: \"2.0\", url: / }\n    \
                          - { title: \"1.4\", url: /1.4, ref: v1.4 }\n",
                     ),
                 ),
@@ -5198,8 +5743,8 @@ mod tests {
         commit_all(&site);
         git_in(&site, &["tag", "v2.0"]);
         let v2_0 = git_in(&site, &["rev-parse", "v2.0^{commit}"]);
-        let versions = "  - { title: dev, url: /dev/ }\n  \
-                        - { title: \"2.0\", url: /, ref: v2.0 }\n  \
+        let versions = "    - { title: dev, url: /dev/ }\n    \
+                        - { title: \"2.0\", url: /, ref: v2.0 }\n    \
                         - { title: \"1.4\", url: /versions/1.4, ref: v1.4 }\n";
         fs::write(site.join("little.yml"), site_cfg(versions)).unwrap();
         fs::write(site.join("docs/new.md"), "# Newer\n").unwrap();
@@ -5251,8 +5796,8 @@ mod tests {
         use git::tests::{commit_all, git_in};
         let site_cfg = |version: &str| {
             format!(
-                "theme: ./theme\nname: New\nsource: ./content\nurl: https://example.com/proj\n\
-                 versions:\n  - {{ title: \"2.0\", url: / }}\n  \
+                "{IN_THEME}  name: New\n  source: ./content\n  url: https://example.com/proj\n  \
+                 versions:\n    - {{ title: \"2.0\", url: / }}\n    \
                  - {{ title: \"1.4\", url: /1.4, {version} }}\n"
             )
         };
@@ -5274,7 +5819,7 @@ mod tests {
                 (
                     "theme/_templates/default.html",
                     "{{ site.name }} {{ '/style.css' | url }} \
-                     | {% for item in site.nav %}{{ item.title }} {{ item.url | safe }}; {% endfor %}\n\
+                     | {% for item in site.navigation.items %}{{ item.title }} {{ item.url | safe }}; {% endfor %}\n\
                      {{ page.content | safe }}",
                 ),
                 ("theme/_static/style.css", "body {}\n"),
@@ -5313,9 +5858,10 @@ mod tests {
         assert_eq!(read("1.4/style.css"), "old {}\n");
         assert_eq!(read("style.css"), "body {}\n");
 
-        // Of a little.yml at the ref, its `source` and `nav` count, but no
-        // other setting.
-        let own = "name: Old\nsource: ./documentation\nnav:\n  - { title: Docs, url: / }\n";
+        // Of a little.yml at the ref, its `site.source` and
+        // `site.navigation.items` count, but no other setting.
+        let own = "site:\n  name: Old\n  source: ./documentation\n  \
+                   navigation:\n    items:\n      - { title: Docs, url: / }\n";
         fs::write(site.join("little.yml"), own).unwrap();
         fs::create_dir_all(site.join("documentation")).unwrap();
         fs::write(site.join("documentation/README.md"), "# Documentation\n").unwrap();
@@ -5327,8 +5873,9 @@ mod tests {
             head("1.4/index.html"),
             "New /proj/style.css | Docs /proj/1.4/; "
         );
-        // But its entry's `nav` wins, with each URL from its home.
-        let own = "ref: v1.5, nav: [{ title: Start, url: / }]";
+        // But its entry's `navigation.items` win, with each URL from its
+        // home.
+        let own = "ref: v1.5, navigation: { items: [{ title: Start, url: / }] }";
         fs::write(site.join("little.yml"), site_cfg(own)).unwrap();
         build(&site).unwrap();
         assert_eq!(
@@ -5344,7 +5891,8 @@ mod tests {
             // says.
             (
                 "little.yml",
-                "theme: ./theme\nversions:\n  - { title: Latest, url: /, root: false }\n",
+                "site:\n  theme:\n    source: ./theme\n  \
+                 versions:\n    - { title: Latest, url: /, root: false }\n",
             ),
             ("docs/README.md", "# Home\n"),
             (
@@ -5367,8 +5915,10 @@ mod tests {
             &[
                 (
                     "little.yml",
-                    "theme: ./theme\nsearch:\n  exclude: [/old, /new, /gone/]\nversions:\n  \
-                     - { title: \"2.0\", url: / }\n  - { title: \"1.4\", url: /1.4, ref: v1.4 }\n",
+                    "site:\n  theme:\n    source: ./theme\n  \
+                     search:\n    enabled: true\n    exclude: [/old, /new, /gone/]\n  \
+                     versions:\n    - { title: \"2.0\", url: / }\n    \
+                     - { title: \"1.4\", url: /1.4, ref: v1.4 }\n",
                 ),
                 ("docs/README.md", "# Home\n"),
                 ("docs/new.md", "# New\n"),
@@ -5384,7 +5934,7 @@ mod tests {
         assert_eq!(indexed_urls(&dist.join("1.4")), ["/"]);
         assert_eq!(
             warnings_of(&built),
-            ["`search.exclude` lists /gone/, but there's no page at that URL, or under it"]
+            ["`site.search.exclude` lists /gone/, but there's no page at that URL, or under it"]
         );
     }
 
@@ -5392,7 +5942,7 @@ mod tests {
     fn a_version_cant_be_where_a_page_or_search_is() {
         let site_cfg = |url: &str| {
             format!(
-                "theme: ./theme\nversions:\n  - {{ title: \"2.0\", url: / }}\n  \
+                "{IN_THEME}  versions:\n    - {{ title: \"2.0\", url: / }}\n    \
                  - {{ title: \"1.4\", url: {url}, ref: v1.4 }}\n"
             )
         };
@@ -5450,7 +6000,8 @@ mod tests {
         }
 
         // Nor can a version be where search's files are.
-        fs::write(site.join("theme/little.yml"), "search: true\n").unwrap();
+        let searched = "site: { search: { enabled: true } }\n";
+        fs::write(site.join("theme/little.yml"), searched).unwrap();
         fs::write(site.join("little.yml"), site_cfg("/pagefind")).unwrap();
         let message = format!("{:#}", build(&site).unwrap_err());
         assert_eq!(
@@ -5465,7 +6016,7 @@ mod tests {
         use git::tests::{commit_all, git_in};
         let site_cfg = |version: &str| {
             format!(
-                "theme: ./theme\nversions:\n  - {{ title: \"2.0\", url: / }}\n  \
+                "{IN_THEME}  versions:\n    - {{ title: \"2.0\", url: / }}\n    \
                  - {{ title: 1.4 (Old), url: /1.4, {version} }}\n"
             )
         };
@@ -5499,7 +6050,7 @@ mod tests {
             )
         );
         // As does a version that can't be built, as it was.
-        fs::write(site.join("little.yml"), "source: content\n").unwrap();
+        fs::write(site.join("little.yml"), "site: { source: content }\n").unwrap();
         commit_all(&site);
         git_in(&site, &["tag", "v1.3"]);
         fs::write(site.join("little.yml"), site_cfg("ref: v1.3")).unwrap();
@@ -5507,7 +6058,8 @@ mod tests {
         assert_eq!(
             message,
             "building version `1.4 (Old)`, from v1.3: there's no source folder at v1.3:content: \
-             set the version's `source`, in `versions`, to the folder its pages are in at v1.3"
+             set the version's `source`, in `site.versions`, to the folder its pages are in at \
+             v1.3"
         );
         // ...which its `source` can name.
         let fixed = site_cfg("ref: v1.3, source: ./docs");
@@ -5521,10 +6073,10 @@ mod tests {
         use git::tests::{commit_all, git_in};
         let site_cfg = |version: &str| {
             format!(
-                "theme: ./theme\nplugins:\n  api:\n    wasm: api.wasm\n    read: pkg\n    \
-                 files: {{ add: [{{ path: reference/hello.md, read: pkg/hello.md }}] }}\n    \
-                 warn: \"can't read pkg/broken.py\"\n\
-                 versions:\n  - {{ title: \"2.0\", url: / }}\n  \
+                "{IN_THEME}  plugins:\n    api:\n      wasm: api.wasm\n      read: pkg\n      \
+                 files: {{ add: [{{ path: reference/hello.md, read: pkg/hello.md }}] }}\n      \
+                 warn: \"can't read pkg/broken.py\"\n  \
+                 versions:\n    - {{ title: \"2.0\", url: / }}\n    \
                  - {{ title: \"1.4\", url: /1.4, {version} }}\n"
             )
         };
@@ -5576,8 +6128,8 @@ mod tests {
         assert_eq!(
             message,
             "building version `1.4`, from v1.3: plugin `api` reads v1.3:pkg, but there's no \
-             folder there: set its `read`, in the version's `plugins`, in `versions`, to the \
-             folders it reads at v1.3, or turn it off there, with `api: false`"
+             folder there: set its `read`, in the version's `plugins`, in `site.versions`, to \
+             the folders it reads at v1.3, or turn it off there, with `enabled: false`"
         );
         // ...unless the version's `plugins` say where it reads there, over the
         // site's settings...
@@ -5589,7 +6141,7 @@ mod tests {
         assert!(hi.starts_with("<h1 id=\"hi\">Hi<"), "{hi}");
         assert_eq!(built.warnings.len(), 2);
         // ...or turn it off, for that version alone.
-        let off = "ref: v1.3, plugins: { api: false }";
+        let off = "ref: v1.3, plugins: { api: { enabled: false } }";
         fs::write(site.join("little.yml"), site_cfg(off)).unwrap();
         let built = build(&site).unwrap();
         assert!(!site.join("dist/1.4/reference").exists());
@@ -5607,8 +6159,8 @@ mod tests {
         ];
         let mut new = vec![(
             "little.yml",
-            "versions:\n  - title: \"2.0 (Alpha)\"\n    url: /2.0-alpha\n  \
-             - title: \"1.4 (Latest)\"\n    url: /\n    ref: v1.4\n",
+            "site:\n  versions:\n    - title: \"2.0 (Alpha)\"\n      url: /2.0-alpha\n    \
+             - title: \"1.4 (Latest)\"\n      url: /\n      ref: v1.4\n",
         )];
         new.extend(pages);
         let (_tmp, site) = versioned_site(&pages, &new);
@@ -5667,7 +6219,7 @@ mod tests {
         // A site with one version has no menu.
         fs::write(
             site.join("little.yml"),
-            "versions:\n  - { title: Latest, url: / }\n",
+            "site:\n  versions:\n    - { title: Latest, url: / }\n",
         )
         .unwrap();
         build(&site).unwrap();

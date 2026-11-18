@@ -1,6 +1,9 @@
 # 0010 — Breadcrumbs
 
-- Status: accepted
+- Status: accepted; amended by
+  [0080](./0080-settings-in-groups-under-site-and-page.md), which renames
+  `page.breadcrumbs` to `page.breadcrumb.items`, and turns them off with
+  `breadcrumb: { enabled: false }`
 - Date: 2026-09-30
 
 ## Context

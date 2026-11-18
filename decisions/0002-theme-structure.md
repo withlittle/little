@@ -1,7 +1,10 @@
 # 0002 — Theme structure and template lookup
 
 - Status: accepted; amended by [0018](./0018-sass-in-themes.md), which
-  compiles Sass in `_static/` to CSS, loading from a new folder, `_sass/`
+  compiles Sass in `_static/` to CSS, loading from a new folder, `_sass/`,
+  and by [0080](./0080-settings-in-groups-under-site-and-page.md), which
+  gives a 404 page a `title` and `description`, from `site.error`, and
+  `page`'s settings
 - Date: 2026-09-27
 
 ## Context

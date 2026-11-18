@@ -10,12 +10,13 @@ its git tag, branch, or commit:
 
 ```yaml
 # little.yml
-versions:
-  - title: "2.0"   # no ref: built from your files as they are
-    url: /
-  - title: "1.4"
-    url: /1.4
-    ref: v1.4
+site:
+  versions:
+    - title: "2.0"   # no ref: built from your files as they are
+      url: /
+    - title: "1.4"
+      url: /1.4
+      ref: v1.4
 ```
 
 1.4's `docs/guide/install.md` is then at `/1.4/guide/install`, and the
@@ -65,31 +66,33 @@ A tag from before you used little works too.
 ## A version's own nav and plugins
 
 For an old release that doesn't fit today's settings, a version from a
-`ref` can set its own `nav` and plugins' settings:
+`ref` can set its own `navigation.items` and plugins' settings:
 
 ```yaml
 # little.yml
-plugins:
-  pydoc:
-    wasm: ./little_pydoc.wasm
-    read: ./src
-versions:
-  - title: "2.0"
-    url: /
-  - title: "1.4"
-    url: /1.4
-    ref: v1.4
-    nav:
-      - { title: Home, url: / }
-      - { title: Install, url: /guide/install }
-    plugins:
-      pydoc:
-        read: ./lib   # where its code was, at v1.4
+site:
+  plugins:
+    pydoc:
+      wasm: ./little_pydoc.wasm
+      read: ./src
+  versions:
+    - title: "2.0"
+      url: /
+    - title: "1.4"
+      url: /1.4
+      ref: v1.4
+      navigation:
+        items:
+          - { title: Home, url: / }
+          - { title: Install, url: /guide/install }
+      plugins:
+        pydoc:
+          read: ./lib   # where its code was, at v1.4
 ```
 
-- Write its `nav` like the
+- Write its `navigation.items` like the
   [site's](navigation.md#writing-the-nav-yourself), with URLs from the
   version's home.
 - Its `plugins` override the site's, setting by setting. Here, 1.4's
-  `pydoc` reads `./lib` at `v1.4`, not `./src`. `pydoc: false` would turn
+  `pydoc` reads `./lib` at `v1.4`, not `./src`. `enabled: false` would turn
   it off for that version.

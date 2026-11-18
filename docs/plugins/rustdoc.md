@@ -19,13 +19,14 @@ the folder your crate's code is in, and the crate's name:
 
 ```yaml
 # little.yml
-plugins:
-  rustdoc:
-    wasm: https://github.com/withlittle/little/releases/download/rustdoc-v0.1.0/little_rustdoc.wasm
-    read: ./src
-    crate: my_crate
-    title: API reference
-    url: /api
+site:
+  plugins:
+    rustdoc:
+      wasm: https://github.com/withlittle/little/releases/download/rustdoc-v0.1.0/little_rustdoc.wasm
+      read: ./src
+      crate: my_crate
+      title: API reference
+      url: /api
 ```
 
 - `read` names the folder of the crate's `lib.rs` or `main.rs`, like
@@ -47,15 +48,16 @@ another entry under `plugins`, with another name, and the same `wasm`:
 
 ```yaml
 # little.yml
-plugins:
-  core_api:
-    wasm: https://github.com/withlittle/little/releases/download/rustdoc-v0.1.0/little_rustdoc.wasm
-    read: ./core/src
-    crate: my_core
-  cli_api:
-    wasm: https://github.com/withlittle/little/releases/download/rustdoc-v0.1.0/little_rustdoc.wasm
-    read: ./cli/src
-    crate: my_cli
+site:
+  plugins:
+    core_api:
+      wasm: https://github.com/withlittle/little/releases/download/rustdoc-v0.1.0/little_rustdoc.wasm
+      read: ./core/src
+      crate: my_core
+    cli_api:
+      wasm: https://github.com/withlittle/little/releases/download/rustdoc-v0.1.0/little_rustdoc.wasm
+      read: ./cli/src
+      crate: my_cli
 ```
 
 ## Its pages

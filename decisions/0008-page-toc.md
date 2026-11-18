@@ -1,6 +1,10 @@
 # 0008 — A page's table of contents is `page.toc`
 
-- Status: accepted
+- Status: accepted; amended by
+  [0080](./0080-settings-in-groups-under-site-and-page.md), which renames
+  `page.toc` to `page.outline.items`, `page.prev` to `page.previous`,
+  `page.breadcrumbs` to `page.breadcrumb.items`, and `site.nav` to
+  `site.navigation.items`
 - Date: 2026-09-30
 
 ## Context

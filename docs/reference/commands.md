@@ -40,7 +40,7 @@ next: cd my-docs && little serve
 ```
 
 - `little.yml` names the site after its folder, here `my-docs`, with what a
-  site sets next, like its `url` and `repo`, ready to uncomment.
+  site sets next, like its `url` and `repository.url`, ready to uncomment.
 - `docs/README.md` is the home page, unless `docs/` has a `README.md`
   already, in any case, like `readme.md`, which it keeps.
 - `.gitignore` keeps the built site, in `dist/`, out of git. One that's
@@ -109,12 +109,14 @@ that has it open.
 ### Choosing where to serve
 
 To serve the site somewhere else every time, like <http://localhost:3000>,
-set `host` and `port`:
+set `serve.host` and `serve.port`:
 
 ```yaml
 # little.yml
-host: localhost
-port: 3000
+site:
+  serve:
+    host: localhost
+    port: 3000
 ```
 
 `little serve --host` and `--port` override them for a single run, like
@@ -128,8 +130,9 @@ and browse to your computer's IP address.
 ## little config
 
 `little config` prints the site's config, as YAML: little's, the theme's,
-and the site's, merged. It's what a theme gets as
-[`site`](template-data.md#site), before [plugins](plugin-hooks.md#config)
-change it, and without what little works out as it builds: `site.nav`,
-`site.year`, and, on a site with [versions](../writing/versions.md),
+and the site's, merged, as its two groups, `site` and `page`. Its `site` is
+what a theme gets as [`site`](template-data.md#site), before
+[plugins](plugin-hooks.md#config) change it, and without what little works
+out as it builds: `site.navigation.items`, `site.year`, the repository's
+`owner` and `name`, and, on a site with [versions](../writing/versions.md),
 `site.version`. Each version has its `url` as you wrote it, and no `root`.

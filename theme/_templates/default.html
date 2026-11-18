@@ -28,8 +28,9 @@
 {%- endif -%}
 {%- endmacro -%}
 
-{#- page.toc is shaped like site.nav: each ### is a child of the ## above
-    it, and each item's url is its heading's #fragment. -#}
+{#- page.outline.items is shaped like site.navigation.items: each ### is a
+    child of the ## above it, and each item's url is its heading's
+    #fragment. -#}
 {%- macro toc_list(items) -%}
 <ul>
   {%- for item in items recursive %}
@@ -39,13 +40,14 @@
 {%- endmacro -%}
 
 {#- A site of one page has nowhere else to go, so it has no nav. -#}
-{%- set has_nav = site.nav and (site.nav | length > 1 or site.nav[0].children) -%}
+{%- set nav = site.navigation.items -%}
+{%- set has_nav = nav and (nav | length > 1 or nav[0].children) -%}
 {#- A site with two or more versions has a menu of them. Each in
     page.versions links to this page in that version, or to its home if the
     page isn't there. -#}
 {%- set versions = page.versions if site.versions and site.versions | length > 1 else [] -%}
 <!doctype html>
-<html lang="{{ site.lang | default('en') }}">
+<html lang="{{ site.language | default('en') }}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -65,7 +67,7 @@
   {# The theme's own URLs go through `url`, which puts the path of the site's
      `url` before them, if it has one. little's URLs, like page.url, already
      have it. #}
-  {% if site.search %}
+  {% if site.search.enabled %}
   {# Pagefind's search box, from the index little writes to /pagefind/. Its
      styles come before this theme's, so the theme can restyle it. Its script
      is deferred, not a module, so it finds the index beside it, even under
@@ -77,7 +79,7 @@
   <script src="{{ '/assets/script.js' | url }}" defer></script>
   <style>
     :root {
-      --font: {{ site.font | default('system-ui, sans-serif') | safe }};
+      --font: {{ site.theme.fonts.body | default('system-ui, sans-serif') | safe }};
     }
   </style>
 </head>
@@ -110,14 +112,14 @@
       <a class="brand" href="{{ '/' | url }}">{{ site.name }}</a>
       {% endif %}
       <div class="header-actions">
-        {% if site.search %}
+        {% if site.search.enabled %}
         {# A button that opens the search box, as ⌘K or Ctrl+K does. #}
         <pagefind-modal-trigger></pagefind-modal-trigger>
         <pagefind-modal></pagefind-modal>
         {% endif %}
         {# Switches between light and dark; it needs the theme's script. #}
         <button class="icon-button theme-toggle" type="button" aria-label="Dark mode" aria-pressed="false">{{ icon("sun") }}{{ icon("moon") }}</button>
-        {% if site.repo %}<a class="icon-button repo-link" href="{{ site.repo | safe }}" aria-label="Repository">{{ icon("repo") }}</a>{% endif %}
+        {% if site.repository.url %}<a class="icon-button repo-link" href="{{ site.repository.url | safe }}" aria-label="Repository">{{ icon("repo") }}</a>{% endif %}
       </div>
     </div>
   </header>
@@ -129,13 +131,14 @@
         <a class="brand" href="{{ '/' | url }}">{{ site.name }}</a>
         <button class="icon-button" type="button" popovertarget="_nav" popovertargetaction="hide" aria-label="Close menu">{{ icon("close") }}</button>
       </div>
-      {# The current page is the item of site.nav whose url matches page.url.
-         A folder without a README is a plain label, and each top-level
-         folder is a group. A folder within one folds up, but for the folders
-         the current page is in. With nav_prune, site.nav lists only what's
-         in those, and every other folder is a link, with nothing to fold. #}
+      {# The current page is the item of site.navigation.items whose url
+         matches page.url. A folder without a README is a plain label, and
+         each top-level folder is a group. A folder within one folds up, but
+         for the folders the current page is in. With site.navigation.prune,
+         the nav lists only what's in those, and every other folder is a
+         link, with nothing to fold. #}
       <ul class="nav">
-        {% for item in site.nav recursive %}
+        {% for item in nav recursive %}
         {#- A folder's items are written before the folder, to find out if
             the current page is among them. -#}
         {%- set children = loop(item.children) if item.children else "" %}
@@ -173,12 +176,13 @@
         <p class="version-note" role="note">These docs are for version <strong>{{ site.version }}</strong>. <a href="{{ root_version.url | safe }}">Go to version {{ root_version.title }}</a></p>
         {% endif %}
 
-        {# page.breadcrumbs is what's above this page in site.nav, from the top
-           down; the home page has none. Folders without a README are labels. #}
-        {% if page.breadcrumbs %}
+        {# page.breadcrumb.items is what's above this page in the nav, from
+           the top down; the home page has none, nor has a page that turns
+           them off. Folders without a README are labels. #}
+        {% if page.breadcrumb.items %}
         <nav class="breadcrumbs" aria-label="Breadcrumbs">
           <ol>
-            {% for crumb in page.breadcrumbs %}
+            {% for crumb in page.breadcrumb.items %}
             <li>{% if crumb.url %}<a href="{{ crumb.url | safe }}">{{ breakable(crumb.title) }}</a>{% else %}{{ breakable(crumb.title) }}{% endif %}</li>
             {% endfor %}
             <li><span aria-current="page">{{ breakable(page.title) }}</span></li>
@@ -188,10 +192,10 @@
 
         {# Where there's no room for the table of contents beside the page, it
            folds up above it. #}
-        {% if page.toc %}
+        {% if page.outline.items %}
         <details class="toc-inline">
           <summary>On this page</summary>
-          <nav aria-label="On this page">{{ toc_list(page.toc) }}</nav>
+          <nav aria-label="On this page">{{ toc_list(page.outline.items) }}</nav>
         </details>
         {% endif %}
 
@@ -199,23 +203,25 @@
           {% block content %}{{ page.content | safe }}{% endblock %}
         </article>
 
-        {# page.edit_url and page.source_url are where to edit and view the
-           page's file in site.repo, if it's on GitHub or GitLab. #}
-        {% if page.edit_url or page.source_url %}
+        {# page.repository's edit_url and source_url are where to edit and
+           view the page's file in the site's repository, if it's on GitHub
+           or GitLab. #}
+        {% set file = page.repository %}
+        {% if file.edit_url or file.source_url %}
         <div class="page-links">
-          {% if page.edit_url %}<a href="{{ page.edit_url | safe }}">{{ icon("edit") }}<span>Edit this page</span></a>{% endif %}
-          {% if page.source_url %}<a href="{{ page.source_url | safe }}">{{ icon("source") }}<span>View source of this page</span></a>{% endif %}
+          {% if file.edit_url %}<a href="{{ file.edit_url | safe }}">{{ icon("edit") }}<span>Edit this page</span></a>{% endif %}
+          {% if file.source_url %}<a href="{{ file.source_url | safe }}">{{ icon("source") }}<span>View source of this page</span></a>{% endif %}
         </div>
         {% endif %}
 
-        {# page.prev and page.next follow site.nav from top to bottom; the first
-           page has no prev, and the last no next. #}
-        {% if page.prev or page.next %}
+        {# page.previous and page.next follow the nav from top to bottom; the
+           first page has no previous, and the last no next. #}
+        {% if page.previous or page.next %}
         <nav class="pager" aria-label="Previous and next pages">
-          {% if page.prev %}
-          <a class="pager-prev" href="{{ page.prev.url | safe }}" rel="prev">
+          {% if page.previous %}
+          <a class="pager-prev" href="{{ page.previous.url | safe }}" rel="prev">
             <span class="pager-label">{{ icon("prev") }}Previous</span>
-            <span class="pager-title">{{ breakable(page.prev.title) }}</span>
+            <span class="pager-title">{{ breakable(page.previous.title) }}</span>
           </a>
           {% endif %}
           {% if page.next %}
@@ -228,10 +234,10 @@
         {% endif %}
       </div>
 
-      {% if page.toc %}
+      {% if page.outline.items %}
       <nav class="toc" aria-labelledby="_toc">
         <h2 class="toc-title" id="_toc">On this page</h2>
-        {{ toc_list(page.toc) }}
+        {{ toc_list(page.outline.items) }}
       </nav>
       {% endif %}
     </main>

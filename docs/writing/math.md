@@ -61,8 +61,9 @@ warning: can't render $\dv{f}{x}$ in ./docs/calculus.md: Unknown command "\dv".
 
 ```yaml
 # little.yml
-markdown:
-  math: tex
+site:
+  markdown:
+    math: tex
 ```
 
 | Value | Math is written… |

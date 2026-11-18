@@ -2,7 +2,7 @@
 # Times little building a large site, to measure a change to how fast it
 # builds: a site of PAGES pages, 2,000 unless given, each of 4 KB of
 # Markdown, in folders of 50, built with the built-in theme, with the whole
-# nav on every page and then with `nav_prune`.
+# nav on every page and then with `site.navigation.prune`.
 #
 #   scripts/bench.sh [PAGES]
 #
@@ -77,9 +77,9 @@ clock='BEGIN { $| = 1; $start = time }
 echo "$pages pages, with $("$little" --version)"
 printf '%-18s %10s %16s %8s\n' "" "Built in" "Links checked in" "Size"
 for prune in false true; do
-  echo "nav_prune: $prune" > "$site/little.yml"
+  printf 'site:\n  navigation:\n    prune: %s\n' "$prune" > "$site/little.yml"
   times=$("$little" build -C "$site" | perl -MTime::HiRes=time -ne "$clock")
   read -r built checked <<< "$times"
   size=$(du -sk "$site/dist" | cut -f1)
-  printf '%-18s %8s s %14s s %5s MB\n' "nav_prune: $prune" "$built" "$checked" $((size / 1024))
+  printf '%-18s %8s s %14s s %5s MB\n' "prune: $prune" "$built" "$checked" $((size / 1024))
 done

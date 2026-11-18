@@ -56,8 +56,8 @@ up to date as you do.
   each page uses what it documents where it can. Its pages link to each
   other by their files, and to little's other files on GitHub. Meta docs,
   like ADRs, don't go there, and its pages don't link to `decisions/`.
-- `little.yml` — the manual's config. It sets `theme: ./theme`, so edits
-  to the built-in theme live-reload.
+- `little.yml` — the manual's config. It sets `site.theme.source` to
+  `./theme`, so edits to the built-in theme live-reload.
 - `wit/plugin.wit` — `little:plugin`, the hooks a plugin can export.
 - `plugins/` — the plugins, each in its own workspace, and the libraries
   they share, `api_reference` and `markup`.
@@ -71,13 +71,17 @@ up to date as you do.
 1. **The theme owns 100% of the markup.** The core never emits baked-in HTML; it
    passes structured `site` / `page` / `nav` data to the theme. Keep it that way.
 2. **Config cascades: little → theme → site, last writer wins.** New config
-   belongs in this cascade. Only settings little itself owns get a built-in
-   default in `src/little.yml`; a site's name, language, and look are the
-   theme's to default (in its `little.yml`) and the site's to set. The theme's
-   and site's `little.yml` are optional — a missing or empty file just
-   contributes nothing. `theme` is the exception: it chooses level 2, and a
-   site that doesn't set it gets little's built-in theme (`theme: true`). A
-   theme that sets it builds on that theme, whose config goes beneath its own.
+   belongs in this cascade, in one of a `little.yml`'s two groups: `site`, the
+   site's settings, or `page`, every page's, which each page's frontmatter
+   goes over. Name it as
+   [0080](./decisions/0080-settings-in-groups-under-site-and-page.md) sets.
+   Only settings little itself owns get a built-in default in
+   `src/little.yml`; a site's name, language, and look are the theme's to
+   default (in its `little.yml`) and the site's to set. The theme's and site's
+   `little.yml` are optional — a missing or empty file just contributes
+   nothing. `site.theme` is the exception: its `enabled` and `source` choose
+   level 2, and a site that sets neither gets little's built-in theme. A theme
+   that sets them builds on that theme, whose config goes beneath its own.
 3. **Keep the core small; push features to plugins.** Sphinx-style API extraction,
    niche renderers, etc. are plugins (WASM components that hook into each
    step of the build), not core code.
@@ -109,7 +113,8 @@ up to date as you do.
 - Add unit tests for parsing/merging logic (frontmatter, config cascade).
 - A change people using little can see updates its page in the manual
   (`docs/`), and the reference pages, in the same PR; a new page goes in
-  `nav` in `little.yml`. Keep the README short: it links to the manual.
+  `site.navigation.items` in `little.yml`. Keep the README short: it links
+  to the manual.
   `cargo run -- build --strict` checks the manual's links, as the Docs
   workflow does for each pull request.
 - "The little static documentation site generator for big things." is

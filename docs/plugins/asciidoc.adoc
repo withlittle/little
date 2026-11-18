@@ -7,8 +7,10 @@ Name it in your site's link:using-plugins.md#naming-a-plugin[`plugins`]:
 [source,yaml]
 ----
 # little.yml
-plugins:
-  asciidoc: https://github.com/withlittle/little/releases/download/asciidoc-v0.1.0/little_asciidoc.wasm
+site:
+  plugins:
+    asciidoc:
+      wasm: https://github.com/withlittle/little/releases/download/asciidoc-v0.1.0/little_asciidoc.wasm
 ----
 
 It has no settings.
@@ -63,8 +65,10 @@ Callouts stay in the code, as you write them, and their list is a numbered list:
 
 [source,yaml]
 ----
-plugins:
-  asciidoc: ./little_asciidoc.wasm # <1>
+site:
+  plugins:
+    asciidoc:
+      wasm: ./little_asciidoc.wasm # <1>
 ----
 <1> A path to a `.wasm` file you've built works too.
 

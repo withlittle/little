@@ -2,7 +2,7 @@
 //! writes the page: a ```` ```mermaid ```` block becomes an `<svg>` with the
 //! id `mermaid-1`, `mermaid-2`, and so on, in the order they come in the
 //! page, which its own styles are scoped to. Each starts from the site's
-//! `mermaid` config, which chooses how it looks.
+//! `site.theme.mermaid`, Mermaid's own config, which chooses how it looks.
 
 use chrono::NaiveDate;
 use comrak::nodes::{AstNode, NodeValue};

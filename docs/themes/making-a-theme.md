@@ -15,7 +15,8 @@ my-theme/
 └── little.yml    # optional: the theme's config
 ```
 
-Use it in a site with `theme: ./my-theme`, or
+Use it in a site by setting [`theme.source`](choosing-a-theme.md) to
+`./my-theme`, or
 [build it on another theme](choosing-a-theme.md#building-on-another-theme)
 to change only part of that one. The built-in theme's
 [`default.html`](https://github.com/withlittle/little/blob/main/theme/_templates/default.html)
@@ -25,14 +26,15 @@ are complete examples.
 ## Templates
 
 Templates are [MiniJinja](https://docs.rs/minijinja), which is like Jinja2.
-Each gets the site's config as `site`, with its nav as `site.nav`, and the
-page as `page`, with its HTML as `page.content`.
+Each gets the site's settings as `site`, with its nav as
+`site.navigation.items`, and the page as `page`, with its HTML as
+`page.content`.
 [Template data](../reference/template-data.md) lists everything they get. A
 `default.html` can be as small as this:
 
 ```html
 <!doctype html>
-<html lang="{{ site.lang | default('en') }}">
+<html lang="{{ site.language | default('en') }}">
 <head>
   <meta charset="utf-8">
   <title>{{ page.title }} · {{ site.name }}</title>
@@ -41,7 +43,7 @@ page as `page`, with its HTML as `page.content`.
 <body>
   <nav>
     <ul>
-      {% for item in site.nav recursive %}
+      {% for item in site.navigation.items recursive %}
       <li>
         {% if item.url %}<a href="{{ item.url | safe }}">{{ item.title }}</a>{% else %}{{ item.title }}{% endif %}
         {% if item.children %}<ul>{{ loop(item.children) }}</ul>{% endif %}
@@ -66,7 +68,9 @@ little renders each page with the template for its type:
 A file a [plugin](../plugins/using-plugins.md#pages-in-other-formats) reads
 as a page, like a notebook, has the type a `.md` file in its place would,
 so `docs/README.ipynb` is the home page. A theme without a `404.html` has
-no 404 page, so the host shows its own.
+no 404 page, so the host shows its own. In one, show `page.title` and
+`page.description`, which are
+[the site's to set](../getting-started/publishing.md#a-404-page).
 
 Templates can `{% extends %}` and `{% include %}` each other, in subfolders
 of `_templates/` too, so `default.html` can be a layout that the others
@@ -92,30 +96,37 @@ templates use, like `name`, and for those of little's
 
 ```yaml
 # my-theme/little.yml
-name: Documentation
-search: true
-toc_max_depth: 3
+site:
+  name: Documentation
+  search:
+    enabled: true
+page:
+  outline:
+    depth:
+      max: 3
 ```
 
 The built-in theme's
 [`little.yml`](https://github.com/withlittle/little/blob/main/theme/little.yml)
-is like this. A theme might set:
+is like this. Under `site`, a theme might set:
 
-- `search: true`, for a theme with a [search box](#a-search-box).
+- `search.enabled`, for a theme with a [search box](#a-search-box).
 - `markdown.highlight`, for the
   [classes its CSS colours](../writing/code.md#choosing-how-code-is-highlighted).
 - `markdown.math: tex` and `markdown.mermaid: false`, for a theme that
   [renders math, or draws diagrams, with a script](styling-markdown.md#loading-a-script-a-site-needs).
-- `mermaid`, for [its diagrams' look](../writing/diagrams.md#choosing-how-diagrams-look).
-- `toc_max_depth`, for the headings its
-  [tables of contents](../writing/navigation.md#tables-of-contents) list.
-- `theme`, to [build on another theme](choosing-a-theme.md#building-on-another-theme).
+- `theme.mermaid`, for [its diagrams' look](../writing/diagrams.md#choosing-how-diagrams-look).
+- `theme.source`, to [build on another theme](choosing-a-theme.md#building-on-another-theme).
 - `plugins`, for [plugins](../plugins/using-plugins.md) its sites use.
+
+Under `page`, it might set `outline.depth.max`, for the headings its
+[tables of contents](../writing/navigation.md#tables-of-contents) list, or
+anything else [every page](../writing/frontmatter.md#for-every-page) has.
 
 ## URLs in a theme
 
-Every URL little gives a theme, like `page.url` and those in `site.nav`,
-already has the path of the site's
+Every URL little gives a theme, like `page.url` and those in
+`site.navigation.items`, already has the path of the site's
 [`url`](../getting-started/publishing.md#choosing-the-sites-url) before it.
 For the URLs a theme writes itself, little adds two filters, `url` and
 `absolute_url`:
@@ -151,29 +162,28 @@ stylesheet relative to it, like `url(fonts/inter.woff2)`.
 
 ## A search box
 
-To give your theme a search box, set `search: true` in its `little.yml`, so
-little [indexes](../writing/search.md) each site built with it. The
+To give your theme a search box, set `search.enabled` to `true` in its
+`little.yml`, so little [indexes](../writing/search.md) each site built
+with it. The
 quickest box is [Pagefind](https://pagefind.app/)'s own, which the built-in
 theme uses:
 
 ```html
 <!-- In <head>, before the theme's stylesheet -->
-{% if site.search %}
+{% if site.search.enabled %}
 <link rel="stylesheet" href="{{ '/pagefind/pagefind-component-ui.css' | url }}">
 <script src="{{ '/pagefind/pagefind-component-ui.js' | url }}" defer></script>
 {% endif %}
 
 <!-- Where its button goes -->
-{% if site.search %}
+{% if site.search.enabled %}
 <pagefind-modal-trigger></pagefind-modal-trigger>
 <pagefind-modal></pagefind-modal>
 {% endif %}
 ```
 
-Wrap the box in `{% if site.search %}`, as above, since a site can turn
-search off. Don't test `== true`: on a site that
-[leaves pages out](../writing/search.md#leaving-pages-out), `site.search`
-is its settings. Load Pagefind's script with `defer`, not as the module its
+Wrap the box in `{% if site.search.enabled %}`, as above, since a site can
+turn search off. Load Pagefind's script with `defer`, not as the module its
 docs show, so it finds the index beside it, under the path of the site's
 [`url`](../getting-started/publishing.md#choosing-the-sites-url).
 
@@ -226,5 +236,6 @@ copyright notice stays current without editing it each January:
 
 With [`SOURCE_DATE_EPOCH`](https://reproducible-builds.org/specs/source-date-epoch/)
 set, for a reproducible build, little builds the site as if at that time,
-so `site.year` is that time's year. A `year` in `little.yml` replaces it.
+so `site.year` is that time's year. A `year` under `site` in `little.yml`
+replaces it.
 The built-in theme shows no notice.

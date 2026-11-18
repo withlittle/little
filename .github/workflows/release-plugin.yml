@@ -118,9 +118,10 @@ jobs:
             echo "To use it, name it by its URL in your site's \`little.yml\`, with the settings [its page in the manual]($repo/blob/$GITHUB_REF_NAME/docs/plugins/$page) lists:"
             echo
             echo '```yaml'
-            echo "plugins:"
-            echo "  $PLUGIN:"
-            echo "    wasm: $repo/releases/download/$GITHUB_REF_NAME/little_$PLUGIN.wasm"
+            echo "site:"
+            echo "  plugins:"
+            echo "    $PLUGIN:"
+            echo "      wasm: $repo/releases/download/$GITHUB_REF_NAME/little_$PLUGIN.wasm"
             echo '```'
             echo
             if [[ -z $previous ]]; then

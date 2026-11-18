@@ -6,7 +6,6 @@
 use anyhow::{Context, Result};
 use comrak::nodes::{AstNode, NodeCodeBlock, NodeHtmlBlock, NodeValue};
 use comrak::{Arena, Options};
-use std::ops::RangeInclusive;
 use time::OffsetDateTime;
 
 use crate::config::{self, Markdown, SiteUrl};
@@ -16,14 +15,13 @@ use crate::render::{self, Rendered};
 
 /// Parse `parts`, as `render::parse_document` parses Markdown: into the
 /// frontmatter at the top of the first, if it's Markdown, rendered HTML,
-/// and outline, with its links and images led from `folder`, the URL of the
+/// and headings, with its links and images led from `folder`, the URL of the
 /// folder its file is in, the code blocks in its Markdown that `plugins`
 /// render rendered, its diagrams drawn, as of `now`, and its code
 /// highlighted, as `markdown` says.
 pub fn parse_parts(
     mut parts: Vec<Part>,
     folder: &str,
-    toc_depths: &RangeInclusive<u8>,
     url: &SiteUrl,
     markdown: &Markdown,
     now: OffsetDateTime,
@@ -57,7 +55,7 @@ pub fn parse_parts(
     // A block's or a diagram's line would be its part's, not its file's.
     let unrendered_blocks = plugins.render(&arena, markdown_blocks, &options, None)?;
     let unrendered_diagrams = mermaid::draw(root, markdown, now, None);
-    let rendered = render::render_tree(root, folder, toc_depths, url, markdown, &options, plugins)?;
+    let rendered = render::render_tree(root, folder, url, markdown, &options, plugins)?;
     Ok(Rendered {
         frontmatter,
         unrendered_diagrams,
@@ -166,14 +164,10 @@ impl<'a> Page<'a> {
 mod tests {
     use super::*;
 
-    /// little's defaults, from `src/little.yml`: every heading but the title.
-    const TOC_DEPTHS: RangeInclusive<u8> = 2..=6;
-
     fn parse(parts: Vec<Part>, markdown: &Markdown) -> Rendered {
         parse_parts(
             parts,
             "/guide/",
-            &TOC_DEPTHS,
             &SiteUrl::default(),
             markdown,
             OffsetDateTime::UNIX_EPOCH,
@@ -240,8 +234,10 @@ mod tests {
         ];
         let rendered = parse(parts, &Markdown::default());
         assert_eq!(rendered.first_h1.as_deref(), Some("Analysis"));
-        let toc: Vec<_> = rendered.toc.iter().map(|item| &item.anchor).collect();
-        assert_eq!(toc, ["#loading-the-data", "#results"]);
+        let headings: Vec<_> = (rendered.headings.iter())
+            .map(|item| &item.anchor)
+            .collect();
+        assert_eq!(headings, ["#analysis", "#loading-the-data", "#results"]);
         let links: Vec<_> = (rendered.links.iter())
             .map(|link| (link.written.as_str(), link.href.as_str()))
             .collect();

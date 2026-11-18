@@ -1,6 +1,9 @@
 # 0009 — The config chooses which headings a table of contents lists
 
-- Status: accepted
+- Status: accepted; amended by
+  [0080](./0080-settings-in-groups-under-site-and-page.md), which renames
+  `toc_min_depth` and `toc_max_depth` to `page.outline.depth.min` and
+  `page.outline.depth.max`, which a page can set for itself
 - Date: 2026-09-30
 
 ## Context

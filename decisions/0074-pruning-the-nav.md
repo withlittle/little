@@ -1,6 +1,8 @@
 # 0074 — Pruning the nav
 
-- Status: accepted
+- Status: accepted; amended by
+  [0080](./0080-settings-in-groups-under-site-and-page.md), which renames
+  `nav_prune` to `site.navigation.prune`
 - Date: 2026-11-12
 - Amends: [0036](./0036-folding-the-built-in-themes-nav.md)
 

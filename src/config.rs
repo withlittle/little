@@ -2,37 +2,47 @@
 //! Each level deep-merges over the previous, so the *last* writer wins.
 //! little's own file is compiled in; the theme's and the site's are optional.
 //!
-//! `theme` chooses the theme level: `true` for little's built-in theme,
-//! `false` for none, the path to a theme's folder, or the URL of a theme's
-//! archive (see `download`). A theme can set it too, to build on another
-//! theme, whose settings go beneath its own: a site whose theme builds on
-//! another cascades little -> that theme -> its theme -> site.
+//! A `little.yml` holds two groups, and nothing else. `site` holds the
+//! site's settings, which the theme gets as `site`. `page` holds settings
+//! for every page, which each page's frontmatter goes over, as a level goes
+//! over the one beneath it, so a page's cascade is little -> theme -> site
+//! -> the page. The settings below are `site`'s.
+//!
+//! `theme` chooses the theme level, and holds how the site looks. Its
+//! `enabled` is `true` for a theme, or `false` for none, and its `source` is
+//! the path to the theme's folder, or the URL of its archive (see
+//! `download`): without one, the theme is little's built-in one. A theme can
+//! set them too, to build on another theme, whose settings go beneath its
+//! own: a site whose theme builds on another cascades little -> that theme
+//! -> its theme -> site. Its other settings are the look, like `mermaid`,
+//! which holds Mermaid's own config, in Mermaid's own names, like `theme`
+//! and `themeVariables`, which each diagram little draws starts from: little
+//! sets none, so a theme can choose how diagrams look, and a site change it.
 //!
 //! `source` and `destination` name the folders a site is built from and
 //! into. Any level can set them, but they're always relative to the site.
 //!
-//! `toc_min_depth` and `toc_max_depth` are the levels of heading, from 1 for
-//! `#` to 6, that each page's table of contents lists.
+
+//! `navigation` holds the site's nav, as `items`, if it sets one (see
+//! `site`), and `prune`, whether each page's nav lists what's in a folder
+//! only if the page is in it: little leaves it off, for a site of thousands
+//! of pages to turn on.
 //!
-//! `nav_prune` is whether each page's nav lists what's in a folder only if
-//! the page is in it (see `site`): little leaves it off, for a site of
-//! thousands of pages to turn on.
-//!
-//! `host` and `port` are where `little serve` serves the site, unless its
-//! `--host` and `--port` say otherwise.
+//! `serve` holds the `host` and `port` `little serve` serves the site at,
+//! unless its `--host` and `--port` say otherwise.
 //!
 //! `url` is the address the site is published at, like
 //! `https://example.github.io/my-project`. Its path, `/my-project`, goes
 //! before each URL little gives the theme, and `little serve` serves the site
 //! under it too.
 //!
-//! `repo` is the address of the repository the site's source is in, like
-//! `https://github.com/withlittle/little`, and `branch` the branch each page
+//! `repository` holds the `url` of the repository the site's source is in,
+//! like `https://github.com/withlittle/little`, and the `branch` each page
 //! links to its file on there.
 //!
-//! `search` is whether each build indexes the site for a search box (see
-//! `search`): little leaves it off, and a theme with a search box turns it on.
-//! Its settings turn it on too, with `exclude`, the URLs of the pages it
+//! `search` holds `enabled`, whether each build indexes the site for a
+//! search box (see `search`): little leaves it off, and a theme with a
+//! search box turns it on. Its `exclude` lists the URLs of the pages it
 //! leaves out, each with the pages under it, unless a page's own `search`
 //! says otherwise.
 //!
@@ -41,25 +51,32 @@
 //! or a site can change any of them. `math`, also GitHub's, chooses how math
 //! is written, `mermaid` how diagrams are drawn, and `highlight` how code is.
 //!
-//! `mermaid` holds Mermaid's own config, in Mermaid's own names, like `theme`
-//! and `themeVariables`, which each diagram little draws starts from: little
-//! sets none, so a theme can choose how diagrams look, and a site change it.
-//!
-//! `plugins` names each plugin and its `.wasm` file (see `plugin`), by a path
-//! from the `little.yml` that names it, or an `https://` URL, with the
-//! plugin's own settings beside it. They cascade plugin by plugin and setting
-//! by setting, and `false` turns a theme's plugin off. Only the site can set
-//! `read`, the folders a plugin can read.
+//! `plugins` names each plugin, with its settings: `wasm`, its `.wasm` file
+//! (see `plugin`), by a path from the `little.yml` that names it, or an
+//! `https://` URL; `read`, the folders it can read, which only the site can
+//! set; `enabled`, which is `false` to turn a theme's plugin off; and the
+//! plugin's own. They cascade plugin by plugin and setting by setting.
 //!
 //! `versions` lists the versions of the site, in the order its menu lists
 //! them, each with the `title` readers see, the `url` it's published at, one
 //! of them at `/`, and the git `ref` it's built from, but for one, at most,
 //! that's built from the site's files as they are (see `site`). Every
 //! version is built with the site's config, but one from a ref has its own
-//! pages, from its `source` there, its own `nav`, and its own settings for
+//! pages, from its `source` there, its own nav, and its own settings for
 //! the site's plugins, which its entry can set (see `Config::for_version`).
 //! Its entry can't set little's other settings, which are the site's, but any
 //! other key in it is for the theme.
+//!
+//! `error` holds the `title` and `description` of the 404 page.
+//!
+//! `page` has a group for each thing little works out for a page, which the
+//! group's `enabled` turns off (see [`PageSettings`]): `outline`, its table
+//! of contents, whose `depth` holds the levels of heading it lists, from
+//! `min` to `max`, each from 1 for `#` to 6; `breadcrumb`, what's above it
+//! in the nav; `previous` and `next`, the pages beside it there; and
+//! `repository`, the links to its file in the site's repository. A page's
+//! `search` holds `enabled`, whether search indexes it, whatever
+//! `site.search`'s `exclude` says.
 
 use anyhow::{Context, Result, anyhow, bail};
 use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, percent_decode_str, utf8_percent_encode};
@@ -80,49 +97,53 @@ pub const CONFIG_FILE: &str = "little.yml";
 /// A site's merged config, and what it chose.
 #[derive(Clone, Debug)]
 pub struct Config {
-    /// The merged cascade: what `little config` prints, and what the theme
+    /// The merged cascade of `site`, the site's settings: what the theme
     /// sees as `site`.
-    pub values: Mapping,
+    pub site: Mapping,
+    /// The merged cascade of `page`, every page's settings: what each page's
+    /// frontmatter goes over.
+    pub page: Mapping,
     /// The theme the site chose, then each theme it builds on in turn. Empty
-    /// for `theme: false`.
+    /// for a site whose `site.theme.enabled` is `false`.
     pub themes: Vec<Location>,
     /// The folder of Markdown files, and other files, the site is built from.
     pub source_dir: PathBuf,
     /// The folder the site is built into, which every build wipes.
     pub destination_dir: PathBuf,
-    /// The levels of heading each page's table of contents lists, from
-    /// `toc_min_depth` to `toc_max_depth`.
-    pub toc_depths: RangeInclusive<u8>,
+    /// What `page` says of what little works out for every page, unless a
+    /// page's own frontmatter says otherwise.
+    pub page_settings: PageSettings,
     /// Whether each page's nav lists what's in a folder only if the page is
-    /// in it, from `nav_prune`.
+    /// in it, from `site.navigation.prune`.
     pub nav_prune: bool,
-    /// The host `little serve` serves at, like `127.0.0.1`.
+    /// The host `little serve` serves at, like `127.0.0.1`, from
+    /// `site.serve.host`.
     pub host: String,
-    /// The port `little serve` serves at, like 8080.
+    /// The port `little serve` serves at, like 8080, from `site.serve.port`.
     pub port: u16,
-    /// Where the site is published, from `url`.
+    /// Where the site is published, from `site.url`.
     pub url: SiteUrl,
-    /// The repository the site's source is in, from `repo` and `branch`, if
-    /// it sets `repo`.
+    /// The repository the site's source is in, from `site.repository`, if it
+    /// sets its `url`.
     pub repo: Option<Repo>,
-    /// What a build indexes for search, from `search`, if it's on.
-    pub search: Option<Search>,
+    /// What a build indexes for search, from `site.search`.
+    pub search: Search,
     /// The extensions to CommonMark each page is written with, from
-    /// `markdown`.
+    /// `site.markdown`.
     pub markdown: Markdown,
-    /// The plugins whose hooks the build calls, from `plugins`, in the order
-    /// they're named.
+    /// The plugins whose hooks the build calls, from `site.plugins`, in the
+    /// order they're named.
     pub plugins: Vec<Plugin>,
-    /// The versions of the site, from `versions`, in the order its menu lists
-    /// them: none for a site that has just the one.
+    /// The versions of the site, from `site.versions`, in the order its menu
+    /// lists them: none for a site that has just the one.
     pub versions: Vec<Version>,
-    /// little's defaults, with the settings of each theme over them: what a
-    /// version of the site from a git ref puts the `source` and `nav` of its
-    /// own little.yml over.
+    /// little's defaults for `site`, with the settings of each theme over
+    /// them: what a version of the site from a git ref puts the `source` and
+    /// `navigation.items` of its own little.yml over.
     beneath: Mapping,
 }
 
-/// A version of a site, from `versions`.
+/// A version of a site, from `site.versions`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Version {
     /// Its title, like `1.4 (Latest)`, which readers see.
@@ -137,11 +158,12 @@ pub struct Version {
     /// The folder its pages are in at its ref, from the site's folder there,
     /// like `./documentation`, if its `source` names one.
     pub source: Option<String>,
-    /// Its nav, if its entry sets one, with each URL from its home, like the
-    /// site's.
+    /// Its nav, if its entry sets one, as `navigation.items`, with each URL
+    /// from its home, like the site's.
     pub nav: Option<Value>,
     /// Its settings for the site's plugins, from its entry's `plugins`, like
-    /// `api: { read: ./lib }`, or `api: false`: empty if it sets none.
+    /// `api: { read: ./lib }`, or `api: { enabled: false }`: empty if it
+    /// sets none.
     pub plugins: Mapping,
 }
 
@@ -153,7 +175,7 @@ impl Version {
     }
 }
 
-/// A plugin a site uses, from `plugins`.
+/// A plugin a site uses, from `site.plugins`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Plugin {
     /// Its name, like `bob`.
@@ -162,7 +184,8 @@ pub struct Plugin {
     pub wasm: Wasm,
     /// The folders it can read, from `read`.
     pub read: Vec<Read>,
-    /// Its settings, all but `wasm`, as a JSON object, for its `setup`.
+    /// Its settings, all but `wasm` and `enabled`, as a JSON object, for its
+    /// `setup`.
     pub settings: String,
 }
 
@@ -259,8 +282,8 @@ fn from_the_root(url: &str) -> bool {
     url.starts_with('/') && !url.starts_with("//")
 }
 
-/// The repository a site's source is in, from `repo`, and the branch its
-/// pages link to their files on, from `branch`.
+/// The repository a site's source is in, from `site.repository`: its `url`,
+/// and the `branch` its pages link to their files on.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Repo {
     /// Its address, like `https://github.com/withlittle/little`, with no `/`
@@ -310,13 +333,29 @@ impl Repo {
             edit: format!("{}/{edit}/{rest}", self.url),
         })
     }
+
+    /// Its owner, if it has one, and its name, from its address: the last
+    /// part of the address's path is its name, and what's before it its
+    /// owner, like `withlittle` and `little`, or, for a project in a group
+    /// on GitLab, `withlittle/docs` and `little`.
+    pub fn owner_and_name(&self) -> (Option<String>, String) {
+        let path = (url::Url::parse(&self.url).ok())
+            .map(|url| url.path().trim_matches('/').to_string())
+            .unwrap_or_default();
+        match path.rsplit_once('/') {
+            Some((owner, name)) => (Some(owner.to_string()), name.to_string()),
+            None => (None, path),
+        }
+    }
 }
 
-/// What a build indexes for search, from `search`, when it's on: every page
-/// but those `exclude` leaves out, unless a page's own `search` says
-/// otherwise.
+/// What a build indexes for search, from `site.search`: if it's `enabled`,
+/// every page but those `exclude` leaves out, unless a page's own `search`
+/// says otherwise.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Search {
+    /// Whether a build indexes the site at all.
+    pub enabled: bool,
     /// The URLs of the pages it leaves out, each with the pages under it, as
     /// they're written, from the root of each version, like `/changelog/`.
     pub exclude: Vec<String>,
@@ -330,19 +369,115 @@ impl Search {
     }
 }
 
-/// Whether `entry`, a URL in `search.exclude`, leaves out the page at `url`:
-/// the page at its URL, with or without the `/` at its end, as `guide.md`
-/// and `guide/README.md` would be the same page, and every page under it.
+/// Whether `entry`, a URL in `site.search.exclude`, leaves out the page at
+/// `url`: the page at its URL, with or without the `/` at its end, as
+/// `guide.md` and `guide/README.md` would be the same page, and every page
+/// under it.
 pub fn leaves_out(entry: &str, url: &str) -> bool {
     let (entry, url) = (entry.trim_end_matches('/'), url.trim_end_matches('/'));
     (url.strip_prefix(entry)).is_some_and(|rest| rest.is_empty() || rest.starts_with('/'))
 }
 
+/// What a page's settings say of what little works out for it: whether it
+/// has each thing, from the `enabled` of its group, and which headings its
+/// table of contents lists.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PageSettings {
+    /// Whether it has a table of contents, from `outline.enabled`.
+    pub outline: bool,
+    /// The levels of heading its table of contents lists, from
+    /// `outline.depth.min` to `outline.depth.max`.
+    pub depths: RangeInclusive<u8>,
+    /// Whether it has breadcrumbs, from `breadcrumb.enabled`.
+    pub breadcrumb: bool,
+    /// Whether it links to the page before it, from `previous.enabled`.
+    pub previous: bool,
+    /// Whether it links to the page after it, from `next.enabled`.
+    pub next: bool,
+    /// Whether it links to its file in the site's repository, from
+    /// `repository.enabled`.
+    pub repository: bool,
+    /// Whether search indexes it, from `search.enabled`, if it's set: left
+    /// unset, `site.search.exclude` says.
+    pub search: Option<bool>,
+}
+
+impl PageSettings {
+    /// Read `page`, a page's settings: every page's, from `page` in the
+    /// config, or one page's, with its frontmatter over them. An error names
+    /// each setting after `prefix`: `page.`, for the config's, or nothing,
+    /// for a page's own, as its frontmatter writes it.
+    pub fn read(page: &Mapping, prefix: &str) -> Result<PageSettings> {
+        let outline = page_group(page, prefix, "outline")?;
+        let depth = |key: &str| -> Result<u8> {
+            let level = (outline.get("depth")).and_then(|depth| depth.get(key));
+            match level.and_then(Value::as_u64) {
+                Some(level @ 1..=6) => Ok(level as u8),
+                _ => bail!(
+                    "`{prefix}outline.depth.{key}` must be a heading level from 1 to 6, like 3 \
+                     for `###`"
+                ),
+            }
+        };
+        // The min and max can be set at different levels of the cascade, so
+        // a min over the max, which would leave the table of contents empty,
+        // is an error.
+        let (min, max) = (depth("min")?, depth("max")?);
+        if min > max {
+            bail!(
+                "`{prefix}outline.depth.min` ({min}) can't be more than \
+                 `{prefix}outline.depth.max` ({max})"
+            );
+        }
+        let search = match page.get("search") {
+            None => None,
+            Some(Value::Mapping(search)) => match search.get("enabled") {
+                None => None,
+                Some(Value::Bool(enabled)) => Some(*enabled),
+                Some(_) => bail!(
+                    "`{prefix}search.enabled` must be `true`, to index the page for search, or \
+                     `false`, to leave it out"
+                ),
+            },
+            Some(_) => bail!("`{prefix}search` must be its settings, like `enabled: false`"),
+        };
+        Ok(PageSettings {
+            outline: enabled(page, prefix, "outline")?,
+            depths: min..=max,
+            breadcrumb: enabled(page, prefix, "breadcrumb")?,
+            previous: enabled(page, prefix, "previous")?,
+            next: enabled(page, prefix, "next")?,
+            repository: enabled(page, prefix, "repository")?,
+            search,
+        })
+    }
+}
+
+/// The settings in a page's group `name`, like `outline`. little's own
+/// config sets each group, so anything else there, like `false`, is a
+/// mistake.
+fn page_group<'a>(page: &'a Mapping, prefix: &str, name: &str) -> Result<&'a Mapping> {
+    match page.get(name) {
+        Some(Value::Mapping(settings)) => Ok(settings),
+        _ => bail!("`{prefix}{name}` must be its settings, like `enabled: false`"),
+    }
+}
+
+/// Whether a page has what its group `name` is for, from the group's
+/// `enabled`. YAML reads `yes` and `"true"` as text, not `true`, so they're
+/// errors rather than a guess.
+fn enabled(page: &Mapping, prefix: &str, name: &str) -> Result<bool> {
+    match page_group(page, prefix, name)?.get("enabled") {
+        Some(Value::Bool(enabled)) => Ok(*enabled),
+        _ => bail!("`{prefix}{name}.enabled` must be `true` or `false`"),
+    }
+}
+
 /// Which extensions to CommonMark each page is written with, how its math is
 /// written, how its diagrams are drawn, and which classes its code is
-/// highlighted with, from the settings under `markdown`, each named for what
-/// an author writes, as `src/little.yml` describes them; and how its diagrams
-/// look, from `mermaid`.
+/// highlighted with, from the settings under `site.markdown`, each named
+/// for what an author writes, as `src/little.yml` describes them; and how
+/// its diagrams look, from `site.theme.mermaid`.
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields, expecting = "settings, like `mark: true`")]
 pub struct Markdown {
@@ -358,9 +493,9 @@ pub struct Markdown {
     /// How math is written, if it's found.
     #[serde(deserialize_with = "or_false")]
     pub math: Option<Math>,
-    /// Mermaid's config, from `mermaid`, as JSON, as Mermaid reads it, if a
-    /// Mermaid block is drawn as an `<svg>` as little builds the page, rather
-    /// than left as code.
+    /// Mermaid's config, from `site.theme.mermaid`, as JSON, as Mermaid
+    /// reads it, if a Mermaid block is drawn as an `<svg>` as little builds
+    /// the page, rather than left as code.
     #[serde(deserialize_with = "svg_or_false")]
     pub mermaid: Option<serde_json::Value>,
     // Beyond GitHub.
@@ -411,7 +546,8 @@ fn or_false<'de, D: Deserializer<'de>, T: Deserialize<'de>>(d: D) -> Result<Opti
     }
 }
 
-/// `svg`, as config for `markdown` to fill in from `mermaid`, or `false`.
+/// `svg`, as config for `markdown` to fill in from `site.theme.mermaid`, or
+/// `false`.
 fn svg_or_false<'de, D: Deserializer<'de>>(d: D) -> Result<Option<serde_json::Value>, D::Error> {
     match Value::deserialize(d)? {
         Value::String(form) if form == "svg" => Ok(Some(serde_json::Value::Null)),
@@ -423,15 +559,62 @@ fn svg_or_false<'de, D: Deserializer<'de>>(d: D) -> Result<Option<serde_json::Va
 impl Default for Markdown {
     /// little's own settings, from `src/little.yml`.
     fn default() -> Self {
-        markdown(&builtin_defaults()).expect("src/little.yml sets each Markdown extension")
+        markdown(&builtin_defaults().site).expect("src/little.yml sets each Markdown extension")
     }
+}
+
+/// What one `little.yml` sets: a level of the cascade.
+#[derive(Clone, Debug, Default)]
+struct Level {
+    /// Its `site`: the site's settings.
+    site: Mapping,
+    /// Its `page`: every page's settings, less any left blank.
+    page: Mapping,
+}
+
+/// The two groups of `cfg`, the settings of the `little.yml` that errors
+/// call `file`. A key beside them is an error, rather than a setting that
+/// does nothing, and so is a group that isn't settings. A group left blank
+/// has none.
+fn level(cfg: Mapping, file: &str) -> Result<Level> {
+    let mut level = Level::default();
+    for (key, value) in cfg {
+        let (group, holds) = match key.as_str() {
+            Some("site") => (&mut level.site, "the site's settings, like `name: My Docs`"),
+            Some("page") => (
+                &mut level.page,
+                "every page's settings, like `breadcrumb: { enabled: false }`",
+            ),
+            _ => bail!(
+                "{file} sets `{}` beside `site` and `page`, but a {CONFIG_FILE} holds only those \
+                 two: put it under `site`, with the site's settings, or under `page`, with every \
+                 page's",
+                written(&key)
+            ),
+        };
+        match value {
+            Value::Null => {}
+            Value::Mapping(settings) => *group = settings,
+            _ => bail!("`{}` in {file} must hold {holds}", written(&key)),
+        }
+    }
+    // A key left blank is as good as not there, as in a page's frontmatter.
+    level.page.retain(|_, value| !value.is_null());
+    Ok(level)
 }
 
 /// little's built-in defaults: level 1 of the cascade. They live in
 /// `src/little.yml`, compiled into the binary so little stays a single file
 /// with nothing to install alongside it.
-fn builtin_defaults() -> Mapping {
-    parse_config(include_str!("little.yml")).expect("src/little.yml holds settings")
+fn builtin_defaults() -> Level {
+    let cfg = parse_config(include_str!("little.yml")).expect("src/little.yml holds settings");
+    level(cfg, "src/little.yml").expect("src/little.yml holds `site` and `page`")
+}
+
+/// The built-in theme's settings, from `theme/little.yml`, compiled in too.
+fn builtin_theme() -> Level {
+    let cfg = parse_config(theme::builtin::CONFIG).expect("theme/little.yml holds settings");
+    level(cfg, "theme/little.yml").expect("theme/little.yml holds `site` and `page`")
 }
 
 /// Follow the chain of themes from the one the site chooses, then merge the
@@ -440,23 +623,28 @@ pub fn load(site_dir: &Path) -> Result<Config> {
     let defaults = builtin_defaults();
     let site_file = site_dir.join(CONFIG_FILE);
     let site_name = site_file.display().to_string();
-    let mut site_cfg = read_config(&site_file, &site_name)?;
-    long_form_plugins(&mut site_cfg, &site_name, site_dir, true)?;
+    let mut own = read_level(&site_file, &site_name)?;
+    plugin_files(&mut own.site, &site_name, site_dir, true)?;
 
-    let mut next = match site_cfg.get("theme").or(defaults.get("theme")) {
-        Some(value) => choose_theme(value, site_dir, &site_name, site_dir)?,
-        None => None,
+    // The site's choice of theme, over little's: its built-in one.
+    let chosen = theme_choice(&own.site, &site_name)?;
+    let littles = theme_choice(&defaults.site, "src/little.yml")?;
+    let enabled = chosen.enabled.or(littles.enabled).unwrap_or(true);
+    let mut next = match (enabled, &chosen.source) {
+        (false, _) => None,
+        (true, Some(source)) => Some(locate(source, site_dir, &site_name, site_dir)?),
+        (true, None) => Some(Location::BuiltIn),
     };
     let mut themes = Vec::new();
-    let mut theme_cfgs = Vec::new();
+    let mut levels = Vec::new();
     // Each theme folder's real path, to catch themes that build on each other
     // in a loop however their paths are written.
     let mut seen = Vec::new();
     while let Some(location) = next {
-        let cfg = match location.folder() {
+        let level = match location.folder() {
             None => {
                 next = None; // the built-in theme builds on nothing
-                parse_config(theme::builtin::CONFIG).expect("theme/little.yml holds settings")
+                builtin_theme()
             }
             Some(dir) => {
                 let real = dir
@@ -475,134 +663,197 @@ pub fn load(site_dir: &Path) -> Result<Config> {
                 }
                 seen.push(real);
                 let file = location.describe(CONFIG_FILE);
-                let mut cfg = read_config(&dir.join(CONFIG_FILE), &file)?;
-                long_form_plugins(&mut cfg, &file, dir, false)?;
-                next = match cfg.get("theme") {
-                    Some(value) => choose_theme(value, dir, &file, site_dir)?,
-                    None => None,
+                let mut level = read_level(&dir.join(CONFIG_FILE), &file)?;
+                plugin_files(&mut level.site, &file, dir, false)?;
+                // A theme builds on another only if it says so: on the one
+                // at its `source`, or, with `enabled: true` alone, on
+                // little's built-in one.
+                let builds_on = theme_choice(&level.site, &file)?;
+                next = match (builds_on.enabled, builds_on.source) {
+                    (Some(false), _) | (None, None) => None,
+                    (_, Some(source)) => Some(locate(&source, dir, &file, site_dir)?),
+                    (Some(true), None) => Some(Location::BuiltIn),
                 };
-                cfg
+                level
             }
         };
         themes.push(location);
-        theme_cfgs.push(cfg);
+        levels.push(level);
     }
 
     // The theme at the end of the chain goes beneath the ones that build on it.
-    let mut values = defaults;
-    for cfg in theme_cfgs.into_iter().rev() {
-        merge(&mut values, cfg);
+    let Level { mut site, mut page } = defaults;
+    for level in levels.into_iter().rev() {
+        merge(&mut site, level.site);
+        merge(&mut page, level.page);
     }
-    let beneath = values.clone();
-    merge(&mut values, site_cfg);
-    settle(site_dir, values, beneath, themes)
+    let beneath = site.clone();
+    merge(&mut site, own.site);
+    merge(&mut page, own.page);
+    // `site.theme` says which theme the site is in, as the site chose it,
+    // not which theme that one builds on.
+    if let Some(Value::Mapping(theme)) = site.get_mut("theme") {
+        theme.insert("enabled".into(), enabled.into());
+        match chosen.source {
+            Some(source) => theme.insert("source".into(), source.into()),
+            None => theme.shift_remove("source"),
+        };
+    }
+    settle(site_dir, site, page, beneath, themes)
 }
 
 impl Config {
+    /// Both groups, `site` and `page`, as a `little.yml` holds them: what
+    /// `little config` prints, and what a plugin's `config` hook is given.
+    pub fn groups(&self) -> Mapping {
+        Mapping::from_iter([
+            ("site".into(), Value::Mapping(self.site.clone())),
+            ("page".into(), Value::Mapping(self.page.clone())),
+        ])
+    }
+
     /// The config of `version`, from a git ref, whose site's folder is at
     /// `site_dir`, as it was at the ref, and whose little.yml errors call
     /// `file`, like `v1.4:docs/little.yml`. It's the site's, with plugins
     /// that read their folders there, but for the version's own `source` and
-    /// `nav`: as its little.yml there sets them, over little's defaults and
-    /// the site's themes, as the site's own would. Without one, it's from
-    /// before the site was built with little, so its pages are in the site's
-    /// `source`. Its entry's `source` and `nav` win over both, and its
-    /// `plugins` go over the site's.
+    /// nav: as the `site` of its little.yml there sets them, as `source`
+    /// and `navigation.items`, over little's defaults and the site's themes,
+    /// as the site's own would. Nothing else in that little.yml counts, so
+    /// it isn't checked. Without one, it's from before the site was built
+    /// with little, so its pages are in the site's `source`. Its entry's
+    /// `source` and `navigation.items` win over both, and its `plugins` go
+    /// over the site's.
     pub fn for_version(&self, version: &Version, site_dir: &Path, file: &str) -> Result<Config> {
         let own = site_dir.join(CONFIG_FILE);
         let mut theirs = self.beneath.clone();
         let source = if own.is_file() {
-            merge(&mut theirs, read_config(&own, file)?);
+            if let Some(Value::Mapping(site)) = read_config(&own, file)?.shift_remove("site") {
+                merge(&mut theirs, site);
+            }
             theirs.get("source")
         } else {
-            self.values.get("source")
+            self.site.get("source")
         };
         let source = match &version.source {
             Some(source) => Some(Value::from(source.as_str())),
             None => source.cloned(),
         };
-        let nav = version.nav.as_ref().or_else(|| theirs.get("nav")).cloned();
-        let mut values = self.values.clone();
-        for (key, value) in [("source", source), ("nav", nav)] {
-            match value {
-                Some(value) => values.insert(key.into(), value),
-                None => values.shift_remove(key),
+        let nav = (version.nav.as_ref())
+            .or_else(|| theirs.get("navigation")?.get("items"))
+            .cloned();
+        let mut site = self.site.clone();
+        match source {
+            Some(source) => site.insert("source".into(), source),
+            None => site.shift_remove("source"),
+        };
+        // Its own nav, or none, for little to build one from its folders.
+        if let Some(Value::Mapping(navigation)) = site.get_mut("navigation") {
+            match nav {
+                Some(nav) => navigation.insert("items".into(), nav),
+                None => navigation.shift_remove("items"),
             };
         }
         // Each plugin its entry names is one the site uses, so its settings
         // go over the site's, as the site's go over its theme's.
         if !version.plugins.is_empty() {
             let plugins = Value::Mapping(version.plugins.clone());
-            merge(
-                &mut values,
-                Mapping::from_iter([("plugins".into(), plugins)]),
-            );
+            merge(&mut site, Mapping::from_iter([("plugins".into(), plugins)]));
         }
         Ok(Config {
-            source_dir: folder(site_dir, &values, "source")?,
-            plugins: plugins(&values, site_dir)?,
-            values,
+            source_dir: folder(site_dir, &site, "source")?,
+            plugins: plugins(&site, site_dir)?,
+            site,
             ..self.clone()
         })
     }
 
-    /// The config of the site at `site_dir`, with `values` in place of its
-    /// own, as a plugin's `config` hook gives them back. Errors, which
-    /// follow ``plugin `name`'s `config` hook``, if they change one of
-    /// [`FIXED`], or little can't use them.
-    pub fn hooked(&self, site_dir: &Path, mut values: Mapping) -> Result<Config> {
-        for key in FIXED {
-            let own = self.values.get(key);
-            if values.get(key) != own {
-                let fixed: Vec<String> = FIXED.iter().map(|key| format!("`{key}`")).collect();
+    /// The config of the site at `site_dir`, with `groups`, its `site` and
+    /// `page`, in place of its own, as a plugin's `config` hook gives them
+    /// back. Errors, which follow ``plugin `name`'s `config` hook``, if they
+    /// change one of [`FIXED`], or little can't use them.
+    pub fn hooked(&self, site_dir: &Path, groups: Mapping) -> Result<Config> {
+        let unusable = |e: anyhow::Error| anyhow!("gives back a config little can't use: {e:#}");
+        let Level { mut site, page } =
+            level(groups, "the config it gives back").map_err(unusable)?;
+        for path in FIXED {
+            let own = at(&self.site, path);
+            if at(&site, path) != own {
+                let fixed: Vec<String> = (FIXED.iter())
+                    .map(|path| format!("`site.{}`", path.join(".")))
+                    .collect();
                 let (last, rest) = fixed.split_last().expect("some settings are fixed");
                 bail!(
-                    "changes `{key}`, but plugins can't change {}, or {last}",
+                    "changes `site.{}`, but plugins can't change {}, or {last}",
+                    path.join("."),
                     rest.join(", ")
                 );
             }
             // As it was, in its order, which a plugin's JSON may not keep.
-            if let Some(own) = own {
-                values.insert(key.into(), own.clone());
+            if let (&[key], Some(own)) = (path, own) {
+                site.insert(key.into(), own.clone());
             }
         }
-        settle(site_dir, values, self.beneath.clone(), self.themes.clone())
-            .map_err(|e| anyhow!("gives back a config little can't use: {e:#}"))
+        settle(
+            site_dir,
+            site,
+            page,
+            self.beneath.clone(),
+            self.themes.clone(),
+        )
+        .map_err(unusable)
     }
 }
 
-/// The settings a plugin's `config` hook can't change, which little reads
-/// before plugins start, and `little serve` reads from the site's own
-/// config: the theme and plugins it uses, the folders it reads and writes,
-/// and where it serves.
-pub const FIXED: [&str; 6] = ["theme", "plugins", "source", "destination", "host", "port"];
+/// The settings a plugin's `config` hook can't change, each by its path in
+/// `site`, which little reads before plugins start, and `little serve` reads
+/// from the site's own config: the theme and plugins it uses, the folders it
+/// reads and writes, and where it serves.
+pub const FIXED: [&[&str]; 6] = [
+    &["theme", "enabled"],
+    &["theme", "source"],
+    &["plugins"],
+    &["source"],
+    &["destination"],
+    &["serve"],
+];
 
-/// Check the merged config, `values`, of the site at `site_dir`, which is in
-/// `themes`, over `beneath`, and work out what it chooses.
+/// The setting at `path` in `settings`, like `["theme", "source"]`, if it's
+/// there.
+fn at<'a>(settings: &'a Mapping, path: &[&str]) -> Option<&'a Value> {
+    let (first, rest) = path.split_first()?;
+    (rest.iter()).try_fold(settings.get(*first)?, |value, key| value.get(*key))
+}
+
+/// Check the merged settings of the site at `site_dir`, its `site` and its
+/// `page`, which is in `themes`, over `beneath`, and work out what they
+/// choose.
 fn settle(
     site_dir: &Path,
-    values: Mapping,
+    site: Mapping,
+    page: Mapping,
     beneath: Mapping,
     themes: Vec<Location>,
 ) -> Result<Config> {
-    let source_dir = folder(site_dir, &values, "source")?;
-    let destination_dir = folder(site_dir, &values, "destination")?;
-    let toc_depths = toc_depths(&values)?;
-    let nav_prune = nav_prune(&values)?;
-    let host = host(&values)?;
-    let port = port(&values)?;
-    let url = site_url(&values)?;
-    let repo = repo(&values)?;
-    let search = search(&values)?;
-    let markdown = markdown(&values)?;
-    let plugins = plugins(&values, site_dir)?;
-    let versions = versions(&values, &plugins)?;
+    let source_dir = folder(site_dir, &site, "source")?;
+    let destination_dir = folder(site_dir, &site, "destination")?;
+    let page_settings = PageSettings::read(&page, "page.")?;
+    let nav_prune = nav_prune(&site)?;
+    let host = host(&site)?;
+    let port = port(&site)?;
+    let url = site_url(&site)?;
+    let repo = repo(&site)?;
+    let search = search(&site)?;
+    let markdown = markdown(&site)?;
+    let plugins = plugins(&site, site_dir)?;
+    let versions = versions(&site, &plugins)?;
+    error_page(&site)?;
     Ok(Config {
-        values,
+        site,
+        page,
         themes,
         source_dir,
         destination_dir,
-        toc_depths,
+        page_settings,
         nav_prune,
         host,
         port,
@@ -616,116 +867,148 @@ fn settle(
     })
 }
 
-/// The theme a `theme` setting chooses, if any. `file` names the file that
-/// sets it, and `dir` is its folder: a path is relative to that, as a theme
-/// can't know where the sites that use it are. A theme downloaded from a URL
-/// is kept in the site at `site_dir`.
-fn choose_theme(
-    value: &Value,
-    dir: &Path,
-    file: &str,
-    site_dir: &Path,
-) -> Result<Option<Location>> {
-    match value {
-        Value::Bool(true) => Ok(Some(Location::BuiltIn)),
-        Value::Bool(false) => Ok(None),
-        Value::String(url) if url.starts_with("https://") => {
-            let dir = download::theme(site_dir, url)
-                .map_err(|e| anyhow!("{file} sets `theme` to `{url}`, but {e:#}"))?;
-            Ok(Some(Location::Downloaded {
-                url: url.clone(),
-                dir,
-            }))
-        }
-        Value::String(url) if url.starts_with("http://") => {
-            bail!("{file} sets `theme` to `{url}`, but little only downloads themes over HTTPS")
-        }
-        Value::String(path) => {
-            let folder = resolve(dir, path);
-            if !folder.is_dir() {
-                bail!(
-                    "{file} sets `theme` to `{path}`, but there's no folder at {}",
-                    folder.display()
-                );
-            }
-            Ok(Some(Location::Folder(folder)))
-        }
-        _ => bail!(
-            "`theme` in {file} must be `true`, `false`, the path to a theme folder, \
-             or the URL of a theme's archive"
-        ),
+/// The settings in `site`'s group `name`, like `serve`. little's own config
+/// sets each group, so anything else there, like `true`, or nothing, is a
+/// mistake, and the error ends with `like`, what to write instead.
+fn group<'a>(site: &'a Mapping, name: &str, like: &str) -> Result<&'a Mapping> {
+    match site.get(name) {
+        Some(Value::Mapping(settings)) => Ok(settings),
+        _ => bail!("`site.{name}` must be its settings, {like}"),
     }
+}
+
+/// What a `little.yml` says of the theme, in its `site.theme`: whether
+/// there's one, and where it is, if it says either.
+struct ThemeChoice {
+    enabled: Option<bool>,
+    source: Option<String>,
+}
+
+/// What the settings in `site`, from `file`, say of the theme, in
+/// `site.theme`, beside how the site looks.
+fn theme_choice(site: &Mapping, file: &str) -> Result<ThemeChoice> {
+    let settings = match site.get("theme") {
+        None => {
+            return Ok(ThemeChoice {
+                enabled: None,
+                source: None,
+            });
+        }
+        Some(Value::Mapping(settings)) => settings,
+        Some(_) => bail!(
+            "`site.theme` in {file} must be its settings, like `source: ./my-theme`, for the \
+             path to a theme's folder, or the URL of its archive, or `enabled: false`, for no \
+             theme"
+        ),
+    };
+    let enabled = match settings.get("enabled") {
+        None => None,
+        Some(Value::Bool(enabled)) => Some(*enabled),
+        Some(_) => bail!("`site.theme.enabled` in {file} must be `true`, or `false`, for no theme"),
+    };
+    let source = match settings.get("source") {
+        None => None,
+        Some(Value::String(source)) => Some(source.clone()),
+        Some(_) => bail!(
+            "`site.theme.source` in {file} must be the path to a theme's folder, or the URL of \
+             a theme's archive"
+        ),
+    };
+    Ok(ThemeChoice { enabled, source })
+}
+
+/// The theme at `source`, a `site.theme.source`: the path to its folder, or
+/// the URL of its archive. `file` names the file that sets it, and `dir` is
+/// its folder: a path is relative to that, as a theme can't know where the
+/// sites that use it are. A theme downloaded from a URL is kept in the site
+/// at `site_dir`.
+fn locate(source: &str, dir: &Path, file: &str, site_dir: &Path) -> Result<Location> {
+    if source.starts_with("https://") {
+        let dir = download::theme(site_dir, source)
+            .map_err(|e| anyhow!("{file} sets `site.theme.source` to `{source}`, but {e:#}"))?;
+        return Ok(Location::Downloaded {
+            url: source.to_string(),
+            dir,
+        });
+    }
+    if source.starts_with("http://") {
+        bail!(
+            "{file} sets `site.theme.source` to `{source}`, but little only downloads themes \
+             over HTTPS"
+        );
+    }
+    let folder = resolve(dir, source);
+    if !folder.is_dir() {
+        bail!(
+            "{file} sets `site.theme.source` to `{source}`, but there's no folder at {}",
+            folder.display()
+        );
+    }
+    Ok(Location::Folder(folder))
 }
 
 /// The folder a setting names. It's relative to the site even when a theme
 /// sets it: it's the site that's built.
-fn folder(site_dir: &Path, values: &Mapping, key: &str) -> Result<PathBuf> {
-    match values.get(key) {
+fn folder(site_dir: &Path, site: &Mapping, key: &str) -> Result<PathBuf> {
+    match site.get(key) {
         Some(Value::String(path)) => Ok(resolve(site_dir, path)),
-        _ => bail!("`{key}` must be the path to a folder"),
+        _ => bail!("`site.{key}` must be the path to a folder"),
     }
 }
 
-/// The levels of heading a table of contents lists. The min and max can be
-/// set at different levels of the cascade, so a min over the max, which would
-/// leave every table of contents empty, is an error.
-fn toc_depths(values: &Mapping) -> Result<RangeInclusive<u8>> {
-    let min = heading_level(values, "toc_min_depth")?;
-    let max = heading_level(values, "toc_max_depth")?;
-    if min > max {
-        bail!("`toc_min_depth` ({min}) can't be more than `toc_max_depth` ({max})");
-    }
-    Ok(min..=max)
-}
-
-/// The level of heading a setting names, like 2 for `##`.
-fn heading_level(values: &Mapping, key: &str) -> Result<u8> {
-    match values.get(key).and_then(Value::as_u64) {
-        Some(level @ 1..=6) => Ok(level as u8),
-        _ => bail!("`{key}` must be a heading level from 1 to 6, like 3 for `###`"),
-    }
+/// The settings in `site.navigation`: `prune`, and the site's nav, as
+/// `items`, if it sets one.
+fn navigation(site: &Mapping) -> Result<&Mapping> {
+    let like = "like `prune: true`, or `items`, the site's nav, a list of links";
+    group(site, "navigation", like)
 }
 
 /// Whether each page's nav lists what's in a folder only if the page is in
-/// it, from `nav_prune`. YAML reads `yes` and `"true"` as text, not `true`,
-/// so they're errors rather than a guess, as for `search`.
-fn nav_prune(values: &Mapping) -> Result<bool> {
-    match values.get("nav_prune") {
+/// it, from `site.navigation.prune`. YAML reads `yes` and `"true"` as text,
+/// not `true`, so they're errors rather than a guess, as for `site.search`.
+fn nav_prune(site: &Mapping) -> Result<bool> {
+    match navigation(site)?.get("prune") {
         Some(Value::Bool(prune)) => Ok(*prune),
         _ => bail!(
-            "`nav_prune` must be `true`, for each page's nav to list what's in a folder only \
-             if the page is in it, or `false`"
+            "`site.navigation.prune` must be `true`, for each page's nav to list what's in a \
+             folder only if the page is in it, or `false`"
         ),
     }
 }
 
+/// The settings in `site.serve`: the `host` and `port` `little serve`
+/// serves at.
+fn serve(site: &Mapping) -> Result<&Mapping> {
+    group(site, "serve", "like `port: 8080`")
+}
+
 /// The host `little serve` serves at: a host name, like `localhost`, or an IP
 /// address, like `127.0.0.1` or `::1`.
-fn host(values: &Mapping) -> Result<String> {
-    match values.get("host") {
+fn host(site: &Mapping) -> Result<String> {
+    match serve(site)?.get("host") {
         Some(Value::String(host)) if !host.is_empty() => Ok(host.clone()),
-        _ => bail!("`host` must be a host name or IP address, like 127.0.0.1"),
+        _ => bail!("`site.serve.host` must be a host name or IP address, like 127.0.0.1"),
     }
 }
 
 /// The port `little serve` serves at. Port 0 would have the system pick one,
 /// and the URL little prints would be wrong.
-fn port(values: &Mapping) -> Result<u16> {
-    match values.get("port").and_then(Value::as_u64) {
+fn port(site: &Mapping) -> Result<u16> {
+    match serve(site)?.get("port").and_then(Value::as_u64) {
         Some(port @ 1..=65535) => Ok(port as u16),
-        _ => bail!("`port` must be a number from 1 to 65535, like 8080"),
+        _ => bail!("`site.serve.port` must be a number from 1 to 65535, like 8080"),
     }
 }
 
-/// Where the site is published, from `url`: its scheme and host, then the
-/// path the site is under.
-fn site_url(values: &Mapping) -> Result<SiteUrl> {
-    let Some(value) = values.get("url") else {
+/// Where the site is published, from `site.url`: its scheme and host, then
+/// the path the site is under.
+fn site_url(site: &Mapping) -> Result<SiteUrl> {
+    let Some(value) = site.get("url") else {
         return Ok(SiteUrl::default());
     };
     let error = || {
         anyhow!(
-            "`url` must be the address the site is published at, starting with https:// \
+            "`site.url` must be the address the site is published at, starting with https:// \
              or http://, like https://example.github.io/my-project"
         )
     };
@@ -746,24 +1029,27 @@ fn web_address(url: &str) -> Option<url::Url> {
     (!rest.starts_with('/') && !rest.contains(bad)).then(|| url::Url::parse(url).ok())?
 }
 
-/// The repository the site's source is in, from `repo`, and the branch its
-/// pages link to their files on, from `branch`. YAML reads a branch like
-/// `2.0` as a number, so it must be quoted, or it would be linked as `2`.
-fn repo(values: &Mapping) -> Result<Option<Repo>> {
-    let branch = match values.get("branch") {
+/// The repository the site's source is in, from `site.repository`: its
+/// `url`, if it sets one, and the `branch` its pages link to their files
+/// on. YAML reads a branch like `2.0` as a number, so it must be quoted, or
+/// it would be linked as `2`.
+fn repo(site: &Mapping) -> Result<Option<Repo>> {
+    let like = "like `url: https://github.com/example/my-project`";
+    let settings = group(site, "repository", like)?;
+    let branch = match settings.get("branch") {
         Some(Value::String(branch)) if !branch.is_empty() => branch.clone(),
         _ => bail!(
-            "`branch` must be the name of a branch, like main, in quotes if it looks like a \
-             number, like \"2.0\""
+            "`site.repository.branch` must be the name of a branch, like main, in quotes if it \
+             looks like a number, like \"2.0\""
         ),
     };
-    let Some(value) = values.get("repo") else {
+    let Some(value) = settings.get("url") else {
         return Ok(None);
     };
     let error = || {
         anyhow!(
-            "`repo` must be the address of the site's repository, as a browser shows it, \
-             like https://github.com/example/my-project"
+            "`site.repository.url` must be the address of the site's repository, as a browser \
+             shows it, like https://github.com/example/my-project"
         )
     };
     let url = value.as_str().ok_or_else(error)?.trim_end_matches('/');
@@ -777,47 +1063,53 @@ fn repo(values: &Mapping) -> Result<Option<Repo>> {
     }
 }
 
-/// What a build indexes for search, if anything: every page, for `true`, or
-/// every page but those its settings leave out, which turn it on. YAML reads
-/// `yes` and `"true"` as text, not `true`, so they're errors rather than a
-/// guess, as are settings left empty, which a theme would read as `false`.
-fn search(values: &Mapping) -> Result<Option<Search>> {
-    let settings = match values.get("search") {
-        Some(Value::Bool(on)) => return Ok(on.then(Search::default)),
-        Some(Value::Mapping(settings)) if !settings.is_empty() => settings,
-        _ => bail!(
-            "`search` must be `true`, `false`, or its settings, like `exclude: [/changelog/]`, \
-             which turn it on"
-        ),
-    };
+/// What a build indexes for search, from `site.search`: whether it's
+/// `enabled`, and the URLs it leaves out, in `exclude`. YAML reads `yes` and
+/// `"true"` as text, not `true`, so they're errors rather than a guess, and
+/// so is a setting it hasn't, like `excludes`, which would leave nothing
+/// out.
+fn search(site: &Mapping) -> Result<Search> {
+    let like = "like `enabled: true`, or `exclude: [/changelog/]`";
+    let settings = group(site, "search", like)?;
     let mut search = Search::default();
     for (key, value) in settings {
         match key.as_str() {
+            Some("enabled") => {}
             Some("exclude") => search.exclude = left_out(value)?,
             _ => bail!(
-                "`search` has no setting `{}`: its one setting is `exclude`",
+                "`site.search` has no setting `{}`: its settings are `enabled` and `exclude`",
                 written(key)
             ),
         }
     }
-    Ok(Some(search))
+    search.enabled = match settings.get("enabled") {
+        Some(Value::Bool(enabled)) => *enabled,
+        _ => bail!(
+            "`site.search.enabled` must be `true`, to index the site for a search box, or \
+             `false`"
+        ),
+    };
+    Ok(search)
 }
 
-/// The URLs `search.exclude` lists, as they're written, or none, if it's
-/// left empty. Each must be a URL, not a file's path, as a page a plugin
-/// adds has no file.
+/// The URLs `site.search.exclude` lists, as they're written, or none, if
+/// it's left empty. Each must be a URL, not a file's path, as a page a
+/// plugin adds has no file.
 fn left_out(value: &Value) -> Result<Vec<String>> {
     let urls = match value {
         Value::Null => return Ok(Vec::new()),
         Value::Sequence(urls) => urls,
-        _ => bail!("`search.exclude` must be a list of URLs, like `[/changelog/, /guide/old]`"),
+        _ => {
+            bail!("`site.search.exclude` must be a list of URLs, like `[/changelog/, /guide/old]`")
+        }
     };
     (urls.iter())
         .map(|url| match url {
             Value::String(url) if url.starts_with('/') => Ok(url.clone()),
             _ => bail!(
-                "`search.exclude` lists `{}`, but each must be a page's URL from the root of the \
-                 site, as `nav` writes it, like `/guide/` or `/guide/install`",
+                "`site.search.exclude` lists `{}`, but each must be a page's URL from the root \
+                 of the site, as `site.navigation.items` writes it, like `/guide/` or \
+                 `/guide/install`",
                 written(url)
             ),
         })
@@ -832,62 +1124,65 @@ fn written(value: &Value) -> String {
 
 /// The extensions to CommonMark each page is written with, each `true` or
 /// `false`, how its math is written, how its diagrams are drawn, and the
-/// classes its code is highlighted with, from the settings under `markdown`.
-/// little's own config sets every one, so any other is a typo. Diagrams
-/// drawn as SVG look as `mermaid` says.
-fn markdown(values: &Mapping) -> Result<Markdown> {
-    let settings = values.get("markdown").cloned().unwrap_or_default();
+/// classes its code is highlighted with, from the settings under
+/// `site.markdown`. little's own config sets every one, so any other is a
+/// typo. Diagrams drawn as SVG look as `site.theme.mermaid` says.
+fn markdown(site: &Mapping) -> Result<Markdown> {
+    let settings = site.get("markdown").cloned().unwrap_or_default();
     let mut markdown: Markdown =
-        serde_path_to_error::deserialize(settings).context("reading `markdown`")?;
+        serde_path_to_error::deserialize(settings).context("reading `site.markdown`")?;
     if markdown.mermaid.is_some() {
-        markdown.mermaid = Some(mermaid(values)?);
+        markdown.mermaid = Some(mermaid(site)?);
     }
     // comrak reads `^[…]` only with footnotes, so it'd be left as text.
     if markdown.inline_footnotes && !markdown.footnotes {
-        bail!("`markdown.inline_footnotes` needs `markdown.footnotes` to be `true` too");
+        bail!("`site.markdown.inline_footnotes` needs `site.markdown.footnotes` to be `true` too");
     }
     // merman doesn't clean every diagram, so one can carry HTML into the page.
     if markdown.mermaid.is_some() && !markdown.raw_html {
         bail!(
-            "`markdown.mermaid: svg` needs `markdown.raw_html` to be `true`, as a diagram can \
-             carry HTML: set `markdown.mermaid: false` too"
+            "`site.markdown.mermaid: svg` needs `site.markdown.raw_html` to be `true`, as a \
+             diagram can carry HTML: set `site.markdown.mermaid: false` too"
         );
     }
     Ok(markdown)
 }
 
 /// Mermaid's config, which each diagram starts from, from the settings under
-/// `mermaid`, as they're written, in Mermaid's own names. Mermaid ignores a
-/// setting it doesn't have, as in a diagram's own config, so little checks
-/// only for the mistakes that change every diagram without a word: a theme
-/// Mermaid doesn't have, which it swaps for its default, and an empty
-/// setting, as a colour like #6f42c1 is without quotes.
-fn mermaid(values: &Mapping) -> Result<serde_json::Value> {
-    let settings = match values.get("mermaid") {
+/// `site.theme.mermaid`, as they're written, in Mermaid's own names. Mermaid
+/// ignores a setting it doesn't have, as in a diagram's own config, so
+/// little checks only for the mistakes that change every diagram without a
+/// word: a theme Mermaid doesn't have, which it swaps for its default, and
+/// an empty setting, as a colour like #6f42c1 is without quotes.
+fn mermaid(site: &Mapping) -> Result<serde_json::Value> {
+    let settings = match site.get("theme").and_then(|theme| theme.get("mermaid")) {
         None => return Ok(serde_json::json!({})),
         Some(Value::Mapping(settings)) => settings,
-        Some(_) => bail!("`mermaid` must be Mermaid's settings, like `theme: forest`"),
+        Some(_) => {
+            bail!("`site.theme.mermaid` must be Mermaid's settings, like `theme: forest`")
+        }
     };
     let themes = merman::supported_themes();
     if let Some(theme) = settings.get("theme")
         && !theme.as_str().is_some_and(|theme| themes.contains(&theme))
     {
         bail!(
-            "`mermaid.theme` must be one of Mermaid's themes: {}",
+            "`site.theme.mermaid.theme` must be one of Mermaid's themes: {}",
             themes.join(", ")
         );
     }
-    if let Some(path) = empty_setting(settings, "mermaid") {
+    if let Some(path) = empty_setting(settings, "site.theme.mermaid") {
         bail!(
             "`{path}` is empty: put a colour in quotes, like \"#6f42c1\", or YAML reads it as \
              a comment"
         );
     }
-    serde_json::to_value(settings).context("reading `mermaid`")
+    serde_json::to_value(settings).context("reading `site.theme.mermaid`")
 }
 
 /// The first setting in `settings`, or in the settings within them, that's
-/// empty, named from `path`, like `mermaid.themeVariables.primaryColor`.
+/// empty, named from `path`, like
+/// `site.theme.mermaid.themeVariables.primaryColor`.
 fn empty_setting(settings: &Mapping, path: &str) -> Option<String> {
     settings.iter().find_map(|(key, value)| {
         let key = serde_yaml::to_string(key).unwrap_or_default();
@@ -900,40 +1195,36 @@ fn empty_setting(settings: &Mapping, path: &str) -> Option<String> {
     })
 }
 
-/// Write each plugin the config in `file`, in `dir`, names in the long form,
-/// as settings with `wasm`, its path from `dir`, so the levels merge setting
-/// by setting, and each path leads from the `little.yml` that wrote it. Only
-/// the site's config, `is_site`, can set `read`.
-fn long_form_plugins(cfg: &mut Mapping, file: &str, dir: &Path, is_site: bool) -> Result<()> {
-    let plugins = match cfg.get_mut("plugins") {
+/// Check each plugin the settings in `site`, from `file`, in `dir`, name,
+/// each with its own settings, and lead its `wasm`, if it's a path, from
+/// `dir`, so each path leads from the `little.yml` that wrote it, once the
+/// levels merge, setting by setting. Only the site's config, `is_site`, can
+/// set `read`.
+fn plugin_files(site: &mut Mapping, file: &str, dir: &Path, is_site: bool) -> Result<()> {
+    let must_name = || {
+        anyhow!(
+            "`site.plugins` in {file} must name each plugin, with its settings, like \
+             `bob: {{ wasm: ./plugins/bob.wasm }}`"
+        )
+    };
+    let plugins = match site.get_mut("plugins") {
         None => return Ok(()),
         Some(Value::Mapping(plugins)) => plugins,
         // `plugins:` with nothing after it.
         Some(Value::Null) => {
-            cfg.shift_remove("plugins");
+            site.shift_remove("plugins");
             return Ok(());
         }
-        Some(_) => bail!(
-            "`plugins` in {file} must name each plugin and its `.wasm` file, like \
-             `bob: ./plugins/bob.wasm`"
-        ),
+        Some(_) => return Err(must_name()),
     };
     for (name, plugin) in plugins.iter_mut() {
-        let Some(name) = name.as_str() else {
+        let name = name.as_str().ok_or_else(must_name)?;
+        let Value::Mapping(settings) = plugin else {
             bail!(
-                "`plugins` in {file} must name each plugin and its `.wasm` file, like \
-                 `bob: ./plugins/bob.wasm`"
+                "plugin `{name}` in {file} must be its settings, like \
+                 `wasm: ./plugins/{name}.wasm`, for its `.wasm` file, or `enabled: false`, to \
+                 turn it off"
             );
-        };
-        if let Value::String(wasm) = plugin {
-            *plugin = Value::Mapping(Mapping::from_iter([("wasm".into(), wasm.as_str().into())]));
-        }
-        let settings = match plugin {
-            Value::Mapping(settings) => settings,
-            Value::Bool(false) => continue,
-            _ => bail!(
-                "plugin `{name}` in {file} must be its `.wasm` file, its settings, or `false`"
-            ),
         };
         if !is_site && settings.contains_key("read") {
             bail!(
@@ -959,18 +1250,25 @@ fn long_form_plugins(cfg: &mut Mapping, file: &str, dir: &Path, is_site: bool) -
     Ok(())
 }
 
-/// The plugins the merged config names, each in the long form, but those
-/// turned off with `false`.
-fn plugins(values: &Mapping, site_dir: &Path) -> Result<Vec<Plugin>> {
-    let Some(Value::Mapping(plugins)) = values.get("plugins") else {
+/// The plugins the merged settings in `site` name, but those turned off,
+/// with `enabled: false`.
+fn plugins(site: &Mapping, site_dir: &Path) -> Result<Vec<Plugin>> {
+    let Some(Value::Mapping(plugins)) = site.get("plugins") else {
         return Ok(Vec::new());
     };
     let mut on = Vec::new();
     for (name, settings) in plugins {
-        let Value::Mapping(settings) = settings else {
-            continue; // `false`
-        };
         let name = name.as_str().expect("each plugin has a name").to_string();
+        let Value::Mapping(settings) = settings else {
+            bail!("plugin `{name}` must be its settings, like `wasm: ./plugins/{name}.wasm`");
+        };
+        match settings.get("enabled") {
+            None | Some(Value::Bool(true)) => {}
+            Some(Value::Bool(false)) => continue,
+            Some(_) => {
+                bail!("`enabled` of plugin `{name}` must be `true`, or `false`, to turn it off")
+            }
+        }
         let wasm = match settings.get("wasm") {
             Some(Value::String(url)) if url.starts_with("https://") => Wasm::Url(url.clone()),
             Some(Value::String(path)) => Wasm::File(PathBuf::from(path)),
@@ -995,9 +1293,11 @@ fn plugins(values: &Mapping, site_dir: &Path) -> Result<Vec<Plugin>> {
             })
             .collect();
         // The plugin is told the folders it can read as it sees them, and its
-        // settings in the order they're written.
+        // settings in the order they're written, less those that are
+        // little's to read.
         let mut settings = settings.clone();
         settings.shift_remove("wasm");
+        settings.shift_remove("enabled");
         if let Some(folders) = settings.get_mut("read") {
             *folders = read.iter().map(|read| read.path.as_str()).collect();
         }
@@ -1020,30 +1320,26 @@ fn read_error(name: &str) -> anyhow::Error {
 }
 
 /// little's settings that are the site's, for every version, so an entry in
-/// `versions` can't set them, though one from a ref can set its own
-/// `source`, `nav`, and `plugins`.
-const SITES_SETTINGS: [&str; 14] = [
+/// `site.versions` can't set them, though one from a ref can set its own
+/// `source`, `navigation.items`, and `plugins`. `navigation` isn't among
+/// them, as only its `prune` is the site's.
+const SITES_SETTINGS: [&str; 9] = [
     "destination",
     "theme",
-    "repo",
-    "branch",
-    "toc_min_depth",
-    "toc_max_depth",
-    "nav_prune",
+    "repository",
     "search",
     "markdown",
-    "mermaid",
     "versions",
     "year",
-    "host",
-    "port",
+    "serve",
+    "error",
 ];
 
-/// The versions of the site, from `versions`, in the order its menu lists
-/// them, whose `plugins` can name only the site's, `sites_plugins`. Each
-/// entry's other keys, but little's settings, are for the theme.
-fn versions(values: &Mapping, sites_plugins: &[Plugin]) -> Result<Vec<Version>> {
-    let entries = match values.get("versions") {
+/// The versions of the site, from `site.versions`, in the order its menu
+/// lists them, whose `plugins` can name only the site's, `sites_plugins`.
+/// Each entry's other keys, but little's settings, are for the theme.
+fn versions(site: &Mapping, sites_plugins: &[Plugin]) -> Result<Vec<Version>> {
+    let entries = match site.get("versions") {
         None | Some(Value::Null) => return Ok(Vec::new()),
         Some(Value::Sequence(entries)) => entries,
         Some(_) => return Err(versions_error()),
@@ -1131,7 +1427,7 @@ fn versions(values: &Mapping, sites_plugins: &[Plugin]) -> Result<Vec<Version>> 
                 other.title
             );
         }
-        // A blank `source:`, `nav:`, or `plugins:` is as good as none.
+        // A blank `source:`, `navigation:`, or `plugins:` is as good as none.
         let source = match entry.get("source") {
             None | Some(Value::Null) => None,
             Some(Value::String(source)) => Some(source.clone()),
@@ -1140,18 +1436,31 @@ fn versions(values: &Mapping, sites_plugins: &[Plugin]) -> Result<Vec<Version>> 
                  at its `ref`, like `./docs`"
             ),
         };
-        // A nav that isn't one stops the build of the version, as the site's
-        // does.
-        let nav = match entry.get("nav") {
+        // Its nav, in `navigation.items`, as the site's is. One that isn't a
+        // nav stops the build of the version, as the site's does.
+        let nav = match entry.get("navigation") {
             None | Some(Value::Null) => None,
-            Some(nav) => Some(nav.clone()),
+            Some(Value::Mapping(navigation)) => {
+                if let Some(key) = (navigation.keys()).find(|key| key.as_str() != Some("items")) {
+                    return Err(sites_setting(
+                        title,
+                        &format!("navigation.{}", written(key)),
+                    ));
+                }
+                let items = navigation.get("items");
+                items.filter(|items| !items.is_null()).cloned()
+            }
+            Some(_) => bail!(
+                "version `{title}`'s `navigation` must hold its nav, as `items`, like \
+                 `navigation: {{ items: [{{ title: Home, url: / }}] }}`"
+            ),
         };
         let plugins = version_plugins(title, entry.get("plugins"), sites_plugins)?;
         // The one without a `ref` is built from the site's files as they
         // are, with the site's settings, so `little serve` shows them.
         let own = [
             ("source", source.is_some()),
-            ("nav", nav.is_some()),
+            ("navigation.items", nav.is_some()),
             ("plugins", !plugins.is_empty()),
         ];
         if git_ref.is_none()
@@ -1163,11 +1472,7 @@ fn versions(values: &Mapping, sites_plugins: &[Plugin]) -> Result<Vec<Version>> 
             );
         }
         if let Some(key) = SITES_SETTINGS.iter().find(|key| entry.contains_key(**key)) {
-            bail!(
-                "version `{title}` sets `{key}`, but every version is built with the site's \
-                 `{key}`: a version from a `ref` can set only its own `source`, `nav`, and \
-                 `plugins`"
-            );
+            return Err(sites_setting(title, key));
         }
         versions.push(Version {
             title: title.clone(),
@@ -1186,11 +1491,20 @@ fn versions(values: &Mapping, sites_plugins: &[Plugin]) -> Result<Vec<Version>> 
     Ok(versions)
 }
 
+/// The error for version `title`'s entry setting `key`, one of little's
+/// settings that are the site's.
+fn sites_setting(title: &str, key: &str) -> anyhow::Error {
+    anyhow!(
+        "version `{title}` sets `{key}`, but every version is built with the site's `{key}`: a \
+         version from a `ref` can set only its own `source`, `navigation.items`, and `plugins`"
+    )
+}
+
 /// The settings version `title` gives the site's plugins, `sites_plugins`,
 /// in its entry's `plugins`, if it has any: each the plugin's settings, which
-/// go over the site's, or `false`, which turns it off. A version can't give
-/// one a `.wasm` file, as every version is built with the site's, the ones
-/// `little serve` watches.
+/// go over the site's, like `enabled: false`, which turns it off. A version
+/// can't give one a `.wasm` file, as every version is built with the site's,
+/// the ones `little serve` watches.
 fn version_plugins(
     title: &str,
     plugins: Option<&Value>,
@@ -1199,7 +1513,7 @@ fn version_plugins(
     let not_settings = || {
         anyhow!(
             "version `{title}`'s `plugins` must name the site's plugins it changes, each with \
-             its settings, or `false`, to turn it off, like `api: false`"
+             its settings, like `api: {{ enabled: false }}`, to turn it off"
         )
     };
     let plugins = match plugins {
@@ -1216,15 +1530,16 @@ fn version_plugins(
             );
         }
         match plugin {
-            Value::Bool(false) => {}
             Value::Mapping(settings) if !settings.contains_key("wasm") => {}
-            // Its `.wasm` file, in the short form or the long.
-            Value::String(_) | Value::Mapping(_) => bail!(
+            Value::Mapping(_) => bail!(
                 "version `{title}` gives plugin `{name}` a `.wasm` file, but every version is \
                  built with the site's: a version can change only a plugin's settings, or turn \
-                 it off, with `false`"
+                 it off, with `enabled: false`"
             ),
-            _ => bail!("plugin `{name}` in version `{title}` must be its settings, or `false`"),
+            _ => bail!(
+                "plugin `{name}` in version `{title}` must be its settings, like \
+                 `enabled: false`, to turn it off"
+            ),
         }
     }
     Ok(plugins.clone())
@@ -1245,12 +1560,27 @@ fn version_path(url: &str) -> Option<String> {
     (path.strip_prefix('/')?.split('/').all(is_folder)).then(|| path.to_string())
 }
 
-/// The error for `versions` that isn't a list of versions.
+/// The error for `site.versions` that isn't a list of versions.
 fn versions_error() -> anyhow::Error {
     anyhow!(
-        "`versions` must list the site's versions, each with its `title`, the `url` it's at, and \
-         the `ref` it's built from, like `- {{ title: \"1.4\", url: /1.4, ref: v1.4 }}`"
+        "`site.versions` must list the site's versions, each with its `title`, the `url` it's \
+         at, and the `ref` it's built from, like `- {{ title: \"1.4\", url: /1.4, ref: v1.4 }}`"
     )
+}
+
+/// Check `site.error`, the `title` and `description` of the 404 page, which
+/// the page gets as its own: each is text, if it's there.
+fn error_page(site: &Mapping) -> Result<()> {
+    let settings = group(site, "error", "like `title: Page not found`")?;
+    for key in ["title", "description"] {
+        if !matches!(settings.get(key), None | Some(Value::String(_))) {
+            bail!(
+                "`site.error.{key}` must be text, in quotes if YAML would read it as anything \
+                 else, like \"404\""
+            );
+        }
+    }
+    Ok(())
 }
 
 /// Resolve a path a config names against `dir`: an absolute path is just that
@@ -1259,8 +1589,15 @@ fn resolve(dir: &Path, path: &str) -> PathBuf {
     dir.join(path).components().collect()
 }
 
-/// Read one level's config from `path`, which errors call `name`. A missing
-/// file isn't an error: that level just has nothing to add.
+/// Read one level of the cascade from the `little.yml` at `path`, which
+/// errors call `name`. A missing file isn't an error: that level just has
+/// nothing to add.
+fn read_level(path: &Path, name: &str) -> Result<Level> {
+    level(read_config(path, name)?, name)
+}
+
+/// Read the settings in the `little.yml` at `path`, which errors call
+/// `name`: none, if it's not there.
 fn read_config(path: &Path, name: &str) -> Result<Mapping> {
     match std::fs::read_to_string(path) {
         Ok(raw) => parse_config(&raw).with_context(|| format!("parsing {name}")),
@@ -1279,8 +1616,9 @@ pub(crate) fn parse_config(raw: &str) -> serde_yaml::Result<Mapping> {
 
 /// Merge `over` into `base`, key by key. Where both set a key to settings,
 /// those merge the same way; any other value replaces the one beneath it. The
-/// build merges a page's frontmatter over `page`, and the config over
-/// `site.nav`, the same way.
+/// build merges a page's frontmatter over every page's settings, and those
+/// over what it works out for `page`, the same way, and the config over what
+/// it works out for `site`.
 pub fn merge(base: &mut Mapping, over: Mapping) {
     for (key, value) in over {
         match (base.get_mut(&key), value) {
@@ -1295,17 +1633,31 @@ pub fn merge(base: &mut Mapping, over: Mapping) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::testing::{self, scratch, write};
+    use crate::testing::{self, IN_THEME, scratch, write};
     use serde_json::json;
 
-    fn get<'a>(cfg: &'a Mapping, key: &str) -> Option<&'a str> {
-        cfg.get(key).and_then(Value::as_str)
+    /// The setting at `path` in `cfg`, like `theme.fonts.body`, if it's
+    /// text.
+    fn get<'a>(cfg: &'a Mapping, path: &str) -> Option<&'a str> {
+        value(cfg, path).and_then(Value::as_str)
+    }
+
+    /// The setting at `path` in `cfg`, like `serve.port`, if it's there.
+    fn value<'a>(cfg: &'a Mapping, path: &str) -> Option<&'a Value> {
+        at(cfg, &path.split('.').collect::<Vec<_>>())
     }
 
     /// Why the site's config doesn't load once its little.yml is `site_cfg`.
     fn error(site: &Path, site_cfg: &str) -> String {
         std::fs::write(site.join(CONFIG_FILE), site_cfg).unwrap();
         format!("{:#}", load(site).unwrap_err())
+    }
+
+    /// A little.yml whose `site` holds `settings`, which are written from
+    /// their first column, for a table of them.
+    fn under_site(settings: &str) -> String {
+        let lines = settings.lines().map(|line| format!("  {line}\n"));
+        format!("site:\n{}", lines.collect::<String>())
     }
 
     /// Put `files`, each a (path, contents) pair, where the theme at `url` is
@@ -1321,44 +1673,156 @@ mod tests {
     }
 
     /// little's defaults, with the built-in theme's settings over them.
-    fn with_builtin_theme() -> Mapping {
-        let mut values = builtin_defaults();
-        merge(&mut values, parse_config(theme::builtin::CONFIG).unwrap());
-        values
+    fn with_builtin_theme() -> Level {
+        let Level { mut site, mut page } = builtin_defaults();
+        let theme = builtin_theme();
+        merge(&mut site, theme.site);
+        merge(&mut page, theme.page);
+        Level { site, page }
+    }
+
+    #[test]
+    fn a_little_yml_holds_only_site_and_page() {
+        let (_tmp, site) = scratch(&[("theme/_templates/default.html", "")]);
+        let file = site.join(CONFIG_FILE).display().to_string();
+        let beside = |key: &str, file: &str| {
+            format!(
+                "{file} sets `{key}` beside `site` and `page`, but a little.yml holds only \
+                 those two: put it under `site`, with the site's settings, or under `page`, \
+                 with every page's"
+            )
+        };
+
+        // A setting beside them would do nothing, so it stops the build.
+        for (site_cfg, key) in [
+            ("name: My Docs\n", "name"),
+            ("site: { name: My Docs }\nauthor: Jo\n", "author"),
+            ("pages: { author: Jo }\n", "pages"),
+            ("1: one\n", "1"),
+        ] {
+            assert_eq!(error(&site, site_cfg), beside(key, &file), "{site_cfg}");
+        }
+
+        // Each holds settings, or nothing.
+        assert_eq!(
+            error(&site, "site: My Docs\n"),
+            format!("`site` in {file} must hold the site's settings, like `name: My Docs`")
+        );
+        assert_eq!(
+            error(&site, "page: [outline]\n"),
+            format!(
+                "`page` in {file} must hold every page's settings, like \
+                 `breadcrumb: {{ enabled: false }}`"
+            )
+        );
+        let builtin = with_builtin_theme();
+        for site_cfg in [
+            "site:\n",
+            "page:\n",
+            "site:\npage:\n",
+            "site: {}\npage: {}\n",
+        ] {
+            std::fs::write(site.join(CONFIG_FILE), site_cfg).unwrap();
+            let cfg = load(&site).unwrap();
+            assert_eq!(cfg.site, builtin.site, "{site_cfg}");
+            assert_eq!(cfg.page, builtin.page, "{site_cfg}");
+        }
+
+        // A theme's little.yml is checked the same way, and named as its.
+        let theme_file = site.join("theme").join(CONFIG_FILE);
+        std::fs::write(&theme_file, "name: Fancy\n").unwrap();
+        let message = error(&site, IN_THEME);
+        assert_eq!(message, beside("name", &theme_file.display().to_string()));
+    }
+
+    #[test]
+    fn every_pages_settings_cascade() {
+        let theme_cfg = "page:\n  author: Theme\n  layout: wide\n  \
+                         social:\n    image: /theme.png\n    card: summary\n";
+        let (_tmp, site) = scratch(&[
+            ("theme/_templates/default.html", ""),
+            ("theme/little.yml", theme_cfg),
+        ]);
+        let page = |site_cfg: &str| {
+            std::fs::write(site.join(CONFIG_FILE), site_cfg).unwrap();
+            let cfg = load(&site).unwrap();
+            // Less little's own, which `little_defaults_only_its_own_settings`
+            // checks.
+            let mut page = cfg.page.clone();
+            page.retain(|key, _| !builtin_defaults().page.contains_key(key));
+            serde_yaml::to_string(&page).unwrap()
+        };
+
+        // A theme sets what every page has, and a site changes it, key by
+        // key, as it changes its theme's `site`.
+        assert_eq!(page(""), "{}\n");
+        assert_eq!(
+            page(IN_THEME),
+            "author: Theme\nlayout: wide\nsocial:\n  image: /theme.png\n  card: summary\n"
+        );
+        let site_cfg =
+            format!("{IN_THEME}page:\n  author: Site\n  social:\n    image: /site.png\n");
+        assert_eq!(
+            page(&site_cfg),
+            "author: Site\nlayout: wide\nsocial:\n  image: /site.png\n  card: summary\n"
+        );
+
+        // A key left blank is ignored, as it is in a page's frontmatter.
+        let site_cfg = format!("{IN_THEME}page:\n  author:\n  layout: narrow\n");
+        assert_eq!(
+            page(&site_cfg),
+            "author: Theme\nlayout: narrow\nsocial:\n  image: /theme.png\n  card: summary\n"
+        );
     }
 
     #[test]
     fn a_site_gets_the_builtin_theme_unless_it_chooses_another() {
         let (_tmp, site) = scratch(&[
-            ("theme/little.yml", "font: mono\n"),
-            ("path/to/my/theme/little.yml", "name: Mine\nfont: serif\n"),
+            (
+                "theme/little.yml",
+                "site: { theme: { fonts: { body: mono } } }\n",
+            ),
+            (
+                "path/to/my/theme/little.yml",
+                "site:\n  name: Mine\n  theme:\n    fonts:\n      body: serif\n",
+            ),
         ]);
         let load_with = |site_cfg: &str| {
             std::fs::write(site.join(CONFIG_FILE), site_cfg).unwrap();
             load(&site).unwrap()
         };
+        let font = "theme.fonts.body";
 
-        // Without a `theme`, or with `theme: true`, the built-in theme, even
-        // for a site with a `theme/` folder.
+        // Without a `theme`, or with one that's `enabled`, and has no
+        // `source`, the built-in theme, even for a site with a `theme/`
+        // folder.
         assert_eq!(load(&site).unwrap().themes, [Location::BuiltIn]);
-        for site_cfg in ["name: My Docs\n", "theme: true\n"] {
+        for site_cfg in [
+            "site: { name: My Docs }\n",
+            "site: { theme: { enabled: true } }\n",
+        ] {
             let cfg = load_with(site_cfg);
             assert_eq!(cfg.themes, [Location::BuiltIn], "with {site_cfg:?}");
-            assert_eq!(get(&cfg.values, "font"), get(&with_builtin_theme(), "font"));
+            assert_eq!(get(&cfg.site, font), get(&with_builtin_theme().site, font));
         }
 
-        // With `theme: false`, no theme, so no theme's settings either.
-        let cfg = load_with("theme: false\n");
-        assert!(cfg.themes.is_empty());
-        assert_eq!(get(&cfg.values, "font"), None);
+        // With `enabled: false`, no theme, so no theme's settings either,
+        // whatever its `source`.
+        for theme in ["{ enabled: false }", "{ enabled: false, source: ./theme }"] {
+            let cfg = load_with(&format!("site: {{ theme: {theme} }}\n"));
+            assert!(cfg.themes.is_empty(), "{theme}");
+            assert_eq!(get(&cfg.site, font), None);
+            assert_eq!(value(&cfg.site, "theme.enabled"), Some(&false.into()));
+        }
 
-        // A path chooses the theme in that folder.
-        let cfg = load_with("theme: ./path/to/my/theme\nname: My Docs\n");
+        // A `source` chooses the theme in that folder.
+        let cfg = load_with("site:\n  theme:\n    source: ./path/to/my/theme\n  name: My Docs\n");
         let chosen = Location::Folder(site.join("path/to/my/theme"));
         assert_eq!(cfg.themes, [chosen]);
-        assert_eq!(get(&cfg.values, "font"), Some("serif")); // the chosen theme's
-        assert_eq!(get(&cfg.values, "name"), Some("My Docs")); // the site still wins
-        assert_eq!(get(&cfg.values, "theme"), Some("./path/to/my/theme"));
+        assert_eq!(get(&cfg.site, font), Some("serif")); // the chosen theme's
+        assert_eq!(get(&cfg.site, "name"), Some("My Docs")); // the site still wins
+        assert_eq!(get(&cfg.site, "theme.source"), Some("./path/to/my/theme"));
+        assert_eq!(value(&cfg.site, "theme.enabled"), Some(&true.into()));
     }
 
     #[test]
@@ -1366,12 +1830,16 @@ mod tests {
         let (_tmp, root) = scratch(&[
             ("site/themes/mine/_templates/default.html", ""),
             ("shared/theme/_templates/default.html", ""),
-            ("shared/company/little.yml", "theme: ../theme\n"),
+            (
+                "shared/company/little.yml",
+                "site: { theme: { source: ../theme } }\n",
+            ),
         ]);
         let site = root.join("site");
         // Unquoted, as people usually write them.
         let chosen = |theme: &str| {
-            std::fs::write(site.join(CONFIG_FILE), format!("theme: {theme}\n")).unwrap();
+            let site_cfg = format!("site:\n  theme:\n    source: {theme}\n");
+            std::fs::write(site.join(CONFIG_FILE), site_cfg).unwrap();
             let themes = load(&site).unwrap().themes;
             themes
                 .iter()
@@ -1397,77 +1865,104 @@ mod tests {
     #[test]
     fn a_theme_can_build_on_another() {
         let (_tmp, site) = scratch(&[
-            ("little.yml", "theme: ./company\nname: My Docs\n"),
+            (
+                "little.yml",
+                "site:\n  theme:\n    source: ./company\n  name: My Docs\n",
+            ),
             (
                 "company/little.yml",
-                "theme: ../fancy\nfont: Inter\ncolors:\n  accent: navy\n",
+                "site:\n  theme:\n    source: ../fancy\n    fonts:\n      body: Inter\n  \
+                 footer:\n    note: Company\npage:\n  author: Company\n",
             ),
             (
                 "fancy/little.yml",
-                "name: Fancy\nfont: serif\nlang: en\ncolors:\n  accent: pink\n  text: black\n",
+                "site:\n  name: Fancy\n  language: en\n  theme:\n    fonts:\n      body: serif\n  \
+                 footer:\n    note: Fancy\n    links: true\npage:\n  author: Fancy\n  \
+                 layout: wide\n",
             ),
         ]);
         let company = site.join("company");
 
         // little -> fancy -> company -> site, each over the one before, as
-        // `little config` prints them.
+        // `little config` prints them. `theme.source` is the site's choice,
+        // not its theme's.
         let cfg = load(&site).unwrap();
         let fancy = Location::Folder(company.join("../fancy"));
         assert_eq!(cfg.themes, [Location::Folder(company.clone()), fancy]);
         // Less little's Markdown settings, which `markdown_cascades` checks.
-        let mut values = cfg.values.clone();
-        values.shift_remove("markdown");
+        let mut groups = cfg.groups();
+        let Some(Value::Mapping(settings)) = groups.get_mut("site") else {
+            panic!("`site` should hold settings");
+        };
+        settings.shift_remove("markdown");
         assert_eq!(
-            serde_yaml::to_string(&values).unwrap(),
-            "source: ./docs\n\
-             destination: ./dist\n\
-             theme: ./company\n\
-             toc_min_depth: 2\n\
-             toc_max_depth: 6\n\
-             nav_prune: false\n\
-             host: 127.0.0.1\n\
-             port: 8080\n\
-             branch: main\n\
-             search: false\n\
-             name: My Docs\n\
-             font: Inter\n\
-             lang: en\n\
-             colors:\n  accent: navy\n  text: black\n"
+            serde_yaml::to_string(&groups).unwrap(),
+            "site:\n  \
+               source: ./docs\n  \
+               destination: ./dist\n  \
+               theme:\n    enabled: true\n    fonts:\n      body: Inter\n    source: ./company\n  \
+               navigation:\n    prune: false\n  \
+               serve:\n    host: 127.0.0.1\n    port: 8080\n  \
+               repository:\n    branch: main\n  \
+               search:\n    enabled: false\n    exclude: []\n  \
+               error:\n    title: Page not found\n    \
+               description: The page you are looking for could not be found.\n  \
+               name: My Docs\n  \
+               language: en\n  \
+               footer:\n    note: Company\n    links: true\n\
+             page:\n  \
+               outline:\n    enabled: true\n    depth:\n      min: 2\n      max: 6\n  \
+               breadcrumb:\n    enabled: true\n  \
+               previous:\n    enabled: true\n  \
+               next:\n    enabled: true\n  \
+               repository:\n    enabled: true\n  \
+               author: Company\n  \
+               layout: wide\n"
         );
 
         // A theme can build on little's built-in theme, too.
-        std::fs::write(company.join(CONFIG_FILE), "theme: true\nfont: Inter\n").unwrap();
+        let company_cfg = "site: { theme: { enabled: true, fonts: { body: Inter } } }\n";
+        std::fs::write(company.join(CONFIG_FILE), company_cfg).unwrap();
         let cfg = load(&site).unwrap();
         assert_eq!(cfg.themes, [Location::Folder(company), Location::BuiltIn]);
-        assert_eq!(get(&cfg.values, "font"), Some("Inter"));
-        assert_eq!(get(&cfg.values, "lang"), get(&with_builtin_theme(), "lang"));
+        assert_eq!(get(&cfg.site, "theme.fonts.body"), Some("Inter"));
+        assert_eq!(
+            get(&cfg.site, "language"),
+            get(&with_builtin_theme().site, "language")
+        );
+        assert_eq!(get(&cfg.site, "theme.source"), Some("./company"));
     }
 
     #[test]
     fn a_theme_can_be_downloaded_from_a_url() {
         let url = "https://example.invalid/fancy-1.0.zip";
-        let site_cfg = format!("theme: {url}\nname: My Docs\n");
+        let site_cfg = format!("site:\n  theme:\n    source: {url}\n  name: My Docs\n");
         let (_tmp, site) = scratch(&[(CONFIG_FILE, &site_cfg)]);
-        let fancy_cfg = "name: Fancy\nfont: serif\nlang: en\n";
+        let fancy_cfg =
+            "site:\n  name: Fancy\n  language: en\n  theme:\n    fonts:\n      body: serif\n";
         let fancy = downloaded(&site, url, &[(CONFIG_FILE, fancy_cfg)]);
+        let font = "theme.fonts.body";
 
         // It cascades like any other theme.
         let cfg = load(&site).unwrap();
         assert_eq!(cfg.themes, std::slice::from_ref(&fancy));
-        assert_eq!(get(&cfg.values, "font"), Some("serif")); // the theme's
-        assert_eq!(get(&cfg.values, "name"), Some("My Docs")); // the site still wins
-        assert_eq!(get(&cfg.values, "theme"), Some(url));
+        assert_eq!(get(&cfg.site, font), Some("serif")); // the theme's
+        assert_eq!(get(&cfg.site, "name"), Some("My Docs")); // the site still wins
+        assert_eq!(get(&cfg.site, "theme.source"), Some(url));
 
         // A company's theme can build on it, changing only what it needs to.
-        let company_cfg = format!("theme: {url}\nfont: Inter\n");
+        let company_cfg =
+            format!("site:\n  theme:\n    source: {url}\n    fonts:\n      body: Inter\n");
         std::fs::create_dir_all(site.join("company")).unwrap();
         std::fs::write(site.join("company").join(CONFIG_FILE), company_cfg).unwrap();
-        std::fs::write(site.join(CONFIG_FILE), "theme: ./company\n").unwrap();
+        let in_company = "site:\n  theme:\n    source: ./company\n";
+        std::fs::write(site.join(CONFIG_FILE), in_company).unwrap();
         let company = Location::Folder(site.join("company"));
         let cfg = load(&site).unwrap();
         assert_eq!(cfg.themes, [company.clone(), fancy.clone()]);
-        assert_eq!(get(&cfg.values, "font"), Some("Inter")); // the company's
-        assert_eq!(get(&cfg.values, "name"), Some("Fancy")); // the downloaded theme's
+        assert_eq!(get(&cfg.site, font), Some("Inter")); // the company's
+        assert_eq!(get(&cfg.site, "name"), Some("Fancy")); // the downloaded theme's
+        assert_eq!(get(&cfg.site, "theme.source"), Some("./company"));
 
         // And it can build on another theme: in its own folder, relative to
         // that, or downloaded too, or little's built-in theme.
@@ -1476,26 +1971,35 @@ mod tests {
         std::fs::create_dir_all(fancy_dir.join("base")).unwrap();
         let plain_url = "https://example.invalid/plain-2.0.tar.gz";
         let plain = downloaded(&site, plain_url, &[]);
+        let from_plain = format!("source: {plain_url}");
         for (theme, beneath) in [
-            ("./base", base),
-            (plain_url, plain),
-            ("true", Location::BuiltIn),
+            ("source: ./base", base),
+            (from_plain.as_str(), plain),
+            ("enabled: true", Location::BuiltIn),
         ] {
-            let fancy_cfg = format!("theme: {theme}\n");
+            let fancy_cfg = format!("site:\n  theme:\n    {theme}\n");
             std::fs::write(fancy_dir.join(CONFIG_FILE), fancy_cfg).unwrap();
             let themes = load(&site).unwrap().themes;
             assert_eq!(themes, [company.clone(), fancy.clone(), beneath]);
+        }
+        // With neither, or with `enabled: false`, it builds on none.
+        for theme in ["fonts: { body: serif }", "enabled: false"] {
+            let fancy_cfg = format!("site:\n  theme:\n    {theme}\n");
+            std::fs::write(fancy_dir.join(CONFIG_FILE), fancy_cfg).unwrap();
+            let themes = load(&site).unwrap().themes;
+            assert_eq!(themes, [company.clone(), fancy.clone()], "{theme}");
         }
     }
 
     #[test]
     fn themes_cannot_build_on_each_other_in_a_loop() {
+        let theme = |source: &str| format!("site:\n  theme:\n    source: {source}\n");
         let (_tmp, site) = scratch(&[
-            ("a/little.yml", "theme: ../b\n"),
-            ("b/little.yml", "theme: ../a\n"),
+            ("a/little.yml", &theme("../b")),
+            ("b/little.yml", &theme("../a")),
         ]);
         let (a, b) = (site.join("a"), site.join("a").join("..").join("b"));
-        let message = error(&site, "theme: ./a\n");
+        let message = error(&site, &theme("./a"));
         let expected = format!(
             "themes build on each other in a loop: {} -> {} -> {}",
             a.display(),
@@ -1505,8 +2009,8 @@ mod tests {
         assert_eq!(message, expected);
 
         // Even a theme that builds on itself.
-        std::fs::write(a.join(CONFIG_FILE), "theme: .\n").unwrap();
-        let message = error(&site, "theme: ./a\n");
+        std::fs::write(a.join(CONFIG_FILE), theme(".")).unwrap();
+        let message = error(&site, &theme("./a"));
         assert!(
             message.contains("themes build on each other in a loop"),
             "{message}"
@@ -1517,9 +2021,9 @@ mod tests {
             "https://example.invalid/a.zip",
             "https://example.invalid/b.zip",
         );
-        downloaded(&site, a, &[(CONFIG_FILE, &format!("theme: {b}\n"))]);
-        downloaded(&site, b, &[(CONFIG_FILE, &format!("theme: {a}\n"))]);
-        let message = error(&site, &format!("theme: {a}\n"));
+        downloaded(&site, a, &[(CONFIG_FILE, &theme(b))]);
+        downloaded(&site, b, &[(CONFIG_FILE, &theme(a))]);
+        let message = error(&site, &theme(a));
         let expected = format!("themes build on each other in a loop: {a} -> {b} -> {a}");
         assert_eq!(message, expected);
     }
@@ -1528,61 +2032,84 @@ mod tests {
     fn bad_theme_choices_explain_themselves() {
         let (_tmp, site) = scratch(&[("theme/_templates/default.html", "")]);
         let file = site.join(CONFIG_FILE).display().to_string();
+        let source = |source: &str| format!("site:\n  theme:\n    source: {source}\n");
         let must_be = |file: &str| {
             format!(
-                "`theme` in {file} must be `true`, `false`, the path to a theme folder, \
-                 or the URL of a theme's archive"
+                "`site.theme` in {file} must be its settings, like `source: ./my-theme`, for \
+                 the path to a theme's folder, or the URL of its archive, or `enabled: false`, \
+                 for no theme"
             )
         };
 
-        let message = error(&site, "theme: ./missing\n");
+        let message = error(&site, &source("./missing"));
         let expected = format!(
-            "{file} sets `theme` to `./missing`, but there's no folder at {}",
+            "{file} sets `site.theme.source` to `./missing`, but there's no folder at {}",
             site.join("missing").display()
         );
         assert_eq!(message, expected);
         // `default` is a folder name like any other, and only unquoted `true`
         // and `false` are booleans.
         for theme in ["default", "\"true\"", "no"] {
-            let message = error(&site, &format!("theme: {theme}\n"));
+            let message = error(&site, &source(theme));
             assert!(message.contains("but there's no folder at"), "{message}");
         }
 
-        // Nothing, or anything but `true`, `false`, or text, isn't a theme.
-        for theme in ["", " [a, b]", " 1"] {
-            let message = error(&site, &format!("theme:{theme}\n"));
-            assert_eq!(message, must_be(&file));
+        // A value where its settings go, like a path, `true`, or `false`,
+        // isn't a theme, nor is nothing.
+        for theme in ["", " ./theme", " true", " false", " [a, b]", " 1"] {
+            let message = error(&site, &format!("site:\n  theme:{theme}\n"));
+            assert_eq!(message, must_be(&file), "theme:{theme}");
+        }
+        // `enabled` is `true` or `false`, and `source` is text.
+        for enabled in ["", " yes", " \"true\"", " 1", " ./theme"] {
+            let message = error(&site, &format!("site:\n  theme:\n    enabled:{enabled}\n"));
+            let expected =
+                format!("`site.theme.enabled` in {file} must be `true`, or `false`, for no theme");
+            assert_eq!(message, expected, "enabled:{enabled}");
+        }
+        for theme in ["", " true", " [a, b]", " 1"] {
+            let message = error(&site, &format!("site:\n  theme:\n    source:{theme}\n"));
+            let expected = format!(
+                "`site.theme.source` in {file} must be the path to a theme's folder, or the \
+                 URL of a theme's archive"
+            );
+            assert_eq!(message, expected, "source:{theme}");
         }
 
         // Themes are only downloaded over HTTPS.
         let url = "http://example.invalid/theme.zip";
-        let message = error(&site, &format!("theme: {url}\n"));
-        let expected =
-            format!("{file} sets `theme` to `{url}`, but little only downloads themes over HTTPS");
+        let message = error(&site, &source(url));
+        let expected = format!(
+            "{file} sets `site.theme.source` to `{url}`, but little only downloads themes over \
+             HTTPS"
+        );
         assert_eq!(message, expected);
         // A download that fails says why. Nothing listens on port 1, so this
         // one fails at once, without the network.
         let url = "https://127.0.0.1:1/theme.zip";
-        let message = error(&site, &format!("theme: {url}\n"));
-        let expected = format!("{file} sets `theme` to `{url}`, but little couldn't download it: ");
+        let message = error(&site, &source(url));
+        let expected = format!(
+            "{file} sets `site.theme.source` to `{url}`, but little couldn't download it: "
+        );
         assert!(message.starts_with(&expected), "{message}");
 
         // A theme's own `theme` is checked the same way, and named as its.
         let theme_file = site.join("theme").join(CONFIG_FILE);
-        std::fs::write(&theme_file, "theme: [a, b]\n").unwrap();
-        let message = error(&site, "theme: ./theme\n");
+        std::fs::write(&theme_file, "site: { theme: [a, b] }\n").unwrap();
+        let message = error(&site, &source("./theme"));
         assert_eq!(message, must_be(&theme_file.display().to_string()));
 
         // A downloaded theme's folder is named with a hash, so its files are
         // named by its URL.
         let url = "https://example.invalid/fancy-1.0.zip";
         let fancy_file = format!("{CONFIG_FILE} in the theme from {url}");
-        let fancy = downloaded(&site, url, &[(CONFIG_FILE, "theme: [a, b]\n")]);
-        let message = error(&site, &format!("theme: {url}\n"));
+        let fancy_cfg = "site: { theme: [a, b] }\n";
+        let fancy = downloaded(&site, url, &[(CONFIG_FILE, fancy_cfg)]);
+        let message = error(&site, &source(url));
         assert_eq!(message, must_be(&fancy_file));
         let fancy_cfg = fancy.folder().unwrap().join(CONFIG_FILE);
         std::fs::write(fancy_cfg, "- font: serif\n").unwrap();
-        let message = error(&site, &format!("theme: {url}\n"));
+        let message = error(&site, &source(url));
         assert!(
             message.starts_with(&format!("parsing {fancy_file}: ")),
             "{message}"
@@ -1593,9 +2120,10 @@ mod tests {
     fn folders_are_relative_to_the_site_wherever_theyre_set() {
         let (_tmp, root) = scratch(&[("site/themes/mine/_templates/default.html", "")]);
         let site = root.join("site");
+        // `site_cfg` goes under the site's `site`.
         let folders = |theme_cfg: &str, site_cfg: &str| {
             std::fs::write(site.join("themes/mine").join(CONFIG_FILE), theme_cfg).unwrap();
-            let site_cfg = format!("theme: ./themes/mine\n{site_cfg}");
+            let site_cfg = format!("site:\n  theme:\n    source: ./themes/mine\n{site_cfg}");
             std::fs::write(site.join(CONFIG_FILE), site_cfg).unwrap();
             let cfg = load(&site).unwrap();
             (cfg.source_dir, cfg.destination_dir)
@@ -1605,18 +2133,18 @@ mod tests {
         assert_eq!(folders("", ""), (site.join("docs"), site.join("dist")));
 
         // A theme can set them, but they're still relative to the site...
-        let theme = "source: content\ndestination: ./public\n";
+        let theme = "site:\n  source: content\n  destination: ./public\n";
         let expected = (site.join("content"), site.join("public"));
         assert_eq!(folders(theme, ""), expected);
 
         // ...and the site has the last word, of course.
-        let site_cfg = "source: ../shared/docs\n";
+        let site_cfg = "  source: ../shared/docs\n";
         let expected = (site.join("../shared/docs"), site.join("public"));
         assert_eq!(folders(theme, site_cfg), expected);
 
         // Absolute paths work too.
         let out = root.join("out");
-        let site_cfg = format!("destination: {}\n", out.display());
+        let site_cfg = format!("  destination: {}\n", out.display());
         assert_eq!(folders("", &site_cfg), (site.join("docs"), out));
     }
 
@@ -1626,51 +2154,130 @@ mod tests {
         for key in ["source", "destination"] {
             // A list, or no value at all, isn't a path.
             for value in [" [a, b]", ""] {
-                let message = error(&site, &format!("{key}:{value}\n"));
-                assert_eq!(message, format!("`{key}` must be the path to a folder"));
+                let message = error(&site, &format!("site:\n  {key}:{value}\n"));
+                assert_eq!(
+                    message,
+                    format!("`site.{key}` must be the path to a folder")
+                );
             }
         }
 
         // Whether the source is there is for the build to say: the config
         // doesn't read it.
-        std::fs::write(site.join(CONFIG_FILE), "source: ./missing\n").unwrap();
+        std::fs::write(site.join(CONFIG_FILE), "site: { source: ./missing }\n").unwrap();
         assert!(load(&site).is_ok());
     }
 
-    #[test]
-    fn toc_depths_cascade() {
-        let (_tmp, site) = scratch(&[("theme/_templates/default.html", "")]);
-        let depths = |site_cfg: &str| {
-            std::fs::write(site.join(CONFIG_FILE), site_cfg).unwrap();
-            load(&site).unwrap().toc_depths
-        };
-
-        // little lists every heading but a page's `#` title, the built-in
-        // theme only `##` and `###`, and a site has the last word.
-        assert_eq!(depths("theme: ./theme\n"), 2..=6);
-        assert_eq!(depths(""), 2..=3);
-        assert_eq!(depths("toc_min_depth: 1\ntoc_max_depth: 6\n"), 1..=6);
+    /// little's own settings for every page, but for the levels of heading
+    /// its table of contents lists, `depths`.
+    fn every_page(depths: RangeInclusive<u8>) -> PageSettings {
+        PageSettings {
+            outline: true,
+            depths,
+            breadcrumb: true,
+            previous: true,
+            next: true,
+            repository: true,
+            search: None,
+        }
     }
 
     #[test]
-    fn bad_toc_depths_explain_themselves() {
+    fn each_pages_groups_cascade() {
+        let theme_cfg = "page:\n  breadcrumb:\n    enabled: false\n  search:\n    enabled: false\n";
+        let (_tmp, site) = scratch(&[
+            ("theme/_templates/default.html", ""),
+            ("theme/little.yml", theme_cfg),
+        ]);
+        let settings = |site_cfg: &str| {
+            std::fs::write(site.join(CONFIG_FILE), site_cfg).unwrap();
+            load(&site).unwrap().page_settings
+        };
+
+        // little gives every page each thing it works out, and lists every
+        // heading but a page's `#` title in its table of contents, and the
+        // built-in theme only `##` and `###`.
+        assert_eq!(settings(""), every_page(2..=3));
+        // A theme turns one off, or leaves every page out of search, and a
+        // site has the last word, setting by setting.
+        let themed = PageSettings {
+            breadcrumb: false,
+            search: Some(false),
+            ..every_page(2..=6)
+        };
+        assert_eq!(settings(IN_THEME), themed);
+        let site_cfg = format!(
+            "{IN_THEME}page:\n  breadcrumb:\n    enabled: true\n  next:\n    enabled: false\n  \
+             outline:\n    depth:\n      min: 1\n"
+        );
+        let sited = PageSettings {
+            next: false,
+            search: Some(false),
+            ..every_page(1..=6)
+        };
+        assert_eq!(settings(&site_cfg), sited);
+        // A group left blank is ignored, as any key under `page` is.
+        let site_cfg = format!("{IN_THEME}page:\n  breadcrumb:\n  search:\n");
+        assert_eq!(settings(&site_cfg), themed);
+    }
+
+    #[test]
+    fn bad_page_groups_explain_themselves() {
         let (_tmp, site) = scratch(&[]);
-        for key in ["toc_min_depth", "toc_max_depth"] {
-            // There's no `#######`, a heading level is a number, and no value
-            // at all isn't one.
-            for value in [" 0", " 7", " -1", " \"3\"", ""] {
-                let message = error(&site, &format!("{key}:{value}\n"));
+        for group in ["outline", "breadcrumb", "previous", "next", "repository"] {
+            // A value where its settings go, like `false`, isn't them.
+            for value in [" false", " true", " [items]"] {
+                let message = error(&site, &format!("page:\n  {group}:{value}\n"));
                 assert_eq!(
                     message,
-                    format!("`{key}` must be a heading level from 1 to 6, like 3 for `###`")
+                    format!("`page.{group}` must be its settings, like `enabled: false`")
+                );
+            }
+            // YAML reads `yes` and a quoted `"true"` as text, not `true`.
+            for value in [" yes", " \"true\"", " 1", ""] {
+                let site_cfg = format!("page:\n  {group}:\n    enabled:{value}\n");
+                assert_eq!(
+                    error(&site, &site_cfg),
+                    format!("`page.{group}.enabled` must be `true` or `false`")
                 );
             }
         }
 
+        // Whether search indexes every page is written the same way.
+        for value in [" false", " true"] {
+            let message = error(&site, &format!("page:\n  search:{value}\n"));
+            assert_eq!(
+                message,
+                "`page.search` must be its settings, like `enabled: false`"
+            );
+        }
+        for value in [" yes", " 1", ""] {
+            let site_cfg = format!("page:\n  search:\n    enabled:{value}\n");
+            assert_eq!(
+                error(&site, &site_cfg),
+                "`page.search.enabled` must be `true`, to index the page for search, or \
+                 `false`, to leave it out"
+            );
+        }
+
+        for key in ["min", "max"] {
+            // There's no `#######`, a heading level is a number, and no value
+            // at all isn't one.
+            for value in [" 0", " 7", " -1", " \"3\"", ""] {
+                let site_cfg = format!("page:\n  outline:\n    depth:\n      {key}:{value}\n");
+                assert_eq!(
+                    error(&site, &site_cfg),
+                    format!(
+                        "`page.outline.depth.{key}` must be a heading level from 1 to 6, like 3 \
+                         for `###`"
+                    )
+                );
+            }
+        }
         // The built-in theme lists down to `###`.
         assert_eq!(
-            error(&site, "toc_min_depth: 4\n"),
-            "`toc_min_depth` (4) can't be more than `toc_max_depth` (3)"
+            error(&site, "page: { outline: { depth: { min: 4 } } }\n"),
+            "`page.outline.depth.min` (4) can't be more than `page.outline.depth.max` (3)"
         );
     }
 
@@ -1679,20 +2286,26 @@ mod tests {
         let (_tmp, site) = scratch(&[
             ("theme/_templates/default.html", ""),
             ("big/_templates/default.html", ""),
-            ("big/little.yml", "nav_prune: true\n"),
+            ("big/little.yml", "site: { navigation: { prune: true } }\n"),
         ]);
         let prune = |site_cfg: &str| {
             std::fs::write(site.join(CONFIG_FILE), site_cfg).unwrap();
             load(&site).unwrap().nav_prune
         };
+        let in_big = "site:\n  theme:\n    source: ./big\n";
 
         // little gives each page the whole nav, as does the built-in theme.
         // A theme can prune it, and a site has the last word.
-        assert!(!prune("theme: ./theme\n"));
+        assert!(!prune(IN_THEME));
         assert!(!prune(""));
-        assert!(prune("nav_prune: true\n"));
-        assert!(prune("theme: ./big\n"));
-        assert!(!prune("theme: ./big\nnav_prune: false\n"));
+        assert!(prune("site: { navigation: { prune: true } }\n"));
+        assert!(prune(in_big));
+        assert!(!prune(&format!(
+            "{in_big}  navigation:\n    prune: false\n"
+        )));
+        // A site that lists its own nav, beside it, leaves it as it is.
+        let site_cfg = format!("{in_big}  navigation:\n    items: [{{ title: Home, url: / }}]\n");
+        assert!(prune(&site_cfg));
     }
 
     #[test]
@@ -1700,11 +2313,21 @@ mod tests {
         let (_tmp, site) = scratch(&[]);
         // YAML reads `yes` and a quoted `"true"` as text, not `true`.
         for value in [" yes", " \"true\"", " 1", "", " {}"] {
-            let message = error(&site, &format!("nav_prune:{value}\n"));
+            let message = error(&site, &format!("site:\n  navigation:\n    prune:{value}\n"));
             assert_eq!(
                 message,
-                "`nav_prune` must be `true`, for each page's nav to list what's in a folder \
-                 only if the page is in it, or `false`"
+                "`site.navigation.prune` must be `true`, for each page's nav to list what's in \
+                 a folder only if the page is in it, or `false`"
+            );
+        }
+
+        // A list of links where its settings go isn't them, nor is nothing.
+        for value in [" [{ title: Home, url: / }]", " true", ""] {
+            let message = error(&site, &format!("site:\n  navigation:{value}\n"));
+            assert_eq!(
+                message,
+                "`site.navigation` must be its settings, like `prune: true`, or `items`, the \
+                 site's nav, a list of links"
             );
         }
     }
@@ -1714,76 +2337,102 @@ mod tests {
         let (_tmp, site) = scratch(&[
             ("theme/_templates/default.html", ""),
             ("drafty/_templates/default.html", ""),
-            ("drafty/little.yml", "search:\n  exclude: [/drafts/]\n"),
+            (
+                "drafty/little.yml",
+                "site:\n  search:\n    enabled: true\n    exclude: [/drafts/]\n",
+            ),
         ]);
         let search = |site_cfg: &str| {
             std::fs::write(site.join(CONFIG_FILE), site_cfg).unwrap();
             load(&site).unwrap().search
         };
-        let on = |exclude: &[&str]| {
-            let exclude = exclude.iter().map(|url| url.to_string()).collect();
-            Some(Search { exclude })
+        let is = |enabled: bool, exclude: &[&str]| Search {
+            enabled,
+            exclude: exclude.iter().map(|url| url.to_string()).collect(),
         };
+        let in_drafty = "site:\n  theme:\n    source: ./drafty\n";
 
         // little leaves search off, the built-in theme, with its search box,
         // turns it on, and a site has the last word.
-        assert_eq!(search("theme: ./theme\n"), None);
-        assert_eq!(search("theme: false\n"), None);
-        assert_eq!(search(""), on(&[]));
-        assert_eq!(search("search: false\n"), None);
-        assert_eq!(search("theme: ./theme\nsearch: true\n"), on(&[]));
+        assert_eq!(search(IN_THEME), is(false, &[]));
+        assert_eq!(
+            search("site: { theme: { enabled: false } }\n"),
+            is(false, &[])
+        );
+        assert_eq!(search(""), is(true, &[]));
+        assert_eq!(
+            search("site: { search: { enabled: false } }\n"),
+            is(false, &[])
+        );
+        let site_cfg = format!("{IN_THEME}  search:\n    enabled: true\n");
+        assert_eq!(search(&site_cfg), is(true, &[]));
 
-        // Its settings turn it on too, with the URLs `exclude` lists, as
-        // they're written, or none, if it's left empty.
-        let site_cfg = "theme: ./theme\nsearch:\n  exclude: [/changelog/, /guide/old]\n";
-        assert_eq!(search(site_cfg), on(&["/changelog/", "/guide/old"]));
-        assert_eq!(search("search:\n  exclude: []\n"), on(&[]));
-        assert_eq!(search("search:\n  exclude:\n"), on(&[]));
+        // `exclude` lists the URLs it leaves out, as they're written, or
+        // none, if it's left empty, but doesn't turn search on.
+        let exclude = "  search:\n    exclude: [/changelog/, /guide/old]\n";
+        let left_out = ["/changelog/", "/guide/old"];
+        assert_eq!(search(&format!("site:\n{exclude}")), is(true, &left_out));
+        assert_eq!(
+            search(&format!("{IN_THEME}{exclude}")),
+            is(false, &left_out)
+        );
+        assert_eq!(search("site: { search: { exclude: [] } }\n"), is(true, &[]));
+        assert_eq!(search("site:\n  search:\n    exclude:\n"), is(true, &[]));
 
         // A site's `exclude` replaces its theme's, as any list does, and its
-        // `true` or `false` replaces its theme's settings.
-        assert_eq!(search("theme: ./drafty\n"), on(&["/drafts/"]));
-        let site_cfg = "theme: ./drafty\nsearch:\n  exclude: [/old/]\n";
-        assert_eq!(search(site_cfg), on(&["/old/"]));
-        assert_eq!(search("theme: ./drafty\nsearch: true\n"), on(&[]));
-        assert_eq!(search("theme: ./drafty\nsearch: false\n"), None);
+        // `enabled` leaves its theme's `exclude` as it is.
+        assert_eq!(search(in_drafty), is(true, &["/drafts/"]));
+        let site_cfg = format!("{in_drafty}  search:\n    exclude: [/old/]\n");
+        assert_eq!(search(&site_cfg), is(true, &["/old/"]));
+        let site_cfg = format!("{in_drafty}  search:\n    enabled: false\n");
+        assert_eq!(search(&site_cfg), is(false, &["/drafts/"]));
     }
 
     #[test]
     fn bad_searches_explain_themselves() {
         let (_tmp, site) = scratch(&[]);
-        // YAML reads `yes` and a quoted `"true"` as text, not `true`, and a
-        // theme would read settings left empty as `false`.
-        for value in [" yes", " \"true\"", " 1", "", " {}"] {
-            let message = error(&site, &format!("search:{value}\n"));
+        // A value where its settings go, like `true`, isn't them, nor is
+        // nothing.
+        for value in [" true", " false", " yes", " [/changelog/]", ""] {
+            let message = error(&site, &format!("site:\n  search:{value}\n"));
             assert_eq!(
                 message,
-                "`search` must be `true`, `false`, or its settings, like \
-                 `exclude: [/changelog/]`, which turn it on"
+                "`site.search` must be its settings, like `enabled: true`, or \
+                 `exclude: [/changelog/]`"
+            );
+        }
+        // YAML reads `yes` and a quoted `"true"` as text, not `true`.
+        for value in [" yes", " \"true\"", " 1", "", " {}"] {
+            let message = error(&site, &format!("site:\n  search:\n    enabled:{value}\n"));
+            assert_eq!(
+                message,
+                "`site.search.enabled` must be `true`, to index the site for a search box, or \
+                 `false`"
             );
         }
 
-        // Its one setting is `exclude`...
+        // Its other setting is `exclude`...
         assert_eq!(
-            error(&site, "search:\n  excludes: [/changelog/]\n"),
-            "`search` has no setting `excludes`: its one setting is `exclude`"
+            error(&site, "site:\n  search:\n    excludes: [/changelog/]\n"),
+            "`site.search` has no setting `excludes`: its settings are `enabled` and `exclude`"
         );
         // ...a list...
         for value in [" /changelog/", " { url: /changelog/ }"] {
-            let message = error(&site, &format!("search:\n  exclude:{value}\n"));
+            let message = error(&site, &format!("site:\n  search:\n    exclude:{value}\n"));
             assert_eq!(
                 message,
-                "`search.exclude` must be a list of URLs, like `[/changelog/, /guide/old]`"
+                "`site.search.exclude` must be a list of URLs, like `[/changelog/, /guide/old]`"
             );
         }
         // ...of pages' URLs, not their files' paths.
         for entry in ["other", "other/notes.md", "1.4"] {
-            let message = error(&site, &format!("search:\n  exclude:\n    - {entry}\n"));
+            let site_cfg = format!("site:\n  search:\n    exclude:\n      - {entry}\n");
             assert_eq!(
-                message,
+                error(&site, &site_cfg),
                 format!(
-                    "`search.exclude` lists `{entry}`, but each must be a page's URL from the \
-                     root of the site, as `nav` writes it, like `/guide/` or `/guide/install`"
+                    "`site.search.exclude` lists `{entry}`, but each must be a page's URL from \
+                     the root of the site, as `site.navigation.items` writes it, like `/guide/` \
+                     or `/guide/install`"
                 )
             );
         }
@@ -1792,6 +2441,7 @@ mod tests {
     #[test]
     fn an_excluded_url_leaves_out_its_page_and_those_under_it() {
         let search = Search {
+            enabled: true,
             exclude: vec!["/guide/".into(), "/changelog".into()],
         };
         // The page at its URL, with or without the `/` at its end, and each
@@ -1819,8 +2469,49 @@ mod tests {
     }
 
     #[test]
+    fn the_404_page_has_a_title_and_a_description() {
+        let (_tmp, site) = scratch(&[("theme/little.yml", "site: { error: { title: Lost } }\n")]);
+        let error_page = |site_cfg: &str| {
+            std::fs::write(site.join(CONFIG_FILE), site_cfg).unwrap();
+            let cfg = load(&site).unwrap();
+            let text = |key: &str| get(&cfg.site, key).unwrap_or_default().to_string();
+            (text("error.title"), text("error.description"))
+        };
+        let page = |title: &str, description: &str| (title.to_string(), description.to_string());
+
+        // little sets both, a theme can change either, and a site has the
+        // last word.
+        let littles = "The page you are looking for could not be found.";
+        assert_eq!(error_page(""), page("Page not found", littles));
+        assert_eq!(error_page(IN_THEME), page("Lost", littles));
+        let site_cfg = format!("{IN_THEME}  error:\n    description: Try the search box.\n");
+        assert_eq!(error_page(&site_cfg), page("Lost", "Try the search box."));
+
+        // Each is text.
+        for key in ["title", "description"] {
+            for value in [" 404", " [Lost]", ""] {
+                let message = error(&site, &format!("site:\n  error:\n    {key}:{value}\n"));
+                assert_eq!(
+                    message,
+                    format!(
+                        "`site.error.{key}` must be text, in quotes if YAML would read it as \
+                         anything else, like \"404\""
+                    )
+                );
+            }
+        }
+        for value in [" Lost", ""] {
+            let message = error(&site, &format!("site:\n  error:{value}\n"));
+            assert_eq!(
+                message,
+                "`site.error` must be its settings, like `title: Page not found`"
+            );
+        }
+    }
+
+    #[test]
     fn markdown_cascades() {
-        let (_tmp, site) = scratch(&[("theme/little.yml", "markdown:\n  math: tex\n")]);
+        let (_tmp, site) = scratch(&[("theme/little.yml", "site: { markdown: { math: tex } }\n")]);
         let markdown = |site_cfg: &str| {
             std::fs::write(site.join(CONFIG_FILE), site_cfg).unwrap();
             load(&site).unwrap().markdown
@@ -1838,55 +2529,59 @@ mod tests {
 
         // A theme that renders math keeps its TeX, and a site turns other
         // extensions off, each merging over the settings beneath it.
-        let site_cfg = "theme: ./theme\nmarkdown:\n  raw_html: false\n  mermaid: false\n";
+        let site_cfg = format!("{IN_THEME}  markdown:\n    raw_html: false\n    mermaid: false\n");
         let expected = Markdown {
             math: Some(Math::Tex),
             raw_html: false,
             mermaid: None,
             ..Markdown::default()
         };
-        assert_eq!(markdown(site_cfg), expected);
+        assert_eq!(markdown(&site_cfg), expected);
 
         // A site has the last word on math, as on anything.
-        let site_cfg = "theme: ./theme\nmarkdown:\n  math: mathml\n";
-        assert_eq!(markdown(site_cfg).math, Some(Math::MathML));
-        let site_cfg = "theme: ./theme\nmarkdown:\n  math: false\n";
-        assert_eq!(markdown(site_cfg).math, None);
+        let site_cfg = format!("{IN_THEME}  markdown:\n    math: mathml\n");
+        assert_eq!(markdown(&site_cfg).math, Some(Math::MathML));
+        let site_cfg = format!("{IN_THEME}  markdown:\n    math: false\n");
+        assert_eq!(markdown(&site_cfg).math, None);
 
         // A site leaves diagrams as code, for a theme that draws them.
-        let site_cfg = "markdown:\n  mermaid: false\n";
+        let site_cfg = "site: { markdown: { mermaid: false } }\n";
         assert_eq!(markdown(site_cfg).mermaid, None);
-        let site_cfg = "markdown:\n  mermaid: svg\n";
+        let site_cfg = "site: { markdown: { mermaid: svg } }\n";
         assert_eq!(markdown(site_cfg).mermaid, Some(json!({})));
 
         // A site chooses GitHub's classes, or none.
-        let site_cfg = "markdown:\n  highlight: github\n";
+        let site_cfg = "site: { markdown: { highlight: github } }\n";
         assert_eq!(markdown(site_cfg).highlight, Some(Highlight::GitHub));
-        let site_cfg = "markdown:\n  highlight: false\n";
+        let site_cfg = "site: { markdown: { highlight: false } }\n";
         assert_eq!(markdown(site_cfg).highlight, None);
     }
 
     #[test]
     fn bad_markdown_explains_itself() {
         let (_tmp, site) = scratch(&[]);
+        let setting = |setting: &str| format!("site:\n  markdown:\n    {setting}\n");
         // YAML reads `yes` and a quoted `"true"` as text, not `true`.
         for value in [" yes", " \"true\"", " 1", ""] {
-            let message = error(&site, &format!("markdown:\n  mark:{value}\n"));
+            let message = error(&site, &setting(&format!("mark:{value}")));
             assert!(
-                message.starts_with("reading `markdown`: mark: "),
+                message.starts_with("reading `site.markdown`: mark: "),
                 "{message}"
             );
             assert!(message.ends_with("expected a boolean"), "{message}");
         }
-        for site_cfg in ["markdown: true\n", "markdown:\n", "markdown: [math]\n"] {
-            let message = error(&site, site_cfg);
-            assert!(message.starts_with("reading `markdown`: "), "{message}");
+        for value in [" true", "", " [math]"] {
+            let message = error(&site, &format!("site:\n  markdown:{value}\n"));
+            assert!(
+                message.starts_with("reading `site.markdown`: "),
+                "{message}"
+            );
         }
 
         // A typo is named, beside the settings there are.
-        let message = error(&site, "markdown:\n  tabels: true\n");
-        let expected = "reading `markdown`: tabels: unknown field `tabels`, expected one of \
-                        `tables`, `strikethrough`, `autolinks`, ";
+        let message = error(&site, &setting("tabels: true"));
+        let expected = "reading `site.markdown`: tabels: unknown field `tabels`, expected one \
+                        of `tables`, `strikethrough`, `autolinks`, ";
         assert!(message.starts_with(expected), "{message}");
         assert!(
             message.ends_with(", `cjk_friendly_emphasis`, `highlight`"),
@@ -1896,9 +2591,9 @@ mod tests {
         // Math is written in a form little has, or not at all: not `true`,
         // which would undo a theme's `tex`.
         for value in ["true", "MathML", "katex", "\"false\"", ""] {
-            let message = error(&site, &format!("markdown:\n  math: {value}\n"));
+            let message = error(&site, &setting(&format!("math: {value}")));
             assert!(
-                message.starts_with("reading `markdown`: math: "),
+                message.starts_with("reading `site.markdown`: math: "),
                 "{message}"
             );
             assert!(message.ends_with("expected `mathml` or `tex`"), "{message}");
@@ -1906,9 +2601,9 @@ mod tests {
 
         // Code is highlighted with a set of classes little has, or none.
         for value in ["true", "monokai", "Pygments", "\"false\"", ""] {
-            let message = error(&site, &format!("markdown:\n  highlight: {value}\n"));
+            let message = error(&site, &setting(&format!("highlight: {value}")));
             assert!(
-                message.starts_with("reading `markdown`: highlight: "),
+                message.starts_with("reading `site.markdown`: highlight: "),
                 "{message}"
             );
             assert!(
@@ -1920,40 +2615,38 @@ mod tests {
         // Diagrams are drawn as SVG or left as code: not `true`, which would
         // undo a theme's `false`.
         for value in ["true", "SVG", "png", "\"false\"", ""] {
-            let message = error(&site, &format!("markdown:\n  mermaid: {value}\n"));
+            let message = error(&site, &setting(&format!("mermaid: {value}")));
             assert_eq!(
                 message,
-                "reading `markdown`: mermaid: expected `svg` or `false`"
+                "reading `site.markdown`: mermaid: expected `svg` or `false`"
             );
         }
 
         // A diagram can carry HTML, so a site without raw HTML says so.
-        for site_cfg in [
-            "markdown:\n  raw_html: false\n",
-            "markdown:\n  raw_html: false\n  mermaid: svg\n",
-        ] {
-            let message = error(&site, site_cfg);
+        for settings in ["raw_html: false", "raw_html: false\n    mermaid: svg"] {
+            let message = error(&site, &setting(settings));
             assert_eq!(
                 message,
-                "`markdown.mermaid: svg` needs `markdown.raw_html` to be `true`, as a diagram \
-                 can carry HTML: set `markdown.mermaid: false` too"
+                "`site.markdown.mermaid: svg` needs `site.markdown.raw_html` to be `true`, as a \
+                 diagram can carry HTML: set `site.markdown.mermaid: false` too"
             );
         }
 
         // comrak reads `^[…]` only with footnotes.
         let message = error(
             &site,
-            "markdown:\n  footnotes: false\n  inline_footnotes: true\n",
+            &setting("footnotes: false\n    inline_footnotes: true"),
         );
         assert_eq!(
             message,
-            "`markdown.inline_footnotes` needs `markdown.footnotes` to be `true` too"
+            "`site.markdown.inline_footnotes` needs `site.markdown.footnotes` to be `true` too"
         );
     }
 
     #[test]
     fn mermaid_cascades() {
-        let theme_cfg = "mermaid:\n  theme: base\n  themeVariables:\n    primaryColor: \"#6f42c1\"\n    \
+        let theme_cfg = "site:\n  theme:\n    mermaid:\n      theme: base\n      \
+                         themeVariables:\n        primaryColor: \"#6f42c1\"\n        \
                          lineColor: \"#333333\"\n";
         let (_tmp, site) = scratch(&[("theme/little.yml", theme_cfg)]);
         let mermaid = |site_cfg: &str| {
@@ -1964,24 +2657,27 @@ mod tests {
         // little sets no look, so diagrams have Mermaid's default.
         assert_eq!(mermaid(""), json!({}));
 
-        // A theme sets its look, and a site changes it, setting by setting.
+        // A theme sets its look, and a site changes it, setting by setting,
+        // beside the theme it chooses.
         let theme = json!({
             "theme": "base",
             "themeVariables": { "primaryColor": "#6f42c1", "lineColor": "#333333" },
         });
-        assert_eq!(mermaid("theme: ./theme\n"), theme);
-        let site_cfg =
-            "theme: ./theme\nmermaid:\n  themeVariables:\n    primaryColor: \"#0969da\"\n";
+        assert_eq!(mermaid(IN_THEME), theme);
+        let site_cfg = format!(
+            "{IN_THEME}    mermaid:\n      themeVariables:\n        primaryColor: \"#0969da\"\n"
+        );
         let expected = json!({
             "theme": "base",
             "themeVariables": { "primaryColor": "#0969da", "lineColor": "#333333" },
         });
-        assert_eq!(mermaid(site_cfg), expected);
+        assert_eq!(mermaid(&site_cfg), expected);
 
         // Every setting is passed on as it's written, in Mermaid's names, for
         // Mermaid to read, or, like a typo, ignore.
-        let site_cfg = "mermaid:\n  look: handDrawn\n  fontFamily: Georgia, serif\n  gantt:\n    \
-                        useWidth: 1000\n  themeVariable:\n    primaryColor: \"#0969da\"\n";
+        let site_cfg = "site:\n  theme:\n    mermaid:\n      look: handDrawn\n      \
+                        fontFamily: Georgia, serif\n      gantt:\n        useWidth: 1000\n      \
+                        themeVariable:\n        primaryColor: \"#0969da\"\n";
         let expected = json!({
             "look": "handDrawn",
             "fontFamily": "Georgia, serif",
@@ -1992,54 +2688,56 @@ mod tests {
 
         // Diagrams left as code, for a theme's script, aren't drawn, so their
         // look isn't read, but the theme still has it.
-        let site_cfg = "theme: ./theme\nmarkdown:\n  mermaid: false\nmermaid:\n  theme: drak\n";
+        let site_cfg =
+            format!("{IN_THEME}    mermaid:\n      theme: drak\n  markdown:\n    mermaid: false\n");
         std::fs::write(site.join(CONFIG_FILE), site_cfg).unwrap();
         let config = load(&site).unwrap();
         assert_eq!(config.markdown.mermaid, None);
-        let theme = config.values.get("mermaid").and_then(|m| m.get("theme"));
-        assert_eq!(theme.and_then(Value::as_str), Some("drak"));
+        assert_eq!(get(&config.site, "theme.mermaid.theme"), Some("drak"));
     }
 
     #[test]
     fn bad_mermaid_explains_itself() {
         let (_tmp, site) = scratch(&[]);
-        for site_cfg in ["mermaid: forest\n", "mermaid:\n", "mermaid: [theme]\n"] {
-            let message = error(&site, site_cfg);
+        let mermaid = |settings: &str| format!("site:\n  theme:\n    mermaid:{settings}\n");
+        for value in [" forest", "", " [theme]"] {
+            let message = error(&site, &mermaid(value));
             assert_eq!(
                 message,
-                "`mermaid` must be Mermaid's settings, like `theme: forest`"
+                "`site.theme.mermaid` must be Mermaid's settings, like `theme: forest`"
             );
         }
 
         // Mermaid would swap a theme it doesn't have for its default.
         for value in ["drak", "Dark", "3", "true", "\"\"", ""] {
-            let message = error(&site, &format!("mermaid:\n  theme: {value}\n"));
+            let message = error(&site, &mermaid(&format!("\n      theme: {value}")));
             assert_eq!(
                 message,
-                "`mermaid.theme` must be one of Mermaid's themes: default, base, dark, forest, \
-                 neutral, neo, neo-dark, redux, redux-dark, redux-color, redux-dark-color"
+                "`site.theme.mermaid.theme` must be one of Mermaid's themes: default, base, \
+                 dark, forest, neutral, neo, neo-dark, redux, redux-dark, redux-color, \
+                 redux-dark-color"
             );
         }
 
         // YAML reads a colour after `#` as a comment, leaving its setting
         // empty, which is named, however deep it is.
-        let site_cfg = "mermaid:\n  theme: base\n  themeVariables:\n    primaryColor: #6f42c1\n";
-        let message = error(&site, site_cfg);
+        let settings = "\n      theme: base\n      themeVariables:\n        primaryColor: #6f42c1";
+        let message = error(&site, &mermaid(settings));
         assert_eq!(
             message,
-            "`mermaid.themeVariables.primaryColor` is empty: put a colour in quotes, like \
-             \"#6f42c1\", or YAML reads it as a comment"
+            "`site.theme.mermaid.themeVariables.primaryColor` is empty: put a colour in quotes, \
+             like \"#6f42c1\", or YAML reads it as a comment"
         );
-        let message = error(&site, "mermaid:\n  fontFamily:\n");
+        let message = error(&site, &mermaid("\n      fontFamily:"));
         assert!(
-            message.starts_with("`mermaid.fontFamily` is empty: "),
+            message.starts_with("`site.theme.mermaid.fontFamily` is empty: "),
             "{message}"
         );
     }
 
     #[test]
     fn host_and_port_cascade() {
-        let (_tmp, site) = scratch(&[("theme/little.yml", "port: 4000\n")]);
+        let (_tmp, site) = scratch(&[("theme/little.yml", "site: { serve: { port: 4000 } }\n")]);
         let address = |site_cfg: &str| {
             std::fs::write(site.join(CONFIG_FILE), site_cfg).unwrap();
             let cfg = load(&site).unwrap();
@@ -2049,12 +2747,13 @@ mod tests {
         // little serves at 127.0.0.1:8080, a theme can change that, and a site
         // has the last word.
         assert_eq!(address(""), ("127.0.0.1".into(), 8080));
-        assert_eq!(address("theme: ./theme\n"), ("127.0.0.1".into(), 4000));
-        let site_cfg = "theme: ./theme\nhost: localhost\nport: 3000\n";
-        assert_eq!(address(site_cfg), ("localhost".into(), 3000));
+        assert_eq!(address(IN_THEME), ("127.0.0.1".into(), 4000));
+        let site_cfg = format!("{IN_THEME}  serve:\n    host: localhost\n    port: 3000\n");
+        assert_eq!(address(&site_cfg), ("localhost".into(), 3000));
 
         // An IPv6 address needs no quotes or brackets.
-        assert_eq!(address("host: ::1\n"), ("::1".into(), 8080));
+        let site_cfg = "site:\n  serve:\n    host: ::1\n";
+        assert_eq!(address(site_cfg), ("::1".into(), 8080));
     }
 
     #[test]
@@ -2063,20 +2762,29 @@ mod tests {
 
         // A host is a name or an address, written as text.
         for value in [" 8080", " [a, b]", " \"\"", ""] {
-            let message = error(&site, &format!("host:{value}\n"));
+            let message = error(&site, &format!("site:\n  serve:\n    host:{value}\n"));
             assert_eq!(
                 message,
-                "`host` must be a host name or IP address, like 127.0.0.1"
+                "`site.serve.host` must be a host name or IP address, like 127.0.0.1"
             );
         }
 
         // Port 0 would have the system pick a port, there's none past 65535,
         // and a port is a number, not text, nor an address with it.
         for value in [" 0", " 65536", " -1", " \"8080\"", " 127.0.0.1:3000", ""] {
-            let message = error(&site, &format!("port:{value}\n"));
+            let message = error(&site, &format!("site:\n  serve:\n    port:{value}\n"));
             assert_eq!(
                 message,
-                "`port` must be a number from 1 to 65535, like 8080"
+                "`site.serve.port` must be a number from 1 to 65535, like 8080"
+            );
+        }
+
+        // An address where its settings go isn't them, nor is nothing.
+        for value in [" 8080", " 127.0.0.1:8080", ""] {
+            let message = error(&site, &format!("site:\n  serve:{value}\n"));
+            assert_eq!(
+                message,
+                "`site.serve` must be its settings, like `port: 8080`"
             );
         }
     }
@@ -2084,8 +2792,8 @@ mod tests {
     #[test]
     fn a_url_puts_the_site_under_its_path() {
         let (_tmp, site) = scratch(&[]);
-        let url = |site_cfg: &str| {
-            std::fs::write(site.join(CONFIG_FILE), site_cfg).unwrap();
+        let url = |url: &str| {
+            std::fs::write(site.join(CONFIG_FILE), format!("site:\n  url: {url}\n")).unwrap();
             load(&site).unwrap().url
         };
         let site_url = |origin: &str, path: &str| SiteUrl {
@@ -2095,17 +2803,17 @@ mod tests {
         };
 
         // Without a url, a site is at the root of whichever domain serves it.
-        assert_eq!(url(""), SiteUrl::default());
+        assert_eq!(load(&site).unwrap().url, SiteUrl::default());
 
         // A `/` at the end of the path is left off, so links don't get two.
         let project = site_url("https://withlittle.github.io", "/little");
-        assert_eq!(url("url: https://withlittle.github.io/little\n"), project);
-        assert_eq!(url("url: https://withlittle.github.io/little/\n"), project);
+        assert_eq!(url("https://withlittle.github.io/little"), project);
+        assert_eq!(url("https://withlittle.github.io/little/"), project);
         let domain = site_url("https://docs.example.com", "");
-        assert_eq!(url("url: https://docs.example.com\n"), domain);
-        assert_eq!(url("url: https://docs.example.com/\n"), domain);
+        assert_eq!(url("https://docs.example.com"), domain);
+        assert_eq!(url("https://docs.example.com/"), domain);
         let nested = site_url("http://localhost:4000", "/a/b");
-        assert_eq!(url("url: http://localhost:4000/a/b\n"), nested);
+        assert_eq!(url("http://localhost:4000/a/b"), nested);
     }
 
     #[test]
@@ -2127,10 +2835,10 @@ mod tests {
             " [https://example.com]",
             "",
         ] {
-            let message = error(&site, &format!("url:{value}\n"));
+            let message = error(&site, &format!("site:\n  url:{value}\n"));
             assert_eq!(
                 message,
-                "`url` must be the address the site is published at, starting with \
+                "`site.url` must be the address the site is published at, starting with \
                  https:// or http://, like https://example.github.io/my-project",
                 "url:{value}"
             );
@@ -2237,7 +2945,8 @@ mod tests {
 
     #[test]
     fn a_repo_and_its_branch_cascade() {
-        let (_tmp, site) = scratch(&[("theme/little.yml", "branch: trunk\n")]);
+        let theme_cfg = "site: { repository: { branch: trunk } }\n";
+        let (_tmp, site) = scratch(&[("theme/little.yml", theme_cfg)]);
         let repo = |site_cfg: &str| {
             std::fs::write(site.join(CONFIG_FILE), site_cfg).unwrap();
             load(&site).unwrap().repo
@@ -2249,27 +2958,29 @@ mod tests {
             })
         };
 
-        // Without a repo, there's nothing to link to.
+        // Without a repository's `url`, there's nothing to link to.
         assert_eq!(repo(""), None);
-        assert_eq!(repo("theme: ./theme\n"), None);
+        assert_eq!(repo(IN_THEME), None);
 
         // little links to files on `main`, a theme can change that, and a
-        // site has the last word. A `/` at the end of the repo is left off.
-        let site_cfg = "repo: https://github.com/withlittle/little\n";
-        assert_eq!(repo(site_cfg), little("main"));
-        assert_eq!(repo(&site_cfg.replace('\n', "/\n")), little("main"));
-        let site_cfg = format!("theme: ./theme\n{site_cfg}");
+        // site has the last word. A `/` at the end of the `url` is left off.
+        let repository = "  repository:\n    url: https://github.com/withlittle/little\n";
+        assert_eq!(repo(&format!("site:\n{repository}")), little("main"));
+        let slashed = repository.replace("little\n", "little/\n");
+        assert_eq!(repo(&format!("site:\n{slashed}")), little("main"));
+        let site_cfg = format!("{IN_THEME}{repository}");
         assert_eq!(repo(&site_cfg), little("trunk"));
-        assert_eq!(repo(&format!("{site_cfg}branch: \"2.0\"\n")), little("2.0"));
+        let site_cfg = format!("{site_cfg}    branch: \"2.0\"\n");
+        assert_eq!(repo(&site_cfg), little("2.0"));
     }
 
     #[test]
     fn bad_repos_and_branches_explain_themselves() {
         let (_tmp, site) = scratch(&[]);
 
-        // A repo is the address a browser shows for it, as text: not the
-        // address it's cloned from, or just its host, and with nothing after
-        // its path.
+        // A repository's `url` is the address a browser shows for it, as
+        // text: not the address it's cloned from, or just its host, and with
+        // nothing after its path.
         for value in [
             " withlittle/little",
             " git@github.com:withlittle/little.git",
@@ -2287,23 +2998,36 @@ mod tests {
             " [https://github.com/withlittle/little]",
             "",
         ] {
-            let message = error(&site, &format!("repo:{value}\n"));
+            let message = error(&site, &format!("site:\n  repository:\n    url:{value}\n"));
             assert_eq!(
                 message,
-                "`repo` must be the address of the site's repository, as a browser shows it, \
-                 like https://github.com/example/my-project",
-                "repo:{value}"
+                "`site.repository.url` must be the address of the site's repository, as a \
+                 browser shows it, like https://github.com/example/my-project",
+                "url:{value}"
             );
         }
 
         // YAML reads a branch like `2.0` as a number, which isn't its name.
         for value in [" 2.0", " 2024", " true", " \"\"", " [main]", ""] {
-            let message = error(&site, &format!("branch:{value}\n"));
+            let message = error(
+                &site,
+                &format!("site:\n  repository:\n    branch:{value}\n"),
+            );
             assert_eq!(
                 message,
-                "`branch` must be the name of a branch, like main, in quotes if it looks like \
-                 a number, like \"2.0\"",
+                "`site.repository.branch` must be the name of a branch, like main, in quotes if \
+                 it looks like a number, like \"2.0\"",
                 "branch:{value}"
+            );
+        }
+
+        // An address where its settings go isn't them, nor is nothing.
+        for value in [" https://github.com/withlittle/little", ""] {
+            let message = error(&site, &format!("site:\n  repository:{value}\n"));
+            assert_eq!(
+                message,
+                "`site.repository` must be its settings, like \
+                 `url: https://github.com/example/my-project`"
             );
         }
     }
@@ -2359,20 +3083,49 @@ mod tests {
     }
 
     #[test]
+    fn a_repo_has_an_owner_and_a_name() {
+        let named = |url: &str| {
+            let repo = Repo {
+                url: url.into(),
+                branch: "main".into(),
+            };
+            let (owner, name) = repo.owner_and_name();
+            (owner.unwrap_or_default(), name)
+        };
+        let is = |owner: &str, name: &str| (owner.to_string(), name.to_string());
+
+        assert_eq!(
+            named("https://github.com/withlittle/little"),
+            is("withlittle", "little")
+        );
+        // A GitLab project can be in a group, in a group.
+        assert_eq!(
+            named("https://gitlab.com/withlittle/docs/little"),
+            is("withlittle/docs", "little")
+        );
+        // One at the top of its host has no owner.
+        let repo = Repo {
+            url: "https://git.example.com/little".into(),
+            branch: "main".into(),
+        };
+        assert_eq!(repo.owner_and_name(), (None, "little".to_string()));
+    }
+
+    #[test]
     fn config_files_hold_settings() {
         let (_tmp, site) = scratch(&[]);
         let parsing = format!("parsing {}: ", site.join(CONFIG_FILE).display());
 
         // Settings are keys and values: a list or a single value would replace
         // them all.
-        for site_cfg in ["- source: ./docs\n", "My Docs\n"] {
+        for site_cfg in ["- site: { source: ./docs }\n", "My Docs\n"] {
             let message = error(&site, site_cfg);
             assert!(message.starts_with(&parsing), "{message}");
             assert!(message.contains("expected a YAML mapping"), "{message}");
         }
 
         // YAML that doesn't parse says where.
-        let message = error(&site, "name: \"My Docs\n");
+        let message = error(&site, "site:\n  name: \"My Docs\n");
         assert!(message.starts_with(&parsing), "{message}");
         assert!(message.contains("at line"), "{message}");
     }
@@ -2380,55 +3133,88 @@ mod tests {
     #[test]
     fn config_files_are_optional_and_can_be_empty() {
         let (_tmp, site) = scratch(&[("theme/_templates/default.html", "")]);
+        let loaded = || {
+            let cfg = load(&site).unwrap();
+            (cfg.site, cfg.page)
+        };
 
         // Without a little.yml, or with one that's empty or only comments, a
         // site gets little's defaults and the built-in theme's.
-        assert_eq!(load(&site).unwrap().values, with_builtin_theme());
+        let builtin = with_builtin_theme();
+        let builtin = (builtin.site, builtin.page);
+        assert_eq!(loaded(), builtin);
         for site_cfg in ["", "# nothing to set yet\n"] {
             std::fs::write(site.join(CONFIG_FILE), site_cfg).unwrap();
-            assert_eq!(load(&site).unwrap().values, with_builtin_theme());
+            assert_eq!(loaded(), builtin);
         }
 
         // The same goes for a theme's little.yml.
-        std::fs::write(site.join(CONFIG_FILE), "theme: ./theme\n").unwrap();
-        let mut expected = builtin_defaults();
-        expected.insert("theme".into(), "./theme".into());
-        assert_eq!(load(&site).unwrap().values, expected);
+        std::fs::write(site.join(CONFIG_FILE), IN_THEME).unwrap();
+        let Level {
+            site: mut expected,
+            page,
+        } = builtin_defaults();
+        let Some(Value::Mapping(theme)) = expected.get_mut("theme") else {
+            panic!("little should default `theme`");
+        };
+        theme.insert("source".into(), "./theme".into());
+        let expected = (expected, page);
+        assert_eq!(loaded(), expected);
         std::fs::write(site.join("theme").join(CONFIG_FILE), "# nothing\n").unwrap();
-        assert_eq!(load(&site).unwrap().values, expected);
+        assert_eq!(loaded(), expected);
     }
 
     #[test]
     fn little_defaults_only_its_own_settings() {
-        let cfg = builtin_defaults();
-        assert_eq!(get(&cfg, "source"), Some("./docs"));
-        assert_eq!(get(&cfg, "destination"), Some("./dist"));
-        assert_eq!(cfg.get("theme"), Some(&Value::Bool(true)));
-        assert_eq!(cfg.get("toc_min_depth").and_then(Value::as_u64), Some(2));
-        assert_eq!(cfg.get("toc_max_depth").and_then(Value::as_u64), Some(6));
-        assert_eq!(get(&cfg, "host"), Some("127.0.0.1"));
-        assert_eq!(cfg.get("port").and_then(Value::as_u64), Some(8080));
+        let Level { site, page } = builtin_defaults();
+        assert_eq!(get(&site, "source"), Some("./docs"));
+        assert_eq!(get(&site, "destination"), Some("./dist"));
+        let number = |path: &str| value(&site, path).and_then(Value::as_u64);
+        assert_eq!(value(&site, "theme.enabled"), Some(&true.into()));
+        assert_eq!(get(&site, "serve.host"), Some("127.0.0.1"));
+        assert_eq!(number("serve.port"), Some(8080));
         // Search is a theme's to turn on, with a box to search in.
-        assert_eq!(cfg.get("search"), Some(&Value::Bool(false)));
-        // Each page gets the whole nav, unless a big site prunes it.
-        assert_eq!(cfg.get("nav_prune"), Some(&Value::Bool(false)));
+        assert_eq!(value(&site, "search.enabled"), Some(&false.into()));
+        // Each page gets the whole nav, unless a big site prunes it, and
+        // little lists a site's pages unless the site does.
+        assert_eq!(value(&site, "navigation.prune"), Some(&false.into()));
+        assert_eq!(value(&site, "navigation.items"), None);
         // A site's name, language, and look are the theme's to default.
-        for key in ["name", "lang", "mermaid"] {
-            assert_eq!(cfg.get(key), None, "little shouldn't default `{key}`");
+        for key in [
+            "name",
+            "language",
+            "theme.source",
+            "theme.mermaid",
+            "theme.fonts",
+        ] {
+            assert_eq!(value(&site, key), None, "little shouldn't default `{key}`");
         }
         // And only the site knows where it's published, and where its
         // repository is, though most link to their files on `main`.
-        assert_eq!(cfg.get("url"), None);
-        assert_eq!(cfg.get("repo"), None);
-        assert_eq!(get(&cfg, "branch"), Some("main"));
+        assert_eq!(value(&site, "url"), None);
+        assert_eq!(value(&site, "repository.url"), None);
+        assert_eq!(get(&site, "repository.branch"), Some("main"));
+        // The 404 page says what it is.
+        assert_eq!(get(&site, "error.title"), Some("Page not found"));
+        assert!(get(&site, "error.description").is_some());
+        // Every page has each thing little works out for it, with every
+        // heading but its `#` title in its table of contents, and is in
+        // search unless the site leaves it out. Any other key is a theme's
+        // to set, and a site's.
+        let settings = PageSettings::read(&page, "page.").unwrap();
+        assert_eq!(settings, every_page(2..=6));
+        let groups = ["outline", "breadcrumb", "previous", "next", "repository"];
+        assert_eq!(Vec::from_iter(page.keys()), groups);
     }
 
     #[test]
     fn the_builtin_theme_builds_on_nothing() {
-        // The chain ends with the built-in theme, so a `theme` in its config
-        // would be ignored.
-        let cfg = parse_config(theme::builtin::CONFIG).unwrap();
-        assert_eq!(cfg.get("theme"), None);
+        // The chain ends with the built-in theme, so a `theme.enabled` or a
+        // `theme.source` in its config would be ignored.
+        let theme = builtin_theme();
+        for key in ["theme.enabled", "theme.source"] {
+            assert_eq!(value(&theme.site, key), None, "{key}");
+        }
     }
 
     #[test]
@@ -2474,21 +3260,29 @@ mod tests {
 
     #[test]
     fn plugins_cascade_plugin_by_plugin_and_setting_by_setting() {
-        let theme_cfg = "plugins:\n  bob: ./plugins/bob.wasm\n  \
-                         ann:\n    wasm: https://example.com/ann.wasm\n    style: plain\n    \
-                         width: 80\n  old: ./old.wasm\n";
+        let theme_cfg = under_site(
+            "plugins:\n  bob:\n    wasm: ./plugins/bob.wasm\n  \
+             ann:\n    wasm: https://example.com/ann.wasm\n    style: plain\n    width: 80\n  \
+             old:\n    wasm: ./old.wasm\n  \
+             new:\n    wasm: ./new.wasm\n    enabled: false\n",
+        );
         let (_tmp, site) = scratch(&[
             ("theme/_templates/default.html", ""),
-            ("theme/little.yml", theme_cfg),
+            ("theme/little.yml", &theme_cfg),
         ]);
         // The site changes one of the theme's settings, turns one of its
-        // plugins off, and adds its own, which reads two folders.
-        let site_cfg = "theme: ./theme\nplugins:\n  ann:\n    style: fancy\n  old: false\n  \
-                        cal:\n    wasm: tools/cal.wasm\n    read: [./src/, examples]\n    depth: 2\n";
+        // plugins off, and another on, and adds its own, which reads two
+        // folders.
+        let site_cfg = format!(
+            "{IN_THEME}  plugins:\n    ann:\n      style: fancy\n    \
+             old:\n      enabled: false\n    new:\n      enabled: true\n    \
+             cal:\n      wasm: tools/cal.wasm\n      read: [./src/, examples]\n      depth: 2\n"
+        );
         std::fs::write(site.join(CONFIG_FILE), site_cfg).unwrap();
 
         // Each path leads from the little.yml that wrote it, and the plugin
-        // is told the folders it reads as it sees them, in its settings.
+        // is told the folders it reads as it sees them, in its settings,
+        // which are its own, but for `read`.
         let url = Wasm::Url("https://example.com/ann.wasm".to_string());
         assert_eq!(
             load(&site).unwrap().plugins,
@@ -2500,6 +3294,7 @@ mod tests {
                     "{}"
                 ),
                 plugin("ann", url, &[], r#"{"style":"fancy","width":80}"#),
+                plugin("new", Wasm::File(site.join("theme/new.wasm")), &[], "{}"),
                 plugin(
                     "cal",
                     Wasm::File(site.join("tools/cal.wasm")),
@@ -2513,7 +3308,7 @@ mod tests {
         );
 
         // `read` can name one folder, like the site's own.
-        let site_cfg = "plugins:\n  cal:\n    wasm: ./cal.wasm\n    read: .\n";
+        let site_cfg = "site:\n  plugins:\n    cal:\n      wasm: ./cal.wasm\n      read: .\n";
         std::fs::write(site.join(CONFIG_FILE), site_cfg).unwrap();
         assert_eq!(
             load(&site).unwrap().plugins,
@@ -2526,7 +3321,7 @@ mod tests {
         );
 
         // A site can name none.
-        for site_cfg in ["", "plugins:\n", "plugins: {}\n"] {
+        for site_cfg in ["", "site:\n  plugins:\n", "site: { plugins: {} }\n"] {
             std::fs::write(site.join(CONFIG_FILE), site_cfg).unwrap();
             assert_eq!(load(&site).unwrap().plugins, [], "{site_cfg}");
         }
@@ -2537,26 +3332,29 @@ mod tests {
         let (_tmp, site) = scratch(&[("theme/_templates/default.html", "")]);
         let file = site.join(CONFIG_FILE);
         let file = file.display();
-        for (site_cfg, expected) in [
+        // A file alone, `true`, `false`, and nothing aren't its settings.
+        let not_settings = format!(
+            "plugin `bob` in {file} must be its settings, like `wasm: ./plugins/bob.wasm`, for \
+             its `.wasm` file, or `enabled: false`, to turn it off"
+        );
+        for (plugins, expected) in [
             (
                 "plugins: [./bob.wasm]\n",
                 format!(
-                    "`plugins` in {file} must name each plugin and its `.wasm` file, like \
-                     `bob: ./plugins/bob.wasm`"
+                    "`site.plugins` in {file} must name each plugin, with its settings, like \
+                     `bob: {{ wasm: ./plugins/bob.wasm }}`"
                 ),
             ),
-            (
-                "plugins:\n  bob: true\n",
-                format!(
-                    "plugin `bob` in {file} must be its `.wasm` file, its settings, or `false`"
-                ),
-            ),
+            ("plugins:\n  bob: ./bob.wasm\n", not_settings.clone()),
+            ("plugins:\n  bob: false\n", not_settings.clone()),
+            ("plugins:\n  bob: true\n", not_settings.clone()),
+            ("plugins:\n  bob:\n", not_settings.clone()),
             (
                 "plugins:\n  bob:\n    style: plain\n",
                 "plugin `bob` needs `wasm`, the path or URL of its `.wasm` file".to_string(),
             ),
             (
-                "plugins:\n  bob: http://example.com/bob.wasm\n",
+                "plugins:\n  bob:\n    wasm: http://example.com/bob.wasm\n",
                 format!(
                     "plugin `bob` in {file} is at `http://example.com/bob.wasm`, but little only \
                      downloads plugins over HTTPS"
@@ -2578,15 +3376,20 @@ mod tests {
                 "plugins:\n  bob:\n    wasm: ./bob.wasm\n    sizes: { ~: small }\n",
                 "plugin `bob`'s settings must each be named, like `style: google`".to_string(),
             ),
+            // YAML reads `no` as text, not `false`.
+            (
+                "plugins:\n  bob:\n    wasm: ./bob.wasm\n    enabled: no\n",
+                "`enabled` of plugin `bob` must be `true`, or `false`, to turn it off".to_string(),
+            ),
         ] {
-            let message = error(&site, site_cfg);
-            assert!(message.starts_with(&expected), "{site_cfg}: {message}");
+            let message = error(&site, &under_site(plugins));
+            assert!(message.starts_with(&expected), "{plugins}: {message}");
         }
 
         // Only the site chooses what a plugin reads, not a theme it uses.
-        let theme_cfg = "plugins:\n  bob:\n    wasm: ./bob.wasm\n    read: /\n";
+        let theme_cfg = under_site("plugins:\n  bob:\n    wasm: ./bob.wasm\n    read: /\n");
         std::fs::write(site.join("theme").join(CONFIG_FILE), theme_cfg).unwrap();
-        let message = error(&site, "theme: ./theme\n");
+        let message = error(&site, IN_THEME);
         let theme_file = site.join("theme").join(CONFIG_FILE);
         let theme_file = theme_file.display();
         assert!(
@@ -2601,8 +3404,9 @@ mod tests {
     #[test]
     fn versions_have_titles_and_urls_and_are_built_from_refs() {
         let (_tmp, site) = scratch(&[]);
-        let versions = |site_cfg: &str| {
-            std::fs::write(site.join(CONFIG_FILE), site_cfg).unwrap();
+        // Each is the site's settings, written from their first column.
+        let versions = |settings: &str| {
+            std::fs::write(site.join(CONFIG_FILE), under_site(settings)).unwrap();
             load(&site).unwrap().versions
         };
         let version = |title: &str, path: &str, git_ref: Option<&str>| Version {
@@ -2615,19 +3419,19 @@ mod tests {
         };
 
         // A site without versions has just the one.
-        for site_cfg in ["", "versions:\n", "versions: []\n"] {
-            assert_eq!(versions(site_cfg), [], "{site_cfg}");
+        for settings in ["", "versions:\n", "versions: []\n"] {
+            assert_eq!(versions(settings), [], "{settings}");
         }
         // In the menu's order, one at `/`, wherever it's listed, each from a
         // tag, a branch, or a commit, but for one, at most, from the site's
         // files as they are. A title is any text, and a `url` can end in `/`
         // or not. Each can have settings of its own, for the theme.
-        let site_cfg = "versions:\n  - title: \"2.0 (Alpha)\"\n    url: /2.0-alpha\n    \
+        let settings = "versions:\n  - title: \"2.0 (Alpha)\"\n    url: /2.0-alpha\n    \
                         label: next\n  - title: 1.10 (Latest)\n    url: /\n    ref: v1.10\n  \
                         - title: 1.x\n    url: /versions/1.x/\n    ref: origin/1.x\n  \
                         - { title: Old docs, url: /old_docs, ref: \"1234567\" }\n";
         assert_eq!(
-            versions(site_cfg),
+            versions(settings),
             [
                 version("2.0 (Alpha)", "/2.0-alpha", None),
                 version("1.10 (Latest)", "", Some("v1.10")),
@@ -2636,25 +3440,25 @@ mod tests {
             ]
         );
         // A blank `ref` is none, and every version can be from a ref.
-        let site_cfg = "versions:\n  - title: a\n    url: /\n    ref:\n  \
+        let settings = "versions:\n  - title: a\n    url: /\n    ref:\n  \
                         - { title: b, url: /b, ref: v1 }\n";
         assert_eq!(
-            versions(site_cfg),
+            versions(settings),
             [version("a", "", None), version("b", "/b", Some("v1"))]
         );
-        let site_cfg = "versions:\n  - { title: a, url: /, ref: v2 }\n  \
+        let settings = "versions:\n  - { title: a, url: /, ref: v2 }\n  \
                         - { title: b, url: /b, ref: v1 }\n";
         assert_eq!(
-            versions(site_cfg),
+            versions(settings),
             [version("a", "", Some("v2")), version("b", "/b", Some("v1"))]
         );
         // The version at `/` can have others in its folders, as can others
         // with the same start to their paths.
-        let site_cfg = "versions:\n  - { title: a, url: / }\n  \
+        let settings = "versions:\n  - { title: a, url: / }\n  \
                         - { title: b, url: /versions/1, ref: v1 }\n  \
                         - { title: c, url: /versions/10, ref: v10 }\n";
         assert_eq!(
-            versions(site_cfg),
+            versions(settings),
             [
                 version("a", "", None),
                 version("b", "/versions/1", Some("v1")),
@@ -2663,39 +3467,48 @@ mod tests {
         );
         // A version from a ref can name the folder its pages are in there,
         // and a blank `source` is none.
-        let site_cfg = "versions:\n  - { title: a, url: / }\n  \
+        let settings = "versions:\n  - { title: a, url: / }\n  \
                         - { title: b, url: /b, ref: v1, source: ./documentation }\n  \
                         - { title: c, url: /c, ref: v0, source: }\n";
         let mut b = version("b", "/b", Some("v1"));
         b.source = Some("./documentation".into());
         assert_eq!(
-            versions(site_cfg),
+            versions(settings),
             [version("a", "", None), b, version("c", "/c", Some("v0"))]
         );
-        // And its own nav, and settings for the site's plugins, each over
-        // the site's, or `false`; a blank `nav` or `plugins` is none. Any
-        // other key, like `name`, is for the theme.
-        let site_cfg = "plugins:\n  api: ./api.wasm\n  bob: ./bob.wasm\n\
-                        versions:\n  - { title: a, url: /, plugins: {} }\n  \
+        // And its own nav, as `navigation.items`, and settings for the
+        // site's plugins, each over the site's; a blank `navigation`, or
+        // `items`, or `plugins` is none. Any other key, like `name`, is for
+        // the theme.
+        let settings = "plugins:\n  api: { wasm: ./api.wasm }\n  bob: { wasm: ./bob.wasm }\n\
+                        versions:\n  - { title: a, url: /, plugins: {}, navigation: {} }\n  \
                         - title: b\n    url: /b\n    ref: v1\n    name: Old\n    \
-                        nav: [{ title: Home, url: / }]\n    \
-                        plugins:\n      api: { read: ./lib, style: plain }\n      bob: false\n  \
-                        - title: c\n    url: /c\n    ref: v0\n    nav:\n    plugins:\n";
+                        navigation:\n      items: [{ title: Home, url: / }]\n    \
+                        plugins:\n      api: { read: ./lib, style: plain }\n      \
+                        bob: { enabled: false }\n  \
+                        - title: c\n    url: /c\n    ref: v0\n    navigation:\n    plugins:\n  \
+                        - { title: d, url: /d, ref: v0, navigation: { items: } }\n";
         let mut b = version("b", "/b", Some("v1"));
         b.nav = Some(serde_yaml::from_str("[{ title: Home, url: / }]").unwrap());
         b.plugins =
-            serde_yaml::from_str("{ api: { read: ./lib, style: plain }, bob: false }").unwrap();
+            serde_yaml::from_str("{ api: { read: ./lib, style: plain }, bob: { enabled: false } }")
+                .unwrap();
         assert_eq!(
-            versions(site_cfg),
-            [version("a", "", None), b, version("c", "/c", Some("v0"))]
+            versions(settings),
+            [
+                version("a", "", None),
+                b,
+                version("c", "/c", Some("v0")),
+                version("d", "/d", Some("v0")),
+            ]
         );
     }
 
     #[test]
     fn bad_versions_explain_themselves() {
         let (_tmp, site) = scratch(&[]);
-        let list = "`versions` must list the site's versions, each with its `title`, the `url` \
-                    it's at, and the `ref` it's built from, like \
+        let list = "`site.versions` must list the site's versions, each with its `title`, the \
+                    `url` it's at, and the `ref` it's built from, like \
                     `- { title: \"1.4\", url: /1.4, ref: v1.4 }`";
         let title = "each version needs a `title`, in quotes if it looks like a number, like \
                      \"1.10\", which YAML would read as 1.1";
@@ -2713,7 +3526,8 @@ mod tests {
                        like v1.4, in quotes if it looks like a number";
         let home = "no version is at `/`, the site's home: give the one readers should land on \
                     `url: /`";
-        for (site_cfg, expected) in [
+        // Each is the site's settings, written from their first column.
+        for (settings, expected) in [
             ("versions: \"2.0\"\n", list.to_string()),
             ("versions: { title: \"2.0\" }\n", list.to_string()),
             ("versions: [\"2.0\"]\n", list.to_string()),
@@ -2820,32 +3634,43 @@ mod tests {
                     .to_string(),
             ),
             (
-                "versions:\n  - { title: a, url: /, nav: [{ title: Home, url: / }] }\n",
-                "version `a` sets `nav` but has no `ref`, so it's built from the site's files as \
-                 they are: set the site's `nav` instead"
+                "versions:\n  \
+                 - { title: a, url: /, navigation: { items: [{ title: Home, url: / }] } }\n",
+                "version `a` sets `navigation.items` but has no `ref`, so it's built from the \
+                 site's files as they are: set the site's `navigation.items` instead"
                     .to_string(),
             ),
             (
-                "plugins:\n  api: ./api.wasm\n\
-                 versions:\n  - { title: a, url: /, plugins: { api: false } }\n",
+                "plugins:\n  api: { wasm: ./api.wasm }\n\
+                 versions:\n  - { title: a, url: /, plugins: { api: { enabled: false } } }\n",
                 "version `a` sets `plugins` but has no `ref`, so it's built from the site's files \
                  as they are: set the site's `plugins` instead"
                     .to_string(),
             ),
+            // Its nav is its `navigation.items`, not its `navigation`.
+            (
+                "versions:\n  - { title: a, url: /, ref: v1, navigation: [{ title: Home }] }\n",
+                "version `a`'s `navigation` must hold its nav, as `items`, like \
+                 `navigation: { items: [{ title: Home, url: / }] }`"
+                    .to_string(),
+            ),
         ] {
-            assert_eq!(error(&site, site_cfg), expected, "{site_cfg}");
+            let site_cfg = under_site(settings);
+            assert_eq!(error(&site, &site_cfg), expected, "{settings}");
         }
 
         // A version's `plugins` can change only the settings of those the
         // site uses.
         let site_cfg = |plugins: &str| {
-            format!(
-                "plugins:\n  api: ./api.wasm\n  bob: false\n\
+            under_site(&format!(
+                "plugins:\n  api: {{ wasm: ./api.wasm }}\n  \
+                 bob: {{ wasm: ./bob.wasm, enabled: false }}\n\
                  versions:\n  - {{ title: a, url: /, ref: v2, plugins: {plugins} }}\n"
-            )
+            ))
         };
         let not_settings = "version `a`'s `plugins` must name the site's plugins it changes, \
-                            each with its settings, or `false`, to turn it off, like `api: false`";
+                            each with its settings, like `api: { enabled: false }`, to turn it \
+                            off";
         let not_the_sites = |name: &str| {
             format!(
                 "version `a` sets plugin `{name}`, but the site doesn't use it: a version can \
@@ -2854,16 +3679,18 @@ mod tests {
         };
         let wasm = "version `a` gives plugin `api` a `.wasm` file, but every version is built \
                     with the site's: a version can change only a plugin's settings, or turn it \
-                    off, with `false`";
-        let neither = "plugin `api` in version `a` must be its settings, or `false`";
+                    off, with `enabled: false`";
+        let neither = "plugin `api` in version `a` must be its settings, like `enabled: false`, \
+                       to turn it off";
         for (plugins, expected) in [
             ("[api]", not_settings.to_string()),
             ("api", not_settings.to_string()),
-            ("{ 1: false }", not_settings.to_string()),
-            ("{ apy: false }", not_the_sites("apy")),
+            ("{ 1: { enabled: false } }", not_settings.to_string()),
+            ("{ apy: { enabled: false } }", not_the_sites("apy")),
             ("{ bob: { style: plain } }", not_the_sites("bob")),
-            ("{ api: ./old/api.wasm }", wasm.to_string()),
             ("{ api: { wasm: ./old/api.wasm } }", wasm.to_string()),
+            ("{ api: ./old/api.wasm }", neither.to_string()),
+            ("{ api: false }", neither.to_string()),
             ("{ api: true }", neither.to_string()),
             ("{ api: [./lib] }", neither.to_string()),
             ("{ api: }", neither.to_string()),
@@ -2872,51 +3699,61 @@ mod tests {
         }
 
         // Nor can it set little's other settings, which are the site's.
+        let sites = |key: &str| {
+            format!(
+                "version `a` sets `{key}`, but every version is built with the site's `{key}`: \
+                 a version from a `ref` can set only its own `source`, `navigation.items`, and \
+                 `plugins`"
+            )
+        };
         for (key, value) in [
             ("destination", "./old"),
-            ("theme", "./old-theme"),
-            ("repo", "\"https://github.com/o/old\""),
-            ("branch", "old"),
-            ("toc_min_depth", "1"),
-            ("toc_max_depth", "3"),
-            ("nav_prune", "true"),
-            ("search", "false"),
+            ("theme", "{ source: ./old-theme }"),
+            ("repository", "{ branch: old }"),
+            ("search", "{ enabled: false }"),
             ("markdown", "{ math: false }"),
-            ("mermaid", "{ theme: forest }"),
             ("versions", "[]"),
             ("year", "2020"),
-            ("host", "0.0.0.0"),
-            ("port", "3000"),
+            ("serve", "{ port: 3000 }"),
+            ("error", "{ title: Gone }"),
         ] {
-            let site_cfg =
+            let settings =
                 format!("versions:\n  - {{ title: a, url: /, ref: v2, {key}: {value} }}\n");
-            let expected = format!(
-                "version `a` sets `{key}`, but every version is built with the site's `{key}`: \
-                 a version from a `ref` can set only its own `source`, `nav`, and `plugins`"
-            );
-            assert_eq!(error(&site, &site_cfg), expected, "{key}");
+            assert_eq!(error(&site, &under_site(&settings)), sites(key), "{key}");
         }
+        // Of `navigation`, only its `items` are its own.
+        let settings = "versions:\n  \
+                        - { title: a, url: /, ref: v2, navigation: { items: [], prune: true } }\n";
+        let message = error(&site, &under_site(settings));
+        assert_eq!(message, sites("navigation.prune"));
     }
 
     #[test]
     fn a_version_from_a_ref_has_the_sites_config_but_its_own_pages_and_nav() {
-        let theme_cfg = "name: Theme\nfont: serif\nplugins:\n  bob: ./bob.wasm\n";
+        let theme_cfg = under_site(
+            "name: Theme\ntheme:\n  fonts:\n    body: serif\nplugins:\n  bob:\n    wasm: ./bob.wasm\n",
+        );
         // Settings that would stop the build, were they the site's, aren't
-        // read.
-        let old_cfg = "theme: ./elsewhere\nname: Old\nurl: https://old.example.com\n\
-                       source: ./src\nversions: []\nnav: [{ title: Old, url: / }]\n\
-                       toc_min_depth: 9\nplugins: [./cal.wasm]\n";
+        // read, nor is anything beside its `site`.
+        let old_cfg = "site:\n  theme: ./elsewhere\n  name: Old\n  url: https://old.example.com\n  \
+                       source: ./src\n  versions: []\n  \
+                       navigation:\n    items: [{ title: Old, url: / }]\n    prune: 1\n  \
+                       search: true\n  plugins: [./cal.wasm]\n\
+                       author: Old\npage:\n  outline: false\n";
         let (_tmp, site) = scratch(&[
-            ("theme/little.yml", theme_cfg),
+            ("theme/little.yml", &theme_cfg),
             ("theme/_templates/default.html", ""),
             ("old/little.yml", old_cfg),
         ]);
-        let site_cfg = "theme: ./theme\nname: New\nurl: https://example.com/docs\n\
-                        repo: https://github.com/example/docs\ndestination: ./public\n\
-                        source: ./content\nnav: [{ title: New, url: / }]\n\
-                        plugins:\n  ann:\n    wasm: ./ann.wasm\n    read: ./lib\n\
-                        versions:\n  - { title: \"2.0\", url: / }\n  \
-                        - { title: \"1.4\", url: /1.4, ref: v1.4 }\n";
+        let site_cfg = format!(
+            "{IN_THEME}  name: New\n  url: https://example.com/docs\n  \
+             repository:\n    url: https://github.com/example/docs\n  destination: ./public\n  \
+             source: ./content\n  navigation:\n    items: [{{ title: New, url: / }}]\n  \
+             plugins:\n    ann:\n      wasm: ./ann.wasm\n      read: ./lib\n  \
+             versions:\n    - {{ title: \"2.0\", url: / }}\n    \
+             - {{ title: \"1.4\", url: /1.4, ref: v1.4 }}\n\
+             page:\n  author: New\n"
+        );
         std::fs::write(site.join(CONFIG_FILE), site_cfg).unwrap();
         let config = load(&site).unwrap();
         let old = site.join("old");
@@ -2926,27 +3763,28 @@ mod tests {
 
         // Its little.yml chooses its pages and its nav, as the site's would.
         assert_eq!(version.source_dir, old.join("src"));
-        assert_eq!(get(&version.values, "source"), Some("./src"));
+        assert_eq!(get(&version.site, "source"), Some("./src"));
         let nav: Value = serde_yaml::from_str("[{ title: Old, url: / }]").unwrap();
-        assert_eq!(version.values.get("nav"), Some(&nav));
+        assert_eq!(value(&version.site, "navigation.items"), Some(&nav));
         // But the rest is the site's, with plugins that read their folders
         // at the ref.
         for key in [
             "theme",
             "name",
-            "font",
             "url",
-            "repo",
+            "repository",
             "versions",
             "plugins",
-            "toc_min_depth",
+            "search",
+            "navigation.prune",
         ] {
-            assert_eq!(version.values.get(key), config.values.get(key), "{key}");
+            assert_eq!(value(&version.site, key), value(&config.site, key), "{key}");
         }
+        assert_eq!(version.page, config.page);
         assert_eq!(version.themes, config.themes);
         assert_eq!(version.url, config.url);
         assert_eq!(version.repo, config.repo);
-        assert_eq!(version.toc_depths, config.toc_depths);
+        assert_eq!(version.page_settings, config.page_settings);
         assert_eq!(version.destination_dir, site.join("public"));
         assert_eq!(version.versions, config.versions);
         assert_eq!(
@@ -2964,36 +3802,38 @@ mod tests {
 
         // A little.yml that sets neither has little's `source`, and a nav
         // worked out from its folders, not the site's.
-        std::fs::write(old.join(CONFIG_FILE), "name: Old\n").unwrap();
+        std::fs::write(old.join(CONFIG_FILE), "site: { name: Old }\n").unwrap();
         let version = config.for_version(&v14, &old, file).unwrap();
         assert_eq!(version.source_dir, old.join("docs"));
-        assert_eq!(get(&version.values, "source"), Some("./docs"));
-        assert_eq!(version.values.get("nav"), None);
-        assert_eq!(get(&version.values, "name"), Some("New"));
+        assert_eq!(get(&version.site, "source"), Some("./docs"));
+        assert_eq!(value(&version.site, "navigation.items"), None);
+        assert_eq!(get(&version.site, "name"), Some("New"));
 
         // Without one, it's from before the site was built with little, so
         // its pages are in the site's `source`.
         std::fs::remove_file(old.join(CONFIG_FILE)).unwrap();
         let version = config.for_version(&v14, &old, file).unwrap();
         assert_eq!(version.source_dir, old.join("content"));
-        assert_eq!(get(&version.values, "source"), Some("./content"));
-        assert_eq!(version.values.get("nav"), None);
+        assert_eq!(get(&version.site, "source"), Some("./content"));
+        assert_eq!(value(&version.site, "navigation.items"), None);
 
         // Its entry's `source` wins, with or without one.
         v14.source = Some("./documentation".into());
         let version = config.for_version(&v14, &old, file).unwrap();
         assert_eq!(version.source_dir, old.join("documentation"));
-        assert_eq!(get(&version.values, "source"), Some("./documentation"));
+        assert_eq!(get(&version.site, "source"), Some("./documentation"));
         std::fs::write(old.join(CONFIG_FILE), old_cfg).unwrap();
         let version = config.for_version(&v14, &old, file).unwrap();
         assert_eq!(version.source_dir, old.join("documentation"));
-        assert_eq!(version.values.get("nav"), Some(&nav));
+        assert_eq!(value(&version.site, "navigation.items"), Some(&nav));
 
-        // As does its `nav`, and its `plugins` go over the site's, setting by
+        // As does its nav, and its `plugins` go over the site's, setting by
         // setting, reading their folders at the ref, or turn one off.
         let own_nav: Value = serde_yaml::from_str("[{ title: Mine, url: / }]").unwrap();
         v14.nav = Some(own_nav.clone());
-        v14.plugins = serde_yaml::from_str("{ ann: { read: [./src, lib] }, bob: false }").unwrap();
+        v14.plugins =
+            serde_yaml::from_str("{ ann: { read: [./src, lib] }, bob: { enabled: false } }")
+                .unwrap();
         let ann = plugin(
             "ann",
             Wasm::File(site.join("ann.wasm")),
@@ -3001,21 +3841,24 @@ mod tests {
             r#"{"read":["src","lib"]}"#,
         );
         let version = config.for_version(&v14, &old, file).unwrap();
-        assert_eq!(version.values.get("nav"), Some(&own_nav));
+        assert_eq!(value(&version.site, "navigation.items"), Some(&own_nav));
         assert_eq!(version.plugins, std::slice::from_ref(&ann));
+        // Each path as little writes it: on Windows, with `\` throughout.
         let plugins: Value = serde_yaml::from_str(&format!(
-            "{{ bob: false, ann: {{ wasm: '{}', read: [./src, lib] }} }}",
+            "{{ bob: {{ wasm: '{}', enabled: false }}, \
+             ann: {{ wasm: '{}', read: [./src, lib] }} }}",
+            site.join("theme").join("bob.wasm").display(),
             site.join("ann.wasm").display()
         ))
         .unwrap();
-        assert_eq!(version.values.get("plugins"), Some(&plugins));
+        assert_eq!(version.site.get("plugins"), Some(&plugins));
         std::fs::remove_file(old.join(CONFIG_FILE)).unwrap();
         let version = config.for_version(&v14, &old, file).unwrap();
-        assert_eq!(version.values.get("nav"), Some(&own_nav));
+        assert_eq!(value(&version.site, "navigation.items"), Some(&own_nav));
         assert_eq!(version.plugins, [ann]);
 
         // Its little.yml is named in its errors as git names it.
-        std::fs::write(old.join(CONFIG_FILE), "name: [Old\n").unwrap();
+        std::fs::write(old.join(CONFIG_FILE), "site:\n  name: [Old\n").unwrap();
         let message = format!("{:#}", config.for_version(&v14, &old, file).unwrap_err());
         assert!(
             message.starts_with("parsing v1.4:old/little.yml: "),
@@ -3025,46 +3868,102 @@ mod tests {
 
     #[test]
     fn a_plugin_changes_the_config_but_not_what_little_reads_before_it_starts() {
-        let (_tmp, site) = scratch(&[(CONFIG_FILE, "title: Docs\nport: 9000\n")]);
+        let site_cfg = "site:\n  title: Docs\n  serve:\n    port: 9000\npage:\n  author: Ada\n";
+        let (_tmp, site) = scratch(&[(CONFIG_FILE, site_cfg)]);
         let config = load(&site).unwrap();
-        let hook = |change: &dyn Fn(&mut Mapping)| {
-            let mut values = config.values.clone();
-            change(&mut values);
-            config.hooked(&site, values).map_err(|e| format!("{e:#}"))
+        // The config a plugin's hook is given, with `change` made to its
+        // `site` and its `page`, given back.
+        let hook = |change: &dyn Fn(&mut Mapping, &mut Mapping)| {
+            let (mut settings, mut page) = (config.site.clone(), config.page.clone());
+            change(&mut settings, &mut page);
+            let groups = Mapping::from_iter([
+                ("site".into(), Value::Mapping(settings)),
+                ("page".into(), Value::Mapping(page)),
+            ]);
+            config.hooked(&site, groups).map_err(|e| format!("{e:#}"))
         };
+        let settings = |yaml: &str| serde_yaml::from_str::<Value>(yaml).unwrap();
 
-        let hooked = hook(&|values| {
-            values.insert("title".into(), "Hooked".into());
-            values.insert("toc_max_depth".into(), 4.into());
+        // It's given both groups, as `little config` prints them.
+        let groups = config.groups();
+        assert_eq!(Vec::from_iter(groups.keys()), ["site", "page"]);
+
+        let hooked = hook(&|site, page| {
+            site.insert("title".into(), "Hooked".into());
+            page.insert("author".into(), "Grace".into());
+            let outline = settings("{ enabled: false, depth: { min: 2, max: 4 } }");
+            page.insert("outline".into(), outline);
         })
         .unwrap();
-        assert_eq!(get(&hooked.values, "title"), Some("Hooked"));
-        assert_eq!(hooked.toc_depths, 2..=4);
+        assert_eq!(get(&hooked.site, "title"), Some("Hooked"));
         assert_eq!(hooked.port, 9000);
+        assert_eq!(get(&hooked.page, "author"), Some("Grace"));
+        let outlined = PageSettings {
+            outline: false,
+            ..every_page(2..=4)
+        };
+        assert_eq!(hooked.page_settings, outlined);
 
-        let fixed = "but plugins can't change `theme`, `plugins`, `source`, `destination`, \
-                     `host`, or `port`";
-        let changed = hook(&|values| {
-            values.insert("port".into(), 9001.into());
+        let fixed = "but plugins can't change `site.theme.enabled`, `site.theme.source`, \
+                     `site.plugins`, `site.source`, `site.destination`, or `site.serve`";
+        let changed = hook(&|site, _| {
+            site.insert("serve".into(), settings("{ host: 127.0.0.1, port: 9001 }"));
         });
-        assert_eq!(changed.unwrap_err(), format!("changes `port`, {fixed}"));
-        let changed = hook(&|values| {
-            values.shift_remove("theme");
+        assert_eq!(
+            changed.unwrap_err(),
+            format!("changes `site.serve`, {fixed}")
+        );
+        let changed = hook(&|site, _| {
+            site.shift_remove("theme");
         });
-        assert_eq!(changed.unwrap_err(), format!("changes `theme`, {fixed}"));
-        let changed = hook(&|values| {
-            let plugins = serde_yaml::from_str("{ bob: ./bob.wasm }").unwrap();
-            values.insert("plugins".into(), plugins);
+        assert_eq!(
+            changed.unwrap_err(),
+            format!("changes `site.theme.enabled`, {fixed}")
+        );
+        let changed = hook(&|site, _| {
+            site.insert(
+                "theme".into(),
+                settings("{ enabled: true, source: ./mine }"),
+            );
         });
-        assert_eq!(changed.unwrap_err(), format!("changes `plugins`, {fixed}"));
+        assert_eq!(
+            changed.unwrap_err(),
+            format!("changes `site.theme.source`, {fixed}")
+        );
+        let changed = hook(&|site, _| {
+            site.insert("plugins".into(), settings("{ bob: { wasm: ./bob.wasm } }"));
+        });
+        assert_eq!(
+            changed.unwrap_err(),
+            format!("changes `site.plugins`, {fixed}")
+        );
+        // How the site looks is a plugin's to change, beside the theme it's
+        // in.
+        let hooked = hook(&|site, _| {
+            let theme = settings("{ enabled: true, fonts: { body: serif } }");
+            site.insert("theme".into(), theme);
+        })
+        .unwrap();
+        assert_eq!(get(&hooked.site, "theme.fonts.body"), Some("serif"));
 
-        let changed = hook(&|values| {
-            values.insert("toc_max_depth".into(), 9.into());
+        let changed = hook(&|_, page| {
+            page.insert("outline".into(), settings("{ enabled: true }"));
         });
         let message = changed.unwrap_err();
         assert!(
             message.starts_with("gives back a config little can't use: "),
             "{message}"
+        );
+        // A setting beside the groups is no more use from a plugin than in
+        // a little.yml.
+        let mut groups = config.groups();
+        groups.insert("title".into(), "Hooked".into());
+        let message = format!("{:#}", config.hooked(&site, groups).unwrap_err());
+        assert_eq!(
+            message,
+            "gives back a config little can't use: the config it gives back sets `title` beside \
+             `site` and `page`, but a little.yml holds only those two: put it under `site`, with \
+             the site's settings, or under `page`, with every page's"
         );
     }
 }

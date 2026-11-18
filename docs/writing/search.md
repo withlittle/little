@@ -13,12 +13,14 @@ There's nothing to set up. Each build indexes every page into
 `dist/pagefind/`, and the search box searches it in the reader's browser,
 so you need no server or service for it. `little serve` indexes each save.
 
-To turn search off, set `search: false`, and the built-in theme leaves out
-its search box too:
+To turn search off, set `search.enabled` to `false`, and the built-in
+theme leaves out its search box too:
 
 ```yaml
 # little.yml
-search: false
+site:
+  search:
+    enabled: false
 ```
 
 A theme without a search box leaves search off. To add one to yours, see
@@ -29,7 +31,7 @@ A theme without a search box leaves search off. To add one to yours, see
 Each page's own content is indexed, under its title, so nothing the theme
 puts around it, like its header or nav, fills the results. Words match by
 their stem, in each page's language, which the built-in theme takes from
-[`lang`](../getting-started/configuring.md#the-built-in-themes-settings),
+[`language`](../getting-started/configuring.md#the-built-in-themes-settings),
 so "installing" finds "install".
 
 The 404 page, pages you [leave out](#leaving-pages-out), HTML files copied
@@ -44,32 +46,32 @@ root of the site. Each leaves out its page, and every page under it:
 
 ```yaml
 # little.yml
-search:
-  exclude:
-    - /changelog   # the page from changelog.md
-    - /archive/    # archive/README.md, and every page in archive/
+site:
+  search:
+    exclude:
+      - /changelog   # the page from changelog.md
+      - /archive/    # archive/README.md, and every page in archive/
 ```
 
 `/archive` and `/archive/` are the same: both leave out `/archive/2019`,
 but not `/archived`. A page left out is still built, and still in the nav,
 but search doesn't find it.
 
-Setting `search.exclude` turns search on. little warns of a URL in it that
-matches no page. On a site with versions, each URL leaves out its pages in
-every version, and little warns of one only if no version has a page
-there.
+little warns of a URL in `search.exclude` that matches no page. On a site
+with versions, each URL leaves out its pages in every version, and little
+warns of one only if no version has a page there.
 
-A page's own `search`, in its [frontmatter](frontmatter.md), has the last
-word: `search: false` leaves it out, and `search: true` keeps it in, even
-under a URL in `exclude`, though it doesn't turn search on for a site that
-has it off. To index only a few pages, exclude `/`, and give each of them
-`search: true`:
+A page's own `search.enabled`, in its [frontmatter](frontmatter.md), has
+the last word: `false` leaves it out, and `true` keeps it in, even under a
+URL in `exclude`, though it doesn't turn search on for a site that has it
+off. To index only a few pages, exclude `/`, and keep each of them in:
 
 ```markdown
 ---
-search: true
+search:
+  enabled: true
 ---
 ```
 
-Don't leave out every page, or the search box shows an error. Set
-`search: false` instead.
+Don't leave out every page, or the search box shows an error. Turn search
+off instead.

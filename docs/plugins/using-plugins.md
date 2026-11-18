@@ -6,13 +6,16 @@ description: Add to what little does as it builds a site, with plugins, each one
 # Using plugins
 
 A plugin adds to what little does as it builds a site. Name each plugin
-your site uses in `plugins`, with its `.wasm` file:
+your site uses in `plugins`, with its `.wasm` file, as `wasm`:
 
 ```yaml
 # little.yml
-plugins:
-  links: ./plugins/links.wasm
-  csv: https://example.com/little-csv-1.0.wasm
+site:
+  plugins:
+    links:
+      wasm: ./plugins/links.wasm
+    csv:
+      wasm: https://example.com/little-csv-1.0.wasm
 ```
 
 little calls each plugin's [hooks](../reference/plugin-hooks.md) as the
@@ -23,28 +26,29 @@ sites in a new tab.
 
 ## Naming a plugin
 
-A plugin's file is a path or an `https://` URL, as a
-[theme](../themes/choosing-a-theme.md) is. little
+A plugin's `wasm` is a path or an `https://` URL, as a
+[theme's `source`](../themes/choosing-a-theme.md) is. little
 [downloads](../themes/choosing-a-theme.md#downloading-a-theme) a URL in the
 site's first build, into `.little/plugins/`, and never again, so to update
 a plugin, change its URL.
 
-A plugin's settings go beside its file, in `wasm`:
+A plugin's own settings go beside its `wasm`:
 
 ```yaml
 # little.yml
-plugins:
-  python:
-    wasm: ./plugins/little_python.wasm
-    read: src
-    style: google
+site:
+  plugins:
+    python:
+      wasm: ./plugins/little_python.wasm
+      read: src
+      style: google
 ```
 
 little runs plugins in the order `plugins` names them, and gives each what
 the one before it gave back. A theme can name plugins in its `little.yml`
 too, which run first. Your site's `little.yml` has the last word, plugin by
 plugin and setting by setting, so it can change a setting of its theme's
-plugin, which keeps its place, or turn one off, like `python: false`. A
+plugin, which keeps its place, or turn one off, with `enabled: false`. A
 page can't change plugins or their settings in its frontmatter.
 
 ## little's own plugins
@@ -94,7 +98,7 @@ plugin chooses, like `mypackage/README.md` for `/mypackage/`, so it's in
 the nav and search, its links are checked, and its code blocks go to
 plugins. It has no file in your
 [repository](../getting-started/configuring.md#choosing-the-sites-repository),
-so it has no `page.source_url` or `page.edit_url`.
+so it has no `page.repository.source_url` or `page.repository.edit_url`.
 
 ## Pages in other formats
 

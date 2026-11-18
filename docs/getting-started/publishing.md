@@ -20,7 +20,8 @@ set `url` to its address:
 
 ```yaml
 # little.yml
-url: https://example.com/docs
+site:
+  url: https://example.com/docs
 ```
 
 little adds the path, `/docs`, to every link, so write links without it.
@@ -33,7 +34,16 @@ set `url`, unless its theme makes absolute links, like for link previews.
 ## A 404 page
 
 A theme's 404 page is built to `dist/404.html`, where most hosts look for
-one, and `little serve` shows it too. The built-in theme has one.
+one, and `little serve` shows it too. The built-in theme has one. To change
+what it says, set `error`:
+
+```yaml
+# little.yml
+site:
+  error:
+    title: Nothing here
+    description: This page has moved, or never was.
+```
 
 ## Checking it first
 

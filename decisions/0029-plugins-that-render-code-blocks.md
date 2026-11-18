@@ -9,7 +9,10 @@
   `setup`, in `little:plugin@0.2.0`, and by
   [0060](./0060-other-formats-in-plugins.md), which gives plugins the blocks
   in the Markdown parts of a page a `formats` hook reads, but not its code
-  parts, like a notebook's code cells
+  parts, like a notebook's code cells, and by
+  [0080](./0080-settings-in-groups-under-site-and-page.md), which writes a
+  plugin only as its settings, under `site.plugins`, with `enabled: false`
+  to turn it off
 - Date: 2026-10-07
 - Amends: [0004](./0004-downloading-themes.md),
   [0016](./0016-checking-links.md),

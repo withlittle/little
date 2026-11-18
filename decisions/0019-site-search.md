@@ -7,7 +7,9 @@
   [0046](./0046-plugin-hooks.md), which indexes the `title` and `content` a
   plugin's `page` hook gives back, and by
   [0061](./0061-leaving-pages-out-of-search.md), with which a site or a page
-  leaves pages out
+  leaves pages out, and by
+  [0080](./0080-settings-in-groups-under-site-and-page.md), which turns
+  search on and off with `site.search.enabled`
 - Date: 2026-10-02
 
 ## Context

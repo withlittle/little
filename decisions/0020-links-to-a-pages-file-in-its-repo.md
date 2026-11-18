@@ -1,6 +1,11 @@
 # 0020 — Linking to a page's file in its repository
 
-- Status: accepted
+- Status: accepted; amended by
+  [0080](./0080-settings-in-groups-under-site-and-page.md), which renames
+  `repo` and `branch` to `site.repository.url` and
+  `site.repository.branch`, works out `site.repository.owner` and
+  `site.repository.name`, and moves a page's links to `page.repository`,
+  which its `enabled` turns off
 - Date: 2026-10-03
 
 ## Context

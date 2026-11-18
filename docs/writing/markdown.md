@@ -100,10 +100,11 @@ diagrams that can carry it:
 
 ```yaml
 # little.yml
-markdown:
-  smart_punctuation: true
-  raw_html: false
-  mermaid: false
+site:
+  markdown:
+    smart_punctuation: true
+    raw_html: false
+    mermaid: false
 ```
 
 | Key | Default | Lets you write… |

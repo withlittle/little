@@ -1,6 +1,8 @@
 # 0011 — The config chooses where `little serve` serves
 
-- Status: accepted
+- Status: accepted; amended by
+  [0080](./0080-settings-in-groups-under-site-and-page.md), which renames
+  `host` and `port` to `site.serve.host` and `site.serve.port`
 - Date: 2026-09-30
 
 ## Context
