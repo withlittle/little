@@ -100,7 +100,10 @@ site:
   name: Documentation
   search:
     enabled: true
-  toc_max_depth: 3
+page:
+  outline:
+    depth:
+      max: 3
 ```
 
 The built-in theme's
@@ -113,13 +116,12 @@ is like this. Under `site`, a theme might set:
 - `markdown.math: tex` and `markdown.mermaid: false`, for a theme that
   [renders math, or draws diagrams, with a script](styling-markdown.md#loading-a-script-a-site-needs).
 - `theme.mermaid`, for [its diagrams' look](../writing/diagrams.md#choosing-how-diagrams-look).
-- `toc_max_depth`, for the headings its
-  [tables of contents](../writing/navigation.md#tables-of-contents) list.
 - `theme.source`, to [build on another theme](choosing-a-theme.md#building-on-another-theme).
 - `plugins`, for [plugins](../plugins/using-plugins.md) its sites use.
 
-It can set `page` too, for what
-[every page](../writing/frontmatter.md#for-every-page) has.
+Under `page`, it might set `outline.depth.max`, for the headings its
+[tables of contents](../writing/navigation.md#tables-of-contents) list, or
+anything else [every page](../writing/frontmatter.md#for-every-page) has.
 
 ## URLs in a theme
 

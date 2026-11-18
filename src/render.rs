@@ -1,5 +1,5 @@
 //! Turn a raw Markdown file (with optional YAML frontmatter) into
-//! frontmatter data, an HTML fragment, and an in-page table of contents. The
+//! frontmatter data, an HTML fragment, and the page's headings. The
 //! parts a plugin reads a file in another format into, like a notebook, are
 //! made into the same tree, in `parts`, and rendered here as Markdown's is.
 
@@ -10,17 +10,17 @@ use comrak::{Anchorizer, Arena, Options};
 use serde_yaml::Mapping;
 use std::borrow::Cow;
 use std::mem;
-use std::ops::RangeInclusive;
 use time::OffsetDateTime;
 
 use crate::config::{self, Markdown, Math, SiteUrl};
 use crate::plugin::{self, PagePlugins};
 use crate::{highlight, math, mermaid};
 
-/// One heading in a page's in-page table of contents. They're listed in the
-/// order they come, and the build nests them like `site.nav`.
+/// One heading in a page. They're listed in the order they come, and the
+/// build nests those at the levels the page's outline lists, like
+/// `site.navigation.items`.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TocItem {
+pub struct Heading {
     /// Human-readable heading text.
     pub title: String,
     /// Fragment link to the heading, e.g. `#getting-started`.
@@ -37,8 +37,8 @@ pub struct Rendered {
     pub frontmatter: Mapping,
     /// Rendered HTML body.
     pub html: String,
-    /// In-page table of contents built from the body's headings.
-    pub toc: Vec<TocItem>,
+    /// The body's headings, at every level, in the order they come.
+    pub headings: Vec<Heading>,
     /// Text of the first `<h1>`, used as a title fallback.
     pub first_h1: Option<String>,
     /// The body's links and images, in the order they come.
@@ -68,9 +68,7 @@ pub struct WrittenLink {
 /// Parse a document, written with the extensions to CommonMark in
 /// `markdown`, into its frontmatter, rendered HTML, with the code blocks
 /// `plugins` render rendered, its math written, its diagrams drawn, as of
-/// `now`, and its code highlighted as `markdown` chooses, and outline, which
-/// lists its headings at the levels in `toc_depths` (the config's
-/// `site.toc_min_depth` to `site.toc_max_depth`).
+/// `now`, and its code highlighted as `markdown` chooses, and its headings.
 /// Links and images relative to the document, like `images/logo.png`, lead
 /// from `folder`, the URL of the folder it's in, like `/guide/`; those from
 /// the root of the site get the path of the site's `url`. A link to a page's
@@ -78,7 +76,6 @@ pub struct WrittenLink {
 pub fn parse_document(
     raw: &str,
     folder: &str,
-    toc_depths: &RangeInclusive<u8>,
     url: &SiteUrl,
     markdown: &Markdown,
     now: OffsetDateTime,
@@ -95,7 +92,7 @@ pub fn parse_document(
     let unrendered_blocks =
         plugins.render(&arena, root.descendants(), &options, Some(lines_before))?;
     let unrendered_diagrams = mermaid::draw(root, markdown, now, Some(lines_before));
-    let rendered = render_tree(root, folder, toc_depths, url, markdown, &options, plugins)?;
+    let rendered = render_tree(root, folder, url, markdown, &options, plugins)?;
     Ok(Rendered {
         frontmatter,
         unrendered_diagrams,
@@ -107,11 +104,10 @@ pub fn parse_document(
 /// Render a document parsed with `options`, as `parse_document` does, from
 /// its tree in comrak's arena, whose diagrams the caller has drawn: its
 /// links led within the site, with those to the files `plugins` read led to
-/// their pages, its outline, and its HTML. Its frontmatter is the caller's.
+/// their pages, its headings, and its HTML. Its frontmatter is the caller's.
 pub(crate) fn render_tree<'a>(
     root: &'a AstNode<'a>,
     folder: &str,
-    toc_depths: &RangeInclusive<u8>,
     url: &SiteUrl,
     markdown: &Markdown,
     options: &Options,
@@ -120,7 +116,7 @@ pub(crate) fn render_tree<'a>(
     let links = link_within_site(root, folder, url, options, |extension| {
         plugins.is_page(extension)
     });
-    let (toc, first_h1) = outline(root, toc_depths);
+    let (headings, first_h1) = headings(root);
 
     let mut plugins = Plugins::default();
     plugins.render.codefence_syntax_highlighter = highlight::highlighter(markdown.highlight);
@@ -135,7 +131,7 @@ pub(crate) fn render_tree<'a>(
     Ok(Rendered {
         frontmatter: Mapping::new(),
         html,
-        toc,
+        headings,
         first_h1,
         links,
         unrendered_math,
@@ -294,19 +290,16 @@ fn has_scheme(url: &str) -> bool {
     })
 }
 
-/// Walk the parsed document once to build the TOC from the headings at the
-/// levels in `toc_depths`, and find the first `<h1>`.
+/// Walk the parsed document once to list its headings, at every level, and
+/// find the first `<h1>`.
 ///
 /// Every heading is fed to the same `Anchorizer` in document order, with the
 /// text comrak gives it its `id` from, so the slugs match the `id`s comrak
 /// emits into the HTML (its formatter anchorizes every heading the same way),
 /// including the `-1`, `-2` … suffixes added to duplicates.
-fn outline<'a>(
-    root: &'a AstNode<'a>,
-    toc_depths: &RangeInclusive<u8>,
-) -> (Vec<TocItem>, Option<String>) {
+fn headings<'a>(root: &'a AstNode<'a>) -> (Vec<Heading>, Option<String>) {
     let mut anchorizer = Anchorizer::new();
-    let mut toc = Vec::new();
+    let mut headings = Vec::new();
     let mut first_h1 = None;
 
     for node in root.descendants() {
@@ -322,16 +315,14 @@ fn outline<'a>(
             first_h1 = Some(text.clone());
         }
 
-        if toc_depths.contains(&level) {
-            toc.push(TocItem {
-                title: text,
-                anchor: format!("#{slug}"),
-                depth: level,
-            });
-        }
+        headings.push(Heading {
+            title: text,
+            anchor: format!("#{slug}"),
+            depth: level,
+        });
     }
 
-    (toc, first_h1)
+    (headings, first_h1)
 }
 
 /// A heading's text, as a reader sees it: its text and code, its math as
@@ -371,9 +362,6 @@ mod tests {
     use crate::config::Highlight;
     use crate::testing::{render_at, site_url};
     use serde_yaml::Value;
-
-    /// little's defaults, from `src/little.yml`: every heading but the title.
-    const TOC_DEPTHS: RangeInclusive<u8> = 2..=6;
 
     fn render(md: &str) -> Rendered {
         render_at(md, "/", &SiteUrl::default(), &Markdown::default()).expect("document renders")
@@ -428,41 +416,20 @@ mod tests {
     }
 
     #[test]
-    fn toc_collects_the_headings_at_its_depths() {
+    fn lists_each_heading_with_its_level() {
         let md = "# Title\n\n## Getting Started\n\n### Install\n\n#### From Source\n\n\
                   ##### On Linux\n\n###### With Nix\n\n# Another Title\n\n## Usage\n";
-        let toc = |depths| {
-            let r = parse_document(
-                md,
-                "/",
-                &depths,
-                &SiteUrl::default(),
-                &Markdown::default(),
-                OffsetDateTime::UNIX_EPOCH,
-                &mut PagePlugins::none(),
-            )
-            .unwrap();
-            let items = r.toc.iter().map(|t| format!("{} {}", t.depth, t.anchor));
-            items.collect::<Vec<_>>()
-        };
-
+        let r = render(md);
+        let headings = (r.headings.iter()).map(|h| format!("{} {}", h.depth, h.anchor));
         assert_eq!(
-            toc(TOC_DEPTHS),
+            headings.collect::<Vec<_>>(),
             [
+                "1 #title",
                 "2 #getting-started",
                 "3 #install",
                 "4 #from-source",
                 "5 #on-linux",
                 "6 #with-nix",
-                "2 #usage",
-            ]
-        );
-        assert_eq!(toc(2..=3), ["2 #getting-started", "3 #install", "2 #usage"]);
-        assert_eq!(
-            toc(1..=2),
-            [
-                "1 #title",
-                "2 #getting-started",
                 "1 #another-title",
                 "2 #usage",
             ]
@@ -470,17 +437,17 @@ mod tests {
     }
 
     #[test]
-    fn toc_anchor_matches_emitted_html_id() {
+    fn a_headings_anchor_matches_emitted_html_id() {
         let r = render("## Hello, World!\n");
-        assert_eq!(r.toc[0].anchor, "#hello-world");
+        assert_eq!(r.headings[0].anchor, "#hello-world");
         assert!(r.html.contains("id=\"hello-world\""));
     }
 
     #[test]
     fn duplicate_headings_get_unique_anchors() {
         let r = render("## Setup\n\n## Setup\n");
-        assert_eq!(r.toc[0].anchor, "#setup");
-        assert_eq!(r.toc[1].anchor, "#setup-1");
+        assert_eq!(r.headings[0].anchor, "#setup");
+        assert_eq!(r.headings[1].anchor, "#setup-1");
         assert!(r.html.contains("id=\"setup\""));
         assert!(r.html.contains("id=\"setup-1\""));
     }
@@ -488,12 +455,12 @@ mod tests {
     #[test]
     fn heading_text_flattens_inline_markup() {
         let r = render("## Use `little` **today**\n");
-        assert_eq!(r.toc[0].title, "Use little today");
-        assert_eq!(r.toc[0].anchor, "#use-little-today");
+        assert_eq!(r.headings[0].title, "Use little today");
+        assert_eq!(r.headings[0].anchor, "#use-little-today");
     }
 
     #[test]
-    fn headings_with_math_emoji_or_two_lines_link_from_the_toc() {
+    fn headings_with_math_emoji_or_two_lines_have_anchors() {
         let md = "## The $x^2$ term\n\n## Done :tada:\n\nTwo\nlines\n---\n";
         for math in [Some(Math::MathML), Some(Math::Tex)] {
             let markdown = Markdown {
@@ -501,11 +468,13 @@ mod tests {
                 ..Markdown::default()
             };
             let r = render_at(md, "/", &SiteUrl::default(), &markdown).unwrap();
-            // A heading's math is TeX in the outline, which is text.
-            let titles: Vec<_> = r.toc.iter().map(|item| item.title.as_str()).collect();
+            // A heading's math is TeX in its title, which is text.
+            let titles: Vec<_> = (r.headings.iter())
+                .map(|item| item.title.as_str())
+                .collect();
             assert_eq!(titles, ["The x^2 term", "Done 🎉", "Two lines"]);
             // Each links to its heading's id, as comrak writes it.
-            for item in &r.toc {
+            for item in &r.headings {
                 let id = format!("id=\"{}\"", &item.anchor[1..]);
                 assert!(r.html.contains(&id), "{id} in {}", r.html);
             }

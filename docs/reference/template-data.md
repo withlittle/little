@@ -32,17 +32,26 @@ both work.
 | `page.url` | The page's URL, like `/getting-started/install`. Compare it with `item.url` to mark the current nav item |
 | `page.title` | The page's [title](../writing/frontmatter.md#a-pages-title) |
 | `page.content` | The page's content, as HTML, to write with [`safe`](../themes/making-a-theme.md#templates) |
-| `page.toc` | The page's [table of contents](../writing/navigation.md#tables-of-contents), shaped like the nav, with each heading's `#fragment` as its `url` |
 | `page.children` | Home and section pages only: what else is in the page's folder, shaped like the nav |
-| `page.breadcrumbs` | The page's [breadcrumbs](../writing/navigation.md#breadcrumbs), from the top of the nav down, each `{ title, url }`, where a label has no `url` |
-| `page.prev`, `page.next` | The [pages before and after](../writing/navigation.md#previous-and-next-pages) this one in the nav, each `{ title, url }` |
-| `page.source_url` | Where to view the page's file in the site's [repository](../getting-started/configuring.md#choosing-the-sites-repository), on github.com or gitlab.com, like `https://github.com/withlittle/little/blob/main/docs/getting-started/install.md`; from a version's `ref`, at its commit |
-| `page.edit_url` | Where to edit it there, like `https://github.com/withlittle/little/edit/main/docs/getting-started/install.md`; none from a version's `ref` |
+| `page.outline.items` | The page's [table of contents](../writing/navigation.md#tables-of-contents), shaped like the nav, with each heading's `#fragment` as its `url` |
+| `page.outline.depth` | The levels of heading it lists, from `min` to `max` |
+| `page.breadcrumb.items` | The page's [breadcrumbs](../writing/navigation.md#breadcrumbs), from the top of the nav down, each `{ title, url }`, where a label has no `url` |
+| `page.previous`, `page.next` | The [pages before and after](../writing/navigation.md#previous-and-next-pages) this one in the nav, each `{ title, url }`. The first page has no `page.previous`, and the last no `page.next` |
+| `page.repository.source_url` | Where to view the page's file in the site's [repository](../getting-started/configuring.md#choosing-the-sites-repository), on github.com or gitlab.com, like `https://github.com/withlittle/little/blob/main/docs/getting-started/install.md`; from a version's `ref`, at its commit |
+| `page.repository.edit_url` | Where to edit it there, like `https://github.com/withlittle/little/edit/main/docs/getting-started/install.md`; none from a version's `ref` |
+| `page.search.enabled` | Whether [search](../writing/search.md#leaving-pages-out) indexes the page, on a site with search on: `false` for one that's left out |
 | `page.versions` | Each entry in `site.versions`, with the `url` of this page in that version, else of its home page, for a [menu of versions](../themes/making-a-theme.md#a-menu-of-versions) |
 | `page.<key>` | Every other key in the page's [frontmatter](../writing/frontmatter.md), or under [`page`](../writing/frontmatter.md#for-every-page) in a `little.yml`, as written, like `page.description` |
 
+`page.outline`, `page.breadcrumb`, `page.repository`, and `page.search` are
+on every page, so `{% if page.outline.items %}` works anywhere. A page that
+[turns one off](../writing/frontmatter.md#frontmatter-wins), with its
+`enabled`, has no `items` in it, or neither URL, and no `page.previous` or
+`page.next`, so a theme shows what it's given.
+
 A 404 page has `page.type`, `page.url`, `/404.html`, and what's under `page`
-in a `little.yml`. Its `page.title` and `page.description` are
+in a `little.yml`, with nothing in its `items`. Its `page.title` and
+`page.description` are
 [the site's to set](../getting-started/publishing.md#a-404-page). On a site
 with versions, it has `page.versions` too, with each version's home page.
 

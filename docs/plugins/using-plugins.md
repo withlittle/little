@@ -98,7 +98,7 @@ plugin chooses, like `mypackage/README.md` for `/mypackage/`, so it's in
 the nav and search, its links are checked, and its code blocks go to
 plugins. It has no file in your
 [repository](../getting-started/configuring.md#choosing-the-sites-repository),
-so it has no `page.source_url` or `page.edit_url`.
+so it has no `page.repository.source_url` or `page.repository.edit_url`.
 
 ## Pages in other formats
 

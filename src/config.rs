@@ -22,9 +22,7 @@
 //! `source` and `destination` name the folders a site is built from and
 //! into. Any level can set them, but they're always relative to the site.
 //!
-//! `toc_min_depth` and `toc_max_depth` are the levels of heading, from 1 for
-//! `#` to 6, that each page's table of contents lists.
-//!
+
 //! `navigation` holds the site's nav, as `items`, if it sets one (see
 //! `site`), and `prune`, whether each page's nav lists what's in a folder
 //! only if the page is in it: little leaves it off, for a site of thousands
@@ -70,6 +68,15 @@
 //! other key in it is for the theme.
 //!
 //! `error` holds the `title` and `description` of the 404 page.
+//!
+//! `page` has a group for each thing little works out for a page, which the
+//! group's `enabled` turns off (see [`PageSettings`]): `outline`, its table
+//! of contents, whose `depth` holds the levels of heading it lists, from
+//! `min` to `max`, each from 1 for `#` to 6; `breadcrumb`, what's above it
+//! in the nav; `previous` and `next`, the pages beside it there; and
+//! `repository`, the links to its file in the site's repository. A page's
+//! `search` holds `enabled`, whether search indexes it, whatever
+//! `site.search`'s `exclude` says.
 
 use anyhow::{Context, Result, anyhow, bail};
 use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, percent_decode_str, utf8_percent_encode};
@@ -103,9 +110,9 @@ pub struct Config {
     pub source_dir: PathBuf,
     /// The folder the site is built into, which every build wipes.
     pub destination_dir: PathBuf,
-    /// The levels of heading each page's table of contents lists, from
-    /// `site.toc_min_depth` to `site.toc_max_depth`.
-    pub toc_depths: RangeInclusive<u8>,
+    /// What `page` says of what little works out for every page, unless a
+    /// page's own frontmatter says otherwise.
+    pub page_settings: PageSettings,
     /// Whether each page's nav lists what's in a folder only if the page is
     /// in it, from `site.navigation.prune`.
     pub nav_prune: bool,
@@ -371,6 +378,101 @@ pub fn leaves_out(entry: &str, url: &str) -> bool {
     (url.strip_prefix(entry)).is_some_and(|rest| rest.is_empty() || rest.starts_with('/'))
 }
 
+/// What a page's settings say of what little works out for it: whether it
+/// has each thing, from the `enabled` of its group, and which headings its
+/// table of contents lists.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PageSettings {
+    /// Whether it has a table of contents, from `outline.enabled`.
+    pub outline: bool,
+    /// The levels of heading its table of contents lists, from
+    /// `outline.depth.min` to `outline.depth.max`.
+    pub depths: RangeInclusive<u8>,
+    /// Whether it has breadcrumbs, from `breadcrumb.enabled`.
+    pub breadcrumb: bool,
+    /// Whether it links to the page before it, from `previous.enabled`.
+    pub previous: bool,
+    /// Whether it links to the page after it, from `next.enabled`.
+    pub next: bool,
+    /// Whether it links to its file in the site's repository, from
+    /// `repository.enabled`.
+    pub repository: bool,
+    /// Whether search indexes it, from `search.enabled`, if it's set: left
+    /// unset, `site.search.exclude` says.
+    pub search: Option<bool>,
+}
+
+impl PageSettings {
+    /// Read `page`, a page's settings: every page's, from `page` in the
+    /// config, or one page's, with its frontmatter over them. An error names
+    /// each setting after `prefix`: `page.`, for the config's, or nothing,
+    /// for a page's own, as its frontmatter writes it.
+    pub fn read(page: &Mapping, prefix: &str) -> Result<PageSettings> {
+        let outline = page_group(page, prefix, "outline")?;
+        let depth = |key: &str| -> Result<u8> {
+            let level = (outline.get("depth")).and_then(|depth| depth.get(key));
+            match level.and_then(Value::as_u64) {
+                Some(level @ 1..=6) => Ok(level as u8),
+                _ => bail!(
+                    "`{prefix}outline.depth.{key}` must be a heading level from 1 to 6, like 3 \
+                     for `###`"
+                ),
+            }
+        };
+        // The min and max can be set at different levels of the cascade, so
+        // a min over the max, which would leave the table of contents empty,
+        // is an error.
+        let (min, max) = (depth("min")?, depth("max")?);
+        if min > max {
+            bail!(
+                "`{prefix}outline.depth.min` ({min}) can't be more than \
+                 `{prefix}outline.depth.max` ({max})"
+            );
+        }
+        let search = match page.get("search") {
+            None => None,
+            Some(Value::Mapping(search)) => match search.get("enabled") {
+                None => None,
+                Some(Value::Bool(enabled)) => Some(*enabled),
+                Some(_) => bail!(
+                    "`{prefix}search.enabled` must be `true`, to index the page for search, or \
+                     `false`, to leave it out"
+                ),
+            },
+            Some(_) => bail!("`{prefix}search` must be its settings, like `enabled: false`"),
+        };
+        Ok(PageSettings {
+            outline: enabled(page, prefix, "outline")?,
+            depths: min..=max,
+            breadcrumb: enabled(page, prefix, "breadcrumb")?,
+            previous: enabled(page, prefix, "previous")?,
+            next: enabled(page, prefix, "next")?,
+            repository: enabled(page, prefix, "repository")?,
+            search,
+        })
+    }
+}
+
+/// The settings in a page's group `name`, like `outline`. little's own
+/// config sets each group, so anything else there, like `false`, is a
+/// mistake.
+fn page_group<'a>(page: &'a Mapping, prefix: &str, name: &str) -> Result<&'a Mapping> {
+    match page.get(name) {
+        Some(Value::Mapping(settings)) => Ok(settings),
+        _ => bail!("`{prefix}{name}` must be its settings, like `enabled: false`"),
+    }
+}
+
+/// Whether a page has what its group `name` is for, from the group's
+/// `enabled`. YAML reads `yes` and `"true"` as text, not `true`, so they're
+/// errors rather than a guess.
+fn enabled(page: &Mapping, prefix: &str, name: &str) -> Result<bool> {
+    match page_group(page, prefix, name)?.get("enabled") {
+        Some(Value::Bool(enabled)) => Ok(*enabled),
+        _ => bail!("`{prefix}{name}.enabled` must be `true` or `false`"),
+    }
+}
+
 /// Which extensions to CommonMark each page is written with, how its math is
 /// written, how its diagrams are drawn, and which classes its code is
 /// highlighted with, from the settings under `site.markdown`, each named
@@ -481,7 +583,7 @@ fn level(cfg: Mapping, file: &str) -> Result<Level> {
             Some("site") => (&mut level.site, "the site's settings, like `name: My Docs`"),
             Some("page") => (
                 &mut level.page,
-                "every page's settings, like `breadcrumbs: false`",
+                "every page's settings, like `breadcrumb: { enabled: false }`",
             ),
             _ => bail!(
                 "{file} sets `{}` beside `site` and `page`, but a {CONFIG_FILE} holds only those \
@@ -734,7 +836,7 @@ fn settle(
 ) -> Result<Config> {
     let source_dir = folder(site_dir, &site, "source")?;
     let destination_dir = folder(site_dir, &site, "destination")?;
-    let toc_depths = toc_depths(&site)?;
+    let page_settings = PageSettings::read(&page, "page.")?;
     let nav_prune = nav_prune(&site)?;
     let host = host(&site)?;
     let port = port(&site)?;
@@ -751,7 +853,7 @@ fn settle(
         themes,
         source_dir,
         destination_dir,
-        toc_depths,
+        page_settings,
         nav_prune,
         host,
         port,
@@ -851,26 +953,6 @@ fn folder(site_dir: &Path, site: &Mapping, key: &str) -> Result<PathBuf> {
     match site.get(key) {
         Some(Value::String(path)) => Ok(resolve(site_dir, path)),
         _ => bail!("`site.{key}` must be the path to a folder"),
-    }
-}
-
-/// The levels of heading a table of contents lists. The min and max can be
-/// set at different levels of the cascade, so a min over the max, which would
-/// leave every table of contents empty, is an error.
-fn toc_depths(site: &Mapping) -> Result<RangeInclusive<u8>> {
-    let min = heading_level(site, "toc_min_depth")?;
-    let max = heading_level(site, "toc_max_depth")?;
-    if min > max {
-        bail!("`site.toc_min_depth` ({min}) can't be more than `site.toc_max_depth` ({max})");
-    }
-    Ok(min..=max)
-}
-
-/// The level of heading a setting names, like 2 for `##`.
-fn heading_level(site: &Mapping, key: &str) -> Result<u8> {
-    match site.get(key).and_then(Value::as_u64) {
-        Some(level @ 1..=6) => Ok(level as u8),
-        _ => bail!("`site.{key}` must be a heading level from 1 to 6, like 3 for `###`"),
     }
 }
 
@@ -1241,12 +1323,10 @@ fn read_error(name: &str) -> anyhow::Error {
 /// `site.versions` can't set them, though one from a ref can set its own
 /// `source`, `navigation.items`, and `plugins`. `navigation` isn't among
 /// them, as only its `prune` is the site's.
-const SITES_SETTINGS: [&str; 11] = [
+const SITES_SETTINGS: [&str; 9] = [
     "destination",
     "theme",
     "repository",
-    "toc_min_depth",
-    "toc_max_depth",
     "search",
     "markdown",
     "versions",
@@ -1630,7 +1710,10 @@ mod tests {
         );
         assert_eq!(
             error(&site, "page: [outline]\n"),
-            format!("`page` in {file} must hold every page's settings, like `breadcrumbs: false`")
+            format!(
+                "`page` in {file} must hold every page's settings, like \
+                 `breadcrumb: {{ enabled: false }}`"
+            )
         );
         let builtin = with_builtin_theme();
         for site_cfg in [
@@ -1818,8 +1901,6 @@ mod tests {
                source: ./docs\n  \
                destination: ./dist\n  \
                theme:\n    enabled: true\n    fonts:\n      body: Inter\n    source: ./company\n  \
-               toc_min_depth: 2\n  \
-               toc_max_depth: 6\n  \
                navigation:\n    prune: false\n  \
                serve:\n    host: 127.0.0.1\n    port: 8080\n  \
                repository:\n    branch: main\n  \
@@ -1830,6 +1911,11 @@ mod tests {
                language: en\n  \
                footer:\n    note: Company\n    links: true\n\
              page:\n  \
+               outline:\n    enabled: true\n    depth:\n      min: 2\n      max: 6\n  \
+               breadcrumb:\n    enabled: true\n  \
+               previous:\n    enabled: true\n  \
+               next:\n    enabled: true\n  \
+               repository:\n    enabled: true\n  \
                author: Company\n  \
                layout: wide\n"
         );
@@ -2082,43 +2168,116 @@ mod tests {
         assert!(load(&site).is_ok());
     }
 
-    #[test]
-    fn toc_depths_cascade() {
-        let (_tmp, site) = scratch(&[("theme/_templates/default.html", "")]);
-        let depths = |site_cfg: &str| {
-            std::fs::write(site.join(CONFIG_FILE), site_cfg).unwrap();
-            load(&site).unwrap().toc_depths
-        };
-
-        // little lists every heading but a page's `#` title, the built-in
-        // theme only `##` and `###`, and a site has the last word.
-        assert_eq!(depths(IN_THEME), 2..=6);
-        assert_eq!(depths(""), 2..=3);
-        assert_eq!(
-            depths("site: { toc_min_depth: 1, toc_max_depth: 6 }\n"),
-            1..=6
-        );
+    /// little's own settings for every page, but for the levels of heading
+    /// its table of contents lists, `depths`.
+    fn every_page(depths: RangeInclusive<u8>) -> PageSettings {
+        PageSettings {
+            outline: true,
+            depths,
+            breadcrumb: true,
+            previous: true,
+            next: true,
+            repository: true,
+            search: None,
+        }
     }
 
     #[test]
-    fn bad_toc_depths_explain_themselves() {
+    fn each_pages_groups_cascade() {
+        let theme_cfg = "page:\n  breadcrumb:\n    enabled: false\n  search:\n    enabled: false\n";
+        let (_tmp, site) = scratch(&[
+            ("theme/_templates/default.html", ""),
+            ("theme/little.yml", theme_cfg),
+        ]);
+        let settings = |site_cfg: &str| {
+            std::fs::write(site.join(CONFIG_FILE), site_cfg).unwrap();
+            load(&site).unwrap().page_settings
+        };
+
+        // little gives every page each thing it works out, and lists every
+        // heading but a page's `#` title in its table of contents, and the
+        // built-in theme only `##` and `###`.
+        assert_eq!(settings(""), every_page(2..=3));
+        // A theme turns one off, or leaves every page out of search, and a
+        // site has the last word, setting by setting.
+        let themed = PageSettings {
+            breadcrumb: false,
+            search: Some(false),
+            ..every_page(2..=6)
+        };
+        assert_eq!(settings(IN_THEME), themed);
+        let site_cfg = format!(
+            "{IN_THEME}page:\n  breadcrumb:\n    enabled: true\n  next:\n    enabled: false\n  \
+             outline:\n    depth:\n      min: 1\n"
+        );
+        let sited = PageSettings {
+            next: false,
+            search: Some(false),
+            ..every_page(1..=6)
+        };
+        assert_eq!(settings(&site_cfg), sited);
+        // A group left blank is ignored, as any key under `page` is.
+        let site_cfg = format!("{IN_THEME}page:\n  breadcrumb:\n  search:\n");
+        assert_eq!(settings(&site_cfg), themed);
+    }
+
+    #[test]
+    fn bad_page_groups_explain_themselves() {
         let (_tmp, site) = scratch(&[]);
-        for key in ["toc_min_depth", "toc_max_depth"] {
-            // There's no `#######`, a heading level is a number, and no value
-            // at all isn't one.
-            for value in [" 0", " 7", " -1", " \"3\"", ""] {
-                let message = error(&site, &format!("site:\n  {key}:{value}\n"));
+        for group in ["outline", "breadcrumb", "previous", "next", "repository"] {
+            // A value where its settings go, like `false`, isn't them.
+            for value in [" false", " true", " [items]"] {
+                let message = error(&site, &format!("page:\n  {group}:{value}\n"));
                 assert_eq!(
                     message,
-                    format!("`site.{key}` must be a heading level from 1 to 6, like 3 for `###`")
+                    format!("`page.{group}` must be its settings, like `enabled: false`")
+                );
+            }
+            // YAML reads `yes` and a quoted `"true"` as text, not `true`.
+            for value in [" yes", " \"true\"", " 1", ""] {
+                let site_cfg = format!("page:\n  {group}:\n    enabled:{value}\n");
+                assert_eq!(
+                    error(&site, &site_cfg),
+                    format!("`page.{group}.enabled` must be `true` or `false`")
                 );
             }
         }
 
+        // Whether search indexes every page is written the same way.
+        for value in [" false", " true"] {
+            let message = error(&site, &format!("page:\n  search:{value}\n"));
+            assert_eq!(
+                message,
+                "`page.search` must be its settings, like `enabled: false`"
+            );
+        }
+        for value in [" yes", " 1", ""] {
+            let site_cfg = format!("page:\n  search:\n    enabled:{value}\n");
+            assert_eq!(
+                error(&site, &site_cfg),
+                "`page.search.enabled` must be `true`, to index the page for search, or \
+                 `false`, to leave it out"
+            );
+        }
+
+        for key in ["min", "max"] {
+            // There's no `#######`, a heading level is a number, and no value
+            // at all isn't one.
+            for value in [" 0", " 7", " -1", " \"3\"", ""] {
+                let site_cfg = format!("page:\n  outline:\n    depth:\n      {key}:{value}\n");
+                assert_eq!(
+                    error(&site, &site_cfg),
+                    format!(
+                        "`page.outline.depth.{key}` must be a heading level from 1 to 6, like 3 \
+                         for `###`"
+                    )
+                );
+            }
+        }
         // The built-in theme lists down to `###`.
         assert_eq!(
-            error(&site, "site: { toc_min_depth: 4 }\n"),
-            "`site.toc_min_depth` (4) can't be more than `site.toc_max_depth` (3)"
+            error(&site, "page: { outline: { depth: { min: 4 } } }\n"),
+            "`page.outline.depth.min` (4) can't be more than `page.outline.depth.max` (3)"
         );
     }
 
@@ -3012,8 +3171,6 @@ mod tests {
         assert_eq!(get(&site, "destination"), Some("./dist"));
         let number = |path: &str| value(&site, path).and_then(Value::as_u64);
         assert_eq!(value(&site, "theme.enabled"), Some(&true.into()));
-        assert_eq!(number("toc_min_depth"), Some(2));
-        assert_eq!(number("toc_max_depth"), Some(6));
         assert_eq!(get(&site, "serve.host"), Some("127.0.0.1"));
         assert_eq!(number("serve.port"), Some(8080));
         // Search is a theme's to turn on, with a box to search in.
@@ -3040,8 +3197,14 @@ mod tests {
         // The 404 page says what it is.
         assert_eq!(get(&site, "error.title"), Some("Page not found"));
         assert!(get(&site, "error.description").is_some());
-        // What every page has is a theme's to set, and a site's.
-        assert_eq!(page, Mapping::new());
+        // Every page has each thing little works out for it, with every
+        // heading but its `#` title in its table of contents, and is in
+        // search unless the site leaves it out. Any other key is a theme's
+        // to set, and a site's.
+        let settings = PageSettings::read(&page, "page.").unwrap();
+        assert_eq!(settings, every_page(2..=6));
+        let groups = ["outline", "breadcrumb", "previous", "next", "repository"];
+        assert_eq!(Vec::from_iter(page.keys()), groups);
     }
 
     #[test]
@@ -3547,8 +3710,6 @@ mod tests {
             ("destination", "./old"),
             ("theme", "{ source: ./old-theme }"),
             ("repository", "{ branch: old }"),
-            ("toc_min_depth", "1"),
-            ("toc_max_depth", "3"),
             ("search", "{ enabled: false }"),
             ("markdown", "{ math: false }"),
             ("versions", "[]"),
@@ -3577,8 +3738,8 @@ mod tests {
         let old_cfg = "site:\n  theme: ./elsewhere\n  name: Old\n  url: https://old.example.com\n  \
                        source: ./src\n  versions: []\n  \
                        navigation:\n    items: [{ title: Old, url: / }]\n    prune: 1\n  \
-                       toc_min_depth: 9\n  plugins: [./cal.wasm]\n\
-                       author: Old\n";
+                       search: true\n  plugins: [./cal.wasm]\n\
+                       author: Old\npage:\n  outline: false\n";
         let (_tmp, site) = scratch(&[
             ("theme/little.yml", &theme_cfg),
             ("theme/_templates/default.html", ""),
@@ -3614,7 +3775,7 @@ mod tests {
             "repository",
             "versions",
             "plugins",
-            "toc_min_depth",
+            "search",
             "navigation.prune",
         ] {
             assert_eq!(value(&version.site, key), value(&config.site, key), "{key}");
@@ -3623,7 +3784,7 @@ mod tests {
         assert_eq!(version.themes, config.themes);
         assert_eq!(version.url, config.url);
         assert_eq!(version.repo, config.repo);
-        assert_eq!(version.toc_depths, config.toc_depths);
+        assert_eq!(version.page_settings, config.page_settings);
         assert_eq!(version.destination_dir, site.join("public"));
         assert_eq!(version.versions, config.versions);
         assert_eq!(
@@ -3728,14 +3889,19 @@ mod tests {
 
         let hooked = hook(&|site, page| {
             site.insert("title".into(), "Hooked".into());
-            site.insert("toc_max_depth".into(), 4.into());
             page.insert("author".into(), "Grace".into());
+            let outline = settings("{ enabled: false, depth: { min: 2, max: 4 } }");
+            page.insert("outline".into(), outline);
         })
         .unwrap();
         assert_eq!(get(&hooked.site, "title"), Some("Hooked"));
-        assert_eq!(hooked.toc_depths, 2..=4);
         assert_eq!(hooked.port, 9000);
         assert_eq!(get(&hooked.page, "author"), Some("Grace"));
+        let outlined = PageSettings {
+            outline: false,
+            ..every_page(2..=4)
+        };
+        assert_eq!(hooked.page_settings, outlined);
 
         let fixed = "but plugins can't change `site.theme.enabled`, `site.theme.source`, \
                      `site.plugins`, `site.source`, `site.destination`, or `site.serve`";
@@ -3779,8 +3945,8 @@ mod tests {
         .unwrap();
         assert_eq!(get(&hooked.site, "theme.fonts.body"), Some("serif"));
 
-        let changed = hook(&|site, _| {
-            site.insert("toc_max_depth".into(), 9.into());
+        let changed = hook(&|_, page| {
+            page.insert("outline".into(), settings("{ enabled: true }"));
         });
         let message = changed.unwrap_err();
         assert!(

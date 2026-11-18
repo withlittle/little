@@ -66,5 +66,5 @@ it also links to view and edit each page's file, on the `main` branch,
 unless you set another beside the `url`, like `branch: trunk`.
 
 A page's [frontmatter](../writing/frontmatter.md#frontmatter-wins) can
-change these links, or remove one, like `edit_url: false` on a page that's
-generated from something else.
+change these links, or remove them, with `repository: { enabled: false }`,
+on a page that's generated from something else.

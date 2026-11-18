@@ -61,8 +61,7 @@ pub(crate) fn files_in(dir: &Path) -> Vec<String> {
 }
 
 /// Render `md`, a page in the folder at `folder`, like `/guide/`, of a site
-/// at `url`, with `markdown`, and no plugins. Its table of contents has
-/// little's levels, every heading but the title. It's built at the start of
+/// at `url`, with `markdown`, and no plugins. It's built at the start of
 /// 2026, for its diagrams.
 pub(crate) fn render_at(
     md: &str,
@@ -71,15 +70,7 @@ pub(crate) fn render_at(
     markdown: &Markdown,
 ) -> Result<Rendered> {
     let now = OffsetDateTime::from_unix_timestamp(1_767_225_600).unwrap();
-    parse_document(
-        md,
-        folder,
-        &(2..=6),
-        url,
-        markdown,
-        now,
-        &mut PagePlugins::none(),
-    )
+    parse_document(md, folder, url, markdown, now, &mut PagePlugins::none())
 }
 
 /// Where little's manual is published: under a path, `/little`.

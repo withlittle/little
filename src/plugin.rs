@@ -1180,7 +1180,7 @@ pub(crate) mod tests {
         let now = OffsetDateTime::from_unix_timestamp(NOW).unwrap();
         let url = SiteUrl::default();
         let mut plugins = plugins.on("docs/test.md");
-        parse_document(md, "/", &(2..=6), &url, markdown, now, &mut plugins)
+        parse_document(md, "/", &url, markdown, now, &mut plugins)
     }
 
     /// Render `md` with little's defaults, but highlighting, so the HTML is
@@ -1202,9 +1202,12 @@ pub(crate) mod tests {
         let r = render(md, &mut plugins);
 
         // Its Markdown is written as the page's is: its headings join the
-        // page's table of contents, and its links are led within the site.
-        let toc: Vec<_> = r.toc.iter().map(|item| item.anchor.as_str()).collect();
-        assert_eq!(toc, ["#from-the-plugin"]);
+        // page's, for its table of contents, and its links are led within
+        // the site.
+        let headings: Vec<_> = (r.headings.iter())
+            .map(|item| item.anchor.as_str())
+            .collect();
+        assert_eq!(headings, ["#title", "#from-the-plugin"]);
         assert!(
             r.html
                 .contains("<h2 id=\"from-the-plugin\">From the plugin"),
@@ -1528,7 +1531,6 @@ pub(crate) mod tests {
         let r = parse_parts(
             parts,
             "/",
-            &(2..=6),
             &SiteUrl::default(),
             &options,
             now,
@@ -1776,7 +1778,7 @@ pub(crate) mod tests {
         );
         // A setting little can't use, or one beside `site` and `page`.
         for merge in [
-            json!({ "site": { "toc_max_depth": 9 } }),
+            json!({ "page": { "outline": { "depth": { "max": 9 } } } }),
             json!({ "title": "Hooked" }),
         ] {
             let message = error(json!({ "merge": merge }));

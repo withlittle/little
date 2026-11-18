@@ -61,15 +61,15 @@ little warns of a URL in `search.exclude` that matches no page. On a site
 with versions, each URL leaves out its pages in every version, and little
 warns of one only if no version has a page there.
 
-A page's own `search`, in its [frontmatter](frontmatter.md), has the last
-word: `search: false` leaves it out, and `search: true` keeps it in, even
-under a URL in `exclude`, though it doesn't turn search on for a site that
-has it off. To index only a few pages, exclude `/`, and give each of them
-`search: true`:
+A page's own `search.enabled`, in its [frontmatter](frontmatter.md), has
+the last word: `false` leaves it out, and `true` keeps it in, even under a
+URL in `exclude`, though it doesn't turn search on for a site that has it
+off. To index only a few pages, exclude `/`, and keep each of them in:
 
 ```markdown
 ---
-search: true
+search:
+  enabled: true
 ---
 ```
 

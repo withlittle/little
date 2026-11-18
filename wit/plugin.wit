@@ -194,8 +194,9 @@ interface site {
     /// URL in it from the root of the site has the path of the site's `url`
     /// before it, as a reader follows it, so one a plugin adds needs it,
     /// too. Gives back the `site` the theme gets, whose `navigation.items`
-    /// is still a list of `{ title, url, children }`, which `page.prev`,
-    /// `page.next`, and `page.breadcrumbs` follow. An error stops the build.
+    /// is still a list of `{ title, url, children }`, which `page.previous`,
+    /// `page.next`, and `page.breadcrumb.items` follow. An error stops the
+    /// build.
     site: func(site: string) -> result<string, string>;
 }
 
@@ -204,8 +205,8 @@ interface page {
     /// Called for each page, the 404 page too, before it's put in the
     /// theme, with `page`, as the theme gets it, as a JSON object, its URLs
     /// as they are in `site`. Gives back the `page` the theme gets, whose
-    /// `title` and `content` search indexes. An error is warned of, and the
-    /// theme gets `page` as it was.
+    /// `title` and `content` search indexes, if its `search.enabled` is
+    /// `true`. An error is warned of, and the theme gets `page` as it was.
     page: func(page: string) -> result<string, string>;
 }
 

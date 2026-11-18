@@ -88,21 +88,23 @@ built-in theme shows them above each page's title.
 
 A page's headings make its table of contents, with each `###` under the
 `##` above it. The built-in theme shows it as "On this page", and lists
-`##` and `###` headings. To list `####` headings too, set `toc_max_depth`:
+`##` and `###` headings. To list `####` headings too, on every page, set
+`outline.depth.max` under `page`:
 
 ```yaml
 # little.yml
-site:
-  toc_max_depth: 4
+page:
+  outline:
+    depth:
+      max: 4
 ```
 
 | Key | Default | Lists headings… |
 | --- | ------- | --------------- |
-| `toc_min_depth` | `2`, for `##` | from this level |
-| `toc_max_depth` | `6`, for `######`; `3`, for `###`, in the built-in theme | down to this level |
+| `outline.depth.min` | `2`, for `##` | from this level |
+| `outline.depth.max` | `6`, for `######`; `3`, for `###`, in the built-in theme | down to this level |
 
 A page's `#` heading is its title, so tables of contents start at `##`.
-With `toc_min_depth: 1`, they list it too, with the other headings under
-it. The levels are the same for every page, but a page can turn its table
-of contents off, with `toc: false` in its
+With `min: 1`, they list it too, with the other headings under it. A page
+can choose its own levels, or turn its table of contents off, in its
 [frontmatter](frontmatter.md#frontmatter-wins).

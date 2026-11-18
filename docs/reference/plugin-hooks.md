@@ -235,8 +235,8 @@ in the theme, with the page's file, as for `source`, and the HTML, which
 the theme gets as `page.content`. It gives back the HTML the build goes on
 with, like the plugin in [Writing plugins](../plugins/writing-plugins.md),
 which makes each of the page's links to other sites open in a new tab.
-`page.toc` lists the headings from before the hook, so a heading it adds
-isn't in it.
+`page.outline.items` lists the headings from before the hook, so a heading
+it adds isn't in it.
 
 ## site
 
@@ -250,9 +250,9 @@ Called once, after every page is read, with
 `version` and `versions`.
 
 It gives back the `site` the theme gets. Its `navigation.items` must still
-be a list of `{ title, url, children }`, and `page.prev`, `page.next`, and
-`page.breadcrumbs` follow it, so they agree with the theme's sidebar. Its
-URLs are as the theme gets them, with the path of the site's
+be a list of `{ title, url, children }`, and `page.previous`, `page.next`,
+and `page.breadcrumb.items` follow it, so they agree with the theme's
+sidebar. Its URLs are as the theme gets them, with the path of the site's
 [`url`](../getting-started/publishing.md#choosing-the-sites-url) before
 them, like `/little/guide/install`, so a URL the hook adds needs it, too.
 With [`navigation.prune`](../writing/navigation.md#pruning-the-nav), little
@@ -270,9 +270,11 @@ Called for each page, and the 404 page, before it's put in the theme, with
 `reading_time` for the theme to show.
 
 [Search](../writing/search.md) indexes the `title` and `content` it gives
-back. If it has a `search`, that
+back, and its `search.enabled`
 [leaves the page out or keeps it in](../writing/search.md#leaving-pages-out),
-as a page's frontmatter does.
+as a page's frontmatter does. little has already acted on the page's other
+groups, so a hook that turns one off, like `outline`, empties its `items`
+too.
 
 ## html
 

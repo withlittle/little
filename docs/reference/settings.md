@@ -42,8 +42,7 @@ any of them:
 | `repository.owner`, `repository.name` | from `repository.url` | the repository's owner and name, like `withlittle` and `little`, for a theme to show |
 | `navigation.items` | the source's pages and folders, [sorted by title](../writing/navigation.md#the-nav) | the site's [nav](../writing/navigation.md#writing-the-nav-yourself) |
 | `navigation.prune` | `false` | whether each page's nav lists [only the folders the page is in](../writing/navigation.md#pruning-the-nav) |
-| `toc_min_depth` | `2`, for `##` | the level of heading a page's [table of contents](../writing/navigation.md#tables-of-contents) lists from |
-| `toc_max_depth` | `6`, for `######`; `3`, for `###`, in the built-in theme | the level it lists down to |
+
 | `search.enabled` | `false`; `true` in the built-in theme | whether the site's [indexed for search](../writing/search.md) |
 | `search.exclude` | none | the URLs of the pages [left out of search](../writing/search.md#leaving-pages-out), each with those under it |
 | `markdown` | GitHub's extensions | the [extensions to Markdown](../writing/markdown.md#choosing-markdowns-extensions) pages are written with |
@@ -76,3 +75,16 @@ that shows it, like `announcement: "2.1 is out!"` as `site.announcement`.
 A key under `page` reaches the theme as `page.<key>`, on every page, as if
 each page's [frontmatter](../writing/frontmatter.md#for-every-page) set it.
 A page's own frontmatter goes over it, and changes only that page.
+
+little sets these under `page`, and a theme, a site, or a page can change
+any of them:
+
+| Key | Default | Chooses… |
+| --- | ------- | -------- |
+| `outline.enabled` | `true` | whether a page has a [table of contents](../writing/navigation.md#tables-of-contents) |
+| `outline.depth.min` | `2`, for `##` | the level of heading it lists from |
+| `outline.depth.max` | `6`, for `######`; `3`, for `###`, in the built-in theme | the level it lists down to |
+| `breadcrumb.enabled` | `true` | whether it has [breadcrumbs](../writing/navigation.md#breadcrumbs) |
+| `previous.enabled`, `next.enabled` | `true` | whether it links to the [pages before and after it](../writing/navigation.md#previous-and-next-pages) |
+| `repository.enabled` | `true` | whether it links to [its file](../getting-started/configuring.md#choosing-the-sites-repository) in the site's repository |
+| `search.enabled` | `false` under a URL in `site.search.exclude`, else `true` | whether [search](../writing/search.md#leaving-pages-out) indexes it |
