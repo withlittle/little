@@ -12,12 +12,12 @@ crate-type = ["cdylib"]
 
 [dependencies]
 little-api-reference = { path = "../api_reference" }
-ruff_python_ast = "0.0.16"
-ruff_python_codegen = "0.0.16"
-ruff_python_parser = "0.0.16"
-ruff_source_file = "0.0.16"
-ruff_text_size = "0.0.16"
-wit-bindgen = "0.62"
+ruff_python_ast = "0.0.22"
+ruff_python_codegen = "0.0.22"
+ruff_python_parser = "0.0.22"
+ruff_source_file = "0.0.22"
+ruff_text_size = "0.0.22"
+wit-bindgen = "0.63"
 
 [dev-dependencies]
 little-api-reference = { path = "../api_reference", features = ["testing"] }
