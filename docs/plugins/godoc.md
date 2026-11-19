@@ -71,9 +71,7 @@ It reads the rest whatever their build constraints, so it reads a
 package's files for every platform, like `canvas_linux.go` and
 `canvas_windows.go`. Of what more than one declares, it documents the first
 with a doc comment, in order of their names. A file it can't read or parse
-is [warned of](using-plugins.md#when-a-plugin-fails), and left out, as is
-one with a method with type parameters, new in Go 1.27, which gosyn doesn't
-read.
+is [warned of](using-plugins.md#when-a-plugin-fails), and left out.
 
 Each folder with `.go` files is a package, imported by the module's path
 and the folder's, like `example.com/shapes/draw`. Where a folder has files

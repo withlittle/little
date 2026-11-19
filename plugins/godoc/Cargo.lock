@@ -82,9 +82,9 @@ checksum = "77ce24cb58228fbb8aa041425bb1050850ac19177686ea6e0f41a70416f56fdb"
 
 [[package]]
 name = "gosyn"
-version = "0.2.15"
+version = "0.2.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "28f4ed3cbcb66ddad22553bb3b94087573cf492a34501bc025a23167ed57e856"
+checksum = "350e29fa9fb4759668da89361c310417de0757b8152bf7a5e6da2210a72d97b8"
 dependencies = [
  "anyhow",
  "strum",
