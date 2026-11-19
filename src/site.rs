@@ -14,6 +14,7 @@
 //! renders and writes only what differs.
 
 use anyhow::{Context, Result, bail};
+use minijinja::value::Serde;
 use minijinja::{Value as MjValue, context};
 use serde::{Deserialize, Serialize};
 use serde_yaml::{Mapping, Value};
@@ -1031,7 +1032,7 @@ fn finish(
         })
     })?;
     let nav = nav_in(&site).context("`site.navigation.items` must be a list of links")?;
-    let site_value = MjValue::from_serialize(&site);
+    let site_value = MjValue::from(Serde(&site));
     // What every page of the version is rendered from: the theme's
     // templates, the URL their filters link under, and `site`, but for a
     // pruned nav, which is each page's own.
@@ -1087,7 +1088,7 @@ fn finish(
             (Some(pruned), Some(nav)) => pruned.site(nav),
             _ => site_value.clone(),
         };
-        let html = theme.render(page_type, context! { site => site, page => page })?;
+        let html = theme.render(page_type, context! { site => site, page => Serde(page) })?;
         let html = html.map(|html| plugins.html(url, on, html));
         anyhow::Ok(html.map(|html| {
             let lang = search::lang(&html);
@@ -2096,7 +2097,7 @@ impl<'a> PrunedNav<'a> {
         if let Some(items) = nav_mut(&mut site) {
             *items = Value::Sequence(nav);
         }
-        MjValue::from_serialize(&site)
+        MjValue::from(Serde(&site))
     }
 
     /// The nav of the page at `url`, as the nav links to it. A page that
