@@ -1323,14 +1323,15 @@ fn read_error(name: &str) -> anyhow::Error {
 /// `site.versions` can't set them, though one from a ref can set its own
 /// `source`, `navigation.items`, and `plugins`. `navigation` isn't among
 /// them, as only its `prune` is the site's.
-const SITES_SETTINGS: [&str; 9] = [
+const SITES_SETTINGS: [&str; 10] = [
     "destination",
     "theme",
     "repository",
     "search",
     "markdown",
     "versions",
-    "year",
+    "built",
+    "modified",
     "serve",
     "error",
 ];
@@ -3713,7 +3714,8 @@ mod tests {
             ("search", "{ enabled: false }"),
             ("markdown", "{ math: false }"),
             ("versions", "[]"),
-            ("year", "2020"),
+            ("built", "2020-01-01"),
+            ("modified", "2020-01-01"),
             ("serve", "{ port: 3000 }"),
             ("error", "{ title: Gone }"),
         ] {

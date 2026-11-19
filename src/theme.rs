@@ -16,18 +16,23 @@
 //! Once its files are read, and layered, a plugin's `theme` hook can change
 //! them (see `plugin`).
 //!
-//! little adds two filters to a theme's templates, for URLs the theme writes
-//! itself: `url` puts the path of the site's `url` before a URL from the root
-//! of the site, and `absolute_url` its scheme and host before one that has
-//! the path.
+//! little adds three filters to a theme's templates. Two are for URLs the
+//! theme writes itself: `url` puts the path of the site's `url` before a URL
+//! from the root of the site, and `absolute_url` its scheme and host before
+//! one that has the path. `dateformat` writes a date, like `site.built`, as
+//! the theme chooses.
 
 use anyhow::{Context, Result, bail};
+use minijinja::value::Kwargs;
 use minijinja::{AutoEscape, Environment, ErrorKind, HtmlEscape, State, Value};
 use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
+use time::format_description::well_known::Rfc3339;
+use time::format_description::{parse_borrowed, parse_strftime_owned};
+use time::{Date, OffsetDateTime};
 use walkdir::WalkDir;
 
 use crate::config::SiteUrl;
@@ -415,6 +420,7 @@ impl Theme {
         env.add_filter("absolute_url", move |state: &State, value: Value| {
             url_filter(state, value, |url| site.absolute(url))
         });
+        env.add_filter("dateformat", dateformat);
         // Templates are compiled as they're needed, by name, so a theme's
         // `_templates/` can hold other files (a README, say) without little
         // trying to parse them.
@@ -493,6 +499,62 @@ fn url_filter(state: &State, value: Value, change: impl Fn(&str) -> Cow<'_, str>
     } else {
         Value::from(changed.into_owned())
     }
+}
+
+/// Write `value`, a date, as `format` says, in `strftime`'s codes, like
+/// `%-d %B %Y`, which a template gives by name. A date is a date and time as
+/// RFC 3339 writes it, like `2026-11-19T02:37:42Z`, as little gives a theme
+/// its dates, written in the zone it's in, or a date alone, like
+/// `2026-11-19`, as an author writes one, taken as midnight, UTC. A value
+/// that isn't there is left as it is, as `url_filter` leaves one.
+fn dateformat(
+    value: Value,
+    unnamed: Option<Value>,
+    kwargs: Kwargs,
+) -> Result<Value, minijinja::Error> {
+    let stop = |why: String| minijinja::Error::new(ErrorKind::InvalidOperation, why);
+    // The template's mistakes first, so they stop the build whether or not
+    // the page it renders has the date.
+    let like = r#"like `dateformat(format="%-d %B %Y")`"#;
+    if unnamed.is_some() {
+        return Err(stop(format!(
+            "`dateformat` takes its format by name, {like}"
+        )));
+    }
+    let Some(format) = kwargs.get::<Option<&str>>("format")? else {
+        return Err(stop(format!("`dateformat` needs a `format`, {like}")));
+    };
+    kwargs.assert_all_used()?;
+    let items = parse_strftime_owned(format).map_err(|e| {
+        stop(format!(
+            "`dateformat` can't read the format `{format}`: {e}"
+        ))
+    })?;
+    if value.is_undefined() || value.is_none() {
+        return Ok(value);
+    }
+    let time = value.as_str().and_then(date_in).ok_or_else(|| {
+        stop(format!(
+            "`dateformat` can't read `{value}` as a date: write one like `2026-11-19`, or \
+             `2026-11-19T02:37:42Z`"
+        ))
+    })?;
+    let written = time.format(&items).map_err(|e| {
+        stop(format!(
+            "`dateformat` can't write `{value}` as `{format}`: {e}"
+        ))
+    })?;
+    Ok(Value::from(written))
+}
+
+/// The time `text` is: a date and time as RFC 3339 writes it, or a date
+/// alone, like `2026-11-19`, as midnight, UTC.
+fn date_in(text: &str) -> Option<OffsetDateTime> {
+    if let Ok(time) = OffsetDateTime::parse(text, &Rfc3339) {
+        return Some(time);
+    }
+    let date = parse_borrowed::<2>("[year]-[month]-[day]").ok()?;
+    Some(Date::parse(text, &date).ok()?.midnight().assume_utc())
 }
 
 #[cfg(test)]
@@ -630,6 +692,89 @@ mod tests {
             "/assets/style.css /guide/ /og.png https://example.com/ \
              /search?q=a&amp;b /a&amp;b []"
         );
+    }
+
+    #[test]
+    fn dateformat_writes_a_date_as_its_format_says() {
+        // What a template writes of `page.date`, or why the build stops.
+        let render = |template: &str, date: Value| {
+            let (_tmp, dir) = scratch(&[("_templates/default.html", template)]);
+            let ctx = context! { page => context! { date => date } };
+            let html = load(&dir).and_then(|theme| theme.render(PageType::Page, ctx));
+            html.map(Option::unwrap).map_err(|e| format!("{e:#}"))
+        };
+        let written = |format: &str, date: &str| {
+            let template = format!(r#"{{{{ page.date | dateformat(format="{format}") }}}}"#);
+            render(&template, Value::from(date))
+        };
+        let ok = |text: &str| Ok(text.to_string());
+
+        // As little gives a theme its dates, in UTC.
+        let built = "2026-11-19T02:37:42Z";
+        assert_eq!(written("%-d %B %Y", built), ok("19 November 2026"));
+        assert_eq!(written("%Y", built), ok("2026"));
+        assert_eq!(written("%Y-%m-%d", built), ok("2026-11-19"));
+        let long = written("%A, %d %b %Y at %H:%M:%S %z", built);
+        assert_eq!(long, ok("Thursday, 19 Nov 2026 at 02:37:42 +0000"));
+        // As an author writes one: a date alone is midnight, UTC, and a time
+        // is written in the zone it's in.
+        assert_eq!(
+            written("%-d %B %Y %H:%M", "2026-11-01"),
+            ok("1 November 2026 00:00")
+        );
+        let sydney = written("%-d %B %Y %H:%M %z", "2026-01-01T09:00:00+11:00");
+        assert_eq!(sydney, ok("1 January 2026 09:00 +1100"));
+        // What's written is escaped, as any text a template writes is.
+        assert_eq!(written("<%Y & %m>", built), ok("&lt;2026 &amp; 11&gt;"));
+
+        // A date that isn't there is left that way, so nothing's written,
+        // and a filter after it still sees none.
+        let missing = r#"[{{ page.missing | dateformat(format="%Y") }}] {{
+                         page.missing | dateformat(format="%Y") | default("never") }}"#;
+        assert_eq!(render(missing, Value::from(built)), ok("[] never"));
+
+        // A value that isn't a date stops the build.
+        for date in [
+            Value::from("soon"),
+            Value::from("2026-11-1"),
+            Value::from(2026),
+        ] {
+            let message = render(r#"{{ page.date | dateformat(format="%Y") }}"#, date.clone());
+            let expected = format!(
+                "`dateformat` can't read `{date}` as a date: write one like `2026-11-19`, or \
+                 `2026-11-19T02:37:42Z`"
+            );
+            let message = message.unwrap_err();
+            assert!(message.contains(&expected), "{message}");
+        }
+        // And so does a template that gives no format, or one `strftime`
+        // doesn't have, whether or not the page has the date.
+        let like = r#"like `dateformat(format="%-d %B %Y")`"#;
+        for (filter, expected) in [
+            (
+                "dateformat",
+                format!("`dateformat` needs a `format`, {like}"),
+            ),
+            (
+                "dateformat('%Y')",
+                format!("`dateformat` takes its format by name, {like}"),
+            ),
+            (
+                "dateformat(format='%Q')",
+                "`dateformat` can't read the format `%Q`: ".to_string(),
+            ),
+            (
+                "dateformat(format='%Z')",
+                "`dateformat` can't read the format `%Z`: ".to_string(),
+            ),
+            ("dateformat(format='%Y', tz='UTC')", "tz".to_string()),
+        ] {
+            for value in ["page.date", "page.missing"] {
+                let template = format!("{{{{ {value} | {filter} }}}}");
+                let message = render(&template, Value::from(built)).unwrap_err();
+                assert!(message.contains(&expected), "{template}: {message}");
+            }
+        }
     }
 
     #[test]

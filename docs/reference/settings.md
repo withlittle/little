@@ -54,7 +54,8 @@ any of them:
 | `serve.host` | `127.0.0.1` | the host `little serve` [serves at](commands.md#choosing-where-to-serve) |
 | `serve.port` | `8080` | the port it serves on |
 | `error.title`, `error.description` | `Page not found`, and a line that says so | what the [404 page](../getting-started/publishing.md#a-404-page) says |
-| `year` | the year the build starts in | the year a theme's [copyright notice](../themes/making-a-theme.md#a-copyright-notice) shows |
+| `built` | when the build starts | when a theme says the site was [built](template-data.md#dates) |
+| `modified` | when the site's newest commit was made | when a theme says the site [last changed](template-data.md#dates) |
 
 ## The built-in theme's settings
 

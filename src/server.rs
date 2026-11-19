@@ -141,8 +141,9 @@ fn spawn_watcher(
             }
 
             let before = Arc::clone(&last.lock().unwrap());
+            // Each as of when `little serve` started, as the first was built.
             let built = match failed {
-                true => site::build(&site_dir),
+                true => site::build_as_of(&site_dir, before.time),
                 false => site::rebuild(&site_dir, &before),
             };
             failed = built.is_err();

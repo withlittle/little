@@ -1,6 +1,9 @@
 # 0026 — The year a site is built
 
-- Status: accepted
+- Status: superseded by
+  [0082](./0082-the-dates-of-a-site-and-its-pages.md), which gives the
+  theme the time of the build whole, as `site.built`, with a filter to
+  format it, in place of its year
 - Date: 2026-10-05
 
 ## Context

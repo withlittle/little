@@ -12,6 +12,11 @@
 //! [`build`] builds a site from nothing, and [`rebuild`] after the build
 //! before it, for `little serve`: it reads the site as [`build`] does, but
 //! renders and writes only what differs.
+//!
+//! A theme gets when the site was built, as `site.built`, and, from git,
+//! when the site last changed, and when each page's file was added, and
+//! last changed (see `git`). A rebuild is as of when the build before it
+//! was, so the time alone renders no page again.
 
 use anyhow::{Context, Result, bail};
 use minijinja::value::Serde;
@@ -30,7 +35,8 @@ use std::mem;
 use std::path::{Component, Path, PathBuf};
 use std::slice;
 use std::sync::{Arc, Mutex};
-use time::OffsetDateTime;
+use time::format_description::well_known::Rfc3339;
+use time::{OffsetDateTime, UtcOffset};
 use walkdir::WalkDir;
 
 use crate::config::{Config, PageSettings, Repo, Shared, SiteUrl};
@@ -57,6 +63,9 @@ struct Page {
     origin: String,
     /// Whether a plugin adds it, so it has no file in the site's repository.
     added: bool,
+    /// When its file was added to the site's repository, and when it last
+    /// changed there, if git says.
+    dates: Option<git::Dates>,
     /// Pretty, extensionless URL (`/`, `/getting-started`, `/guide/install`).
     url: String,
     /// Output file on disk (`dist/guide/install/index.html`).
@@ -95,6 +104,13 @@ struct PageData<'a> {
     title: Option<&'a str>,
     #[serde(skip_serializing_if = "Option::is_none")]
     content: Option<&'a str>,
+    /// When the page's file was added to the site's repository, like
+    /// `2026-11-19T02:37:42Z`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    created: Option<&'a str>,
+    /// When it last changed there.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    modified: Option<&'a str>,
     /// A home or section page's branch of the nav: what's in its folder.
     #[serde(skip_serializing_if = "Option::is_none")]
     children: Option<&'a [NavItem]>,
@@ -245,6 +261,31 @@ pub struct Built {
     /// Each Markdown page it parsed, by a hash of all it was parsed from,
     /// which a [`rebuild`] parses again only if that differs.
     pub parsed: Arc<HashMap<u64, render::Rendered>>,
+    /// When it started, or `SOURCE_DATE_EPOCH`: the theme's `site.built`,
+    /// which a [`rebuild`] keeps, so the time alone renders no page again.
+    pub time: OffsetDateTime,
+    /// The commit the site's files, as they are, were built from, if its
+    /// repository has one, which a [`rebuild`] asks git the date of only if
+    /// it's another.
+    head: Option<git::Commit>,
+    /// The dates git has for the files of each version, by its commit, and
+    /// its source folder, from the top of the repository, which a
+    /// [`rebuild`] reads again only for another commit.
+    histories: Arc<HashMap<(String, String), Arc<FileDates>>>,
+}
+
+/// When each file in a folder of the site's repository was added, and when
+/// it last changed, as git has it: each by its path from the top of the
+/// repository, like `docs/guide.md`.
+type FileDates = HashMap<String, git::Dates>;
+
+/// When a site was built, and when it last changed, as its theme gets them.
+#[derive(Clone, Copy)]
+struct Times {
+    /// When the build started, or, for a [`rebuild`], the first one did.
+    built: OffsetDateTime,
+    /// When the commit the site is built from was made, if git says.
+    modified: Option<OffsetDateTime>,
 }
 
 /// What a build wrote a file from.
@@ -479,7 +520,14 @@ impl Ready {
 /// has the path of the version's URL before them, like `/my-project/guide/`,
 /// or `/my-project/1.4/guide/`.
 pub fn build(site_dir: &Path) -> Result<Built> {
-    build_after(site_dir, None)
+    build_after(site_dir, None, None)
+}
+
+/// Build the site rooted at `site_dir`, as [`build`] does, but as of `time`,
+/// not now: when `little serve` started, which it keeps as the time of each
+/// build it makes, whole ones too.
+pub fn build_as_of(site_dir: &Path, time: OffsetDateTime) -> Result<Built> {
+    build_after(site_dir, None, Some(time))
 }
 
 /// Build the site rooted at `site_dir` again, after `last`, the build before
@@ -492,8 +540,11 @@ pub fn build(site_dir: &Path) -> Result<Built> {
 /// its text, or the settings it's parsed with, have changed. If `last`
 /// went to another destination, or its files aren't there now, every page
 /// is rendered and written, as [`build`] does.
+///
+/// It's built as of when `last` was, so `site.built` is the same, and a
+/// page isn't rendered again for the time alone.
 pub fn rebuild(site_dir: &Path, last: &Built) -> Result<Built> {
-    build_after(site_dir, Some(last))
+    build_after(site_dir, Some(last), Some(last.time))
 }
 
 /// The Markdown pages a build parses, by a hash of all each is parsed from:
@@ -506,8 +557,51 @@ struct Parses {
     kept: HashMap<u64, render::Rendered>,
 }
 
-/// [`build`], or, after `last`, [`rebuild`].
-fn build_after(site_dir: &Path, last: Option<&Built>) -> Result<Built> {
+/// The dates git has for the files of each version of a site: when each was
+/// added to the site's repository, and when it last changed there.
+struct Histories<'a> {
+    /// The repository the site is in, if it has its whole history: without
+    /// one, or in a shallow clone, whose oldest commit seems to add every
+    /// file, no file has dates.
+    repository: Option<&'a git::Repository>,
+    /// The commit the site's files, as they are, are built from.
+    head: Option<&'a str>,
+    /// Those the build before it read, by each version's commit, and its
+    /// source folder, from the top of the repository.
+    before: Arc<HashMap<(String, String), Arc<FileDates>>>,
+    /// Those this build has, read or taken from `before`.
+    kept: HashMap<(String, String), Arc<FileDates>>,
+}
+
+impl Histories<'_> {
+    /// The dates of the files in `folder`, from the top of the repository,
+    /// in the history of `commit`: none, without either, or if git can't
+    /// say, as a date it can't give is left out.
+    fn of(&mut self, commit: Option<&str>, folder: Option<&str>) -> Arc<FileDates> {
+        let (Some(repository), Some(commit), Some(folder)) = (self.repository, commit, folder)
+        else {
+            return Arc::default();
+        };
+        let key = (commit.to_string(), folder.to_string());
+        let dates = match self.kept.get(&key).or_else(|| self.before.get(&key)) {
+            Some(dates) => Arc::clone(dates),
+            None => match repository.dates(commit, folder) {
+                Ok(dates) => Arc::new(dates),
+                Err(_) => return Arc::default(),
+            },
+        };
+        self.kept.insert(key, Arc::clone(&dates));
+        dates
+    }
+}
+
+/// [`build`], or, after `last`, [`rebuild`]: as of `time`, or, without one,
+/// now.
+fn build_after(
+    site_dir: &Path,
+    last: Option<&Built>,
+    time: Option<OffsetDateTime>,
+) -> Result<Built> {
     let mut parses = Parses {
         before: last
             .map(|last| Arc::clone(&last.parsed))
@@ -515,9 +609,12 @@ fn build_after(site_dir: &Path, last: Option<&Built>) -> Result<Built> {
         kept: HashMap::new(),
     };
     let config = config::load(site_dir)?;
-    // Once, so every page of a build has the same year, and every diagram
+    // Once, so every page of a build has the same time, and every diagram
     // the same today, even at midnight.
-    let now = time_of_build(env::var_os("SOURCE_DATE_EPOCH"))?;
+    let now = match time {
+        Some(time) => time,
+        None => time_of_build(env::var_os("SOURCE_DATE_EPOCH"))?,
+    };
     // The site's plugins start before anything's read, so their `config`
     // hooks change the config the build reads, and their `theme` hooks the
     // theme every version is in.
@@ -530,10 +627,37 @@ fn build_after(site_dir: &Path, last: Option<&Built>) -> Result<Built> {
     } else {
         config.versions.iter().map(Some).collect()
     };
-    let repository = (versions.iter().flatten())
-        .any(|version| version.git_ref.is_some())
-        .then(|| git::Repository::find(site_dir))
-        .transpose()?;
+    // A site needn't be in a repository, unless one of its versions is from
+    // a git ref: without one, git has no dates for it.
+    let from_refs = (versions.iter().flatten()).any(|version| version.git_ref.is_some());
+    let repository = match git::Repository::find(site_dir) {
+        Ok(repository) => Some(repository),
+        Err(e) if from_refs => return Err(e),
+        Err(_) => None,
+    };
+    // The commit the site is built from, and when it was made, which git is
+    // asked only of a commit the last build wasn't built from.
+    let head = repository.as_ref().and_then(|repository| {
+        let id = repository.head()?;
+        let kept = (last.and_then(|last| last.head.as_ref())).filter(|head| head.id == id);
+        match kept {
+            Some(head) => Some(head.clone()),
+            None => Some(git::Commit {
+                id: id.to_string(),
+                date: repository.date(id).ok()?,
+            }),
+        }
+    });
+    let times = Times {
+        built: now,
+        modified: head.as_ref().map(|head| head.date),
+    };
+    let mut histories = Histories {
+        repository: (repository.as_ref()).filter(|repository| !repository.is_shallow()),
+        head: head.as_ref().map(|head| head.id.as_str()),
+        before: (last.map(|last| Arc::clone(&last.histories))).unwrap_or_default(),
+        kept: HashMap::new(),
+    };
 
     // Every version is in the site's theme, so its static files are read
     // once, and written once, for the version at the root of the site.
@@ -563,13 +687,13 @@ fn build_after(site_dir: &Path, last: Option<&Built>) -> Result<Built> {
                 check_out(&config, repository, version, git_ref).and_then(|(checkout, config)| {
                     let plugins = Plugins::start(&config.plugins, site_dir, now)?;
                     let checkout = Some(checkout);
-                    let theme = (&theme, &mut parses);
+                    let theme = (&theme, &mut parses, &mut histories);
                     read_source(site_dir, &config, checkout, plugins, theme, place, now)
                 })
             }
             _ => {
                 let plugins = site_plugins.take().unwrap_or_default();
-                let theme = (&theme, &mut parses);
+                let theme = (&theme, &mut parses, &mut histories);
                 read_source(site_dir, &config, None, plugins, theme, place, now)
             }
         };
@@ -596,6 +720,9 @@ fn build_after(site_dir: &Path, last: Option<&Built>) -> Result<Built> {
         written: HashSet::new(),
         indexes: Arc::default(),
         parsed: Arc::new(parses.kept),
+        time: now,
+        histories: Arc::new(histories.kept),
+        head,
     };
     // When every version is from a git ref, the site's plugins build none,
     // but may have warned as they started.
@@ -623,7 +750,7 @@ fn build_after(site_dir: &Path, last: Option<&Built>) -> Result<Built> {
     let mut ready = Vec::new();
     for (source, &version) in sources.into_iter().zip(&versions) {
         let theme = (theme_files.as_slice(), &templates);
-        let finished = finish(source, every.as_ref(), theme, now, last, &mut built);
+        let finished = finish(source, every.as_ref(), theme, times, last, &mut built);
         ready.push(in_version(finished, version)?);
     }
 
@@ -751,13 +878,15 @@ enum Format {
 /// Read the version of the site at `site_dir` that `config` configures, to
 /// build at `place`, in `theme`, with `plugins`: its files from `checkout`,
 /// if it's from a git ref, or else as they are, and those its plugins add.
-/// Its pages are rendered, but not yet put in its theme.
+/// Its pages are rendered, but not yet put in its theme. Each has the dates
+/// of its file, from `histories`, and a Markdown page's parse is kept in
+/// `parses`.
 fn read_source(
     site_dir: &Path,
     config: &Config,
     checkout: Option<git::Checkout>,
     mut plugins: Plugins,
-    (theme, parses): (&ThemeFiles, &mut Parses),
+    (theme, parses, histories): (&ThemeFiles, &mut Parses, &mut Histories),
     mut place: Place,
     now: OffsetDateTime,
 ) -> Result<Source> {
@@ -868,6 +997,19 @@ fn read_source(
     let version_dir = checkout.as_ref().map_or(site_dir, git::Checkout::site_dir);
     let source_in_site = source_dir.strip_prefix(version_dir).unwrap_or(source_dir);
 
+    // When each page's file was added to the site's repository, and when it
+    // last changed there: in the history of the version's commit, which for
+    // the site's files as they are is `HEAD`, whatever isn't committed.
+    let (commit, tracked) = match &checkout {
+        Some(checkout) => (Some(&*checkout.commit), checkout.in_repo(source_dir)),
+        None => {
+            let repository = histories.repository;
+            let tracked = repository.and_then(|repo| repo.in_repo(site_dir, source_dir));
+            (histories.head, tracked)
+        }
+    };
+    let dates = histories.of(commit, tracked.as_deref());
+
     // The settings as the site writes them, for the plugins that read pages.
     let markdown = (config.site.get("markdown").and_then(Value::as_mapping))
         .cloned()
@@ -922,9 +1064,19 @@ fn read_source(
         };
         let mut rendered = rendered.with_context(|| format!("rendering {origin}"))?;
         rendered.html = plugins.content(&file, &origin, mem::take(&mut rendered.html));
+        // A file a plugin adds isn't in the repository, whatever is there
+        // at its path.
+        let dated = tracked.as_deref().filter(|_| !added).and_then(|tracked| {
+            let file = slashed(&rel);
+            match tracked {
+                "" => dates.get(&file),
+                tracked => dates.get(&format!("{tracked}/{file}")),
+            }
+        });
         let every_page = &config.page;
         let destination = &place.destination;
-        let page = page_from(rel, origin, added, rendered, every_page, destination)?;
+        let mut page = page_from(rel, origin, added, rendered, every_page, destination)?;
+        page.dates = dated.copied();
         pages.push(page);
     }
 
@@ -963,7 +1115,7 @@ fn finish(
     source: Source,
     versions: Option<&Versions>,
     (theme_files, templates): (&[StaticFile], &DefaultHasher),
-    now: OffsetDateTime,
+    times: Times,
     last: Option<&Built>,
     built: &mut Built,
 ) -> Result<Ready> {
@@ -985,16 +1137,19 @@ fn finish(
     } = source;
 
     // What little works out is the bottom of the cascade: the nav it builds
-    // from the folders, the year, the version, and the owner and name of the
-    // repository go beneath the config, so a theme or site that sets
-    // `navigation.items`, `year`, `version`, or `repository.owner` replaces
-    // it.
+    // from the folders, when the site was built and last changed, the
+    // version, and the owner and name of the repository go beneath the
+    // config, so a theme or site that sets `navigation.items`, `built`,
+    // `modified`, `version`, or `repository.owner` replaces it.
     let tree = build_tree(&pages);
     let mut site = Mapping::new();
     let items = serde_yaml::to_value(build_nav(&tree))?;
     let navigation = Mapping::from_iter([("items".into(), items)]);
     site.insert("navigation".into(), Value::Mapping(navigation));
-    site.insert("year".into(), now.year().into());
+    site.insert("built".into(), timestamp(times.built)?.into());
+    if let Some(modified) = times.modified {
+        site.insert("modified".into(), timestamp(modified)?.into());
+    }
     if let Some(title) = &place.title {
         site.insert("version".into(), title.as_str().into());
     }
@@ -1117,11 +1272,15 @@ fn finish(
             .filter(|_| !page.added && wants.repository)
             .and_then(|in_repo| in_repo.repo.file_urls(&in_repo.folder.join(&page.rel)));
         let in_versions = versions.map(|versions| versions.at(Some(&page.url)));
+        let created = (page.dates.map(|dates| timestamp(dates.created))).transpose()?;
+        let modified = (page.dates.map(|dates| timestamp(dates.modified))).transpose()?;
         let data = PageData {
             page_type: page.page_type.name(),
             url: &page.url,
             title: Some(&page.title),
             content: Some(&page.html),
+            created: created.as_deref(),
+            modified: modified.as_deref(),
             children: children.as_deref(),
             versions: in_versions.as_deref(),
             // Its own `search.enabled` says, else `site.search.exclude`.
@@ -1182,6 +1341,8 @@ fn finish(
             url: &not_found_url,
             title: None,
             content: None,
+            created: None,
+            modified: None,
             children: None,
             versions: homes.as_deref(),
             search: Enabled { enabled: false },
@@ -1449,6 +1610,7 @@ fn page_from(
         rel,
         origin,
         added,
+        dates: None,
         url,
         out_path,
         title,
@@ -1479,10 +1641,10 @@ fn folder_in_repo(source_dir: &Path, site_dir: &Path) -> Result<Option<PathBuf>>
     Ok(source.strip_prefix(&root).ok().map(Path::to_path_buf))
 }
 
-/// When a build is, in UTC, for a theme's copyright notice, and a diagram's
-/// today: `SOURCE_DATE_EPOCH`, if it's set, so the build can be reproduced,
-/// or now. A malformed `SOURCE_DATE_EPOCH` is an error, as its specification
-/// asks.
+/// When a build is, in UTC, which its theme gets as `site.built`, a diagram
+/// as its today, and a plugin as its clock: `SOURCE_DATE_EPOCH`, if it's set,
+/// so the build can be reproduced, or now. A malformed `SOURCE_DATE_EPOCH`
+/// is an error, as its specification asks.
 fn time_of_build(source_date_epoch: Option<OsString>) -> Result<OffsetDateTime> {
     let Some(epoch) = source_date_epoch else {
         return Ok(OffsetDateTime::now_utc());
@@ -1497,6 +1659,13 @@ fn time_of_build(source_date_epoch: Option<OsString>) -> Result<OffsetDateTime> 
                  as `date +%s` prints it, not {epoch:?}"
             )
         })
+}
+
+/// `time`, as a theme gets it: in UTC, to the second, as RFC 3339 writes
+/// it, like `2026-11-19T02:37:42Z`.
+fn timestamp(time: OffsetDateTime) -> Result<String> {
+    let time = time.to_offset(UtcOffset::UTC).replace_nanosecond(0)?;
+    Ok(time.format(&Rfc3339)?)
 }
 
 /// What a template sees as `page`: what little works out for it, `data`,
@@ -2221,6 +2390,7 @@ mod tests {
             rel,
             origin,
             added: false,
+            dates: None,
             url,
             out_path,
             title: title.to_string(),
@@ -4856,8 +5026,9 @@ mod tests {
     }
 
     #[test]
-    fn every_page_gets_the_year_of_the_build() {
-        let template = "&copy; {{ site.year }} {{ site.name }}";
+    fn every_page_gets_when_the_site_was_built() {
+        let template = "{{ site.built }} &copy; {{ site.built | dateformat(format='%Y') }} \
+                        {{ site.name }} [{{ site.modified }}{{ page.created }}{{ page.modified }}]";
         let (_tmp, site) = scratch(&[
             (
                 "little.yml",
@@ -4868,22 +5039,167 @@ mod tests {
             ("theme/_templates/default.html", template),
             ("theme/_templates/404.html", template),
         ]);
-        let year = time_of_build(env::var_os("SOURCE_DATE_EPOCH"))
-            .unwrap()
-            .year();
 
-        build(&site).unwrap();
-
+        // In UTC, to the second, whatever the time's zone, and its fraction.
+        // The site isn't in a repository, so git has no dates for it.
+        build_as_of(&site, git::tests::when("2026-11-19T13:37:42.5+11:00")).unwrap();
         let read = |path: &str| fs::read_to_string(site.join("dist").join(path)).unwrap();
         for path in ["index.html", "guide/index.html", "404.html"] {
-            assert_eq!(read(path), format!("&copy; {year} Little"), "{path}");
+            let built = "2026-11-19T02:37:42Z &copy; 2026 Little []";
+            assert_eq!(read(path), built, "{path}");
         }
 
-        // It's beneath the config, like the nav, so a `year` there replaces it.
-        let site_cfg = "site:\n  theme:\n    source: ./theme\n  name: Little\n  year: 2019–2026\n";
+        // They're beneath the config, like the nav, so a `built` or a
+        // `modified` there replaces little's, as it's written.
+        let site_cfg = "site:\n  theme:\n    source: ./theme\n  name: Little\n  \
+                        built: 2019-06-01\n  modified: last year\n";
         fs::write(site.join("little.yml"), site_cfg).unwrap();
         build(&site).unwrap();
-        assert_eq!(read("index.html"), "&copy; 2019–2026 Little");
+        assert_eq!(
+            read("index.html"),
+            "2019-06-01 &copy; 2019 Little [last year]"
+        );
+    }
+
+    #[test]
+    fn a_rebuild_keeps_the_time_of_the_build() {
+        let (_tmp, site) = scratch(&[
+            ("little.yml", IN_THEME),
+            ("docs/README.md", "# Home\n"),
+            ("docs/guide.md", "# Guide\n"),
+            (
+                "theme/_templates/default.html",
+                "{{ site.built }} {{ page.content | safe }}",
+            ),
+        ]);
+        let time = git::tests::when("2026-11-19T02:37:42Z");
+        let built = build_as_of(&site, time).unwrap();
+
+        // Later, a page's text changes: it alone is rendered again, as of
+        // then, as the time is the same in what every page is rendered from.
+        write(&site, &[("docs/guide.md", "# Guide\n\nMore.\n")]);
+        let rebuilt = rebuild(&site, &built).unwrap();
+        assert_eq!(rebuilt.time, time);
+        assert!(rebuilt.written.contains(&native("guide/index.html")));
+        assert!(!rebuilt.written.contains(&native("index.html")));
+        let guide = fs::read_to_string(site.join("dist/guide/index.html")).unwrap();
+        assert!(guide.starts_with("2026-11-19T02:37:42Z <h1"), "{guide}");
+        assert!(guide.contains("<p>More.</p>"), "{guide}");
+    }
+
+    #[test]
+    fn each_page_gets_its_files_dates_from_git() {
+        use git::tests::{commit_all_at, git_in, init};
+        let template = "{{ page.created | default('-') }} {{ page.modified | default('-') }} \
+                        {{ site.modified | default('-') }}";
+        let moved = "# Moved\n\nA page.\n\nWith a few lines.\n\nFor git to know it by.\n";
+        let (_tmp, site) = scratch(&[
+            (".gitignore", "dist/\n"),
+            ("little.yml", IN_THEME),
+            ("docs/README.md", "# Home\n"),
+            ("docs/guide.md", "# Guide\n"),
+            ("docs/old.md", moved),
+            (
+                "docs/pinned.md",
+                "---\nmodified: 2020-02-02\n---\n# Pinned\n",
+            ),
+            ("theme/_templates/default.html", template),
+            ("theme/_templates/404.html", template),
+        ]);
+        init(&site);
+        commit_all_at(&site, "2026-01-05T10:00:00+11:00");
+        write(&site, &[("docs/guide.md", "# Guide\n\nMore.\n")]);
+        commit_all_at(&site, "2026-02-01T00:00:00Z");
+        git_in(&site, &["mv", "docs/old.md", "docs/new.md"]);
+        commit_all_at(&site, "2026-03-01T00:00:00Z");
+        // Not committed: a new page, and a change to one.
+        let home = ("docs/README.md", "# Home\n\nWelcome.\n");
+        write(&site, &[("docs/draft.md", "# Draft\n"), home]);
+        let (jan, feb, mar, apr) = (
+            "2026-01-04T23:00:00Z",
+            "2026-02-01T00:00:00Z",
+            "2026-03-01T00:00:00Z",
+            "2026-04-01T00:00:00Z",
+        );
+
+        // Each page's are its file's commits', in UTC, and the site's is its
+        // newest commit's. What isn't committed moves none of them.
+        let built = build(&site).unwrap();
+        let read = |path: &str| fs::read_to_string(site.join("dist").join(path)).unwrap();
+        assert_eq!(read("index.html"), format!("{jan} {jan} {mar}"));
+        assert_eq!(read("guide/index.html"), format!("{jan} {feb} {mar}"));
+        // A file that's renamed keeps its history.
+        assert_eq!(read("new/index.html"), format!("{jan} {mar} {mar}"));
+        // A page's frontmatter replaces its own, as it's written.
+        let pinned = format!("{jan} 2020-02-02 {mar}");
+        assert_eq!(read("pinned/index.html"), pinned);
+        // A page whose file isn't committed has none, nor has one with no
+        // file.
+        assert_eq!(read("draft/index.html"), format!("- - {mar}"));
+        assert_eq!(read("404.html"), format!("- - {mar}"));
+
+        // A rebuild has the same dates, so renders nothing again, until
+        // there's another commit, which every page has as the site's.
+        let rebuilt = rebuild(&site, &built).unwrap();
+        for page in ["index.html", "guide/index.html", "draft/index.html"] {
+            assert!(!rebuilt.written.contains(&native(page)), "{page}");
+        }
+        commit_all_at(&site, apr);
+        rebuild(&site, &rebuilt).unwrap();
+        assert_eq!(read("index.html"), format!("{jan} {apr} {apr}"));
+        assert_eq!(read("guide/index.html"), format!("{jan} {feb} {apr}"));
+        assert_eq!(read("draft/index.html"), format!("{apr} {apr} {apr}"));
+        assert_eq!(read("404.html"), format!("- - {apr}"));
+
+        // A shallow clone has the commit it's built from, whole, but not the
+        // commits each file changed in, so its pages have no dates.
+        let (_clone, clone) = scratch(&[]);
+        let url = url::Url::from_file_path(&site).unwrap().to_string();
+        git_in(&clone, &["clone", "--quiet", "--depth", "1", &url, "."]);
+        build(&clone).unwrap();
+        let read = |path: &str| fs::read_to_string(clone.join("dist").join(path)).unwrap();
+        for path in ["index.html", "guide/index.html", "draft/index.html"] {
+            assert_eq!(read(path), format!("- - {apr}"), "{path}");
+        }
+        // Its frontmatter still gives a page one.
+        assert_eq!(read("pinned/index.html"), format!("- 2020-02-02 {apr}"));
+    }
+
+    #[test]
+    fn a_version_from_a_ref_has_its_pages_dates_from_its_ref() {
+        use git::tests::{commit_all_at, git_in, init};
+        let template = "{{ page.created | default('-') }} {{ page.modified | default('-') }} \
+                        {{ site.modified | default('-') }}";
+        let config = format!(
+            "{IN_THEME}  versions:\n    - {{ title: \"2.0\", url: / }}\n    \
+             - {{ title: \"1.0\", url: /1.0, ref: v1.0 }}\n"
+        );
+        let (_tmp, site) = scratch(&[
+            (".gitignore", "dist/\n"),
+            ("little.yml", &config),
+            ("docs/README.md", "# Home\n"),
+            ("docs/guide.md", "# Guide\n"),
+            ("theme/_templates/default.html", template),
+        ]);
+        init(&site);
+        commit_all_at(&site, "2026-01-01T00:00:00Z");
+        git_in(&site, &["tag", "v1.0"]);
+        let guide = ("docs/guide.md", "# Guide\n\nMore.\n");
+        write(&site, &[guide, ("docs/new.md", "# New\n")]);
+        commit_all_at(&site, "2026-02-01T00:00:00Z");
+        let (jan, feb) = ("2026-01-01T00:00:00Z", "2026-02-01T00:00:00Z");
+
+        build(&site).unwrap();
+        let read = |path: &str| fs::read_to_string(site.join("dist").join(path)).unwrap();
+        // The site's files, as they are, have the history of `HEAD`.
+        assert_eq!(read("index.html"), format!("{jan} {jan} {feb}"));
+        assert_eq!(read("guide/index.html"), format!("{jan} {feb} {feb}"));
+        assert_eq!(read("new/index.html"), format!("{feb} {feb} {feb}"));
+        // A version from a ref has its ref's, but the site's own date is the
+        // same in every version.
+        assert_eq!(read("1.0/index.html"), format!("{jan} {jan} {feb}"));
+        assert_eq!(read("1.0/guide/index.html"), format!("{jan} {jan} {feb}"));
+        assert!(!site.join("dist/1.0/new").exists());
     }
 
     #[test]
@@ -5065,7 +5381,8 @@ mod tests {
             let dist = site.join("dist");
             let check = |rebuilt: &Built, edit: &str| {
                 let left = contents_of(&dist);
-                let built = build(&site).unwrap();
+                // As of the same time, which each page is rendered from.
+                let built = build_as_of(&site, rebuilt.time).unwrap();
                 let fresh = contents_of(&dist);
                 let names = |files: &BTreeMap<String, Vec<u8>>| -> Vec<String> {
                     files.keys().cloned().collect()

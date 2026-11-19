@@ -1,6 +1,8 @@
 # 0080 — Settings in groups, under `site` and `page`
 
-- Status: accepted
+- Status: accepted; amended by
+  [0082](./0082-the-dates-of-a-site-and-its-pages.md), which has
+  `site.built`, the time of the build, in place of `site.year`
 - Date: 2026-11-18
 - Amends: [0002](./0002-theme-structure.md),
   [0003](./0003-choosing-and-layering-themes.md),

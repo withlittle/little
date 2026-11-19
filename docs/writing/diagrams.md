@@ -46,7 +46,7 @@ warning: can't draw the diagram on line 12 of ./docs/guide.md: No diagram type d
 
 A diagram is drawn when the site is built, so a gantt chart's line at
 today's date marks the day it was built, in UTC, or that of
-[`SOURCE_DATE_EPOCH`](../themes/making-a-theme.md#a-copyright-notice). To
+[`SOURCE_DATE_EPOCH`](../reference/template-data.md#dates). To
 leave the line out, write `todayMarker off` in the chart.
 
 ## Choosing how diagrams are drawn

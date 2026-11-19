@@ -225,17 +225,34 @@ any of your own, like `released`, for the theme to show. little sets its
 `url`, and its `root`, which is true only for the version at `/`, so
 `page.versions | selectattr("root") | first` is that one.
 
-## A copyright notice
+## When a page last changed
 
-`site.year` is the year little builds the site in, in UTC, so a theme's
-copyright notice stays current without editing it each January:
+`page.modified` is when the page last changed, and `page.created` when it
+was created, as git has them, for a theme to show:
 
 ```html
-<footer>&copy; {{ site.year }} {{ site.name }}. All rights reserved.</footer>
+{% if page.modified %}
+<p>Last updated on <time datetime="{{ page.modified }}">
+  {{ page.modified | dateformat(format="%-d %B %Y") }}</time>.</p>
+{% endif %}
 ```
 
-With [`SOURCE_DATE_EPOCH`](https://reproducible-builds.org/specs/source-date-epoch/)
-set, for a reproducible build, little builds the site as if at that time,
-so `site.year` is that time's year. A `year` under `site` in `little.yml`
-replaces it.
-The built-in theme shows no notice.
+Each is a time, like `2026-11-19T02:37:42Z`, which the
+[`dateformat` filter](../reference/template-data.md#filters) writes as its
+`format` says, here as `19 November 2026`. Test for one before you write
+around it, as [a page can have none](../reference/template-data.md#dates),
+like one that isn't committed yet.
+
+## A copyright notice
+
+`site.built` is when little builds the site, so a theme's copyright notice
+stays current without editing it each January:
+
+```html
+<footer>&copy; {{ site.built | dateformat(format="%Y") }} {{ site.name }}. All rights reserved.</footer>
+```
+
+For the year the site last changed, write
+`site.modified | default(site.built)` in its place: `site.modified` is
+when the site's newest commit was made, and a site that isn't in git has
+none. The built-in theme shows no notice, and no dates.

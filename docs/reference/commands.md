@@ -133,6 +133,7 @@ and browse to your computer's IP address.
 and the site's, merged, as its two groups, `site` and `page`. Its `site` is
 what a theme gets as [`site`](template-data.md#site), before
 [plugins](plugin-hooks.md#config) change it, and without what little works
-out as it builds: `site.navigation.items`, `site.year`, the repository's
-`owner` and `name`, and, on a site with [versions](../writing/versions.md),
-`site.version`. Each version has its `url` as you wrote it, and no `root`.
+out as it builds: `site.navigation.items`, `site.built`, `site.modified`,
+the repository's `owner` and `name`, and, on a site with
+[versions](../writing/versions.md), `site.version`. Each version has its
+`url` as you wrote it, and no `root`.
