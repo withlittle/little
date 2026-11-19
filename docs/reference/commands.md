@@ -73,6 +73,9 @@ It warns of:
   [can't render](../plugins/using-plugins.md#code-blocks)
 - each URL in [`search.exclude`](../writing/search.md#leaving-pages-out)
   that matches no page
+- each [redirect](../writing/pages-and-files.md#redirects) that no version
+  of the site has, or all of them, if the theme
+  [writes none](../themes/making-a-theme.md#redirects)
 - each warning from a plugin, and each of its hooks that
   [fails on a page](../plugins/using-plugins.md#when-a-plugin-fails)
 

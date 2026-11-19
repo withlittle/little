@@ -29,7 +29,7 @@ both work.
 
 | Variable | Contents |
 | -------- | -------- |
-| `page.type` | The page's [type](../themes/making-a-theme.md#templates): `home`, `section`, `page`, or `404` |
+| `page.type` | The page's [type](../themes/making-a-theme.md#templates): `home`, `section`, `page`, `404`, or `redirect` |
 | `page.url` | The page's URL, like `/getting-started/install`. Compare it with `item.url` to mark the current nav item |
 | `page.title` | The page's [title](../writing/frontmatter.md#a-pages-title) |
 | `page.content` | The page's content, as HTML, to write with [`safe`](../themes/making-a-theme.md#templates) |
@@ -43,6 +43,7 @@ both work.
 | `page.repository.edit_url` | Where to edit it there, like `https://github.com/withlittle/little/edit/main/docs/getting-started/install.md`; none from a version's `ref` |
 | `page.search.enabled` | Whether [search](../writing/search.md#leaving-pages-out) indexes the page, on a site with search on: `false` for one that's left out |
 | `page.versions` | Each entry in `site.versions`, with the `url` of this page in that version, else of its home page, for a [menu of versions](../themes/making-a-theme.md#a-menu-of-versions) |
+| `page.redirect.url`, `page.redirect.title` | [Redirects](../themes/making-a-theme.md#redirects) only: where it leads, and the title of the page there, if it's one of the site's |
 | `page.<key>` | Every other key in the page's [frontmatter](../writing/frontmatter.md), or under [`page`](../writing/frontmatter.md#for-every-page) in a `little.yml`, as written, like `page.description` |
 
 `page.outline`, `page.breadcrumb`, `page.repository`, and `page.search` are
@@ -56,6 +57,10 @@ in a `little.yml`, with nothing in its `items`. Its `page.title` and
 `page.description` are
 [the site's to set](../getting-started/publishing.md#a-404-page). On a site
 with versions, it has `page.versions` too, with each version's home page.
+
+A [redirect](../themes/making-a-theme.md#redirects) has what a 404 page
+has, but for a title and a description: its `page.url` is the URL it's
+from, and its `page.redirect` is where it leads.
 
 A page's frontmatter has the last word on `page`, as
 [Frontmatter wins](../writing/frontmatter.md#frontmatter-wins) explains.

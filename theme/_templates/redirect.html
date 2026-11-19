@@ -1,0 +1,25 @@
+{#- A page at a URL one of the site's `redirects` is from, which sends its
+    reader on to page.redirect.url, where the redirect leads: at once, with a
+    refresh, which needs no script, and with a link, for a browser that
+    doesn't follow one. It tells a search engine to index the page it leads
+    to, not this one. It's a page of its own, without the site's header and
+    nav, as a reader sees it for a moment, if at all. page.redirect.url has
+    the path of the site's `url`, as little's other URLs have, and
+    page.redirect.title is the title of the page there, if it's one of the
+    site's. -#}
+<!doctype html>
+<html lang="{{ site.language | default('en') }}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <meta name="robots" content="noindex">
+  <title>{{ page.redirect.title | default('Redirecting') }} · {{ site.name }}</title>
+  {# The page it leads to, whichever heading it leads to there. #}
+  <link rel="canonical" href="{{ page.redirect.url | split('#') | first | absolute_url }}">
+  <meta http-equiv="refresh" content="0; url={{ page.redirect.url | safe }}">
+</head>
+<body>
+  <p>This page has moved to <a href="{{ page.redirect.url | safe }}">{{ page.redirect.title or page.redirect.url | safe }}</a>.</p>
+</body>
+</html>

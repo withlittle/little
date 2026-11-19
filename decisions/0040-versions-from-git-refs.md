@@ -9,7 +9,9 @@
   and `nav`, and writes the theme's files once, at the root, and by
   [0059](./0059-the-menu-of-versions-as-a-popover.md), which makes the
   built-in theme's menu of versions a popover, closed by a click
-  elsewhere, or Escape, without a script
+  elsewhere, or Escape, without a script, and by
+  [0083](./0083-redirects-from-old-urls.md), which writes each of the
+  site's redirects in every version that can have it
 - Date: 2026-10-12
 - Amends: [0013](./0013-pages-that-clash.md),
   [0014](./0014-site-url-and-its-path.md),

@@ -69,6 +69,10 @@
 //!
 //! `error` holds the `title` and `description` of the 404 page.
 //!
+//! `redirects` lists the site's redirects, each with `to`, the URL it leads
+//! to, and `from`, the URLs that lead there, where a page used to be, which
+//! the build writes a page at, to send its reader on (see `site`).
+//!
 //! `page` has a group for each thing little works out for a page, which the
 //! group's `enabled` turns off (see [`PageSettings`]): `outline`, its table
 //! of contents, whose `depth` holds the levels of heading it lists, from
@@ -83,7 +87,7 @@ use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, percent_decode_str, utf8_perc
 use serde::{Deserialize, Deserializer, de::Error as _};
 use serde_yaml::{Mapping, Value};
 use std::borrow::Cow;
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 use std::io::ErrorKind;
 use std::ops::RangeInclusive;
 use std::path::{Path, PathBuf};
@@ -137,6 +141,9 @@ pub struct Config {
     /// The versions of the site, from `site.versions`, in the order its menu
     /// lists them: none for a site that has just the one.
     pub versions: Vec<Version>,
+    /// The site's redirects, from `site.redirects`, in the order they're
+    /// listed: one for each URL an entry is `from`.
+    pub redirects: Vec<Redirect>,
     /// little's defaults for `site`, with the settings of each theme over
     /// them: what a version of the site from a git ref puts the `source` and
     /// `navigation.items` of its own little.yml over.
@@ -172,6 +179,27 @@ impl Version {
     /// from its `path`: none for the version at `/`.
     pub fn folders(&self) -> impl Iterator<Item = &str> {
         self.path.split('/').filter(|folder| !folder.is_empty())
+    }
+}
+
+/// One of a site's redirects, from `site.redirects`: a URL a page used to
+/// be at, and where it leads now.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Redirect {
+    /// The URL it's from, as it's written, from the root of each version,
+    /// like `/guide/setup`.
+    pub from: String,
+    /// Where it leads, as it's written: a URL from the root of each
+    /// version, like `/guide/install#usage`, or another site's address.
+    pub to: String,
+}
+
+impl Redirect {
+    /// The URL of the page or file it leads to, in its version, without any
+    /// `?query` or `#fragment`, like `/guide/install`: `None` if it leads to
+    /// another site.
+    pub fn target(&self) -> Option<&str> {
+        from_the_root(&self.to).then(|| self.to.split(['?', '#']).next().unwrap_or_default())
     }
 }
 
@@ -846,6 +874,7 @@ fn settle(
     let markdown = markdown(&site)?;
     let plugins = plugins(&site, site_dir)?;
     let versions = versions(&site, &plugins)?;
+    let redirects = redirects(&site)?;
     error_page(&site)?;
     Ok(Config {
         site,
@@ -863,6 +892,7 @@ fn settle(
         markdown,
         plugins,
         versions,
+        redirects,
         beneath,
     })
 }
@@ -1323,13 +1353,14 @@ fn read_error(name: &str) -> anyhow::Error {
 /// `site.versions` can't set them, though one from a ref can set its own
 /// `source`, `navigation.items`, and `plugins`. `navigation` isn't among
 /// them, as only its `prune` is the site's.
-const SITES_SETTINGS: [&str; 10] = [
+const SITES_SETTINGS: [&str; 11] = [
     "destination",
     "theme",
     "repository",
     "search",
     "markdown",
     "versions",
+    "redirects",
     "built",
     "modified",
     "serve",
@@ -1566,6 +1597,126 @@ fn versions_error() -> anyhow::Error {
     anyhow!(
         "`site.versions` must list the site's versions, each with its `title`, the `url` it's \
          at, and the `ref` it's built from, like `- {{ title: \"1.4\", url: /1.4, ref: v1.4 }}`"
+    )
+}
+
+/// The site's redirects, from `site.redirects`: one for each URL in each
+/// entry's `from`, in the order they're listed, or none, if it's left empty.
+/// Each is from a URL little can write a page at, and none leads to a URL
+/// that's redirected too, as that would send a reader on twice.
+fn redirects(site: &Mapping) -> Result<Vec<Redirect>> {
+    let entries = match site.get("redirects") {
+        None | Some(Value::Null) => return Ok(Vec::new()),
+        Some(Value::Sequence(entries)) => entries,
+        Some(_) => return Err(redirects_error()),
+    };
+    let mut redirects = Vec::new();
+    for entry in entries {
+        let Value::Mapping(entry) = entry else {
+            return Err(redirects_error());
+        };
+        let other = |key: &&Value| !matches!(key.as_str(), Some("to" | "from"));
+        if let Some(key) = entry.keys().find(other) {
+            bail!(
+                "a redirect in `site.redirects` sets `{}`, but each has only `to`, the URL it \
+                 leads to, and `from`, the URLs that lead there",
+                written(key)
+            );
+        }
+        let to = match entry.get("to") {
+            Some(Value::String(to)) if leads_somewhere(to) => to,
+            None | Some(Value::Null) => bail!(
+                "each redirect in `site.redirects` needs a `to`, the URL it leads to, like \
+                 `to: /guide/install`"
+            ),
+            Some(to) => bail!(
+                "`site.redirects` has a redirect to `{}`, but each must lead to a URL from the \
+                 root of the site, as `site.navigation.items` writes it, like `/guide/install`, \
+                 or to another site's address, starting with https:// or http://",
+                written(to)
+            ),
+        };
+        // Always a list, so there's one way to write it.
+        let from = match entry.get("from") {
+            Some(Value::Sequence(from)) if !from.is_empty() => from,
+            _ => bail!(
+                "the redirect to {to} in `site.redirects` needs a `from`, a list of the URLs \
+                 that lead there, like `from: [/guide/setup]`"
+            ),
+        };
+        for url in from {
+            match url {
+                Value::String(url) if names_a_page(url) => redirects.push(Redirect {
+                    from: url.clone(),
+                    to: to.clone(),
+                }),
+                _ => bail!(
+                    "the redirect to {to} in `site.redirects` is from `{}`, but each must be \
+                     from a URL from the root of the site, where a page was, like `/guide/setup` \
+                     or `/setup.html`, with no `?` or `#`",
+                    written(url)
+                ),
+            }
+        }
+    }
+    // Each by the page it's from: `/guide` and `/guide/` are the same page.
+    fn page(url: &str) -> &str {
+        url.trim_end_matches('/')
+    }
+    let itself = |redirect: &&Redirect| {
+        let target = redirect.target();
+        target.is_some_and(|target| page(target) == page(&redirect.from))
+    };
+    if let Some(redirect) = redirects.iter().find(itself) {
+        bail!("`site.redirects` sends {} to itself", redirect.from);
+    }
+    let sent_on: HashMap<&str, &Redirect> = (redirects.iter())
+        .map(|redirect| (page(&redirect.from), redirect))
+        .collect();
+    for redirect in &redirects {
+        let next = (redirect.target()).and_then(|target| sent_on.get(page(target)));
+        let Some(next) = next else {
+            continue;
+        };
+        let Redirect { from, to } = redirect;
+        bail!(
+            "`site.redirects` sends {from} to {to}, but sends {} on to {}: send {from} to {} \
+             too, so a reader is sent on once",
+            next.from,
+            next.to,
+            next.to
+        );
+    }
+    Ok(redirects)
+}
+
+/// Whether a redirect can lead to `url`: a URL from the root of the site,
+/// like `/guide/install#usage`, or another site's address.
+fn leads_somewhere(url: &str) -> bool {
+    let on_the_web =
+        |address: url::Url| matches!(address.scheme(), "https" | "http") && address.has_host();
+    from_the_root(url) || url::Url::parse(url).is_ok_and(on_the_web)
+}
+
+/// Whether a redirect can be from `url`: a URL from the root of the site
+/// with a page's path, which little can write a page at, in the site's
+/// folder, on any system. A page has no `?query` or `#fragment`, and none of
+/// its path's parts is empty, `.`, or `..`, or has a `\` or a `:`, which mean
+/// something else on Windows.
+fn names_a_page(url: &str) -> bool {
+    let Some(path) = url.strip_prefix('/') else {
+        return false;
+    };
+    let path = path.strip_suffix('/').unwrap_or(path);
+    let folders = |path: &str| !path.split('/').any(|part| matches!(part, "" | "." | ".."));
+    !url.contains(['?', '#', '\\', ':']) && (path.is_empty() || folders(path))
+}
+
+/// The error for `site.redirects` that isn't a list of redirects.
+fn redirects_error() -> anyhow::Error {
+    anyhow!(
+        "`site.redirects` must list the site's redirects, each with the URL it leads `to`, and \
+         the URLs it's `from`, like `- {{ to: /guide/install, from: [/guide/setup] }}`"
     )
 }
 
@@ -2508,6 +2659,194 @@ mod tests {
                 "`site.error` must be its settings, like `title: Page not found`"
             );
         }
+    }
+
+    #[test]
+    fn redirects_list_where_each_old_url_leads() {
+        let (_tmp, site) = scratch(&[
+            ("theme/_templates/default.html", ""),
+            (
+                "theme/little.yml",
+                "site:\n  redirects:\n    - { to: /theme, from: [/themes] }\n",
+            ),
+        ]);
+        let redirects = |site_cfg: &str| -> Vec<String> {
+            std::fs::write(site.join(CONFIG_FILE), site_cfg).unwrap();
+            let redirects = load(&site).unwrap().redirects;
+            let sends = |redirect: &Redirect| format!("{} to {}", redirect.from, redirect.to);
+            redirects.iter().map(sends).collect()
+        };
+        let none: [&str; 0] = [];
+
+        // little has none, and a list left empty is none.
+        assert_eq!(redirects(""), none);
+        assert_eq!(redirects("site:\n  redirects:\n"), none);
+        assert_eq!(redirects("site: { redirects: [] }\n"), none);
+
+        // One for each URL an entry is from, in the order they're listed, as
+        // they're written: to a page, with any `?query` or `#fragment`, or
+        // to another site.
+        let site_cfg = "site:\n  redirects:\n    - to: /guide/install#usage\n      \
+                        from:\n        - /guide/setup\n        - /setup.html\n    \
+                        - from: [/news/, /, /Old Guide/a.b]\n      \
+                        to: https://example.com/blog?tag=new#top\n";
+        assert_eq!(
+            redirects(site_cfg),
+            [
+                "/guide/setup to /guide/install#usage",
+                "/setup.html to /guide/install#usage",
+                "/news/ to https://example.com/blog?tag=new#top",
+                "/ to https://example.com/blog?tag=new#top",
+                "/Old Guide/a.b to https://example.com/blog?tag=new#top",
+            ]
+        );
+
+        // A site's list replaces its theme's, as any list does.
+        assert_eq!(redirects(IN_THEME), ["/themes to /theme"]);
+        let site_cfg = format!("{IN_THEME}  redirects:\n    - {{ to: /new, from: [/old] }}\n");
+        assert_eq!(redirects(&site_cfg), ["/old to /new"]);
+
+        // One to a page or file in the site leads to its URL, without any
+        // `?query` or `#fragment`.
+        let target = |to: &str| {
+            let from = "/old".to_string();
+            let to = to.to_string();
+            Redirect { from, to }.target().map(str::to_string)
+        };
+        for (to, page) in [
+            ("/", "/"),
+            ("/guide/install", "/guide/install"),
+            ("/guide/#usage", "/guide/"),
+            ("/files/guide.pdf?download#page=2", "/files/guide.pdf"),
+        ] {
+            assert_eq!(target(to).as_deref(), Some(page), "{to}");
+        }
+        assert_eq!(target("https://example.com/guide/"), None);
+        assert_eq!(target("http://example.com"), None);
+    }
+
+    #[test]
+    fn bad_redirects_explain_themselves() {
+        let (_tmp, site) = scratch(&[]);
+        let redirects =
+            |redirects: &str| error(&site, &format!("site:\n  redirects:{redirects}\n"));
+
+        // A list of redirects, each its settings...
+        for value in [
+            " /old",
+            " true",
+            " { /old: /new }",
+            " { to: /new, from: [/old] }",
+            "\n    - /old",
+            "\n    - [/old, /new]",
+        ] {
+            assert_eq!(
+                redirects(value),
+                "`site.redirects` must list the site's redirects, each with the URL it leads \
+                 `to`, and the URLs it's `from`, like \
+                 `- { to: /guide/install, from: [/guide/setup] }`",
+                "{value}"
+            );
+        }
+        // ...which are `to` and `from`.
+        assert_eq!(
+            redirects(" [{ to: /new, from: [/old], status: 301 }]"),
+            "a redirect in `site.redirects` sets `status`, but each has only `to`, the URL it \
+             leads to, and `from`, the URLs that lead there"
+        );
+
+        // `to` is a URL from the root of the site, or another site's address.
+        for entry in ["{ from: [/old] }", "{ to: , from: [/old] }"] {
+            assert_eq!(
+                redirects(&format!(" [{entry}]")),
+                "each redirect in `site.redirects` needs a `to`, the URL it leads to, like \
+                 `to: /guide/install`",
+                "{entry}"
+            );
+        }
+        for (to, written) in [
+            ("guide/install", "guide/install"),
+            ("install.md", "install.md"),
+            ("//example.com/guide", "//example.com/guide"),
+            ("ftp://example.com/guide", "ftp://example.com/guide"),
+            ("mailto:docs@example.com", "mailto:docs@example.com"),
+            ("\"\"", "''"),
+            ("1.4", "1.4"),
+            ("[/new]", "- /new"),
+        ] {
+            assert_eq!(
+                redirects(&format!(" [{{ to: {to}, from: [/old] }}]")),
+                format!(
+                    "`site.redirects` has a redirect to `{written}`, but each must lead to a \
+                     URL from the root of the site, as `site.navigation.items` writes it, like \
+                     `/guide/install`, or to another site's address, starting with https:// or \
+                     http://"
+                ),
+                "{to}"
+            );
+        }
+
+        // `from` is always a list, so there's one way to write it...
+        for from in [
+            "",
+            ", from:",
+            ", from: /old",
+            ", from: []",
+            ", from: { url: /old }",
+        ] {
+            assert_eq!(
+                redirects(&format!(" [{{ to: /new#here{from} }}]")),
+                "the redirect to /new#here in `site.redirects` needs a `from`, a list of the \
+                 URLs that lead there, like `from: [/guide/setup]`",
+                "{from}"
+            );
+        }
+        // ...of URLs from the root of the site, each of which little can
+        // write a page at, in the site's folder.
+        for (from, written) in [
+            ("old", "old"),
+            ("old.md", "old.md"),
+            ("https://example.com/old", "https://example.com/old"),
+            ("//old", "//old"),
+            ("/old?page=2", "/old?page=2"),
+            ("\"/old#usage\"", "/old#usage"),
+            ("/a//b", "/a//b"),
+            ("/a/./b", "/a/./b"),
+            ("/../../etc/passwd", "/../../etc/passwd"),
+            ("/a/..", "/a/.."),
+            ("'/a\\b'", "/a\\b"),
+            ("/c:/old", "/c:/old"),
+            ("1.4", "1.4"),
+            ("[/old]", "- /old"),
+            ("", "null"),
+        ] {
+            assert_eq!(
+                redirects(&format!("\n    - to: /new\n      from:\n        - {from}")),
+                format!(
+                    "the redirect to /new in `site.redirects` is from `{written}`, but each \
+                     must be from a URL from the root of the site, where a page was, like \
+                     `/guide/setup` or `/setup.html`, with no `?` or `#`"
+                ),
+                "{from}"
+            );
+        }
+
+        // One to the URL it's from leads nowhere, whether or not either
+        // ends in a `/`...
+        for (to, from) in [("/a", "/a"), ("/a/#usage", "/a"), ("/", "/")] {
+            assert_eq!(
+                redirects(&format!(" [{{ to: {to}, from: [/b, {from}] }}]")),
+                format!("`site.redirects` sends {from} to itself"),
+                "{to}"
+            );
+        }
+        // ...and one to a URL that's redirected would send a reader on twice.
+        let chained = "\n    - { to: /b/#usage, from: [/a] }\n    - { to: https://example.com/c, from: [/b] }";
+        assert_eq!(
+            redirects(chained),
+            "`site.redirects` sends /a to /b/#usage, but sends /b on to https://example.com/c: \
+             send /a to https://example.com/c too, so a reader is sent on once"
+        );
     }
 
     #[test]
@@ -3714,6 +4053,7 @@ mod tests {
             ("search", "{ enabled: false }"),
             ("markdown", "{ math: false }"),
             ("versions", "[]"),
+            ("redirects", "[]"),
             ("built", "2020-01-01"),
             ("modified", "2020-01-01"),
             ("serve", "{ port: 3000 }"),

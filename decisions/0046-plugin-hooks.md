@@ -5,7 +5,9 @@
   for files in other formats, whose errors stop the build, and by
   [0080](./0080-settings-in-groups-under-site-and-page.md), which gives
   `config` both groups, `site` and `page`, and names what it can't change
-  by where it is now, like `site.serve`
+  by where it is now, like `site.serve`, and by
+  [0083](./0083-redirects-from-old-urls.md), which calls `page` and `html`
+  for each redirect, as for the 404 page
 - Date: 2026-10-15
 - Amends: [0019](./0019-site-search.md),
   [0029](./0029-plugins-that-render-code-blocks.md),

@@ -1,6 +1,8 @@
 # 0072 — The manual's concise style
 
-- Status: accepted
+- Status: accepted; amended by
+  [0083](./0083-redirects-from-old-urls.md), which has a page that moves
+  listed in `site.redirects`, where a rewrite kept each page's file name
 - Date: 2026-11-08
 - Supersedes: [0066](./0066-the-manuals-plain-style.md)
 

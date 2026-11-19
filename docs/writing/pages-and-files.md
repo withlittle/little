@@ -1,6 +1,6 @@
 ---
 title: Pages and files
-description: How the files in docs/ become a site's pages, and its other files.
+description: How the files in docs/ become a site's pages, and its other files, and how to redirect a page's old URL.
 ---
 
 # Pages and files
@@ -56,3 +56,41 @@ everything in it, like a `.drafts/` folder or Jupyter's
 `.ipynb_checkpoints/`, and `little serve` doesn't rebuild when you save
 one. Only names inside the source folder count, so the source folder
 itself can be hidden, like `./.github`.
+
+## Redirects
+
+When you move or rename a page, list its old URL in `redirects`, so links
+to it still work:
+
+```yaml
+# little.yml
+site:
+  redirects:
+    - to: /guide/install
+      from:
+        - /guide/setup
+        - /setup.html
+    - to: https://example.com/blog
+      from:
+        - /news/
+```
+
+little builds a page at each URL in `from`, which sends its reader on to
+`to`, whichever host serves your site.
+
+- `to` is a URL from the root of the site, with a `#heading` if you want
+  one, or another site's address. In the site, it leads to a page or a
+  file.
+- `from` is a list, even of one URL. Each is from the root of the site,
+  where there's no page now. `/news` and `/news/` are the same URL, and
+  neither covers the URLs under it. One that ends in `.html`, as another
+  tool's pages may have, is built at that file's path.
+
+On a site with [versions](versions.md), each URL is from the root of each
+version. A version has a redirect if it has the page it leads to, and no
+page at its old URL, so an old version keeps its pages where they were.
+little warns of a redirect that no version has.
+
+Your theme writes each redirect's page, from its
+[`redirect.html`](../themes/making-a-theme.md#redirects), as the built-in
+theme does.

@@ -61,6 +61,10 @@ pub mod builtin {
             "default.html",
             include_str!("../theme/_templates/default.html"),
         ),
+        (
+            "redirect.html",
+            include_str!("../theme/_templates/redirect.html"),
+        ),
     ];
     /// Its static files, by their path from `_static/`.
     pub const STATIC: &[(&str, &[u8])] = &[
@@ -87,10 +91,19 @@ pub enum PageType {
     Page,
     /// The page a host shows for a URL that has no page.
     NotFound,
+    /// A page at a URL one of the site's `redirects` is from, which sends
+    /// its reader on to where the redirect leads.
+    Redirect,
 }
 
 impl PageType {
-    const ALL: [Self; 4] = [Self::Home, Self::Section, Self::Page, Self::NotFound];
+    const ALL: [Self; 5] = [
+        Self::Home,
+        Self::Section,
+        Self::Page,
+        Self::NotFound,
+        Self::Redirect,
+    ];
 
     /// What a template sees as `page.type`.
     pub fn name(self) -> &'static str {
@@ -99,6 +112,7 @@ impl PageType {
             Self::Section => "section",
             Self::Page => "page",
             Self::NotFound => "404",
+            Self::Redirect => "redirect",
         }
     }
 
@@ -456,10 +470,11 @@ impl Theme {
             let template = page_type.template();
             if has_template(&template)? {
                 templates.insert(page_type, template);
-            } else if page_type != PageType::NotFound {
+            } else if !matches!(page_type, PageType::NotFound | PageType::Redirect) {
                 // A 404 page has no content for default.html to show, so
                 // without a 404.html the site gets none, and its host shows
-                // its own.
+                // its own. Nor has a redirect, which default.html wouldn't
+                // send on, so without a redirect.html the site gets none.
                 templates.insert(page_type, DEFAULT_TEMPLATE.to_string());
             }
         }
@@ -468,7 +483,7 @@ impl Theme {
     }
 
     /// Whether it renders pages of type `page_type`, as it doesn't the 404
-    /// page without a `404.html`.
+    /// page without a `404.html`, or a redirect without a `redirect.html`.
     pub fn renders(&self, page_type: PageType) -> bool {
         self.templates.contains_key(&page_type)
     }
@@ -624,6 +639,7 @@ mod tests {
                 expect("section:section"),
                 expect("default:page"),
                 None, // no 404.html, so no 404 page: default.html has nothing to show
+                None, // nor a redirect.html, so no redirects
             ]
         );
 
@@ -639,6 +655,7 @@ mod tests {
                 expect("own:section"),
                 expect("own:page"),
                 expect("own:404"),
+                expect("own:redirect"),
             ]
         );
     }
@@ -994,7 +1011,7 @@ mod tests {
             String::from_utf8_lossy(&paths.unwrap().contents),
             // The company's style.scss replaces the built-in style.css.
             "_sass/_colors.scss\n_static/assets/script.js\n_static/assets/style.scss\n\
-             _templates/404.html\n_templates/default.html"
+             _templates/404.html\n_templates/default.html\n_templates/redirect.html"
         );
     }
 

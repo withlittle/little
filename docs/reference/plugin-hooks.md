@@ -264,10 +264,11 @@ prunes the nav it gives back, for each page.
 page: func(page: string) -> result<string, string>;
 ```
 
-Called for each page, and the 404 page, before it's put in the theme, with
-[`page`](template-data.md#page), as the theme gets it, with its URLs as in
-`site`. It gives back the `page` the theme gets, like one with a
-`reading_time` for the theme to show.
+Called for each page, the 404 page, and each
+[redirect](../writing/pages-and-files.md#redirects), before it's put in
+the theme, with [`page`](template-data.md#page), as the theme gets it,
+with its URLs as in `site`. It gives back the `page` the theme gets, like
+one with a `reading_time` for the theme to show.
 
 [Search](../writing/search.md) indexes the `title` and `content` it gives
 back, and its `search.enabled`
@@ -282,9 +283,9 @@ too.
 html: func(url: string, html: string) -> result<string, string>;
 ```
 
-Called for each page the theme writes, and the 404 page, with the page's
-URL, as a reader follows it, like `/little/guide/install`, and its HTML. It
-gives back the HTML that's written, whose links are
+Called for each page the theme writes, the 404 page and each redirect too,
+with the page's URL, as a reader follows it, like `/little/guide/install`,
+and its HTML. It gives back the HTML that's written, whose links are
 [checked](../writing/links-and-images.md#checking-links), and warned of as
 a reader follows them, though search doesn't see what it changes.
 

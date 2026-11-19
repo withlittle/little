@@ -1,6 +1,6 @@
 ---
 title: Making a theme
-description: A theme's templates, static files, and config, the filters for its URLs, and its search box.
+description: A theme's templates, static files, and config, the filters for its URLs, its search box, and its redirects.
 ---
 
 # Making a theme
@@ -19,8 +19,9 @@ Use it in a site by setting [`theme.source`](choosing-a-theme.md) to
 `./my-theme`, or
 [build it on another theme](choosing-a-theme.md#building-on-another-theme)
 to change only part of that one. The built-in theme's
-[`default.html`](https://github.com/withlittle/little/blob/main/theme/_templates/default.html)
-and [`404.html`](https://github.com/withlittle/little/blob/main/theme/_templates/404.html)
+[`default.html`](https://github.com/withlittle/little/blob/main/theme/_templates/default.html),
+[`404.html`](https://github.com/withlittle/little/blob/main/theme/_templates/404.html),
+and [`redirect.html`](https://github.com/withlittle/little/blob/main/theme/_templates/redirect.html)
 are complete examples.
 
 ## Templates
@@ -64,6 +65,7 @@ little renders each page with the template for its type:
 | `section` | a folder's `README.md`, like `docs/guide/README.md` | `section.html`, else `default.html` |
 | `page` | every other `.md` file | `page.html`, else `default.html` |
 | `404` | the page a host shows for a URL with no page | `404.html`, else none |
+| `redirect` | the page at each URL a [redirect](#redirects) is from | `redirect.html`, else none |
 
 A file a [plugin](../plugins/using-plugins.md#pages-in-other-formats) reads
 as a page, like a notebook, has the type a `.md` file in its place would,
@@ -194,6 +196,37 @@ For a box of your own, use Pagefind's
 [JavaScript API](https://pagefind.app/docs/api/), from
 `{{ '/pagefind/pagefind.js' | url }}`. little indexes each page in the
 language of its `<html lang>`, so give it one.
+
+## Redirects
+
+little renders `redirect.html` for each of a site's
+[redirects](../writing/pages-and-files.md#redirects), at the URL it's
+from, to send the reader on to `page.redirect.url`:
+
+```html
+<!doctype html>
+<html lang="{{ site.language | default('en') }}">
+<head>
+  <meta charset="utf-8">
+  <title>{{ site.name }}</title>
+  <meta name="robots" content="noindex">
+  <link rel="canonical" href="{{ page.redirect.url | absolute_url }}">
+  <meta http-equiv="refresh" content="0; url={{ page.redirect.url | safe }}">
+</head>
+<body>
+  <a href="{{ page.redirect.url | safe }}">{{ page.redirect.title or "This page has moved" }}</a>
+</body>
+</html>
+```
+
+The `<meta http-equiv="refresh">` sends the reader on at once, with no
+script, and the link is for a browser that doesn't follow it.
+`page.redirect.url` already has the path of the site's `url`, unless it's
+another site's address, so write it with `safe`. `page.redirect.title` is
+the title of the page it leads to, if it's one of the site's.
+
+A theme without a `redirect.html` writes no redirects, and `little build`
+warns of a site that lists some.
 
 ## A menu of versions
 

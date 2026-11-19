@@ -4,7 +4,9 @@
   which stops the build, the same way, for a plugin's page that would be
   the same page as a file in the source, or as another plugin's page, and
   by [0040](./0040-versions-from-git-refs.md), which does the same for a
-  page or file where another version's folder goes
+  page or file where another version's folder goes, and by
+  [0083](./0083-redirects-from-old-urls.md), which does the same for a
+  redirect from where a page or a file is
 - Date: 2026-10-01
 
 ## Context
