@@ -782,7 +782,7 @@ impl Reader<'_> {
                 None => format!("  {id},"),
             });
             members.push(Item {
-                name: Some(member.id.static_name().to_string()),
+                name: Some(member.id.static_name().display().to_string()),
                 ty: None,
                 default: value,
                 description: (documented.map(|comment| comment.description.clone()))

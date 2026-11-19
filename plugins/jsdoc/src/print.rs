@@ -194,7 +194,7 @@ pub fn key(text: &str, key: &PropertyKey, computed: bool) -> Option<String> {
         return None;
     }
     match (computed, key.static_name()) {
-        (false, Some(name)) => Some(name.into_owned()),
+        (false, Some(name)) => Some(name.display().to_string()),
         _ => Some(format!("[{}]", written(text, key.span()))),
     }
 }

@@ -350,7 +350,7 @@ impl<'a> Builder<'a> {
                 for specifier in &export.specifiers {
                     let exported = specifier.exported.name().to_string();
                     let import = Import {
-                        specifier: export.source.value.to_string(),
+                        specifier: export.source.value.display().to_string(),
                         name: Some(specifier.local.name().to_string()),
                     };
                     let shown = exported.clone();
@@ -364,7 +364,7 @@ impl<'a> Builder<'a> {
             }
             Statement::ExportAllDeclaration(export) => {
                 let import = Import {
-                    specifier: export.source.value.to_string(),
+                    specifier: export.source.value.display().to_string(),
                     name: None,
                 };
                 let (exported, shown) = match &export.exported {
@@ -402,7 +402,7 @@ impl<'a> Builder<'a> {
 
     /// Note what `import` imports, by the name it gives each.
     fn import(&mut self, import: &ImportDeclaration) {
-        let specifier = import.source.value.to_string();
+        let specifier = import.source.value.display().to_string();
         for imported in import.specifiers.iter().flatten() {
             let name = match imported {
                 ImportDeclarationSpecifier::ImportSpecifier(imported) => {
@@ -572,7 +572,7 @@ impl<'a> Builder<'a> {
                     };
                     let import = Import {
                         specifier: import.specifier.clone(),
-                        name: Some(name.into_owned()),
+                        name: Some(name.display().to_string()),
                     };
                     self.module.imports.insert(local.to_string(), import);
                 }
@@ -674,7 +674,7 @@ impl<'a> Builder<'a> {
                 continue;
             };
             if let Some(key) = property.key.static_name().filter(|_| !property.computed) {
-                self.property(&key, &property.value, property.span);
+                self.property(&key.display().to_string(), &property.value, property.span);
             }
         }
     }
@@ -873,7 +873,7 @@ fn exports<'a>(
         return Some(None);
     }
     let member = target.as_member_expression()?;
-    let name = member.static_property_name()?;
+    let name = member.static_property_name()?.as_str()?;
     let object = member.object();
     let exports = object.is_specific_id("exports")
         || object.is_specific_member_access("module", "exports")
@@ -884,7 +884,8 @@ fn exports<'a>(
 /// Whether `target` is `module.exports`.
 fn module_exports(target: &AssignmentTarget) -> bool {
     target.as_member_expression().is_some_and(|member| {
-        member.object().is_specific_id("module") && member.static_property_name() == Some("exports")
+        member.object().is_specific_id("module")
+            && member.static_property_name().and_then(|name| name.as_str()) == Some("exports")
     })
 }
 
@@ -953,7 +954,7 @@ fn required(expression: &Expression) -> Option<Import> {
     match expression.without_parentheses() {
         Expression::CallExpression(call) if call.is_require_call() => match &call.arguments[0] {
             Argument::StringLiteral(specifier) => Some(Import {
-                specifier: specifier.value.to_string(),
+                specifier: specifier.value.display().to_string(),
                 name: None,
             }),
             _ => None,
@@ -961,7 +962,7 @@ fn required(expression: &Expression) -> Option<Import> {
         expression => {
             let member = expression.as_member_expression()?;
             let import = required(member.object()).filter(|import| import.name.is_none())?;
-            let name = Some(member.static_property_name()?.to_string());
+            let name = Some(member.static_property_name()?.display().to_string());
             Some(Import { name, ..import })
         }
     }
