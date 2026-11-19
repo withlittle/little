@@ -22,7 +22,8 @@ both work.
 | `site.search.enabled` | Whether the site's [indexed for search](../writing/search.md), so a theme shows its search box |
 | `site.version` | On a site with [versions](../writing/versions.md), the `title` of the one being built, like `1.4`. A `version` under `site` in `little.yml` replaces it |
 | `site.versions` | Each entry in `versions`, as it's written, with its home page's `url`, and `root`, for a [menu of versions](../themes/making-a-theme.md#a-menu-of-versions) |
-| `site.year` | The year the site is built in, like `2026`, for a [copyright notice](../themes/making-a-theme.md#a-copyright-notice) |
+| `site.built` | When the site was [built](#dates), like `2026-11-19T02:37:42Z`, for a [copyright notice](../themes/making-a-theme.md#a-copyright-notice) |
+| `site.modified` | When the site [last changed](#dates), as git has it |
 
 ## page
 
@@ -32,6 +33,7 @@ both work.
 | `page.url` | The page's URL, like `/getting-started/install`. Compare it with `item.url` to mark the current nav item |
 | `page.title` | The page's [title](../writing/frontmatter.md#a-pages-title) |
 | `page.content` | The page's content, as HTML, to write with [`safe`](../themes/making-a-theme.md#templates) |
+| `page.created`, `page.modified` | When the page was [created, and when it last changed](#dates), as git has them, for a theme to [show](../themes/making-a-theme.md#when-a-page-last-changed) |
 | `page.children` | Home and section pages only: what else is in the page's folder, shaped like the nav |
 | `page.outline.items` | The page's [table of contents](../writing/navigation.md#tables-of-contents), shaped like the nav, with each heading's `#fragment` as its `url` |
 | `page.outline.depth` | The levels of heading it lists, from `min` to `max` |
@@ -58,13 +60,51 @@ with versions, it has `page.versions` too, with each version's home page.
 A page's frontmatter has the last word on `page`, as
 [Frontmatter wins](../writing/frontmatter.md#frontmatter-wins) explains.
 
+## Dates
+
+Each date is a time in UTC, written like `2026-11-19T02:37:42Z`, which a
+`<time>`'s `datetime` takes as it is, and the
+[`dateformat` filter](#filters) writes as you choose.
+
+| Variable | When… |
+| -------- | ----- |
+| `site.built` | the build started, or `little serve` did |
+| `site.modified` | the commit the site is built from was made |
+| `page.created` | the commit that added the page's file was made |
+| `page.modified` | the newest commit to change the page's file was made |
+
+`site.built` is always there. With
+[`SOURCE_DATE_EPOCH`](https://reproducible-builds.org/specs/source-date-epoch/)
+set, for a reproducible build, it's that time instead.
+
+The other three come from git, so every build of a commit has the same
+dates, and changes that aren't committed move none of them. A file that's
+renamed keeps the date it was created, where git finds it's the same file,
+and a version from a [`ref`](../writing/versions.md) has its pages' dates
+from its ref. little leaves out a date git can't give:
+
+- all three, for a site that isn't in a git repository;
+- a page's two, until its file is committed, and for a page a plugin adds;
+- every page's two, in a shallow clone, as CI often makes: fetch the
+  repository's whole history for them.
+
+A `created` or `modified` in a page's
+[frontmatter](../writing/frontmatter.md#a-pages-dates) replaces the page's,
+and a `built` or `modified` under `site` in `little.yml` the site's.
+
 ## Filters
 
-little adds two filters to [MiniJinja's](https://docs.rs/minijinja), for
-the URLs a theme writes itself, as
-[URLs in a theme](../themes/making-a-theme.md#urls-in-a-theme) explains:
+little adds three filters to [MiniJinja's](https://docs.rs/minijinja): two
+for the URLs a theme writes itself, as
+[URLs in a theme](../themes/making-a-theme.md#urls-in-a-theme) explains,
+and one for [dates](#dates):
 
 | Filter | Gives back | Like |
 | ------ | ---------- | ---- |
 | `url` | a URL from the root of the site, with the path of the site's `url` before it | `{{ '/assets/style.css' \| url }}` is `/little/assets/style.css` |
 | `absolute_url` | a URL with the path, with the site's scheme and host before it | `{{ page.url \| absolute_url }}` is `https://withlittle.github.io/little/getting-started/install` |
+| `dateformat` | a date, written as its `format` says, in [`strftime`'s codes](https://man7.org/linux/man-pages/man3/strftime.3.html) | `{{ page.modified \| dateformat(format="%-d %B %Y") }}` is `19 November 2026` |
+
+`dateformat` reads a date alone too, like `2026-11-19`, as a page's
+frontmatter might set one, and takes it as midnight, UTC. It names months
+and days in English, and writes nothing for a date that isn't there.

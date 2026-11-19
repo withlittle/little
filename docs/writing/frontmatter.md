@@ -33,6 +33,21 @@ page by its title. If you
 [write the nav yourself](navigation.md#writing-the-nav-yourself), they
 show the title you give the page there instead.
 
+## A page's dates
+
+A theme can show when a page was created, and when it last changed, which
+little reads from git. To set either yourself, as for a page written
+before it was in git, write it in the page's frontmatter:
+
+```markdown
+---
+created: 2019-06-01
+modified: 2026-11-19
+---
+```
+
+[Dates](../reference/template-data.md#dates) says what little reads.
+
 ## Frontmatter wins
 
 little works out what a theme shows around a page, each in a group of its

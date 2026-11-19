@@ -246,8 +246,8 @@ site: func(site: string) -> result<string, string>;
 
 Called once, after every page is read, with
 [`site`](template-data.md#site), as the theme gets it: the config's
-`site`, with `navigation.items` and `year`, and, on a site with versions,
-`version` and `versions`.
+`site`, with `navigation.items`, `built`, and `modified`, and, on a site
+with versions, `version` and `versions`.
 
 It gives back the `site` the theme gets. Its `navigation.items` must still
 be a list of `{ title, url, children }`, and `page.previous`, `page.next`,

@@ -12,7 +12,9 @@
   parts, like a notebook's code cells, and by
   [0080](./0080-settings-in-groups-under-site-and-page.md), which writes a
   plugin only as its settings, under `site.plugins`, with `enabled: false`
-  to turn it off
+  to turn it off, and by
+  [0082](./0082-the-dates-of-a-site-and-its-pages.md), under which a
+  plugin's clock, in `little serve`, reads the time it started
 - Date: 2026-10-07
 - Amends: [0004](./0004-downloading-themes.md),
   [0016](./0016-checking-links.md),
