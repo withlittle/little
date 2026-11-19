@@ -16,7 +16,7 @@ orgize = "=0.10.0-alpha.10"
 wit-bindgen = "0.63"
 
 [dev-dependencies]
-comrak = { version = "0.55", default-features = false, features = ["shortcodes"] }
+comrak = { version = "1.0", default-features = false, features = ["shortcodes"] }
 little-markup = { path = "../markup", features = ["testing"] }
 
 [profile.release]

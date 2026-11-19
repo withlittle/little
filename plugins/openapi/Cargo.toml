@@ -19,7 +19,7 @@ wit-bindgen = "0.63"
 yaml-rust2 = { version = "0.13", default-features = false }
 
 [dev-dependencies]
-comrak = { version = "0.55", default-features = false, features = ["shortcodes"] }
+comrak = { version = "1.0", default-features = false, features = ["shortcodes"] }
 little-api-reference = { path = "../api_reference", features = ["testing"] }
 
 [profile.release]

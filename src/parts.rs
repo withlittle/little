@@ -83,23 +83,17 @@ impl<'a> Page<'a> {
             Part::Markdown(markdown) => self.add_markdown(&markdown),
             // Whole, as raw HTML in Markdown would end at a blank line, as
             // in the `<style>` pandas writes before a table.
-            Part::Html(html) => self.add(NodeValue::HtmlBlock(NodeHtmlBlock {
-                block_type: 6,
-                literal: format!("{}\n", html.trim_end()),
-            })),
+            Part::Html(html) => {
+                let mut block = NodeHtmlBlock::new(format!("{}\n", html.trim_end()));
+                block.block_type = 6;
+                self.add(NodeValue::HtmlBlock(block));
+            }
             Part::Code(Code { language, mut text }) => {
                 if !text.is_empty() && !text.ends_with('\n') {
                     text.push('\n');
                 }
-                self.add(NodeValue::CodeBlock(Box::new(NodeCodeBlock {
-                    fenced: true,
-                    fence_char: b'`',
-                    fence_length: 3,
-                    info: language,
-                    literal: text,
-                    closed: true,
-                    ..NodeCodeBlock::default()
-                })));
+                let block = NodeCodeBlock::fenced(language, text);
+                self.add(NodeValue::CodeBlock(Box::new(block)));
             }
         }
     }

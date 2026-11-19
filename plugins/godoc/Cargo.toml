@@ -17,7 +17,7 @@ unic-ucd-category = "0.9"
 wit-bindgen = "0.63"
 
 [dev-dependencies]
-comrak = { version = "0.55", default-features = false, features = ["shortcodes"] }
+comrak = { version = "1.0", default-features = false, features = ["shortcodes"] }
 little-api-reference = { path = "../api_reference", features = ["testing"] }
 
 [profile.release]
