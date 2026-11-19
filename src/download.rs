@@ -181,7 +181,7 @@ fn unpack_zip(archive: &[u8], dest: &Path, limit: u64) -> Result<()> {
     let mut unpacked = 0;
     for i in 0..zip.len() {
         let mut entry = zip.by_index(i)?;
-        let name = entry.name().to_string();
+        let name = entry.name()?.into_owned();
         // `None` for a path that climbs out of the archive with `..`.
         let Some(path) = entry.enclosed_name() else {
             bail!("`{name}` leads outside the archive");
