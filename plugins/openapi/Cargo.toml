@@ -15,7 +15,7 @@ finl_unicode = { version = "1.4", default-features = false, features = ["categor
 little-api-reference = { path = "../api_reference" }
 pulldown-cmark = { version = "0.13.4", default-features = false }
 serde_json = { version = "1.0.151", features = ["preserve_order", "arbitrary_precision"] }
-wit-bindgen = "0.62"
+wit-bindgen = "0.63"
 yaml-rust2 = { version = "0.13", default-features = false }
 
 [dev-dependencies]

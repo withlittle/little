@@ -14,7 +14,7 @@ crate-type = ["cdylib"]
 gosyn = "0.2.16"
 little-api-reference = { path = "../api_reference" }
 unic-ucd-category = "0.9"
-wit-bindgen = "0.62"
+wit-bindgen = "0.63"
 
 [dev-dependencies]
 comrak = { version = "0.55", default-features = false, features = ["shortcodes"] }
