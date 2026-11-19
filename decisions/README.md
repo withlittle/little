@@ -90,3 +90,4 @@ made, and link to each other.
 - [0078 — Keeping the search index](0078-keeping-the-search-index.md)
 - [0079 — Keeping each page's parse](0079-keeping-each-pages-parse.md)
 - [0080 — Settings in groups, under `site` and `page`](0080-settings-in-groups-under-site-and-page.md)
+- [0081 — Mermaid 12's look, with merman 0.10](0081-mermaid-12s-look.md)

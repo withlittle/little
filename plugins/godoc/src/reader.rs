@@ -738,6 +738,13 @@ mod tests {
     }
 
     #[test]
+    fn a_method_is_read_with_its_type_parameters() {
+        let file = read("package p\n\ntype T struct{}\n\nfunc (T) M[P any](p P) {}\n").unwrap();
+        assert_eq!(file.funcs[0].receiver.as_deref(), Some("T"));
+        assert_eq!(file.funcs[0].signature, "func (T) M[P any](p P)");
+    }
+
+    #[test]
     fn a_struct_shows_only_the_fields_it_exports() {
         let text = "package p\n\n// T is t.\ntype T struct {\n\t// A is a.\n\tA int `json:\"a\"`\n\tb, C string // c\n\td bool\n\t*Embedded\n\tio.Reader\n\tlower\n}\n";
         let file = read(text).unwrap();
@@ -940,10 +947,6 @@ mod tests {
             ),
             ("package p; func )\n", "unexpected ')' on line 1"),
             ("package p\nfunc )\n", "unexpected ')' on line 2"),
-            (
-                "package p\n\ntype T struct {\n\tA int\n\n\tB int\n}\n\nfunc (T) M[P any]() {}\n",
-                "unexpected '[' on line 9",
-            ),
         ];
         for (text, error) in errors {
             assert_eq!(read(text).unwrap_err(), error, "{text:?}");

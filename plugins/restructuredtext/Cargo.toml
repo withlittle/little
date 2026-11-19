@@ -13,7 +13,7 @@ crate-type = ["cdylib"]
 [dependencies]
 little-markup = { path = "../markup" }
 unicode-width = { version = "0.2", default-features = false }
-wit-bindgen = "0.62"
+wit-bindgen = "0.63"
 
 [dev-dependencies]
 little-markup = { path = "../markup", features = ["testing"] }

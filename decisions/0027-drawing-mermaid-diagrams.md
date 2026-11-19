@@ -5,7 +5,8 @@
   config, in `mermaid`, and a theme widen a gantt chart, and by
   [0029](./0029-plugins-that-render-code-blocks.md), which leaves diagrams
   in other languages to plugins, which render their blocks before
-  diagrams are drawn
+  diagrams are drawn, and by [0081](./0081-mermaid-12s-look.md), which
+  moves to merman 0.10, without chrono
 - Date: 2026-10-05
 - Amends: [0016](./0016-checking-links.md),
   [0022](./0022-markdown-extensions.md),

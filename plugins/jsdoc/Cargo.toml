@@ -12,13 +12,13 @@ crate-type = ["cdylib"]
 
 [dependencies]
 little-api-reference = { path = "../api_reference" }
-oxc_allocator = "0.154.0"
-oxc_ast = "0.154.0"
-oxc_codegen = { version = "0.154.0", default-features = false }
-oxc_parser = { version = "0.154.0", default-features = false }
-oxc_span = "0.154.0"
+oxc_allocator = "0.159.0"
+oxc_ast = "0.159.0"
+oxc_codegen = { version = "0.159.0", default-features = false }
+oxc_parser = { version = "0.159.0", default-features = false }
+oxc_span = "0.159.0"
 pulldown-cmark = { version = "0.13.4", default-features = false }
-wit-bindgen = "0.62"
+wit-bindgen = "0.63"
 
 [dev-dependencies]
 little-api-reference = { path = "../api_reference", features = ["testing"] }

@@ -1,9 +1,9 @@
 //! Highlight each code block as comrak writes it, with a class on each
 //! token, like `k` for a keyword, for the theme to colour.
 
-use comrak::adapters::SyntaxHighlighterAdapter;
+use comrak::adapters::{SyntaxHighlightMeta, SyntaxHighlighterAdapter};
 use std::borrow::Cow;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 use std::fmt::{self, Write};
 use std::str::FromStr;
 use std::sync::LazyLock;
@@ -217,11 +217,11 @@ impl SyntaxHighlighterAdapter for Classes {
     fn write_highlighted(
         &self,
         out: &mut dyn Write,
-        lang: Option<&str>,
-        code: &str,
+        highlight: &SyntaxHighlightMeta<'_>,
     ) -> fmt::Result {
+        let code = highlight.code;
         // A grammar can fail on code it can't read, which is left plain.
-        let tokens = syntax(lang.unwrap_or_default())
+        let tokens = syntax(highlight.lang)
             .and_then(|syntax| self.tokens(syntax, code).ok())
             .unwrap_or_else(|| vec![(None, code)]);
         write_spans(out, &tokens)
@@ -230,26 +230,21 @@ impl SyntaxHighlighterAdapter for Classes {
     fn write_pre_tag(
         &self,
         out: &mut dyn Write,
-        mut attributes: HashMap<&'static str, Cow<'_, str>>,
+        _: &SyntaxHighlightMeta<'_>,
+        mut attributes: BTreeMap<&str, Cow<'_, str>>,
     ) -> fmt::Result {
         attributes.insert("class", "highlight".into());
-        comrak::html::write_opening_tag(out, "pre", sorted(attributes))
+        comrak::html::write_opening_tag(out, "pre", attributes)
     }
 
     fn write_code_tag(
         &self,
         out: &mut dyn Write,
-        attributes: HashMap<&'static str, Cow<'_, str>>,
+        _: &SyntaxHighlightMeta<'_>,
+        attributes: BTreeMap<&str, Cow<'_, str>>,
     ) -> fmt::Result {
-        comrak::html::write_opening_tag(out, "code", sorted(attributes))
+        comrak::html::write_opening_tag(out, "code", attributes)
     }
-}
-
-/// A tag's attributes, in the same order each build.
-fn sorted<'a>(
-    attributes: HashMap<&'static str, Cow<'a, str>>,
-) -> BTreeMap<&'static str, Cow<'a, str>> {
-    attributes.into_iter().collect()
 }
 
 /// The grammar for a code block in `lang`, the first word after its fence:
@@ -307,7 +302,7 @@ mod tests {
         let mut html = String::new();
         let highlighter = highlighter(Some(classes)).unwrap();
         highlighter
-            .write_highlighted(&mut html, Some(lang), code)
+            .write_highlighted(&mut html, &SyntaxHighlightMeta::new(lang, "", code))
             .unwrap();
         html
     }
@@ -422,10 +417,15 @@ mod tests {
     fn pre_has_the_highlight_class() {
         let highlighter = highlighter(Some(Highlight::Pygments)).unwrap();
         let mut html = String::new();
-        let attributes = HashMap::from([("data-x", "1".into())]);
-        highlighter.write_pre_tag(&mut html, attributes).unwrap();
-        let attributes = HashMap::from([("class", "language-rust".into())]);
-        highlighter.write_code_tag(&mut html, attributes).unwrap();
+        let meta = SyntaxHighlightMeta::new("rust", "", "");
+        let attributes = BTreeMap::from([("data-x", "1".into())]);
+        highlighter
+            .write_pre_tag(&mut html, &meta, attributes)
+            .unwrap();
+        let attributes = BTreeMap::from([("class", "language-rust".into())]);
+        highlighter
+            .write_code_tag(&mut html, &meta, attributes)
+            .unwrap();
         assert_eq!(
             html,
             "<pre class=\"highlight\" data-x=\"1\"><code class=\"language-rust\">"

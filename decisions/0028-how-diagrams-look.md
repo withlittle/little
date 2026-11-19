@@ -2,7 +2,9 @@
 
 - Status: accepted; amended by
   [0080](./0080-settings-in-groups-under-site-and-page.md), which moves
-  `mermaid` to `site.theme.mermaid`
+  `mermaid` to `site.theme.mermaid`, and by
+  [0081](./0081-mermaid-12s-look.md), which makes Mermaid 12's look the
+  default
 - Date: 2026-10-06
 - Amends: [0027](./0027-drawing-mermaid-diagrams.md)
 

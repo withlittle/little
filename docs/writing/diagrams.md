@@ -97,6 +97,8 @@ site:
   `"#6f42c1"`, not `purple`.
 - Mermaid's other settings work too, like `look: handDrawn` or
   `flowchart: { curve: linear }`.
+- `theme: default`, `look: classic`, and `layout: dagre` together draw
+  diagrams as Mermaid 11 did.
 - A gantt chart is drawn 800 pixels wide. A theme with a wider page can set
   `gantt: { useWidth: 1000 }`.
 - A diagram's own config goes over it, like `%%{init: {"theme": "dark"}}%%`
