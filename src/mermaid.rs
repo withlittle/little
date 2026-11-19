@@ -4,10 +4,14 @@
 //! page, which its own styles are scoped to. Each starts from the site's
 //! `site.theme.mermaid`, Mermaid's own config, which chooses how it looks.
 
-use chrono::NaiveDate;
 use comrak::nodes::{AstNode, NodeValue};
-use merman::MermaidConfig;
-use merman::render::{HeadlessError, HeadlessRenderer, RootBackgroundPostprocessor, SvgPipeline};
+use merman::model::runtime::RuntimePolicy;
+use merman::model::time::CivilDate;
+use merman::svg::{RootBackgroundPostprocessor, SvgPipeline, SvgRenderOptions};
+use merman::{
+    MermaidEngine, OperationControl, ParseOptions, RenderError, RenderOutput, RenderRequest,
+    Renderer, SourcePresentationConfig, SvgRequest,
+};
 use serde_json::json;
 use time::OffsetDateTime;
 
@@ -56,8 +60,7 @@ pub fn draw<'a>(
         // their ids while its author fixes it.
         diagrams += 1;
         let renderer = renderer.get_or_insert_with(|| renderer_at(now, config));
-        renderer.svg.diagram_id = Some(format!("mermaid-{diagrams}"));
-        match svg(renderer, &block.literal) {
+        match svg(renderer, &block.literal, format!("mermaid-{diagrams}")) {
             Ok(svg) => data.value = NodeValue::Raw(format!("{}\n", svg.trim_end())),
             Err(reason) => unrendered.push(Unrendered {
                 line: lines_before.map(|before| before + data.sourcepos.start.line),
@@ -74,33 +77,51 @@ pub fn draw<'a>(
 /// transparent background, so it's on the theme's. The site's `config` goes
 /// over little's, so a theme can widen a gantt chart, and a diagram's own
 /// config over that.
-fn renderer_at(now: OffsetDateTime, config: &serde_json::Value) -> HeadlessRenderer {
+fn renderer_at(now: OffsetDateTime, config: &serde_json::Value) -> Renderer {
     let little = json!({
         "handDrawnSeed": 1,
         "gitGraph": { "seed": 1 },
         "gantt": { "useWidth": 800 },
     });
-    let today = NaiveDate::from_ymd_opt(now.year(), u8::from(now.month()).into(), now.day().into());
-    let mut renderer = HeadlessRenderer::new()
-        .with_strict_parsing()
-        .with_site_config(MermaidConfig::from_value(little))
-        .with_site_config(MermaidConfig::from_value(config.clone()))
-        .with_fixed_today(today)
-        .with_fixed_local_offset_minutes(Some(0))
-        .with_svg_pipeline(
-            SvgPipeline::parity()
-                .with_postprocessor(RootBackgroundPostprocessor::new("transparent")),
-        );
-    renderer.svg.now_ms_override = i64::try_from(now.unix_timestamp_nanos() / 1_000_000).ok();
-    renderer
+    let today = CivilDate::new(now.year(), u8::from(now.month()).into(), now.day().into());
+    let mut policy = RuntimePolicy::deterministic().with_fixed_today(today);
+    if let Ok(millis) = i64::try_from(now.unix_timestamp_nanos() / 1_000_000) {
+        policy = policy.with_fixed_unix_millis(millis);
+    }
+    if let Ok(utc) = policy.clone().try_with_fixed_local_offset_minutes(0) {
+        policy = utc;
+    }
+    let engine = MermaidEngine::new()
+        .with_site_config(SourcePresentationConfig::from_value(little))
+        .with_site_config(SourcePresentationConfig::from_value(config.clone()));
+    Renderer::new()
+        .with_presentation_engine(engine)
+        .with_runtime_policy(policy)
+        .with_parse_options(ParseOptions::strict())
 }
 
-/// `diagram` drawn as SVG, or why merman can't draw it, on one line.
-fn svg(renderer: &HeadlessRenderer, diagram: &str) -> Result<String, String> {
-    let reason = match renderer.render_svg_sync(diagram) {
-        Ok(Some(svg)) => return Ok(svg),
-        // merman's message for this goes on to repeat the whole diagram.
-        Ok(None) | Err(HeadlessError::Parse(merman::Error::DetectType(_))) => {
+/// `diagram` drawn as SVG, with `id` as its id, or why merman can't draw it,
+/// on one line.
+fn svg(renderer: &Renderer, diagram: &str, id: String) -> Result<String, String> {
+    let request = SvgRequest {
+        pipeline: Some(
+            SvgPipeline::parity()
+                .with_postprocessor(RootBackgroundPostprocessor::new("transparent")),
+        ),
+        options: SvgRenderOptions {
+            diagram_id: Some(id),
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    let request = RenderRequest::svg(diagram, OperationControl::new(), request);
+    let reason = match renderer.render(request) {
+        Ok(RenderOutput::Svg(Some(svg))) => return Ok(svg.svg().to_string()),
+        Ok(_) | Err(RenderError::NoDiagram) => "No diagram type detected".to_string(),
+        // In merman's words, it's "No Mermaid diagram type detected".
+        Err(RenderError::Parse(error))
+            if error.terminal_diagnostic_details().code == "merman.parse.no_diagram_detected" =>
+        {
             "No diagram type detected".to_string()
         }
         Err(error) => error.to_string(),
