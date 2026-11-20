@@ -190,8 +190,9 @@ follows it where it's for them, and so do doc comments in `src/`.
 - **Lists and tables are for lists and lookups**, not for paragraphs of
   rules. Keep table cells short.
 - **A rewrite may cut.** Keep each heading a link leads to, or update the
-  links, and keep pages' file names, as little has no redirects. Code,
-  and what little prints, stay as they are.
+  links. List a page whose file moves in `site.redirects`, in
+  `little.yml`, so its old URL leads to it. Code, and what little prints,
+  stay as they are.
 
 ## Decisions
 Notable choices are recorded as ADRs in `decisions/`, which its

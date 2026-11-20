@@ -4,7 +4,9 @@
   compiles Sass in `_static/` to CSS, loading from a new folder, `_sass/`,
   and by [0080](./0080-settings-in-groups-under-site-and-page.md), which
   gives a 404 page a `title` and `description`, from `site.error`, and
-  `page`'s settings
+  `page`'s settings, and by [0083](./0083-redirects-from-old-urls.md),
+  which adds a type of page, `redirect`, whose template is
+  `redirect.html`, with no fallback
 - Date: 2026-09-27
 
 ## Context

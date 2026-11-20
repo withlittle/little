@@ -202,20 +202,21 @@ interface site {
 
 /// Changes what the theme gets as `page`.
 interface page {
-    /// Called for each page, the 404 page too, before it's put in the
-    /// theme, with `page`, as the theme gets it, as a JSON object, its URLs
-    /// as they are in `site`. Gives back the `page` the theme gets, whose
-    /// `title` and `content` search indexes, if its `search.enabled` is
-    /// `true`. An error is warned of, and the theme gets `page` as it was.
+    /// Called for each page, the 404 page and each redirect too, before
+    /// it's put in the theme, with `page`, as the theme gets it, as a JSON
+    /// object, its URLs as they are in `site`. Gives back the `page` the
+    /// theme gets, whose `title` and `content` search indexes, if its
+    /// `search.enabled` is `true`. An error is warned of, and the theme
+    /// gets `page` as it was.
     page: func(page: string) -> result<string, string>;
 }
 
 /// Changes each page as it's written.
 interface html {
-    /// Called for each page the theme writes, the 404 page too, with its
-    /// URL, as a reader follows it, like `/guide/install`, and its HTML.
-    /// Gives back the HTML that's written. An error is warned of, and the
-    /// HTML is written as it was.
+    /// Called for each page the theme writes, the 404 page and each
+    /// redirect too, with its URL, as a reader follows it, like
+    /// `/guide/install`, and its HTML. Gives back the HTML that's written.
+    /// An error is warned of, and the HTML is written as it was.
     html: func(url: string, html: string) -> result<string, string>;
 }
 

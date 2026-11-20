@@ -51,6 +51,7 @@ any of them:
 | `markdown.mermaid` | `svg` | how [diagrams are drawn](../writing/diagrams.md#choosing-how-diagrams-are-drawn) |
 | `plugins` | none | the [plugins](../plugins/using-plugins.md) a site uses, each with its `wasm` file and its settings |
 | `versions` | none | the site's [versions](../writing/versions.md), each with its `title`, `url`, and git `ref` |
+| `redirects` | none | the site's [redirects](../writing/pages-and-files.md#redirects), each with the URL it leads `to`, and the URLs it's `from` |
 | `serve.host` | `127.0.0.1` | the host `little serve` [serves at](commands.md#choosing-where-to-serve) |
 | `serve.port` | `8080` | the port it serves on |
 | `error.title`, `error.description` | `Page not found`, and a line that says so | what the [404 page](../getting-started/publishing.md#a-404-page) says |
