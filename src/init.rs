@@ -53,7 +53,7 @@ Each Markdown file in `docs/` is a page, at its path without `.md`, like
 page, as on GitHub. Link to a page by its file, like `[Guide](guide.md)`.
 
 Set the site's name, and more, in `little.yml`. `little build` builds the
-site into `dist/`, for any static host.
+site into `dist/`, for a static host.
 
 [little's manual](https://withlittle.github.io/little) has the rest.
 ";

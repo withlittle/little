@@ -9,6 +9,10 @@
 //! under it, as it's published, so a link that leaves the path out is broken
 //! here too. The root of the domain sends the browser to the site.
 //!
+//! A page is served from the file named for it, like `guide/install.html`,
+//! at its URL, `/guide/install`, as a host serves it, and isn't found at its
+//! URL with a `/` at its end, as it isn't on GitHub Pages.
+//!
 //! After each build, it warns of each broken link within the site. Links
 //! that leave it are left to `little build`, so a save never waits on the
 //! network. It keeps what it reads from each file, so after a rebuild it
@@ -435,8 +439,10 @@ fn respond_with(destination: &Path, base: &str, url: &str) -> Option<(PathBuf, u
 
 /// Resolve a request URL to a file in the destination, understanding the
 /// pretty, extensionless routes the build emits (`/getting-started` ->
-/// `getting-started/index.html`). The URL is decoded first, as a browser
-/// encodes what it can't send as is: the page built from
+/// `getting-started.html`), as a host that serves a page's file at its URL
+/// does. A page asked for with a `/` at its end, like `/getting-started/`,
+/// isn't found, as GitHub Pages doesn't find it. The URL is decoded first,
+/// as a browser encodes what it can't send as is: the page built from
 /// `Incident Response/triage.md` is asked for as `/Incident%20Response/triage`.
 /// Returns `None` for anything that doesn't resolve to a real file, and
 /// rejects paths that would leave the destination.
@@ -460,8 +466,9 @@ fn resolve_route(destination: &Path, url: &str) -> Option<PathBuf> {
         destination.join(trimmed)
     };
 
-    // Directory index first (covers "/", "/guide/", and extensionless routes),
-    // then an exact file (a static file), then a sibling ".html" as a fallback.
+    // A folder's index first (covers "/", "/guide/", and a redirect's folder,
+    // with or without its "/"), then an exact file (a static file), then the
+    // page named for the URL, "<url>.html".
     let candidates = [
         base.join("index.html"),
         base.clone(),
@@ -501,12 +508,15 @@ mod tests {
 
     #[test]
     fn resolves_pretty_and_asset_routes() {
-        // A throwaway `dist/` tree mirroring the pretty-URL output layout.
+        // A throwaway `dist/` tree mirroring the pretty-URL output layout: a
+        // page in a file named for it, a folder's page in its `index.html`,
+        // and a redirect in a folder at the URL it's from.
         let (_tmp, dist) = scratch(&[
             ("index.html", "x"),
-            ("getting-started/index.html", "x"),
+            ("getting-started.html", "x"),
             ("guide/index.html", "x"),
-            ("guide/install/index.html", "x"),
+            ("guide/install.html", "x"),
+            ("guide/setup/index.html", "x"),
             ("assets/style.css", "x"),
         ]);
         let at = |url: &str| resolve_route(&dist, url);
@@ -514,23 +524,28 @@ mod tests {
         assert_eq!(at("/"), Some(dist.join("index.html")));
         assert_eq!(
             at("/getting-started"),
-            Some(dist.join("getting-started/index.html"))
-        );
-        assert_eq!(
-            at("/getting-started/"),
-            Some(dist.join("getting-started/index.html"))
+            Some(dist.join("getting-started.html"))
         );
         assert_eq!(at("/guide/"), Some(dist.join("guide/index.html")));
+        assert_eq!(at("/guide"), Some(dist.join("guide/index.html")));
+        assert_eq!(at("/guide/install"), Some(dist.join("guide/install.html")));
         assert_eq!(
-            at("/guide/install"),
-            Some(dist.join("guide/install/index.html"))
+            at("/guide/install.html"),
+            Some(dist.join("guide/install.html"))
         );
         assert_eq!(at("/assets/style.css"), Some(dist.join("assets/style.css")));
         assert_eq!(
             at("/getting-started?v=2"),
-            Some(dist.join("getting-started/index.html"))
+            Some(dist.join("getting-started.html"))
         );
+        // A redirect is found with or without the `/` at the end of its URL.
+        for url in ["/guide/setup", "/guide/setup/"] {
+            assert_eq!(at(url), Some(dist.join("guide/setup/index.html")), "{url}");
+        }
 
+        // A page has no `/` at the end of its URL, as on GitHub Pages.
+        assert_eq!(at("/getting-started/"), None);
+        assert_eq!(at("/guide/install/"), None);
         assert_eq!(at("/does-not-exist"), None);
         assert_eq!(at("/../secret"), None);
     }
@@ -565,20 +580,20 @@ mod tests {
         // `café`, when it asks for them.
         let (_tmp, root) = scratch(&[
             ("dist/index.html", "Home"),
-            ("dist/Incident Response/Process/triage/index.html", "Triage"),
+            ("dist/Incident Response/Process/triage.html", "Triage"),
             ("dist/café/index.html", "Café"),
             ("secret/index.html", "Secret"),
         ]);
         let dist = root.join("dist");
         let at = |url: &str| resolve_route(&dist, url);
-        let triage = dist.join("Incident Response/Process/triage/index.html");
+        let triage = dist.join("Incident Response/Process/triage.html");
 
         assert_eq!(
             at("/Incident%20Response/Process/triage"),
             Some(triage.clone())
         );
         assert_eq!(
-            at("/Incident%20Response/Process/triage/?v=2"),
+            at("/Incident%20Response/Process/triage?v=2"),
             Some(triage.clone())
         );
         assert_eq!(at("/caf%C3%A9/"), Some(dist.join("café/index.html")));

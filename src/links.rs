@@ -8,6 +8,13 @@
 //! from it into the destination, so a link that leaves the path out is
 //! broken here, as it would be on the web.
 //!
+//! A page is built into a file named for it, like `guide/install.html`, at
+//! `/guide/install`, where a host finds it, so little leads a link to a page
+//! to its file before lychee looks for it. A link to a page with a `/` at
+//! its end, like `/guide/install/`, is to a folder that isn't there, which a
+//! host may not lead to the page. lychee reads a link to a file without its
+//! `/`, so little looks for these itself, in each page's Markdown.
+//!
 //! An anchor in one of the site's own files, like the `#usage` of
 //! `guide/#usage`, little looks for itself, among the file's `id`s: lychee
 //! checks that the file's there, and little reads each file once, where
@@ -74,7 +81,8 @@ pub struct Broken {
     /// the theme or a copied file, as a reader follows it, like
     /// `/my-project/guide/#usage`.
     pub url: String,
-    /// Why it's broken, in lychee's words.
+    /// Why it's broken, in lychee's words, or, for a link to a page with a
+    /// `/` at its end, little's.
     pub reason: String,
 }
 
@@ -238,7 +246,7 @@ impl Checker {
         let mut anchored = Vec::new();
         let mut pages: BTreeMap<String, Request> = BTreeMap::new();
         for id in found {
-            let request = self.links[id].clone();
+            let mut request = self.links[id].clone();
             match Anchor::of(&client, &request) {
                 Some(anchor) => {
                     let mut page = request.clone();
@@ -246,14 +254,19 @@ impl Checker {
                     pages.entry(anchor.page.to_string()).or_insert(page);
                     anchored.push((id, request.uri, anchor));
                 }
-                None => plain.push((id, request)),
+                None => {
+                    let link = request.uri.clone();
+                    if let Some(file) = page_file(&client, &link) {
+                        request.uri = file;
+                    }
+                    plain.push((id, link, request));
+                }
             }
         }
         let checked_plain: Vec<_> = futures::stream::iter(plain)
-            .map(|(id, request)| {
+            .map(|(id, link, request)| {
                 let client = &client;
                 async move {
-                    let link = request.uri.clone();
                     let (checked, reason) = match client.check(request).await {
                         Ok(response) => {
                             let status = response.status();
@@ -351,6 +364,18 @@ impl Checker {
                 }
             }
         }
+        // A link to a page with a `/` at its end is to a folder that isn't
+        // there, which lychee can't tell from the page.
+        for (file, links) in &site.built.links {
+            for link in links {
+                if let Some(page) = site.page_without_slash(&link.href) {
+                    let path = &site.built.url.path;
+                    let reason = format!("Cannot find folder: the page is at {path}{page}");
+                    let url = link.written.clone();
+                    (broken.entry((url, reason)).or_default()).insert(site.origin(file));
+                }
+            }
+        }
 
         let mut broken: Vec<_> = broken
             .into_iter()
@@ -371,7 +396,8 @@ struct Anchor {
     /// The link, as lychee would check it: led into the destination, if
     /// it's to the site's own `url`, or from the root of the domain.
     link: Uri,
-    /// The link without its fragment: the file, or its folder.
+    /// The link without its fragment: the file, the folder it's the page
+    /// of, or, for a link to a page named for its URL, the page's file.
     page: Url,
     /// The fragment, as the link writes it, and, if it's encoded, like
     /// `caf%C3%A9`, decoded too: a page's `id` can be either.
@@ -404,6 +430,7 @@ impl Anchor {
         }
         let mut page = url.clone();
         page.set_fragment(None);
+        to_page_file(&mut page);
         Some(Self { link, page, names })
     }
 
@@ -411,6 +438,37 @@ impl Anchor {
     fn is_in(&self, anchors: &HashSet<String>) -> bool {
         self.names.iter().any(|name| anchors.contains(name))
     }
+}
+
+/// `link`, led to the file of the page it's to, as `client` leads it into
+/// the destination: `None` if it's to anything else, so is checked as it is.
+fn page_file(client: &Client, link: &Uri) -> Option<Uri> {
+    let mut led = link.clone();
+    client.remap(&mut led).ok()?;
+    let mut url = Url::parse(led.as_str()).ok()?;
+    (led.is_file() && to_page_file(&mut url)).then(|| Uri::from(url))
+}
+
+/// Lead `url`, a `file` URL, to the file of the page it's to, and say
+/// whether it was one. The page at `/guide/install` is built into
+/// `guide/install.html`, where a host finds it, so a link to it is to no
+/// file of its own. Any other is left as it is: one to a file or a folder
+/// that's there, to neither, or with a `/` at its end, which is a folder's.
+fn to_page_file(url: &mut Url) -> bool {
+    let Ok(path) = url.to_file_path() else {
+        return false;
+    };
+    if url.path().ends_with('/') || path.exists() {
+        return false;
+    }
+    let mut file = path.into_os_string();
+    file.push(".html");
+    let is_page = Path::new(&file).is_file();
+    if is_page {
+        let path = format!("{}.html", url.path());
+        url.set_path(&path);
+    }
+    is_page
 }
 
 /// The HTML file a browser shows at `url`, a `file` URL of a file or folder
@@ -462,6 +520,9 @@ struct Site<'a> {
     /// destination, then by the URL lychee makes of each, or, for one that
     /// isn't a URL, by its text.
     written: HashMap<PathBuf, HashMap<String, BTreeSet<String>>>,
+    /// The URL of each page that's built into a file named for it, like
+    /// `/guide/install`, in `guide/install.html`, from the root of the site.
+    named: HashSet<&'a str>,
 }
 
 impl<'a> Site<'a> {
@@ -483,13 +544,33 @@ impl<'a> Site<'a> {
                 (rel.clone(), written_in(&source, links, &root_url))
             })
             .collect();
+        // Not a folder's page, or a redirect, which is in a folder too.
+        let named = (built.urls.iter())
+            .filter(|(file, url)| {
+                let page = url.trim_start_matches('/');
+                file.as_path() == Path::new(&format!("{page}.html"))
+            })
+            .map(|(_, url)| url.as_str())
+            .collect();
         Ok(Self {
             built,
             destination,
             root,
             own,
             written,
+            named,
         })
+    }
+
+    /// The URL of the page that `href` leads to with a `/` at its end, like
+    /// `/guide/install/`, from the root of the site: `None` for any other
+    /// link. `href` is a link in a page's Markdown, as the page's HTML has
+    /// it, under the site's path.
+    fn page_without_slash(&self, href: &str) -> Option<&'a str> {
+        let path = href.split(['?', '#']).next()?;
+        let page = (path.strip_prefix(self.built.url.path.as_str())?).strip_suffix('/')?;
+        let page = percent_decode_str(page).decode_utf8().ok()?;
+        self.named.get(&*page).copied()
     }
 
     fn client(&self, scope: Scope) -> Result<Client> {
@@ -860,6 +941,51 @@ mod tests {
                 "broken link guide/install.md#from-sorce in docs/README.md: Cannot find fragment"
                     .to_string(),
                 format!("broken link guide/uninstall.md in docs/README.md: {NOT_FOUND}"),
+            ]
+        );
+    }
+
+    #[test]
+    fn finds_a_page_in_its_file_but_not_with_a_slash_at_its_end() {
+        let broken = broken_links(
+            Scope::Internal,
+            &[
+                (
+                    "little.yml",
+                    "site:\n  theme:\n    source: ./theme\n  \
+                     url: https://withlittle.github.io/little\n",
+                ),
+                BARE_THEME[1],
+                // A page is in a file named for it, whatever dots its name
+                // has, where a link to it, or into it, finds it. A folder's
+                // page is found with or without its `/`, as a host leads a
+                // reader from one to the other.
+                (
+                    "docs/README.md",
+                    "# Home\n\n[Install](guide/install) [Install](/guide/install#from-source) \
+                     [Notes](releases/v1.2#fixed) [Guide](guide) [Guide](/guide/)\n\n\
+                     [Install](guide/install/) [Install](/guide/install/#from-source) \
+                     [Notes](releases/v1.2/) [Notes](releases/v1.2#fixd)\n",
+                ),
+                ("docs/guide/README.md", "# Guide\n\n[Install](install/)\n"),
+                ("docs/guide/install.md", "# Install\n\n## From source\n"),
+                ("docs/releases/v1.2.md", "# 1.2\n\n## Fixed\n"),
+            ],
+        );
+        // A host finds nothing at a page's URL with a `/` at its end, and
+        // the warning says where the page is, under the site's path.
+        assert_eq!(
+            broken,
+            [
+                "broken link /guide/install/#from-source in docs/README.md: Cannot find folder: \
+                 the page is at /little/guide/install",
+                "broken link guide/install/ in docs/README.md: Cannot find folder: the page is \
+                 at /little/guide/install",
+                "broken link releases/v1.2#fixd in docs/README.md: Cannot find fragment",
+                "broken link releases/v1.2/ in docs/README.md: Cannot find folder: the page is \
+                 at /little/releases/v1.2",
+                "broken link install/ in docs/guide/README.md: Cannot find folder: the page is \
+                 at /little/guide/install",
             ]
         );
     }

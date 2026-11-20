@@ -9,7 +9,14 @@
 //! theme's files are written once, for the version at the root, and the
 //! others link to them there.
 //!
-//! Each of the site's `redirects` is a page too, at the URL it's from, which
+//! Each page is built into a file named for it, like `guide/install.html`,
+//! at `/guide/install`, where a host that serves a `.html` file at its path
+//! without the extension finds it, with no redirect. A folder's own page is
+//! the folder's `index.html`, at `/guide/`. A page can't be beside a folder
+//! of its name, as a host can't tell `/guide` from `/guide/`.
+//!
+//! Each of the site's `redirects` is a page too, at the URL it's from, in a
+//! folder there, so a host finds it with or without the URL's `/`, which
 //! the theme writes, to send its reader on to where the redirect leads. A
 //! site with `versions` writes one in each version that has a page or file
 //! where it leads, and none where it's from, as an old version may still
@@ -76,7 +83,7 @@ struct Page {
     dates: Option<git::Dates>,
     /// Pretty, extensionless URL (`/`, `/getting-started`, `/guide/install`).
     url: String,
-    /// Output file on disk (`dist/guide/install/index.html`).
+    /// Output file on disk (`dist/guide/install.html`).
     out_path: PathBuf,
     title: String,
     /// The page's settings: every page's, from `page` in the config, with
@@ -278,8 +285,8 @@ pub struct Built {
     /// Markdown, like `docs/guide.md`, or a static file's origin.
     pub origins: HashMap<PathBuf, String>,
     /// Each page's URL from the root of the site, by its path in the
-    /// destination, like `/guide/install` for `guide/install/index.html`,
-    /// so a broken link to it is shown as the theme links to it.
+    /// destination, like `/guide/install` for `guide/install.html`, so a
+    /// broken link to it is shown as the theme links to it.
     pub urls: HashMap<PathBuf, String>,
     /// The links and images in each page's Markdown, by its path in the
     /// destination, so a broken one is shown as it's written.
@@ -1514,12 +1521,13 @@ fn finish(
     paths.extend(search_files.iter().map(|file| slashed(&file.path)));
 
     // Each of the site's redirects is a page too, at the URL it's from, in
-    // the file a page there would be, which the theme writes, to send its
-    // reader on, if it has a template for one. It leads to one of the
-    // version's pages or files, or to another site, from a URL where the
-    // version has neither. On a site with versions, each has the redirects
-    // it can, as an old one may still have a page where it was, and none
-    // where it's gone. On any other site, one it can't have is a mistake.
+    // a folder there, which a host serves with or without the URL's `/`. The
+    // theme writes it, to send its reader on, if it has a template for one.
+    // It leads to one of the version's pages or files, or to another site,
+    // from a URL where the version has neither. On a site with versions,
+    // each has the redirects it can, as an old one may still have a page
+    // where it was, and none where it's gone. On any other site, one it
+    // can't have is a mistake.
     //
     // One from every page under a folder is a redirect to each of the
     // version's pages under the folder it leads to, from where the page
@@ -1534,7 +1542,7 @@ fn finish(
             .collect();
         let alone: HashSet<String> = (redirects.iter())
             .filter(|redirect| redirect.folders().is_none())
-            .map(|redirect| html_file_at(&redirect.from))
+            .map(|redirect| redirect_file(&redirect.from))
             .collect();
         let mut files = Vec::new();
         for (index, redirect) in redirects.iter().enumerate() {
@@ -1554,29 +1562,45 @@ fn finish(
             }
             for (from, to) in each {
                 let from = from.as_ref();
-                let file = html_file_at(from);
-                if folders.is_some() && (paths.contains(&file) || alone.contains(&file)) {
+                let file = redirect_file(from);
+                // What's there already is a file where the redirect would
+                // be, or a page at its URL, which is in a file of its own.
+                let taken =
+                    paths.contains(&file) || paths.contains(&page_file(from.trim_end_matches('/')));
+                if folders.is_some() && (taken || alone.contains(&file)) {
                     continue;
                 }
-                // Where it leads is a page, at the file a reader of its URL
-                // is shown, or any other file, at its own path.
+                // Where it leads is a page, at its URL, a folder's page,
+                // with or without its `/`, as a host sends a reader on to
+                // it, or any other file, at its own path. A page's URL has
+                // no `/` at its end: a host finds nothing there.
                 let target = match folders {
                     Some(_) => Some(to),
                     None => redirect.target(),
                 };
                 let is_there = |target: &str| {
-                    paths.contains(&html_file_at(target))
+                    paths.contains(&page_file(target))
+                        || paths.contains(&redirect_file(target))
                         || paths.contains(target.trim_matches('/'))
                 };
                 let leads_nowhere = target.is_some_and(|target| !is_there(target));
-                if versions.is_some() && (leads_nowhere || paths.contains(&file)) {
+                if versions.is_some() && (leads_nowhere || taken) {
                     continue;
                 }
                 if let (true, Some(target)) = (leads_nowhere, target) {
-                    bail!(
-                        "`site.redirects` sends {from} to {to}, but there's no page or file at \
-                         {target}"
-                    );
+                    let page = (target.strip_suffix('/'))
+                        .and_then(|url| pages.iter().find(|page| page.url == url));
+                    match page {
+                        Some(page) => bail!(
+                            "`site.redirects` sends {from} to {to}, but there's no page or file \
+                             at {target}: the page is at {}, with no `/` at its end",
+                            page.url
+                        ),
+                        None => bail!(
+                            "`site.redirects` sends {from} to {to}, but there's no page or file \
+                             at {target}"
+                        ),
+                    }
                 }
                 let title = target.and_then(|target| titles.get(target.trim_end_matches('/')));
                 let data = PageData {
@@ -1646,7 +1670,11 @@ fn finish(
     for file in &static_files {
         written.push((file.path.as_path(), file.origin.clone()));
     }
-    check_written(written)?;
+    // Each page but a folder's own is in a file named for it.
+    let named = (pages.iter().filter(|page| !page.url.ends_with('/')))
+        .map(|page| page.out_path.strip_prefix(&place.destination))
+        .collect::<Result<Vec<_>, _>>()?;
+    check_written(written, &named)?;
 
     built
         .warnings
@@ -2030,18 +2058,26 @@ fn remove_file(destination: &Path, path: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Fail if two files in the source would be the same page, like `guide.md`
-/// and `guide/README.md`, or `README.md` and `readme.md`: one would silently
-/// overwrite the other. So would a page a plugin adds, as a file at its path.
-/// Files whose URLs differ only in case, like `API.md` and `api/README.md`,
-/// aren't caught, though they clash on a disk that ignores case, as macOS's
-/// and Windows' do by default.
+/// Fail if two files in the source would be the same page, like `README.md`
+/// and `readme.md`, where one would silently overwrite the other, or
+/// `guide.md` and `guide/README.md`, at `/guide` and `/guide/`, which a
+/// host can't serve apart. So would a page a plugin adds, as a file at its
+/// path.
+/// Files whose URLs differ only in case, like `API.md` and `api.md`, aren't
+/// caught, though they clash on a disk that ignores case, as macOS's and
+/// Windows' do by default.
 fn check_clashes(pages: &[Page]) -> Result<()> {
-    let mut seen: HashMap<&Path, &Page> = HashMap::new();
+    let mut files: HashMap<&Path, &Page> = HashMap::new();
+    let mut urls: HashMap<&str, &Page> = HashMap::new();
     for page in pages {
-        if let Some(other) = seen.insert(&page.out_path, page) {
-            // `guide.md` is at `/guide` and `guide/README.md` at `/guide/`,
-            // but both would be `guide/index.html`, served at `/guide/`.
+        // `guide.md` and `guide/README.md` each have a file of their own,
+        // but `/guide` and `/guide/` are one page to a reader, and which of
+        // the two a host serves there depends on the host. A page named
+        // `index` is its folder's `index.html`, as the folder's `README.md`
+        // is.
+        let file = files.insert(&page.out_path, page);
+        let url = urls.insert(page.url.trim_end_matches('/'), page);
+        if let Some(other) = file.or(url) {
             let url = if other.url.ends_with('/') {
                 &other.url
             } else {
@@ -2060,17 +2096,50 @@ fn check_clashes(pages: &[Page]) -> Result<()> {
 /// Fail if one of the files a version of a site writes, `files`, each its
 /// path in the version's folder and what it's called, is on another, or
 /// where another's folder goes, or in it, so one would overwrite the other.
-fn check_written(files: Vec<(&Path, String)>) -> Result<()> {
-    let mut written: BTreeMap<&Path, String> = BTreeMap::new();
-    for (path, name) in files {
+///
+/// Fail, too, if one of `pages`, the files among them that are each named
+/// for the page it is, like `guide.html`, at `/guide`, is beside a file or
+/// a folder of that name, `guide/`. A host can't tell `/guide` from
+/// `/guide/`: some serve the page at both, and some look in the folder, and
+/// find another page, or none.
+fn check_written(files: Vec<(&Path, String)>, pages: &[&Path]) -> Result<()> {
+    // Each with its place in `files`, so the later of two is the one named
+    // as clashing with the other.
+    let mut written: BTreeMap<&Path, (usize, String)> = BTreeMap::new();
+    for (place, (path, name)) in files.into_iter().enumerate() {
         // Paths sort by their parts, so the files in a folder sort just after it.
         let under = (written.range(path..).next()).filter(|(file, _)| file.starts_with(path));
         let other = (path.ancestors().find_map(|folder| written.get(folder)))
             .or(under.map(|(_, other)| other));
-        if let Some(other) = other {
+        if let Some((_, other)) = other {
             bail!("{name} clashes with {other}");
         }
-        written.insert(path, name);
+        written.insert(path, (place, name));
+    }
+    for page in pages {
+        let Some((place, name)) = written.get(page) else {
+            continue;
+        };
+        let folder = page.with_extension("");
+        // A file of that name, or a version built there, is at the page's
+        // URL, and so is the folder's own page, like a redirect from it.
+        let index = folder.join("index.html");
+        let there = (written.get(folder.as_path())).or_else(|| written.get(index.as_path()));
+        if let Some((other_place, other)) = there {
+            let (later, earlier) = match place < other_place {
+                true => (other, name),
+                false => (name, other),
+            };
+            bail!("{later} clashes with {earlier}");
+        }
+        let within = (written.range(folder.as_path()..).next())
+            .filter(|(file, _)| file.starts_with(&folder));
+        if let Some((_, (_, other))) = within {
+            bail!(
+                "{name} clashes with {other}: a page can't be beside a folder of its name, so \
+                 make it the folder's README, or rename one"
+            );
+        }
     }
     Ok(())
 }
@@ -2179,21 +2248,39 @@ fn destination_in(source: &Path, destination: &Path) -> Option<PathBuf> {
     Some(source.join(rel))
 }
 
-/// Map a pretty URL to its directory-index output file in the destination.
+/// Map a pretty URL to its output file in the destination.
 fn out_path_for_url(destination: &Path, url: &str) -> PathBuf {
-    destination.join(url.trim_matches('/')).join("index.html")
+    destination.join(page_file(url))
 }
 
-/// The HTML file a reader of `url`, from the root of a version, is shown,
-/// from the version's folder, with `/` between its parts: the `index.html`
-/// of the folder at the URL, as a page's is, or, for a URL that ends in
-/// `.html`, that file itself, as a site built by another tool may have
+/// The file the page at `url`, from the root of a version, is built into,
+/// from the version's folder, with `/` between its parts: one named for the
+/// page, which a host serves at the page's URL, with no `/` at its end and
+/// no redirect, or, for a folder's own page, whose URL ends in `/`, the
+/// folder's `index.html`.
+///
+/// - `/`               -> `index.html`
+/// - `/guide/`         -> `guide/index.html`
+/// - `/guide/install`  -> `guide/install.html`
+fn page_file(url: &str) -> String {
+    match url.strip_prefix('/').unwrap_or(url) {
+        "" => "index.html".to_string(),
+        folder if folder.ends_with('/') => format!("{folder}index.html"),
+        page => format!("{page}.html"),
+    }
+}
+
+/// The file a redirect from `url`, from the root of a version, is written
+/// to, from the version's folder, with `/` between its parts: the
+/// `index.html` of a folder at the URL, which a host serves with or without
+/// the `/` at its end, as a reader may have either, or, for a URL that ends
+/// in `.html`, that file itself, as a site built by another tool may have
 /// published its pages.
 ///
 /// - `/`               -> `index.html`
 /// - `/guide/install`  -> `guide/install/index.html`
 /// - `/install.html`   -> `install.html`
-fn html_file_at(url: &str) -> String {
+fn redirect_file(url: &str) -> String {
     match url.trim_matches('/') {
         "" => "index.html".to_string(),
         file if file.ends_with(".html") => file.to_string(),
@@ -2767,24 +2854,32 @@ mod tests {
     }
 
     #[test]
-    fn maps_urls_to_directory_index_files() {
+    fn maps_urls_to_the_files_pages_are_built_into() {
+        // A page is in a file named for it, and a folder's own page in the
+        // folder's `index.html`.
         let dist = Path::new("dist");
-        assert_eq!(
-            out_path_for_url(dist, "/"),
-            PathBuf::from("dist/index.html")
-        );
-        assert_eq!(
-            out_path_for_url(dist, "/getting-started"),
-            PathBuf::from("dist/getting-started/index.html")
-        );
-        assert_eq!(
-            out_path_for_url(dist, "/guide/"),
-            PathBuf::from("dist/guide/index.html")
-        );
-        assert_eq!(
-            out_path_for_url(dist, "/guide/install"),
-            PathBuf::from("dist/guide/install/index.html")
-        );
+        for (url, file) in [
+            ("/", "dist/index.html"),
+            ("/getting-started", "dist/getting-started.html"),
+            ("/guide/", "dist/guide/index.html"),
+            ("/guide/install", "dist/guide/install.html"),
+            // Named in full, whatever dots it has.
+            ("/releases/v1.2", "dist/releases/v1.2.html"),
+            ("/guide/index", "dist/guide/index.html"),
+        ] {
+            assert_eq!(out_path_for_url(dist, url), PathBuf::from(file), "{url}");
+        }
+
+        // A redirect is in a folder, with or without the `/` at the end of
+        // the URL it's from, or in the `.html` file it names.
+        for (url, file) in [
+            ("/", "index.html"),
+            ("/guide/setup", "guide/setup/index.html"),
+            ("/guide/setup/", "guide/setup/index.html"),
+            ("/setup.html", "setup.html"),
+        ] {
+            assert_eq!(redirect_file(url), file, "{url}");
+        }
     }
 
     #[test]
@@ -2807,10 +2902,18 @@ mod tests {
              rename or move one"
         );
 
-        // A page beside a folder is fine, and so, for now, are URLs that
-        // differ only in case.
+        // A page named `index` is its folder's `index.html`, as its README is.
+        assert_eq!(
+            check("guide/README.md", "guide/index.md").unwrap_err(),
+            "docs/guide/README.md and docs/guide/index.md would both be the page at /guide/: \
+             rename or move one"
+        );
+
+        // A page beside a folder of its name is caught once every file the
+        // site writes is known, and URLs that differ only in case aren't
+        // caught, for now.
         assert!(check("guide.md", "guide/install.md").is_ok());
-        assert!(check("API.md", "api/README.md").is_ok());
+        assert!(check("API.md", "api.md").is_ok());
     }
 
     #[test]
@@ -3483,7 +3586,7 @@ mod tests {
         assert_eq!(destination, site.join("public"));
         let read = |path: &str| fs::read_to_string(destination.join(path)).unwrap();
         assert_eq!(read("index.html"), "Home");
-        assert_eq!(read("guide/install/index.html"), "Install");
+        assert_eq!(read("guide/install.html"), "Install");
         assert!(!site.join("dist").exists());
     }
 
@@ -3523,7 +3626,7 @@ mod tests {
             MARKER_FILE,
             ".nojekyll",
             "guide/index.html",
-            "guide/install/index.html",
+            "guide/install.html",
             "index.html",
         ];
         assert_eq!(files_in(&dist), built);
@@ -3552,7 +3655,7 @@ mod tests {
 
         build(&site).unwrap();
 
-        let built = [MARKER_FILE, "ISSUE_TEMPLATE/bug/index.html", "index.html"];
+        let built = [MARKER_FILE, "ISSUE_TEMPLATE/bug.html", "index.html"];
         assert_eq!(files_in(&dist), built);
         assert_eq!(read("index.html"), "Home");
 
@@ -3618,7 +3721,7 @@ mod tests {
             ("docs/README.md", "# Home\n"),
             ("docs/logo.svg", "<svg/>"),
             ("docs/guide/install.md", "# Install\n"),
-            ("docs/guide/install/demo.mp4", "mp4"),
+            ("docs/guide/videos/demo.mp4", "mp4"),
             ("docs/assets/style.css", "site"),
             ("theme/_templates/default.html", "{{ page.title }}"),
             ("theme/_static/assets/style.css", "theme"),
@@ -3633,15 +3736,15 @@ mod tests {
 
         build(&site).unwrap();
 
-        // To the same path, beside the pages, even in a page's own folder.
+        // To the same path, beside the pages.
         let dist = site.join("dist");
         let built = [
             MARKER_FILE,
             "assets/style.css",
             "assets/theme.js",
             "guide/images/step 1.png",
-            "guide/install/demo.mp4",
-            "guide/install/index.html",
+            "guide/install.html",
+            "guide/videos/demo.mp4",
             "index.html",
             "logo.svg",
         ];
@@ -3754,7 +3857,7 @@ mod tests {
             format!("<p>{diagram} {install}</p>\n")
         );
         assert_eq!(
-            read("guide/install/index.html"),
+            read("guide/install.html"),
             format!("<p>{diagram} {logo}</p>\n")
         );
         // And each image is where it leads.
@@ -3809,12 +3912,12 @@ mod tests {
             MARKER_FILE,
             "data/index.html",
             "data/notes.TEST",
-            "guide/analysis/index.html",
+            "guide/analysis.html",
             "index.html",
         ];
         assert_eq!(files_in(&dist), files);
         let read = |path: &str| fs::read_to_string(dist.join(path)).unwrap();
-        let analysis = read("guide/analysis/index.html");
+        let analysis = read("guide/analysis.html");
         assert!(analysis.starts_with("The analysis\n<h1"), "{analysis}");
         assert!(analysis.contains("<a href=\"/\">Home</a>"), "{analysis}");
         let code = "<pre class=\"highlight\"><code class=\"language-python\">";
@@ -3871,7 +3974,7 @@ mod tests {
             (
                 "$$\\qty{1}{m}$$\n",
                 "$x^2$ and $\\dv{f}{x}$",
-                "analysis/index.html",
+                "analysis.html",
                 "<p><math><msup>",
                 [
                     "can't render $$\\qty{1}{m}$$ in {}: Unknown command \"\\qty\".",
@@ -3997,7 +4100,7 @@ mod tests {
         );
         // Its frontmatter is read, and its blocks go to plugins, which are
         // told it's the file at its path.
-        let base = read("reference/pkg/base/index.html");
+        let base = read("reference/pkg/base.html");
         assert!(
             base.starts_with(
                 "The base | False | Home, Reference, Pkg | Reference | \n<h2 id=\"thing\">"
@@ -4008,7 +4111,7 @@ mod tests {
             base.contains("<p>test | test | docs/reference/pkg/base.md</p>"),
             "{base}"
         );
-        let guide = read("guide/index.html");
+        let guide = read("guide.html");
         assert!(
             guide.starts_with("Guide | True | Home | Home | Reference\n"),
             "{guide}"
@@ -4109,7 +4212,7 @@ mod tests {
             home.ends_with("<p>Hello, plugins.</p>\n<p>docs/README.md</p></html>"),
             "{home}"
         );
-        let added = read("added/index.html");
+        let added = read("added.html");
         assert!(
             added.starts_with("<html lang=\"en\">Hooked | Hooked, too |  | Added\n"),
             "{added}"
@@ -4126,7 +4229,7 @@ mod tests {
         // build writes, and it's noted as the plugin's.
         let files = read("files.txt");
         let paths: Vec<_> = files.lines().collect();
-        assert_eq!(paths[..2], ["added/index.html", "index.html"], "{files}");
+        assert_eq!(paths[..2], ["added.html", "index.html"], "{files}");
         assert!(paths.contains(&"pagefind/pagefind.js"), "{files}");
         assert!(
             paths[2..].iter().all(|path| path.starts_with("pagefind/")),
@@ -4271,14 +4374,14 @@ mod tests {
              outline previous repository search title type url"
         );
         assert_eq!(
-            read("guide/install/index.html"),
+            read("guide/install.html"),
             "page with default.html: breadcrumb content outline previous repository search \
              title type url"
         );
         // A folder without a README gets no page of its own.
         assert!(!dist.join("api/index.html").exists());
         assert_eq!(
-            read("api/reference/index.html"),
+            read("api/reference.html"),
             "page with default.html: breadcrumb content next outline previous repository \
              search title type url"
         );
@@ -4329,12 +4432,12 @@ mod tests {
         // every page's `page`, as if each page's frontmatter set it, so here
         // no page has breadcrumbs.
         assert_eq!(
-            read("api/errors/index.html"),
+            read("api/errors.html"),
             "Errors: Site, wide, /site.png, , 0 above"
         );
         // A page's own frontmatter goes over it, key by key.
         assert_eq!(
-            read("guide/index.html"),
+            read("guide.html"),
             "Guide: Ada, wide, /site.png, A guide, 1 above"
         );
         // The 404 page has them too, with its title, from `site.error`.
@@ -4406,8 +4509,9 @@ mod tests {
         let dist = site.join("dist");
         let read = |path: &str| fs::read_to_string(dist.join(path)).unwrap();
 
-        // Each is written where a page at its URL would be, or, for a URL
-        // that ends in `.html`, at that file's own path. Its `page` has
+        // Each is written in a folder at its URL, which a host serves with
+        // or without the URL's `/`, or, for a URL that ends in `.html`, at
+        // that file's own path. Its `page` has
         // where it leads, with the site's path, and the title of the page
         // there, and what the 404 page has: each group, with nothing in it,
         // and every page's settings.
@@ -4470,8 +4574,9 @@ mod tests {
         let dist = site.join("dist");
         let docs = site.join("docs");
 
-        // It leads to a page, with or without the `/` at its end, or to a
-        // file, from a URL nothing is at, even beside the files in a folder.
+        // It leads to a page, a folder's with or without the `/` at its end,
+        // or to a file, from a URL nothing is at, even beside the files in a
+        // folder.
         let ok = redirects(
             "    - { to: /guide, from: [/a] }\n    - { to: /guide/, from: [/b] }\n    \
              - { to: /files/guide.pdf, from: [/files] }\n    - { to: /old.html, from: [/d] }\n    \
@@ -4504,6 +4609,16 @@ mod tests {
             );
             assert_eq!(nowhere, Err(expected), "{to}");
         }
+        // ...as does one to a page with a `/` at the end of its URL, where a
+        // host finds nothing, and the error says where the page is...
+        assert_eq!(
+            redirects("    - { to: \"/new/#usage\", from: [/a] }\n"),
+            Err(
+                "`site.redirects` sends /a to /new/#usage, but there's no page or file at \
+                 /new/: the page is at /new, with no `/` at its end"
+                    .to_string()
+            )
+        );
         // ...and so does one from where a page or a file is, or would be in
         // one's way, as for two files that would be one page...
         let page = |file: &str| {
@@ -4546,6 +4661,13 @@ mod tests {
             ),
         ] {
             let clashed = redirects(&format!("    - {{ to: /new, from: [/a, {from}] }}\n"));
+            assert_eq!(clashed, Err(clash), "{from}");
+        }
+        // A page that isn't a folder's is in a file of its own, beside the
+        // folder a redirect from its URL would be in, which clashes too.
+        for from in ["/new", "/new/"] {
+            let clashed = redirects(&format!("    - {{ to: /guide/, from: [{from}] }}\n"));
+            let clash = format!("the redirect from {from} clashes with {}", page("new.md"));
             assert_eq!(clashed, Err(clash), "{from}");
         }
         // ...or two from one URL.
@@ -4630,7 +4752,7 @@ mod tests {
                 "/proj/gadgets/kept to /proj/tools/kept (Moved)",
             ),
             // It gives way to a page that's still there...
-            ("widgets/kept/index.html", "Kept"),
+            ("widgets/kept.html", "Kept"),
             // ...and to a redirect from that URL alone.
             (
                 "gadgets/deep/that/index.html",
@@ -4648,11 +4770,11 @@ mod tests {
             [
                 "widgets/deep/that/index.html",
                 "widgets/index.html",
-                "widgets/kept/index.html",
+                "widgets/kept.html",
                 "widgets/this/index.html",
             ]
         );
-        assert_eq!(redirected("toolshed/"), ["toolshed/index.html"]);
+        assert_eq!(redirected("toolshed"), ["toolshed.html"]);
         let this = Path::new("widgets/this/index.html");
         assert_eq!(built.urls[this], "/widgets/this");
         assert_eq!(built.origins[this], "the redirect from /widgets/this");
@@ -4708,7 +4830,7 @@ mod tests {
         // warns, once, and writes none.
         assert_eq!(
             files_in(&site.join("dist")),
-            [".little-build", "guide/index.html", "index.html"]
+            [".little-build", "guide.html", "index.html"]
         );
         assert_eq!(
             warnings_of(&built),
@@ -4838,10 +4960,7 @@ mod tests {
             read("guide/index.html"),
             "Home / < Guide > Install /guide/install"
         );
-        assert_eq!(
-            read("guide/install/index.html"),
-            "Guide /guide/ < Install >"
-        );
+        assert_eq!(read("guide/install.html"), "Guide /guide/ < Install >");
     }
 
     #[test]
@@ -4875,20 +4994,17 @@ mod tests {
         assert_eq!(read("index.html"), "Home");
         assert_eq!(read("guide/index.html"), "Home / > Guide");
         assert_eq!(
-            read("guide/install/index.html"),
+            read("guide/install.html"),
             "Home / > Guide /guide/ > Install"
         );
         assert_eq!(
-            read("api/reference/index.html"),
+            read("api/reference.html"),
             "Home / > Api (label) > Reference"
         );
         // Frontmatter has the last word: `breadcrumb.enabled` turns them off,
         // and its `items` replace them.
-        assert_eq!(read("api/errors/index.html"), "Errors");
-        assert_eq!(
-            read("api/limits/index.html"),
-            "Reference /api/reference > Limits"
-        );
+        assert_eq!(read("api/errors.html"), "Errors");
+        assert_eq!(read("api/limits.html"), "Reference /api/reference > Limits");
 
         // They follow a nav set by hand, so a page that isn't in it has none.
         let site_cfg = "site:\n  theme:\n    source: ./theme\n  navigation:\n    items:\n      \
@@ -4896,7 +5012,7 @@ mod tests {
                         - { title: Install, url: /guide/install }\n";
         fs::write(site.join("little.yml"), site_cfg).unwrap();
         build(&site).unwrap();
-        assert_eq!(read("guide/install/index.html"), "Start / > Install");
+        assert_eq!(read("guide/install.html"), "Start / > Install");
         assert_eq!(read("guide/index.html"), "Guide");
     }
 
@@ -4931,7 +5047,7 @@ mod tests {
         // It ends with the page itself, and a folder without a README.md is
         // plain text, as in the sidebar.
         assert_eq!(
-            trail("guide/install/index.html"),
+            trail("guide/install.html"),
             [
                 r#"<li><a href="/">Home</a></li>"#,
                 r#"<li><a href="/guide/">Guide</a></li>"#,
@@ -4939,7 +5055,7 @@ mod tests {
             ]
         );
         assert_eq!(
-            trail("api/reference/index.html"),
+            trail("api/reference.html"),
             [
                 r#"<li><a href="/">Home</a></li>"#,
                 "<li>Api</li>",
@@ -4948,7 +5064,7 @@ mod tests {
         );
         // The home page has nothing above it, a page can turn them off, and the
         // 404 page has none.
-        for path in ["index.html", "api/errors/index.html", NOT_FOUND_FILE] {
+        for path in ["index.html", "api/errors.html", NOT_FOUND_FILE] {
             assert!(!read(path).contains(nav), "{path}");
         }
     }
@@ -4993,7 +5109,7 @@ mod tests {
         // one folds, from a button beside its link, if it has a README.md, or
         // from its label. Only the folders the current page is in are open.
         assert_eq!(
-            sidebar("guide/advanced/deep/limits/index.html"),
+            sidebar("guide/advanced/deep/limits.html"),
             [
                 r#"<a href="/">Home</a>"#,
                 r#"<span class="nav-label">Api</span>"#,
@@ -5026,7 +5142,7 @@ mod tests {
             ["<details open>", "<details>", "<details>"]
         );
         assert_eq!(
-            folds("guide/recipes/bake/index.html"),
+            folds("guide/recipes/bake.html"),
             ["<details>", "<details>", "<details open>"]
         );
         // Elsewhere, each is closed, even one with a title like the current
@@ -5046,7 +5162,7 @@ mod tests {
         fs::write(site.join("little.yml"), pruned).unwrap();
         build(&site).unwrap();
         assert_eq!(
-            sidebar("guide/advanced/deep/limits/index.html"),
+            sidebar("guide/advanced/deep/limits.html"),
             [
                 r#"<a href="/">Home</a>"#,
                 r#"<a href="/api/reference">Api</a>"#,
@@ -5106,17 +5222,17 @@ mod tests {
         // nearest folder above it with a `.git`.
         build(&site).unwrap();
         assert_eq!(
-            read("guide/install/index.html"),
+            read("guide/install.html"),
             links("main/site/docs/guide/install.md")
         );
         // A page's frontmatter has the last word, and a link from the root of
         // the site gets its path. `repository.enabled` turns both links off,
         // whatever else it sets. The 404 page isn't built from a file.
         assert_eq!(
-            read("guide/reference/index.html"),
+            read("guide/reference.html"),
             format!("{repo} | /little/api/ | {repo}/edit/main/site/docs/guide/reference.md")
         );
-        assert_eq!(read("guide/generated/index.html"), format!("{repo} |  | "));
+        assert_eq!(read("guide/generated.html"), format!("{repo} |  | "));
         assert_eq!(read(NOT_FOUND_FILE), format!("{repo} |  | "));
 
         // In a worktree, `.git` is a file. A site can link to another branch.
@@ -5176,7 +5292,7 @@ mod tests {
             assert!(home.contains(&link), "{link} in {home}");
         }
         // A page can turn its links off, and the 404 page has neither.
-        let guide = read("guide/index.html");
+        let guide = read("guide.html");
         assert!(!guide.contains("Edit this page"), "{guide}");
         assert!(!guide.contains("View source of this page"), "{guide}");
         let not_found = read(NOT_FOUND_FILE);
@@ -5242,7 +5358,7 @@ mod tests {
 
         let read = |path: &str| fs::read_to_string(site.join("dist").join(path)).unwrap();
         let meta = |text: &str| format!(r#"<meta name="description" content="{text}">"#);
-        let guide = read("guide/index.html");
+        let guide = read("guide.html");
         assert!(guide.contains(&meta("All about it")), "{guide}");
         assert!(!guide.contains("Docs that just work"), "{guide}");
         // The header doesn't show it, so it's only in the meta tag.
@@ -5285,7 +5401,7 @@ mod tests {
             format!("{nav} / [Setup #setup [Requirements #requirements]][Usage #usage]")
         );
         // A page without headings has an empty `page.outline.items`.
-        assert_eq!(read("guide/install/index.html"), format!("{nav} / "));
+        assert_eq!(read("guide/install.html"), format!("{nav} / "));
     }
 
     #[test]
@@ -5305,7 +5421,7 @@ mod tests {
         let read = |path: &str| fs::read_to_string(site.join("dist").join(path)).unwrap();
         let toc = r#"<nav class="toc""#;
         assert!(read("index.html").contains(toc));
-        assert!(!read("guide/index.html").contains(toc));
+        assert!(!read("guide.html").contains(toc));
     }
 
     #[test]
@@ -5418,10 +5534,10 @@ mod tests {
         let read = |path: &str| fs::read_to_string(site.join("dist").join(path)).unwrap();
         assert_eq!(read("index.html"), "Setup [Install; ]; from 2 to 3");
         assert_eq!(
-            read("deep/index.html"),
+            read("deep.html"),
             "Setup [Install [From source; ]; ]; from 2 to 4"
         );
-        assert_eq!(read("whole/index.html"), "Whole [Setup; ]; from 1 to 2");
+        assert_eq!(read("whole.html"), "Whole [Setup; ]; from 1 to 2");
 
         // Levels a page can't have stop the build, naming the page.
         let page = site.join("docs").join("deep.md");
@@ -5535,7 +5651,7 @@ mod tests {
         // Settings merge key by key, so `previous` keeps its URL, and `next`
         // is turned off.
         assert_eq!(
-            read("guide/index.html"),
+            read("guide.html"),
             "tutorial /elsewhere: Start here / < Guide >"
         );
         // Only the theme sees it: the page is built at its own URL, with the
@@ -5543,7 +5659,7 @@ mod tests {
         assert!(!site.join("dist/elsewhere").exists());
         assert_eq!(read("index.html"), "home /: < Home > Guide /guide");
         assert_eq!(
-            read("reference/index.html"),
+            read("reference.html"),
             "page /reference: Guide /guide < Reference >"
         );
     }
@@ -5574,10 +5690,7 @@ mod tests {
         // `next` follow it. A page that isn't in it has neither.
         let read = |path: &str| fs::read_to_string(site.join("dist").join(path)).unwrap();
         let nav = "Start; Home (house); GitHub; ";
-        assert_eq!(
-            read("guide/install/index.html"),
-            format!("{nav}< Install > /")
-        );
+        assert_eq!(read("guide/install.html"), format!("{nav}< Install > /"));
         assert_eq!(
             read("index.html"),
             format!("{nav}/guide/install < Home > https://github.com/withlittle/little")
@@ -5626,13 +5739,13 @@ mod tests {
         // `previous`, and `next` follow the whole nav, as they do without
         // `prune`.
         assert_eq!(
-            read("guide/advanced/tuning/index.html"),
+            read("guide/advanced/tuning.html"),
             "Home /; Api /api/reference; \
              Guide /guide/ [Advanced [Tuning /guide/advanced/tuning; ]; Install /guide/install; ]; \
              | Home > Guide > Advanced > | /guide/ < Tuning > /guide/install"
         );
         assert_eq!(
-            read("api/reference/index.html"),
+            read("api/reference.html"),
             "Home /; Api [Reference /api/reference; ]; Guide /guide/; \
              | Home > Api > | / < Reference > /guide/"
         );
@@ -5660,7 +5773,7 @@ mod tests {
             read(NOT_FOUND_FILE),
             "Home /little/; Api /little/api/reference; Guide /little/guide/; "
         );
-        assert!(read("guide/install/index.html").starts_with(
+        assert!(read("guide/install.html").starts_with(
             "Home /little/; Api /little/api/reference; Guide /little/guide/ \
              [Advanced /little/guide/advanced/tuning; Install /little/guide/install; ]; "
         ));
@@ -5671,7 +5784,7 @@ mod tests {
         let whole = "Home /; Api [Reference /api/reference; ]; \
                      Guide /guide/ [Advanced [Tuning /guide/advanced/tuning; ]; \
                      Install /guide/install; ]; ";
-        for path in ["index.html", "guide/install/index.html", NOT_FOUND_FILE] {
+        for path in ["index.html", "guide/install.html", NOT_FOUND_FILE] {
             assert!(read(path).starts_with(whole), "{path}");
         }
     }
@@ -5695,7 +5808,7 @@ mod tests {
         // The site isn't in a repository, so git has no dates for it.
         build_as_of(&site, git::tests::when("2026-11-19T13:37:42.5+11:00")).unwrap();
         let read = |path: &str| fs::read_to_string(site.join("dist").join(path)).unwrap();
-        for path in ["index.html", "guide/index.html", "404.html"] {
+        for path in ["index.html", "guide.html", "404.html"] {
             let built = "2026-11-19T02:37:42Z &copy; 2026 Little []";
             assert_eq!(read(path), built, "{path}");
         }
@@ -5731,9 +5844,9 @@ mod tests {
         write(&site, &[("docs/guide.md", "# Guide\n\nMore.\n")]);
         let rebuilt = rebuild(&site, &built).unwrap();
         assert_eq!(rebuilt.time, time);
-        assert!(rebuilt.written.contains(&native("guide/index.html")));
+        assert!(rebuilt.written.contains(&native("guide.html")));
         assert!(!rebuilt.written.contains(&native("index.html")));
-        let guide = fs::read_to_string(site.join("dist/guide/index.html")).unwrap();
+        let guide = fs::read_to_string(site.join("dist/guide.html")).unwrap();
         assert!(guide.starts_with("2026-11-19T02:37:42Z <h1"), "{guide}");
         assert!(guide.contains("<p>More.</p>"), "{guide}");
     }
@@ -5778,28 +5891,28 @@ mod tests {
         let built = build(&site).unwrap();
         let read = |path: &str| fs::read_to_string(site.join("dist").join(path)).unwrap();
         assert_eq!(read("index.html"), format!("{jan} {jan} {mar}"));
-        assert_eq!(read("guide/index.html"), format!("{jan} {feb} {mar}"));
+        assert_eq!(read("guide.html"), format!("{jan} {feb} {mar}"));
         // A file that's renamed keeps its history.
-        assert_eq!(read("new/index.html"), format!("{jan} {mar} {mar}"));
+        assert_eq!(read("new.html"), format!("{jan} {mar} {mar}"));
         // A page's frontmatter replaces its own, as it's written.
         let pinned = format!("{jan} 2020-02-02 {mar}");
-        assert_eq!(read("pinned/index.html"), pinned);
+        assert_eq!(read("pinned.html"), pinned);
         // A page whose file isn't committed has none, nor has one with no
         // file.
-        assert_eq!(read("draft/index.html"), format!("- - {mar}"));
+        assert_eq!(read("draft.html"), format!("- - {mar}"));
         assert_eq!(read("404.html"), format!("- - {mar}"));
 
         // A rebuild has the same dates, so renders nothing again, until
         // there's another commit, which every page has as the site's.
         let rebuilt = rebuild(&site, &built).unwrap();
-        for page in ["index.html", "guide/index.html", "draft/index.html"] {
+        for page in ["index.html", "guide.html", "draft.html"] {
             assert!(!rebuilt.written.contains(&native(page)), "{page}");
         }
         commit_all_at(&site, apr);
         rebuild(&site, &rebuilt).unwrap();
         assert_eq!(read("index.html"), format!("{jan} {apr} {apr}"));
-        assert_eq!(read("guide/index.html"), format!("{jan} {feb} {apr}"));
-        assert_eq!(read("draft/index.html"), format!("{apr} {apr} {apr}"));
+        assert_eq!(read("guide.html"), format!("{jan} {feb} {apr}"));
+        assert_eq!(read("draft.html"), format!("{apr} {apr} {apr}"));
         assert_eq!(read("404.html"), format!("- - {apr}"));
 
         // A shallow clone has the commit it's built from, whole, but not the
@@ -5809,11 +5922,11 @@ mod tests {
         git_in(&clone, &["clone", "--quiet", "--depth", "1", &url, "."]);
         build(&clone).unwrap();
         let read = |path: &str| fs::read_to_string(clone.join("dist").join(path)).unwrap();
-        for path in ["index.html", "guide/index.html", "draft/index.html"] {
+        for path in ["index.html", "guide.html", "draft.html"] {
             assert_eq!(read(path), format!("- - {apr}"), "{path}");
         }
         // Its frontmatter still gives a page one.
-        assert_eq!(read("pinned/index.html"), format!("- 2020-02-02 {apr}"));
+        assert_eq!(read("pinned.html"), format!("- 2020-02-02 {apr}"));
     }
 
     #[test]
@@ -5844,12 +5957,12 @@ mod tests {
         let read = |path: &str| fs::read_to_string(site.join("dist").join(path)).unwrap();
         // The site's files, as they are, have the history of `HEAD`.
         assert_eq!(read("index.html"), format!("{jan} {jan} {feb}"));
-        assert_eq!(read("guide/index.html"), format!("{jan} {feb} {feb}"));
-        assert_eq!(read("new/index.html"), format!("{feb} {feb} {feb}"));
+        assert_eq!(read("guide.html"), format!("{jan} {feb} {feb}"));
+        assert_eq!(read("new.html"), format!("{feb} {feb} {feb}"));
         // A version from a ref has its ref's, but the site's own date is the
         // same in every version.
         assert_eq!(read("1.0/index.html"), format!("{jan} {jan} {feb}"));
-        assert_eq!(read("1.0/guide/index.html"), format!("{jan} {jan} {feb}"));
+        assert_eq!(read("1.0/guide.html"), format!("{jan} {jan} {feb}"));
         assert!(!site.join("dist/1.0/new").exists());
     }
 
@@ -5933,7 +6046,7 @@ mod tests {
         // So does one the author writes where little would, like `previous`,
         // but not a setting of the theme's own, like `logo`.
         assert_eq!(
-            read("guide/install/index.html"),
+            read("guide/install.html"),
             format!(
                 "{nav}| /little/guide/install | /little/start/  | /little/ /little/guide/ \
                  | | | /logo.png"
@@ -5962,7 +6075,7 @@ mod tests {
         build(&site).unwrap();
         let github = "https://github.com/withlittle/little";
         assert_eq!(
-            read("guide/install/index.html"),
+            read("guide/install.html"),
             format!(
                 "/little/guide/install {github} | /little/guide/install \
                  | /little/start/ {github} | | | | /logo.png"
@@ -6112,12 +6225,7 @@ mod tests {
             ("theme/_templates/default.html", template),
         ]);
         let dist = site.join("dist");
-        let files = [
-            "index.html",
-            "guide/index.html",
-            "about/index.html",
-            "logo.svg",
-        ];
+        let files = ["index.html", "guide.html", "about.html", "logo.svg"];
         // Each file that's left as it was, of those a build writes, found by
         // writing over them all first.
         let left = |last: &Built| {
@@ -6139,8 +6247,8 @@ mod tests {
         // A page whose text changes is rendered again, alone.
         write(&site, &[("docs/guide.md", "# Guide\n\nSecond.\n")]);
         let (built, unwritten) = left(&built);
-        assert_eq!(unwritten, ["index.html", "about/index.html", "logo.svg"]);
-        let guide = fs::read_to_string(dist.join("guide/index.html")).unwrap();
+        assert_eq!(unwritten, ["index.html", "about.html", "logo.svg"]);
+        let guide = fs::read_to_string(dist.join("guide.html")).unwrap();
         assert!(guide.contains("<p>Second.</p>"), "{guide}");
 
         // Its title is in the nav, so in every page.
@@ -6161,10 +6269,10 @@ mod tests {
         fs::remove_file(site.join("docs/about.md")).unwrap();
         let built = rebuild(&site, &built).unwrap();
         assert!(!dist.join("about").exists());
-        fs::remove_file(dist.join("guide/index.html")).unwrap();
+        fs::remove_file(dist.join("guide.html")).unwrap();
         let built = rebuild(&site, &built).unwrap();
         assert_eq!(
-            fs::read_to_string(dist.join("guide/index.html")).unwrap(),
+            fs::read_to_string(dist.join("guide.html")).unwrap(),
             "Guiding"
         );
 
@@ -6232,7 +6340,7 @@ mod tests {
         write(&site, &[("docs/guide.md", "# Guide\n\nSecond.\n")]);
         let built = rebuild(&site, &rebuilt).unwrap();
         assert_eq!(kept(&built, &rebuilt), (2, 1));
-        let guide = fs::read_to_string(site.join("dist/guide/index.html")).unwrap();
+        let guide = fs::read_to_string(site.join("dist/guide.html")).unwrap();
         assert!(guide.contains("<p>Second.</p>"), "{guide}");
 
         // A page that moves leads its links from another folder.
@@ -6279,7 +6387,7 @@ mod tests {
         build(&site).unwrap();
         assert!(site.join("dist/guide/style.css").is_file());
 
-        // ...but not on one, or where one's folder goes, whether it's the
+        // ...but not on one, or beside one, with its name, whether it's the
         // theme's or one in the source.
         let built_from = |file: &str| {
             let source = site.join("docs").join(native(file));
@@ -6289,7 +6397,7 @@ mod tests {
             for (file, page) in [
                 ("index.html", built_from("README.md")),
                 ("guide/install", built_from("guide/install.md")),
-                ("guide/install/index.html", built_from("guide/install.md")),
+                ("guide/install.html", built_from("guide/install.md")),
                 ("404.html", "the 404 page".to_string()),
             ] {
                 let path = folder.join(native(file));
@@ -6315,8 +6423,9 @@ mod tests {
         ]);
         build(&site).unwrap();
 
-        // `guide.md` would be built into `guide/index.html` too, so the build
-        // stops, and leaves the last one in place.
+        // `guide.md` would be the page at `/guide`, which a host can't tell
+        // from `/guide/`, so the build stops, and leaves the last one in
+        // place.
         fs::write(site.join("docs/guide.md"), "# Also the guide\n").unwrap();
         let message = format!("{:#}", build(&site).unwrap_err());
         let docs = site.join("docs");
@@ -6328,6 +6437,54 @@ mod tests {
         assert_eq!(message, expected);
         let guide = fs::read_to_string(site.join("dist/guide/index.html")).unwrap();
         assert_eq!(guide, "Guide");
+    }
+
+    #[test]
+    fn a_page_cant_be_beside_a_folder_of_its_name() {
+        let (_tmp, site) = scratch(&[
+            ("little.yml", IN_THEME),
+            ("docs/README.md", "# Home\n"),
+            ("docs/guide.md", "# Guide\n"),
+            ("theme/_templates/default.html", "{{ page.title }}"),
+        ]);
+        build(&site).unwrap();
+        let dist = site.join("dist");
+        let read = |path: &str| fs::read_to_string(dist.join(path)).unwrap();
+        assert_eq!(read("guide.html"), "Guide");
+
+        // The page is at `/guide`, which a host can't tell from `/guide/`,
+        // the folder, so anything in a folder of its name stops the build:
+        // a page, or any other file, in the source or in the theme.
+        let docs = site.join("docs");
+        let guide = docs.join("guide.md");
+        for (file, name) in [
+            ("docs/guide/install.md", "the page built from "),
+            ("docs/guide/images/setup.png", ""),
+            ("theme/_static/guide/style.css", ""),
+        ] {
+            let file = site.join(native(file));
+            fs::create_dir_all(file.parent().unwrap()).unwrap();
+            fs::write(&file, "# Install\n").unwrap();
+            let message = format!("{:#}", build(&site).unwrap_err());
+            let expected = format!(
+                "the page built from {} clashes with {name}{}: a page can't be beside a folder \
+                 of its name, so make it the folder's README, or rename one",
+                guide.display(),
+                file.display()
+            );
+            assert_eq!(message, expected);
+            fs::remove_file(&file).unwrap();
+        }
+        // The last build is left in place.
+        assert_eq!(read("guide.html"), "Guide");
+
+        // As the folder's README, it's the folder's own page, at `/guide/`.
+        fs::rename(&guide, docs.join(native("guide/README.md"))).unwrap();
+        fs::write(docs.join(native("guide/install.md")), "# Install\n").unwrap();
+        build(&site).unwrap();
+        assert_eq!(read("guide/index.html"), "Guide");
+        assert_eq!(read("guide/install.html"), "Install");
+        assert!(!dist.join("guide.html").exists());
     }
 
     #[test]
@@ -6420,7 +6577,7 @@ mod tests {
         // `exclude`, and those under it, but not one that only starts with
         // the same letters, and a page's own `search.enabled` has the last
         // word.
-        assert!(dist.join("other/a/index.html").is_file());
+        assert!(dist.join("other/a.html").is_file());
         let urls = indexed_urls(&dist);
         assert_eq!(urls, ["/", "/other/deep/b", "/others", "/this/new"]);
 
@@ -6512,8 +6669,8 @@ mod tests {
         for (path, enabled) in [
             ("index.html", "True"),
             ("old/index.html", "False"),
-            ("old/kept/index.html", "True"),
-            ("secret/index.html", "False"),
+            ("old/kept.html", "True"),
+            ("secret.html", "False"),
             (NOT_FOUND_FILE, "False"),
         ] {
             assert_eq!(
@@ -6533,9 +6690,10 @@ mod tests {
             ("theme/little.yml", "site: { search: { enabled: true } }\n"),
             ("theme/_templates/default.html", "{{ page.title }}"),
         ]);
-        // A page at /pagefind, or a file beside search's files, is fine...
-        fs::write(site.join("docs/pagefind.md"), "# Pagefind\n").unwrap();
+        // The page of the folder at /pagefind/, or a file beside search's
+        // files, is fine...
         fs::create_dir_all(site.join("docs/pagefind")).unwrap();
+        fs::write(site.join("docs/pagefind/README.md"), "# Pagefind\n").unwrap();
         fs::write(site.join("docs/pagefind/notes.txt"), "notes").unwrap();
         build(&site).unwrap();
         let dist = site.join("dist");
@@ -6566,9 +6724,22 @@ mod tests {
             fs::remove_file(file).unwrap();
         }
 
-        // ...or one where their folder goes.
-        fs::remove_file(docs.join("pagefind.md")).unwrap();
+        // ...or a page beside their folder, which is named as the folder
+        // is, so a host can't tell their URLs apart...
         fs::remove_dir_all(docs.join("pagefind")).unwrap();
+        let page = docs.join("pagefind.md");
+        fs::write(&page, "# Pagefind\n").unwrap();
+        let message = format!("{:#}", build(&site).unwrap_err());
+        let expected = format!(
+            "the page built from {} clashes with /pagefind/, where little writes files for \
+             search: a page can't be beside a folder of its name, so make it the folder's \
+             README, or rename one",
+            page.display()
+        );
+        assert_eq!(message, expected);
+        fs::remove_file(&page).unwrap();
+
+        // ...or one where their folder goes.
         fs::write(docs.join("pagefind"), "a file, not a folder").unwrap();
         let message = format!("{:#}", build(&site).unwrap_err());
         let expected = format!(
@@ -6655,7 +6826,7 @@ mod tests {
         // it's not there, to its home.
         let all = "2.0* /proj/ 1.4 /proj/1.4/ ";
         assert_eq!(
-            head("guide/index.html"),
+            head("guide.html"),
             format!(
                 "New 2.0 | {all}| 2.0* /proj/guide 1.4 /proj/1.4/guide/ | {} | {}",
                 file("main", "guide.md"),
@@ -6663,7 +6834,7 @@ mod tests {
             )
         );
         assert_eq!(
-            head("new/index.html"),
+            head("new.html"),
             format!(
                 "New 2.0 | {all}| 2.0* /proj/new 1.4 /proj/1.4/ | {} | {}",
                 file("main", "new.md"),
@@ -6681,7 +6852,7 @@ mod tests {
             )
         );
         assert_eq!(
-            head("1.4/old/index.html"),
+            head("1.4/old.html"),
             format!(
                 "New 1.4 | {all}| 2.0* /proj/ 1.4 /proj/1.4/old | {} | ",
                 file(&v1_4, "old.md")
@@ -6702,14 +6873,10 @@ mod tests {
 
         // A file from a ref is named as git names it, and a page's URL is
         // from the root of the site.
-        let old = Path::new("1.4/old/index.html");
+        let old = Path::new("1.4/old.html");
         assert_eq!(built.origins[old], "v1.4:docs/old.md");
         assert_eq!(built.urls[old], "/1.4/old");
-        let from_refs = [
-            "1.4/index.html",
-            "1.4/guide/index.html",
-            "1.4/old/index.html",
-        ];
+        let from_refs = ["1.4/index.html", "1.4/guide/index.html", "1.4/old.html"];
         let from_refs: HashSet<_> = from_refs.into_iter().map(PathBuf::from).collect();
         assert_eq!(built.from_refs, from_refs);
 
@@ -6728,21 +6895,21 @@ mod tests {
         let all = "dev /proj/dev/ 2.0* /proj/ 1.4 /proj/versions/1.4/ ";
         let new = "dev /proj/dev/new 2.0* /proj/new 1.4 /proj/versions/1.4/ ";
         assert_eq!(
-            head("new/index.html"),
+            head("new.html"),
             format!("New 2.0 | {all}| {new}| {} | ", file(&v2_0, "new.md"))
         );
-        assert!(read("new/index.html").contains("<h1 id=\"new\">New<"));
+        assert!(read("new.html").contains("<h1 id=\"new\">New<"));
         assert_eq!(
-            head("dev/new/index.html"),
+            head("dev/new.html"),
             format!(
                 "New dev | {all}| {new}| {} | {}",
                 file("main", "new.md"),
                 edit("new.md")
             )
         );
-        assert!(read("dev/new/index.html").contains("<h1 id=\"newer\">Newer<"));
+        assert!(read("dev/new.html").contains("<h1 id=\"newer\">Newer<"));
         assert_eq!(
-            head("versions/1.4/old/index.html"),
+            head("versions/1.4/old.html"),
             format!(
                 "New 1.4 | {all}| dev /proj/dev/ 2.0* /proj/ 1.4 /proj/versions/1.4/old | {} | ",
                 file(&v1_4, "old.md")
@@ -6753,7 +6920,7 @@ mod tests {
                 .contains(r#"<a href="/proj/versions/1.4/old">the old page</a>"#)
         );
         assert_eq!(
-            built.urls[Path::new("versions/1.4/old/index.html")],
+            built.urls[Path::new("versions/1.4/old.html")],
             "/versions/1.4/old"
         );
         assert_eq!(
@@ -6762,9 +6929,9 @@ mod tests {
         );
         assert!(!dist.join("dev").join(NOT_FOUND_FILE).exists());
         assert!(!dist.join("1.4").exists());
-        assert!(built.from_refs.contains(Path::new("new/index.html")));
-        assert!(!built.from_refs.contains(Path::new("dev/new/index.html")));
-        assert!((built.from_refs).contains(Path::new("versions/1.4/old/index.html")));
+        assert!(built.from_refs.contains(Path::new("new.html")));
+        assert!(!built.from_refs.contains(Path::new("dev/new.html")));
+        assert!((built.from_refs).contains(Path::new("versions/1.4/old.html")));
     }
 
     #[test]
@@ -6954,7 +7121,7 @@ mod tests {
             read("widgets/that/index.html"),
             "/widgets/that to /tools/that"
         );
-        assert_eq!(read("1.4/widgets/this/index.html"), "This");
+        assert_eq!(read("1.4/widgets/this.html"), "This");
         assert_eq!(
             read("1.4/widgets/early/index.html"),
             "/1.4/widgets/early to /1.4/tools/early"
@@ -7017,9 +7184,9 @@ mod tests {
             read("guide/setup/index.html"),
             "/guide/setup to /guide/install | / /1.4/"
         );
-        assert_eq!(read("1.4/guide/setup/index.html"), "Setup");
+        assert_eq!(read("1.4/guide/setup.html"), "Setup");
         assert_eq!(read("faq/index.html"), "/faq to /guide/install | / /1.4/");
-        assert_eq!(read("1.4/faq/index.html"), "FAQ");
+        assert_eq!(read("1.4/faq.html"), "FAQ");
         // One to another site is in each that has nothing where it's from.
         assert_eq!(
             read("elsewhere/index.html"),
@@ -7125,8 +7292,13 @@ mod tests {
         fs::write(docs.join("notes/1.4.md"), "# Notes\n").unwrap();
         build(&site).unwrap();
         let dist = site.join("dist");
-        for page in ["versions", "versions/1", "versions/1.4", "notes/1.4"] {
-            assert!(dist.join(page).join("index.html").is_file(), "{page}");
+        for page in [
+            "versions/index.html",
+            "versions/1.html",
+            "versions/1.4/index.html",
+            "notes/1.4.html",
+        ] {
+            assert!(dist.join(page).is_file(), "{page}");
         }
 
         // Nor can a version be where search's files are.
@@ -7229,9 +7401,9 @@ mod tests {
 
         let built = build(&site).unwrap();
         let read = |path: &str| fs::read_to_string(site.join("dist").join(path)).unwrap();
-        let hello = read("1.4/reference/hello/index.html");
+        let hello = read("1.4/reference/hello.html");
         assert!(hello.starts_with("<h1 id=\"hello\">Hello<"), "{hello}");
-        let hi = read("reference/hello/index.html");
+        let hi = read("reference/hello.html");
         assert!(hi.starts_with("<h1 id=\"hi\">Hi<"), "{hi}");
         // What it warns of, and the pages it adds, say which version they're
         // in.
@@ -7244,7 +7416,7 @@ mod tests {
             ]
         );
         assert_eq!(
-            built.origins[Path::new("1.4/reference/hello/index.html")],
+            built.origins[Path::new("1.4/reference/hello.html")],
             "plugin `api`'s reference/hello.md at v1.4"
         );
 
@@ -7267,7 +7439,7 @@ mod tests {
                      files: { add: [{ path: reference/hello.md, read: lib/hello.md }] } } }";
         fs::write(site.join("little.yml"), site_cfg(moved)).unwrap();
         let built = build(&site).unwrap();
-        let hi = read("1.4/reference/hello/index.html");
+        let hi = read("1.4/reference/hello.html");
         assert!(hi.starts_with("<h1 id=\"hi\">Hi<"), "{hi}");
         assert_eq!(built.warnings.len(), 2);
         // ...or turn it off, for that version alone.
@@ -7276,7 +7448,7 @@ mod tests {
         let built = build(&site).unwrap();
         assert!(!site.join("dist/1.4/reference").exists());
         assert!(site.join("dist/1.4/index.html").is_file());
-        assert!(site.join("dist/reference/hello/index.html").is_file());
+        assert!(site.join("dist/reference/hello.html").is_file());
         let warnings = warnings_of(&built);
         assert_eq!(warnings, ["plugin `api`: can't read pkg/broken.py"]);
     }
@@ -7298,7 +7470,7 @@ mod tests {
         build(&site).unwrap();
 
         let read = |path: &str| fs::read_to_string(site.join("dist").join(path)).unwrap();
-        let latest = read("guide/index.html");
+        let latest = read("guide.html");
         assert!(
             latest.contains(
                 "<button type=\"button\" popovertarget=\"_versions\">\
@@ -7313,7 +7485,7 @@ mod tests {
         assert!(!latest.contains("version-note"), "{latest}");
         // Each version but the one at `/` notes which it is, and links to the
         // one at `/`.
-        let alpha = read("2.0-alpha/guide/index.html");
+        let alpha = read("2.0-alpha/guide.html");
         assert!(
             alpha.contains("<a href=\"/2.0-alpha/guide\" aria-current=\"true\">2.0 (Alpha)</a>"),
             "{alpha}"
@@ -7353,7 +7525,7 @@ mod tests {
         )
         .unwrap();
         build(&site).unwrap();
-        let only = read("guide/index.html");
+        let only = read("guide.html");
         assert!(!only.contains("version-menu"), "{only}");
         assert!(!only.contains("version-note"), "{only}");
     }

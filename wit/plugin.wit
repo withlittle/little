@@ -232,7 +232,7 @@ interface destination {
 
     /// Called once, after every page is put in the theme, before the site
     /// is written, with the path of each file it writes, from its folder in
-    /// the destination, like `guide/install/index.html`, sorted. Gives back
+    /// the destination, like `guide/install.html`, sorted. Gives back
     /// files to add, like a `sitemap.xml`, but not where one is. An error
     /// stops the build.
     destination: func(paths: list<string>) -> result<list<file>, string>;
