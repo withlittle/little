@@ -1,6 +1,8 @@
 # 0083 — Redirects from old URLs
 
-- Status: accepted
+- Status: accepted; amended by
+  [0084](./0084-redirects-from-a-folder.md) (a redirect can be from every
+  page under a folder, written with `/*`)
 - Date: 2026-11-20
 - Amends: [0002](./0002-theme-structure.md),
   [0013](./0013-pages-that-clash.md),

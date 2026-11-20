@@ -131,7 +131,9 @@ site:
   # with `to`, the URL it leads to, from the root of the site, like
   # /guide/install, or another site's address, and `from`, a list of the URLs
   # that lead there, where a page used to be, like [/guide/setup]. A build
-  # writes a page at each, which sends its reader on.
+  # writes a page at each, which sends its reader on. One whose `to` and
+  # `from` each end in `/*`, like /tools/* and [/widgets/*], is from every
+  # page under a folder, to the same page under another.
 
 # What every page has, unless its frontmatter says otherwise. little works
 # out each of these for a page, from the nav, its headings, and its file, and
