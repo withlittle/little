@@ -13,7 +13,9 @@
 //! the theme writes, to send its reader on to where the redirect leads. A
 //! site with `versions` writes one in each version that has a page or file
 //! where it leads, and none where it's from, as an old version may still
-//! have a page where it was.
+//! have a page where it was. One from every page under a folder, like
+//! `/widgets/*`, is a page for each of the version's pages under the folder
+//! it leads to, where the page would have been.
 //!
 //! [`build`] builds a site from nothing, and [`rebuild`] after the build
 //! before it, for `little serve`: it reads the site as [`build`] does, but
@@ -834,11 +836,15 @@ fn build_after(
         .filter(|(_, written)| writes_redirects && every.is_some() && !**written);
     for (redirect, _) in unwritten {
         let config::Redirect { from, to } = redirect;
-        let why = match redirect.target() {
-            Some(target) => format!(
+        let why = match (redirect.folders(), redirect.target()) {
+            (Some((was, now)), _) => format!(
+                "no version of the site has a page under {now} without a page or file where it \
+                 would be under {was}"
+            ),
+            (None, Some(target)) => format!(
                 "no version of the site has a page or file at {target} without one at {from}"
             ),
-            None => format!("every version of the site has a page or file at {from}"),
+            (None, None) => format!("every version of the site has a page or file at {from}"),
         };
         built.warnings.push(Warning {
             kind: "redirect(s) in `site.redirects` that no version of the site has",
@@ -1514,59 +1520,95 @@ fn finish(
     // version has neither. On a site with versions, each has the redirects
     // it can, as an old one may still have a page where it was, and none
     // where it's gone. On any other site, one it can't have is a mistake.
+    //
+    // One from every page under a folder is a redirect to each of the
+    // version's pages under the folder it leads to, from where the page
+    // would be under the other. It gives way to a page or file that's
+    // there, on any site, as some of a folder's pages may have stayed, and
+    // to a redirect from that URL alone, as a page may have been renamed
+    // as its folder was.
     let mut redirected = Vec::new();
     if theme.renders(PageType::Redirect) {
         let titles: HashMap<&str, &str> = (pages.iter())
             .map(|page| (page.url.trim_end_matches('/'), page.title.as_str()))
             .collect();
+        let alone: HashSet<String> = (redirects.iter())
+            .filter(|redirect| redirect.folders().is_none())
+            .map(|redirect| html_file_at(&redirect.from))
+            .collect();
         let mut files = Vec::new();
         for (index, redirect) in redirects.iter().enumerate() {
-            let config::Redirect { from, to } = redirect;
-            let file = html_file_at(from);
-            // Where it leads is a page, at the file a reader of its URL is
-            // shown, or any other file, at its own path.
-            let target = redirect.target();
-            let is_there = |target: &str| {
-                paths.contains(&html_file_at(target)) || paths.contains(target.trim_matches('/'))
+            let folders = redirect.folders();
+            let each: Vec<(Cow<str>, &str)> = match folders {
+                None => vec![(Cow::from(&redirect.from), redirect.to.as_str())],
+                Some((was, now)) => (pages.iter())
+                    .filter_map(|page| {
+                        let rest = page.url.strip_prefix(now)?;
+                        Some((Cow::from(format!("{was}{rest}")), page.url.as_str()))
+                    })
+                    .collect(),
             };
-            let leads_nowhere = target.is_some_and(|target| !is_there(target));
-            if versions.is_some() && (leads_nowhere || paths.contains(&file)) {
-                continue;
+            if let (Some((_, now)), true, None) = (folders, each.is_empty(), versions) {
+                let config::Redirect { from, to } = redirect;
+                bail!("`site.redirects` sends {from} to {to}, but there's no page under {now}");
             }
-            if let (true, Some(target)) = (leads_nowhere, target) {
-                bail!(
-                    "`site.redirects` sends {from} to {to}, but there's no page or file at \
-                     {target}"
-                );
-            }
-            let title = target.and_then(|target| titles.get(target.trim_end_matches('/')));
-            let data = PageData {
-                redirect: Some(Target {
-                    url: to,
-                    title: title.copied(),
-                }),
-                ..PageData::bare(PageType::Redirect, from, homes.as_deref())
-            };
-            let name = format!("the redirect from {}{from}", place.prefix);
-            let path = place.destination.join(&file);
-            let rendered = page_value(&data, &bare, &every_page_wants, &place.url)
-                .and_then(|value| {
-                    let url = place.url.link(from);
-                    render(PageType::Redirect, value, &url, &name, &path)
-                })
-                .with_context(|| format!("rendering {name}"))?;
-            if let Some((html, wrote, _)) = rendered {
-                outputs.push(Output {
-                    path,
-                    url: format!("{}{from}", place.prefix),
-                    html,
-                    wrote,
-                    origin: name.clone(),
-                    name,
-                    links: Vec::new(),
-                });
-                files.push(file);
-                redirected.push(index);
+            for (from, to) in each {
+                let from = from.as_ref();
+                let file = html_file_at(from);
+                if folders.is_some() && (paths.contains(&file) || alone.contains(&file)) {
+                    continue;
+                }
+                // Where it leads is a page, at the file a reader of its URL
+                // is shown, or any other file, at its own path.
+                let target = match folders {
+                    Some(_) => Some(to),
+                    None => redirect.target(),
+                };
+                let is_there = |target: &str| {
+                    paths.contains(&html_file_at(target))
+                        || paths.contains(target.trim_matches('/'))
+                };
+                let leads_nowhere = target.is_some_and(|target| !is_there(target));
+                if versions.is_some() && (leads_nowhere || paths.contains(&file)) {
+                    continue;
+                }
+                if let (true, Some(target)) = (leads_nowhere, target) {
+                    bail!(
+                        "`site.redirects` sends {from} to {to}, but there's no page or file at \
+                         {target}"
+                    );
+                }
+                let title = target.and_then(|target| titles.get(target.trim_end_matches('/')));
+                let data = PageData {
+                    redirect: Some(Target {
+                        url: to,
+                        title: title.copied(),
+                    }),
+                    ..PageData::bare(PageType::Redirect, from, homes.as_deref())
+                };
+                let name = format!("the redirect from {}{from}", place.prefix);
+                let path = place.destination.join(&file);
+                let rendered = page_value(&data, &bare, &every_page_wants, &place.url)
+                    .and_then(|value| {
+                        let url = place.url.link(from);
+                        render(PageType::Redirect, value, &url, &name, &path)
+                    })
+                    .with_context(|| format!("rendering {name}"))?;
+                if let Some((html, wrote, _)) = rendered {
+                    outputs.push(Output {
+                        path,
+                        url: format!("{}{from}", place.prefix),
+                        html,
+                        wrote,
+                        origin: name.clone(),
+                        name,
+                        links: Vec::new(),
+                    });
+                    files.push(file);
+                    if redirected.last() != Some(&index) {
+                        redirected.push(index);
+                    }
+                }
             }
         }
         // Only now, so each is checked against the version's pages and
@@ -4533,6 +4575,122 @@ mod tests {
     }
 
     #[test]
+    fn a_redirect_from_every_page_under_a_folder_leads_to_each_page_there_now() {
+        let (_tmp, site) = scratch(&[
+            ("docs/README.md", "# Home\n"),
+            ("docs/tools/README.md", "# Tools\n"),
+            ("docs/tools/this.md", "# This\n"),
+            ("docs/tools/deep/that.md", "# That\n"),
+            ("docs/tools/kept.md", "# Moved\n"),
+            ("docs/tools/data.csv", "a,b\n"),
+            ("docs/widgets/kept.md", "# Kept\n"),
+            ("docs/toolshed.md", "# Shed\n"),
+            ("theme/_templates/default.html", "{{ page.title }}"),
+            (
+                "theme/_templates/redirect.html",
+                "{{ page.url | safe }} to {{ page.redirect.url | safe }} ({{ page.redirect.title }})",
+            ),
+        ]);
+        let redirects = |redirects: &str| {
+            let site_cfg =
+                format!("{IN_THEME}  url: https://example.com/proj\n  redirects:\n{redirects}");
+            fs::write(site.join("little.yml"), site_cfg).unwrap();
+            build(&site).map_err(|e| format!("{e:#}"))
+        };
+        let built = redirects(
+            "    - { to: /tools/*, from: [/widgets/*, /gadgets/*] }\n    \
+             - { to: /tools/this, from: [/gadgets/deep/that] }\n",
+        )
+        .unwrap();
+        let dist = site.join("dist");
+        let read = |path: &str| fs::read_to_string(dist.join(path)).unwrap();
+
+        // Each page under the folder it leads to has a redirect, where the
+        // page would be under each folder it's from: the folder's own page,
+        // and those in its folders, but not its other files.
+        for (file, sends) in [
+            (
+                "widgets/index.html",
+                "/proj/widgets/ to /proj/tools/ (Tools)",
+            ),
+            (
+                "widgets/this/index.html",
+                "/proj/widgets/this to /proj/tools/this (This)",
+            ),
+            (
+                "widgets/deep/that/index.html",
+                "/proj/widgets/deep/that to /proj/tools/deep/that (That)",
+            ),
+            (
+                "gadgets/index.html",
+                "/proj/gadgets/ to /proj/tools/ (Tools)",
+            ),
+            (
+                "gadgets/kept/index.html",
+                "/proj/gadgets/kept to /proj/tools/kept (Moved)",
+            ),
+            // It gives way to a page that's still there...
+            ("widgets/kept/index.html", "Kept"),
+            // ...and to a redirect from that URL alone.
+            (
+                "gadgets/deep/that/index.html",
+                "/proj/gadgets/deep/that to /proj/tools/this (This)",
+            ),
+        ] {
+            assert_eq!(read(file), sends, "{file}");
+        }
+        let redirected = |folder: &str| -> Vec<String> {
+            let under = |file: &String| file.starts_with(folder);
+            files_in(&dist).into_iter().filter(under).collect()
+        };
+        assert_eq!(
+            redirected("widgets/"),
+            [
+                "widgets/deep/that/index.html",
+                "widgets/index.html",
+                "widgets/kept/index.html",
+                "widgets/this/index.html",
+            ]
+        );
+        assert_eq!(redirected("toolshed/"), ["toolshed/index.html"]);
+        let this = Path::new("widgets/this/index.html");
+        assert_eq!(built.urls[this], "/widgets/this");
+        assert_eq!(built.origins[this], "the redirect from /widgets/this");
+        assert_eq!(warnings_of(&built), Vec::<String>::new());
+
+        // One from every page of the site, or to every page of it, is each
+        // page's, but for those at a page that's there.
+        redirects("    - { to: /tools/*, from: [/*] }\n").unwrap();
+        assert_eq!(read("index.html"), "Home");
+        assert_eq!(
+            read("this/index.html"),
+            "/proj/this to /proj/tools/this (This)"
+        );
+        redirects("    - { to: /*, from: [/old/*] }\n").unwrap();
+        assert_eq!(read("old/index.html"), "/proj/old/ to /proj/ (Home)");
+        assert_eq!(
+            read("old/tools/this/index.html"),
+            "/proj/old/tools/this to /proj/tools/this (This)"
+        );
+
+        // One that leads to a folder with no pages stops the build.
+        for to in ["/tool", "/toolshed", "/tools/data.csv", "/widgets/kept"] {
+            assert_eq!(
+                redirects(&format!("    - {{ to: {to}/*, from: [/a/*] }}\n")).map(drop),
+                Err(format!(
+                    "`site.redirects` sends /a/* to {to}/*, but there's no page under {to}/"
+                )),
+                "{to}"
+            );
+        }
+        // Two from one URL still do.
+        assert_eq!(
+            redirects("    - { to: /tools/deep/*, from: [/a/*, /a/*] }\n").map(drop),
+            Err("the redirect from /a/that clashes with the redirect from /a/that".to_string())
+        );
+    }
+
+    #[test]
     fn a_theme_without_a_template_writes_no_redirects() {
         let site_cfg = format!(
             "{IN_THEME}  redirects:\n    - {{ to: /guide, from: [/a, /b] }}\n    \
@@ -5860,7 +6018,8 @@ mod tests {
                     "little.yml",
                     &format!(
                         "site:\n  name: Test\n  navigation:\n    prune: {nav_prune}\n  \
-                         redirects:\n    - {{ to: /guide/install, from: [/setup, /a.html] }}\n"
+                         redirects:\n    - {{ to: /guide/install, from: [/setup, /a.html] }}\n    \
+                         - {{ to: /guide/*, from: [/manual/*] }}\n"
                     ),
                 ),
                 (
@@ -5902,7 +6061,8 @@ mod tests {
             let built = check(&rebuild(&site, &built).unwrap(), "after an edit");
 
             // A page gets another title, so the nav changes, and the
-            // redirect to it; a page and a folder go, and a page comes; and
+            // redirects to it; a page and a folder go, and a page comes,
+            // each with the redirect from where it was in its folder; and
             // a file changes.
             write(
                 &site,
@@ -6751,6 +6911,64 @@ mod tests {
         assert_eq!(
             warnings_of(&built),
             ["`site.search.exclude` lists /gone/, but there's no page at that URL, or under it"]
+        );
+    }
+
+    #[test]
+    fn each_version_has_a_folders_redirects_for_its_own_pages() {
+        let site_cfg = format!(
+            "{IN_THEME}  redirects:\n    - {{ to: /tools/*, from: [/widgets/*] }}\n    \
+             - {{ to: /kit/*, from: [/bits/*] }}\n  \
+             versions:\n    - {{ title: \"2.0\", url: / }}\n    \
+             - {{ title: \"1.4\", url: /1.4, ref: v1.4 }}\n"
+        );
+        let (_tmp, site) = versioned_site(
+            &[
+                ("docs/README.md", "# Home\n"),
+                ("docs/widgets/this.md", "# This\n"),
+                ("docs/tools/early.md", "# Early\n"),
+            ],
+            &[
+                ("little.yml", &site_cfg),
+                ("docs/README.md", "# Home\n"),
+                ("docs/tools/this.md", "# This\n"),
+                ("docs/tools/that.md", "# That\n"),
+                ("theme/_templates/default.html", "{{ page.title }}"),
+                (
+                    "theme/_templates/redirect.html",
+                    "{{ page.url | safe }} to {{ page.redirect.url | safe }}",
+                ),
+            ],
+        );
+        let built = build(&site).unwrap();
+        let dist = site.join("dist");
+        let read = |path: &str| fs::read_to_string(dist.join(path)).unwrap();
+
+        // Each version has one for each of its own pages under the folder:
+        // 1.4 still has the page 2.0 has moved, and had one there already.
+        assert_eq!(
+            read("widgets/this/index.html"),
+            "/widgets/this to /tools/this"
+        );
+        assert_eq!(
+            read("widgets/that/index.html"),
+            "/widgets/that to /tools/that"
+        );
+        assert_eq!(read("1.4/widgets/this/index.html"), "This");
+        assert_eq!(
+            read("1.4/widgets/early/index.html"),
+            "/1.4/widgets/early to /1.4/tools/early"
+        );
+        assert!(!dist.join("widgets/early").exists());
+        assert!(!dist.join("1.4/widgets/that").exists());
+
+        // One that no version has a page for is warned of.
+        assert_eq!(
+            warnings_of(&built),
+            [
+                "`site.redirects` sends /bits/* to /kit/*, but no version of the site has a page \
+                 under /kit/ without a page or file where it would be under /bits/"
+            ]
         );
     }
 

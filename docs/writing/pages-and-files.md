@@ -83,7 +83,8 @@ little builds a page at each URL in `from`, which sends its reader on to
   file.
 - `from` is a list, even of one URL. Each is from the root of the site,
   where there's no page now. `/news` and `/news/` are the same URL, and
-  neither covers the URLs under it. One that ends in `.html`, as another
+  neither covers the URLs under it, as [a folder's](#a-folder-youve-renamed)
+  does. One that ends in `.html`, as another
   tool's pages may have, is built at that file's path.
 
 On a site with [versions](versions.md), each URL is from the root of each
@@ -94,3 +95,22 @@ little warns of a redirect that no version has.
 Your theme writes each redirect's page, from its
 [`redirect.html`](../themes/making-a-theme.md#redirects), as the built-in
 theme does.
+
+### A folder you've renamed
+
+End `to` and each `from` with `/*` to redirect every page under a folder:
+
+```yaml
+# little.yml
+site:
+  redirects:
+    - to: /tools/*
+      from:
+        - /widgets/*
+```
+
+Each page under `/tools/` gets a redirect from the same place under
+`/widgets/`, so `/widgets/this` leads to `/tools/this`, and `/widgets/` to
+`/tools/`. A page that's still under `/widgets/` stays as it is. If you
+renamed a page as well, list its old URL in an entry of its own, which
+goes over the folder's.

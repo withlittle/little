@@ -71,7 +71,9 @@
 //!
 //! `redirects` lists the site's redirects, each with `to`, the URL it leads
 //! to, and `from`, the URLs that lead there, where a page used to be, which
-//! the build writes a page at, to send its reader on (see `site`).
+//! the build writes a page at, to send its reader on (see `site`). One whose
+//! `to` and `from` each end in `/*` is from every page under a folder that's
+//! moved, to the same page under the folder it's now in.
 //!
 //! `page` has a group for each thing little works out for a page, which the
 //! group's `enabled` turns off (see [`PageSettings`]): `outline`, its table
@@ -187,10 +189,12 @@ impl Version {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Redirect {
     /// The URL it's from, as it's written, from the root of each version,
-    /// like `/guide/setup`.
+    /// like `/guide/setup`, or, for every page under a folder, `/guide/*`.
     pub from: String,
     /// Where it leads, as it's written: a URL from the root of each
-    /// version, like `/guide/install#usage`, or another site's address.
+    /// version, like `/guide/install#usage`, another site's address, or, for
+    /// one from every page under a folder, the folder they're now in, like
+    /// `/manual/*`.
     pub to: String,
 }
 
@@ -201,6 +205,23 @@ impl Redirect {
     pub fn target(&self) -> Option<&str> {
         from_the_root(&self.to).then(|| self.to.split(['?', '#']).next().unwrap_or_default())
     }
+
+    /// The folder it's from, and the one it leads to, each with the `/` at
+    /// its end, like `/widgets/` and `/tools/`, if it's from every page
+    /// under a folder, as `/widgets/*` is: `None` if it's from one URL.
+    pub fn folders(&self) -> Option<(&str, &str)> {
+        Some((every_page_under(&self.from)?, every_page_under(&self.to)?))
+    }
+}
+
+/// The folder `url` is every page under, with the `/` at its end, like
+/// `/widgets/` for `/widgets/*`: `None` if it's one URL, as it is with a `*`
+/// at the end of its `?query` or `#fragment`.
+fn every_page_under(url: &str) -> Option<&str> {
+    let a_folder = |folder: &&str| {
+        from_the_root(folder) && folder.ends_with('/') && !folder.contains(['*', '?', '#'])
+    };
+    url.strip_suffix('*').filter(a_folder)
 }
 
 /// A plugin a site uses, from `site.plugins`.
@@ -1602,8 +1623,9 @@ fn versions_error() -> anyhow::Error {
 
 /// The site's redirects, from `site.redirects`: one for each URL in each
 /// entry's `from`, in the order they're listed, or none, if it's left empty.
-/// Each is from a URL little can write a page at, and none leads to a URL
-/// that's redirected too, as that would send a reader on twice.
+/// Each is from a URL little can write a page at, or from every page under
+/// a folder, to every page under another, and none leads to a URL that's
+/// redirected too, as that would send a reader on twice.
 fn redirects(site: &Mapping) -> Result<Vec<Redirect>> {
     let entries = match site.get("redirects") {
         None | Some(Value::Null) => return Ok(Vec::new()),
@@ -1644,18 +1666,45 @@ fn redirects(site: &Mapping) -> Result<Vec<Redirect>> {
                  that lead there, like `from: [/guide/setup]`"
             ),
         };
+        // Every page under a folder leads to the same page under another,
+        // in the site, whose pages little can list. A `*` in a `?query` or
+        // a `#fragment` names no file, so it's left as it's written.
+        let folder = every_page_under(to);
+        let path = to.split(['?', '#']).next().unwrap_or_default();
+        if folder.is_none() && from_the_root(to) && path.contains('*') {
+            bail!(
+                "`site.redirects` has a redirect to `{to}`, but a `*` is only for every page \
+                 under a folder, as the end of a URL, like `/tools/*`"
+            );
+        }
         for url in from {
-            match url {
-                Value::String(url) if names_a_page(url) => redirects.push(Redirect {
-                    from: url.clone(),
-                    to: to.clone(),
-                }),
-                _ => bail!(
+            let Some(url) = url
+                .as_str()
+                .filter(|url| names_a_page(every_page_under(url).unwrap_or(url)))
+            else {
+                bail!(
                     "the redirect to {to} in `site.redirects` is from `{}`, but each must be \
                      from a URL from the root of the site, where a page was, like `/guide/setup` \
-                     or `/setup.html`, with no `?` or `#`",
+                     or `/setup.html`, with no `?` or `#`, or from every page under a folder, \
+                     like `/guide/*`",
                     written(url)
+                )
+            };
+            match (every_page_under(url), folder) {
+                (Some(_), None) => bail!(
+                    "`site.redirects` sends {url}, every page under a folder, to {to}, but \
+                     each leads to the same page under another of the site's folders, like \
+                     `to: /tools/*`"
                 ),
+                (None, Some(_)) => bail!(
+                    "`site.redirects` sends {url} to {to}, every page under a folder, so it \
+                     must be from every page under one too, like `{}/*`",
+                    url.trim_end_matches('/')
+                ),
+                _ => redirects.push(Redirect {
+                    from: url.to_string(),
+                    to: to.clone(),
+                }),
             }
         }
     }
@@ -1701,15 +1750,15 @@ fn leads_somewhere(url: &str) -> bool {
 /// Whether a redirect can be from `url`: a URL from the root of the site
 /// with a page's path, which little can write a page at, in the site's
 /// folder, on any system. A page has no `?query` or `#fragment`, and none of
-/// its path's parts is empty, `.`, or `..`, or has a `\` or a `:`, which mean
-/// something else on Windows.
+/// its path's parts is empty, `.`, or `..`, or has a `\`, a `:`, or a `*`,
+/// which mean something else on Windows.
 fn names_a_page(url: &str) -> bool {
     let Some(path) = url.strip_prefix('/') else {
         return false;
     };
     let path = path.strip_suffix('/').unwrap_or(path);
     let folders = |path: &str| !path.split('/').any(|part| matches!(part, "" | "." | ".."));
-    !url.contains(['?', '#', '\\', ':']) && (path.is_empty() || folders(path))
+    !url.contains(['?', '#', '\\', ':', '*']) && (path.is_empty() || folders(path))
 }
 
 /// The error for `site.redirects` that isn't a list of redirects.
@@ -2700,6 +2749,37 @@ mod tests {
                 "/Old Guide/a.b to https://example.com/blog?tag=new#top",
             ]
         );
+        // One from every page under a folder leads to every page under
+        // another, even from, or to, every page of the site.
+        let site_cfg = "site:\n  redirects:\n    - { to: /tools/*, from: [/widgets/*, /Old Guide/*] }\n    \
+                        - { to: /manual/*, from: [/*] }\n    \
+                        - { to: \"https://example.com/*\", from: [/all] }\n    \
+                        - { to: \"/tools/?tag=/*\", from: [/tagged] }\n";
+        assert_eq!(
+            redirects(site_cfg),
+            [
+                "/widgets/* to /tools/*",
+                "/Old Guide/* to /tools/*",
+                "/* to /manual/*",
+                "/all to https://example.com/*",
+                "/tagged to /tools/?tag=/*",
+            ]
+        );
+        let folders = |from: &str, to: &str| {
+            let (from, to) = (from.to_string(), to.to_string());
+            let redirect = Redirect { from, to };
+            redirect
+                .folders()
+                .map(|(from, to)| format!("{from} to {to}"))
+        };
+        assert_eq!(
+            folders("/widgets/*", "/tools/*").unwrap(),
+            "/widgets/ to /tools/"
+        );
+        assert_eq!(folders("/*", "/manual/*").unwrap(), "/ to /manual/");
+        assert_eq!(folders("/all", "https://example.com/*"), None);
+        assert_eq!(folders("/widgets", "/tools"), None);
+        assert_eq!(folders("/widgets/*", "/tools/?tag=/*"), None);
 
         // A site's list replaces its theme's, as any list does.
         assert_eq!(redirects(IN_THEME), ["/themes to /theme"]);
@@ -2816,6 +2896,10 @@ mod tests {
             ("/a/..", "/a/.."),
             ("'/a\\b'", "/a\\b"),
             ("/c:/old", "/c:/old"),
+            ("/a*", "/a*"),
+            ("/a/*/b", "/a/*/b"),
+            ("/a/**", "/a/**"),
+            ("\"*\"", "'*'"),
             ("1.4", "1.4"),
             ("[/old]", "- /old"),
             ("", "null"),
@@ -2825,7 +2909,44 @@ mod tests {
                 format!(
                     "the redirect to /new in `site.redirects` is from `{written}`, but each \
                      must be from a URL from the root of the site, where a page was, like \
-                     `/guide/setup` or `/setup.html`, with no `?` or `#`"
+                     `/guide/setup` or `/setup.html`, with no `?` or `#`, or from every page \
+                     under a folder, like `/guide/*`"
+                ),
+                "{from}"
+            );
+        }
+
+        // A `*` is only for every page under a folder, at the end of a URL
+        // in the site...
+        for to in ["/a*", "/a/*/b", "/a/**", "/*/*", "\"/a/*#usage\""] {
+            let to = to.trim_matches('"');
+            assert_eq!(
+                redirects(&format!(" [{{ to: \"{to}\", from: [/old/*] }}]")),
+                format!(
+                    "`site.redirects` has a redirect to `{to}`, but a `*` is only for every \
+                     page under a folder, as the end of a URL, like `/tools/*`"
+                ),
+                "{to}"
+            );
+        }
+        // ...which leads to every page under another, in the site.
+        for to in ["/new", "/new/", "https://example.com/new/*"] {
+            assert_eq!(
+                redirects(&format!(" [{{ to: \"{to}\", from: [/a, /old/*] }}]")),
+                format!(
+                    "`site.redirects` sends /old/*, every page under a folder, to {to}, but \
+                     each leads to the same page under another of the site's folders, like \
+                     `to: /tools/*`"
+                ),
+                "{to}"
+            );
+        }
+        for (from, like) in [("/old", "/old/*"), ("/old/", "/old/*"), ("/", "/*")] {
+            assert_eq!(
+                redirects(&format!(" [{{ to: /new/*, from: [/a/*, {from}] }}]")),
+                format!(
+                    "`site.redirects` sends {from} to /new/*, every page under a folder, so \
+                     it must be from every page under one too, like `{like}`"
                 ),
                 "{from}"
             );
@@ -2840,12 +2961,22 @@ mod tests {
                 "{to}"
             );
         }
+        assert_eq!(
+            redirects(" [{ to: /a/*, from: [/b/*, /a/*] }]"),
+            "`site.redirects` sends /a/* to itself"
+        );
         // ...and one to a URL that's redirected would send a reader on twice.
         let chained = "\n    - { to: /b/#usage, from: [/a] }\n    - { to: https://example.com/c, from: [/b] }";
         assert_eq!(
             redirects(chained),
             "`site.redirects` sends /a to /b/#usage, but sends /b on to https://example.com/c: \
              send /a to https://example.com/c too, so a reader is sent on once"
+        );
+        let chained = "\n    - { to: /b/*, from: [/a/*] }\n    - { to: /c/*, from: [/b/*] }";
+        assert_eq!(
+            redirects(chained),
+            "`site.redirects` sends /a/* to /b/*, but sends /b/* on to /c/*: send /a/* to /c/* \
+             too, so a reader is sent on once"
         );
     }
 
