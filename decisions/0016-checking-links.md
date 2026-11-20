@@ -10,8 +10,11 @@
   for a code block a plugin can't render, and by
   [0040](./0040-versions-from-git-refs.md), which checks every version's
   links within the site, but not a version from a git ref's links to other
-  sites, and by [0075](./0075-finding-anchors-in-the-sites-pages.md), which
-  has little, not lychee, find the anchors in the site's own pages
+  sites, by [0075](./0075-finding-anchors-in-the-sites-pages.md), which
+  has little, not lychee, find the anchors in the site's own pages, and by
+  [0085](./0085-each-page-in-a-file-named-for-it.md), which leads a
+  link to a page to the page's file, and warns of a link in Markdown to a
+  page with a `/` at its end
 - Date: 2026-10-01
 
 ## Context

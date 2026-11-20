@@ -298,7 +298,7 @@ destination: func(paths: list<string>) -> result<list<file>, string>;
 
 Called once, after every page is put in the theme, before the site is
 written, with the path of each file the build writes, from the destination,
-like `guide/install/index.html`, sorted: the site's pages, its other files,
+like `guide/install.html`, sorted: the site's pages, its other files,
 the theme's static files, and search's. It gives back files to add, like a
 `sitemap.xml` or a `robots.txt`, at paths as for [`files`](#files), but not
 where there's a file or a folder, or in a file.

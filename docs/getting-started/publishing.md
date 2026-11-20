@@ -1,6 +1,6 @@
 ---
 title: Publishing
-description: Publish a site on any static host, or on GitHub Pages with a workflow.
+description: Publish a site on a static host, or on GitHub Pages with a workflow.
 ---
 
 # Publishing
@@ -9,8 +9,8 @@ description: Publish a site on any static host, or on GitHub Pages with a workfl
 little build
 ```
 
-This builds your site into `dist/`, which any static host can serve. On
-GitHub Pages, a [workflow](#publishing-on-github-pages) can
+This builds your site into `dist/`, for a [static host](#choosing-a-host)
+to serve. On GitHub Pages, a [workflow](#publishing-on-github-pages) can
 publish it each time you push.
 
 ## Choosing the site's URL
@@ -30,6 +30,13 @@ little adds the path, `/docs`, to every link, so write links without it.
 
 A site at the root of its domain, like `https://docs.example.com`, needn't
 set `url`, unless its theme makes absolute links, like for link previews.
+
+## Choosing a host
+
+little builds each page into a file named for it, so the page at
+`/guide/install` is `dist/guide/install.html`. Your host must serve that
+file at the page's URL, without the `.html`, as GitHub Pages does. Some
+hosts call this clean URLs, and have a setting to turn it on.
 
 ## A 404 page
 

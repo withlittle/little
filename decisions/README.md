@@ -94,3 +94,4 @@ made, and link to each other.
 - [0082 — The dates of a site and its pages](0082-the-dates-of-a-site-and-its-pages.md)
 - [0083 — Redirects from old URLs](0083-redirects-from-old-urls.md)
 - [0084 — Redirects from a folder](0084-redirects-from-a-folder.md)
+- [0085 — Each page in a file named for it](0085-each-page-in-a-file-named-for-it.md)

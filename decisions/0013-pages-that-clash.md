@@ -6,7 +6,10 @@
   by [0040](./0040-versions-from-git-refs.md), which does the same for a
   page or file where another version's folder goes, and by
   [0083](./0083-redirects-from-old-urls.md), which does the same for a
-  redirect from where a page or a file is
+  redirect from where a page or a file is, and by
+  [0085](./0085-each-page-in-a-file-named-for-it.md), which builds
+  each page into a file named for it, not a folder, and stops the build
+  for a page beside a folder of its name
 - Date: 2026-10-01
 
 ## Context
