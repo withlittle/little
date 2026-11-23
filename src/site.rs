@@ -3473,6 +3473,37 @@ mod tests {
     }
 
     #[test]
+    fn a_site_sets_the_built_in_themes_look() {
+        // The built-in theme's colours, fonts, and corners are its own,
+        // which its template writes into each page for its stylesheet.
+        let (_tmp, site) = scratch(&[("docs/README.md", "# Home\n")]);
+        let home = || {
+            build(&site).unwrap();
+            fs::read_to_string(site.join("dist/index.html")).unwrap()
+        };
+        let page = home();
+        assert!(page.contains("--primary: #7c3aed;"), "{page}");
+        assert!(page.contains("--radius: 0.5rem;"), "{page}");
+        // Headings are in the body's font, as the stylesheet has them.
+        assert!(!page.contains("--font-heading"), "{page}");
+
+        // A site sets what it likes, and the rest stay the theme's.
+        let look = "site:\n  theme:\n    colors:\n      primary: \"#0d9488\"\n    fonts:\n      \
+                    heading: \"'Source Serif 4', serif\"\n    radius: 0\n";
+        write(&site, &[("little.yml", look)]);
+        let page = home();
+        assert!(page.contains("--primary: #0d9488;"), "{page}");
+        assert!(page.contains("--info: #2f6fdb;"), "{page}");
+        // A font's quotes are written as they are.
+        assert!(
+            page.contains("--font-heading: 'Source Serif 4', serif;"),
+            "{page}"
+        );
+        // The stylesheet multiplies the radius, so 0 has a unit.
+        assert!(page.contains("--radius: 0px;"), "{page}");
+    }
+
+    #[test]
     fn builds_with_a_theme_that_builds_on_another() {
         let (_tmp, site) = scratch(&[
             (

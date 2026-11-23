@@ -17,7 +17,10 @@
   menu of versions below its button where the browser can, from 2026, and
   by [0068](./0068-the-sites-description-as-a-meta-description.md), which
   takes the site's description out of its header, and makes it the meta
-  description of each page without its own
+  description of each page without its own, and by
+  [0086](./0086-the-built-in-themes-design-system.md), which builds its
+  look from a system of tokens, whose settings a site sets, and has alerts
+  and code in colours of its own
 - Date: 2026-10-10
 - Amends: [0023](./0023-highlighting-code.md),
   [0024](./0024-jupyter-notebooks.md)

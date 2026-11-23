@@ -2,7 +2,10 @@
 
 - Status: accepted; amended by
   [0082](./0082-the-dates-of-a-site-and-its-pages.md), which has
-  `site.built`, the time of the build, in place of `site.year`
+  `site.built`, the time of the build, in place of `site.year`, and by
+  [0086](./0086-the-built-in-themes-design-system.md), which has one colour
+  for each of `site.theme.colors`, not a light and a dark, and adds
+  `site.theme.radius`
 - Date: 2026-11-18
 - Amends: [0002](./0002-theme-structure.md),
   [0003](./0003-choosing-and-layering-themes.md),

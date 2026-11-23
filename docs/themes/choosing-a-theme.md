@@ -54,17 +54,29 @@ Everything but search works without JavaScript. The theme's script only
 adds to it, like the buttons to choose light or dark and to
 [copy code](../writing/code.md#copying-code).
 
-To restyle it, [build a theme on it](#building-on-another-theme), and link
-a stylesheet of your own from a copy of its
+To give it your colours, fonts, and corners, set them in
+[`little.yml`](../getting-started/configuring.md#choosing-colours-and-fonts).
+
+To restyle it further, [build a theme on it](#building-on-another-theme),
+and link a stylesheet of your own from a copy of its
 [`default.html`](https://github.com/withlittle/little/blob/main/theme/_templates/default.html).
-Its [CSS](https://github.com/withlittle/little/blob/main/theme/_static/assets/style.css)
+Keep the `<style>` there that writes the site's settings into the page, as
+the stylesheet has no colours without them. Its
+[CSS](https://github.com/withlittle/little/blob/main/theme/_static/assets/style.css)
 is in cascade layers, so CSS outside a layer wins over it, however specific
 its selectors. Yours can't override the few declarations it marks
 `!important`: those for Pagefind's search button on a narrow screen, a
-diagram's background, which `--diagram-bg` sets, and what print hides. Its
-colours and sizes are custom properties, like `--accent`, so setting one
-changes it everywhere, and each colour is a pair for light and dark, like
-`light-dark(#7c3aed, #a78bfa)`.
+diagram's background, which `--color-diagram-bg` sets, and what print
+hides.
+
+Its colours, sizes, and spaces are custom properties, in three tiers, so
+setting one changes it everywhere:
+
+| Tier | Like | Holds |
+| ---- | ---- | ----- |
+| Settings | `--primary`, `--font-sans`, `--radius` | what a site sets in `little.yml` |
+| Scales | `--primary-600`, `--text-sm`, `--space-4` | the steps worked out from the settings |
+| Roles | `--color-link`, `--color-border` | what each colour is for, as a pair for light and dark |
 
 ## Downloading a theme
 

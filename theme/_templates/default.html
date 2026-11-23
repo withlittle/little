@@ -77,9 +77,30 @@
   {% endif %}
   <link rel="stylesheet" href="{{ '/assets/style.css' | url }}">
   <script src="{{ '/assets/script.js' | url }}" defer></script>
+  {# The site's settings for its look, under site.theme, are the settings
+     the stylesheet's tokens are worked out from: its colours, its fonts, and
+     how round its corners are. The theme's little.yml sets each, so the
+     stylesheet has no defaults of its own, but for the font of headings,
+     which is the body's unless a site sets one. They go in the stylesheet's
+     first layer, with its tokens, so a stylesheet outside a layer still wins
+     over them. A radius of 0 is written with a unit, as the stylesheet
+     multiplies it. #}
+  {% set look = site.theme %}
   <style>
-    :root {
-      --font: {{ site.theme.fonts.body | default('system-ui, sans-serif') | safe }};
+    @layer little.tokens {
+      :root {
+        --primary: {{ look.colors.primary | safe }};
+        --info: {{ look.colors.info | safe }};
+        --success: {{ look.colors.success | safe }};
+        --warning: {{ look.colors.warning | safe }};
+        --danger: {{ look.colors.danger | safe }};
+        --font-sans: {{ look.fonts.body | safe }};
+        {%- if look.fonts.heading %}
+        --font-heading: {{ look.fonts.heading | safe }};
+        {%- endif %}
+        --font-mono: {{ look.fonts.code | safe }};
+        --radius: {% if look.radius == 0 %}0px{% else %}{{ look.radius | safe }}{% endif %};
+      }
     }
   </style>
 </head>
@@ -88,40 +109,51 @@
 
   <header class="site-header">
     <div class="site-header-inner">
-      {% if has_nav %}
-      {# Opens the nav as a drawer where there's no room to show it beside the
-         page. A popover needs no script. #}
-      <button class="icon-button menu-button" type="button" popovertarget="_nav" aria-label="Menu">{{ icon("menu") }}</button>
-      {% endif %}
-      {% if versions %}
-      {# The site's name, and the version this is, which opens a list of
-         them all. A popover needs no script, and closes on a click
-         elsewhere, or Escape. #}
-      <div class="brand-group">
-        <a class="brand" href="{{ '/' | url }}">{{ site.name }}</a>
-        <div class="version-menu">
-          <button type="button" popovertarget="_versions"><span class="visually-hidden">Version </span>{{ site.version }}</button>
-          <ul id="_versions" popover>
-            {% for version in versions %}
-            <li><a href="{{ version.url | safe }}"{% if version.title == site.version %} aria-current="true"{% endif %}>{{ version.title }}</a></li>
-            {% endfor %}
-          </ul>
+      {# The menu button and the site's name. Where the nav is a column,
+         they have at least its width, so the search button after them lines
+         up with the page. #}
+      <div class="header-start">
+        {% if has_nav %}
+        {# Opens the nav as a drawer where there's no room to show it beside
+           the page. A popover needs no script. #}
+        <button class="icon-button menu-button" type="button" popovertarget="_nav" aria-label="Menu">{{ icon("menu") }}</button>
+        {% endif %}
+        {% if versions %}
+        {# The site's name, and the version this is, which opens a list of
+           them all. A popover needs no script, and closes on a click
+           elsewhere, or Escape. #}
+        <div class="brand-group">
+          <a class="brand" href="{{ '/' | url }}">{{ site.name }}</a>
+          <div class="version-menu">
+            <button type="button" popovertarget="_versions"><span class="visually-hidden">Version </span>{{ site.version }}</button>
+            <ul id="_versions" popover>
+              {% for version in versions %}
+              <li><a href="{{ version.url | safe }}"{% if version.title == site.version %} aria-current="true"{% endif %}>{{ version.title }}</a></li>
+              {% endfor %}
+            </ul>
+          </div>
         </div>
+        {% else %}
+        <a class="brand" href="{{ '/' | url }}">{{ site.name }}</a>
+        {% endif %}
       </div>
-      {% else %}
-      <a class="brand" href="{{ '/' | url }}">{{ site.name }}</a>
+      {% if site.search.enabled %}
+      {# A button that opens the search box, as ⌘K or Ctrl+K does. Pagefind's
+         styles reset its own element, so the theme sizes the box around
+         it. #}
+      <div class="header-search"><pagefind-modal-trigger></pagefind-modal-trigger></div>
       {% endif %}
       <div class="header-actions">
-        {% if site.search.enabled %}
-        {# A button that opens the search box, as ⌘K or Ctrl+K does. #}
-        <pagefind-modal-trigger></pagefind-modal-trigger>
-        <pagefind-modal></pagefind-modal>
-        {% endif %}
         {# Switches between light and dark; it needs the theme's script. #}
         <button class="icon-button theme-toggle" type="button" aria-label="Dark mode" aria-pressed="false">{{ icon("sun") }}{{ icon("moon") }}</button>
         {% if site.repository.url %}<a class="icon-button repo-link" href="{{ site.repository.url | safe }}" aria-label="Repository">{{ icon("repo") }}</a>{% endif %}
       </div>
     </div>
+    {% if site.search.enabled %}
+    {# The search box the button opens, over the page: outside the header's
+       row, so it takes no room in it. #}
+    <pagefind-modal></pagefind-modal>
+    {% endif %}
   </header>
 
   <div class="layout">
@@ -241,10 +273,11 @@
       </nav>
       {% endif %}
     </main>
-  </div>
 
-  <footer class="site-footer">
-    <p>Built with little</p>
-  </footer>
+    {# Under the page, beside the nav, where it's a column. #}
+    <footer class="site-footer">
+      <p>Built with little</p>
+    </footer>
+  </div>
 </body>
 </html>

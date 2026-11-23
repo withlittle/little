@@ -5,9 +5,27 @@
 site:
   name: "Documentation"
   language: en
+  # How a site looks: the settings the stylesheet's tokens are worked out
+  # from, which the template writes into each page.
   theme:
+    # One colour each, in quotes, as YAML reads what follows a # as a comment.
+    # The theme takes a colour's hue and its strength, and chooses each
+    # lightness itself, so any colour reads on the page, in light and dark.
+    colors:
+      # Links, markers, the tint of every grey, and the Important alert.
+      primary: "#7c3aed"
+      # The Note, Tip, Warning, and Caution alerts.
+      info: "#2f6fdb"
+      success: "#1f9d57"
+      warning: "#b7791f"
+      danger: "#d6453d"
+    # Each a CSS font-family. `heading` has no default: headings are in the
+    # body's font, until a site sets one.
     fonts:
-      body: "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif"
+      body: ui-sans-serif, system-ui, sans-serif
+      code: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace
+    # How round corners are: a CSS length, or 0 for square ones.
+    radius: 0.5rem
   # This theme has a search box, so index each site for it.
   search:
     enabled: true
