@@ -621,9 +621,11 @@
 
   /* What's coloured as an alert sets one colour, `--alert`, and its text,
      background, and border are worked out from it, by one recipe: each kind
-     of alert in a page, and the note that names an old version. */
+     of alert in a page, the note that names an old version, and an error in
+     the search box. */
   .markdown-alert,
-  .version-note {
+  .version-note,
+  pagefind-modal {
     --alert: var(--info);
     --alert-text: light-dark(oklch(from var(--alert) 0.45 min(c, 0.17) h), oklch(from var(--alert) 0.82 min(c, 0.11) h));
     --alert-bg: light-dark(oklch(from var(--alert) 0.975 calc(c * 0.13) h), oklch(from var(--alert) 0.225 calc(c * 0.22) h));
@@ -642,6 +644,17 @@
     font-size: var(--text-sm);
   }
   .version-note a { white-space: nowrap; }
+
+  /* An error in the search box, as when its index doesn't load. Pagefind's
+     own colours for one are for a light page, so its variables for them
+     take the alert's. */
+  pagefind-modal {
+    --alert: var(--danger);
+    --pf-error-bg: var(--alert-bg);
+    --pf-error-border: var(--alert-line);
+    --pf-error-text: var(--alert-text);
+    --pf-error-text-secondary: var(--alert-text);
+  }
 
   /* The site's nav. A page at its top level, and each folder's name, is a
      heading. The pages in a folder hang from a rail, and a marker on the
@@ -1395,3 +1408,14 @@
   --pf-input-height: 2.5rem;
   --pf-modal-backdrop: var(--color-overlay);
 }
+
+/* Pagefind resets every property of its own elements, their colour scheme
+   too, which leaves them in the system's, whichever the reader chose with
+   the toggle. Each of the theme's colours is a light-dark() pair, which the
+   element that uses it picks from by its own scheme, so the search button,
+   the search box, and every element Pagefind puts in the box take the
+   page's back. Like the colours above, this is outside a layer, to come
+   after Pagefind's reset. */
+pagefind-modal-trigger,
+pagefind-modal,
+pagefind-modal * { color-scheme: inherit; }

@@ -73,5 +73,5 @@ search:
 ---
 ```
 
-Don't leave out every page, or the search box shows an error. Turn search
-off instead.
+Don't leave out every page, or the search box never finishes a search.
+Turn search off instead.
