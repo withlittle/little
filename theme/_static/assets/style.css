@@ -1395,3 +1395,14 @@
   --pf-input-height: 2.5rem;
   --pf-modal-backdrop: var(--color-overlay);
 }
+
+/* Pagefind resets every property of its own elements, their colour scheme
+   too, which leaves them in the system's, whichever the reader chose with
+   the toggle. Each of the theme's colours is a light-dark() pair, which the
+   element that uses it picks from by its own scheme, so the search button,
+   the search box, and every element Pagefind puts in the box take the
+   page's back. Like the colours above, this is outside a layer, to come
+   after Pagefind's reset. */
+pagefind-modal-trigger,
+pagefind-modal,
+pagefind-modal * { color-scheme: inherit; }
