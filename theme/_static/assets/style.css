@@ -1,90 +1,189 @@
 /* little's built-in theme. Every style here belongs to the theme, not to
    little: little writes the Markdown's HTML, and the theme the rest.
 
-   It's plain CSS, in cascade layers, so any stylesheet that isn't in a layer,
-   like one a site adds, wins over it, however specific its selectors. Its
-   colours, sizes, and fonts are custom properties, in `little.tokens`: set
-   one, like `--accent`, to change it everywhere, in light and dark. */
+   It's built as a system, whose tokens are in three tiers, each made only
+   from the one above:
+
+   1. Settings: the few values a site sets, under `site.theme` in its
+      `little.yml`, like `--primary`.
+   2. Scales: the ramps and steps worked out from the settings, like
+      `--primary-600`, `--text-sm`, and `--space-4`.
+   3. Roles: what each colour is for, like `--color-link`.
+
+   The rules below the tokens take their colours from the roles, and their
+   type, space, and corners from the scales.
+
+   It's plain CSS, in cascade layers, so any stylesheet that isn't in a
+   layer, like one a site adds, wins over it, however specific its
+   selectors. */
 
 @layer little.tokens, little.base, little.layout, little.components, little.content, little.print;
 
 @layer little.tokens {
   :root {
     /* Light, unless the system is dark; the theme toggle sets data-theme to
-       override it. Each colour is a pair, light-dark(light, dark). */
+       override it. Each role is a pair, light-dark(light, dark). */
     color-scheme: light dark;
 
-    --font: system-ui, sans-serif;
-    --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+    /* 1. Settings -------------------------------------------------------- */
 
-    --bg: light-dark(#ffffff, #0f1117);
-    --bg-subtle: light-dark(#f6f7f9, #151921);
-    --bg-muted: light-dark(#eef0f3, #1d222c);
-    --header-bg: light-dark(rgb(255 255 255 / 0.85), rgb(15 17 23 / 0.8));
-    --border: light-dark(#e3e6ea, #262b35);
-    --border-strong: light-dark(#cdd2d9, #394150);
-    --text: light-dark(#1f2329, #e3e6eb);
-    --text-muted: light-dark(#5a626d, #9aa2ad);
-    --heading: light-dark(#0f1217, #f5f6f8);
+    /* These have no values here. The theme's template writes each into the
+       page, from the site's `site.theme`, whose defaults are in the theme's
+       `little.yml`:
 
-    --accent: light-dark(#7c3aed, #a78bfa);
-    --accent-hover: light-dark(#6d28d9, #c4b5fd);
-    --accent-soft: light-dark(rgb(124 58 237 / 0.08), rgb(167 139 250 / 0.12));
-    --accent-line: light-dark(rgb(124 58 237 / 0.35), rgb(167 139 250 / 0.45));
+       --primary, --info, --success, --warning, --danger
+           `colors`: one colour each. The scales take only its hue and its
+           strength, and choose every lightness themselves, so any colour
+           reads on the page, in light and dark.
+       --font-sans, --font-mono
+           `fonts.body` and `fonts.code`.
+       --radius
+           `radius`: how round corners are, from square, at 0.
 
-    --code-bg: light-dark(#f6f8fa, #151b23);
-    --code-text: light-dark(#1f2328, #e6edf3);
-    --inline-code-bg: light-dark(rgb(129 139 152 / 0.15), rgb(110 118 129 / 0.3));
-    /* A diagram is drawn for a light page, so it sits on a light card in dark
-       mode. */
-    --diagram-bg: light-dark(transparent, #f6f8fa);
+       A theme that builds on this one, with a `default.html` of its own,
+       writes them as this one's does. */
 
-    --shadow-sm: 0 1px 2px light-dark(rgb(15 23 42 / 0.06), rgb(0 0 0 / 0.4));
-    --shadow-lg: 0 12px 32px light-dark(rgb(15 23 42 / 0.16), rgb(0 0 0 / 0.6));
+    /* `fonts.heading`: the body's, until a site sets one. */
+    --font-heading: var(--font-sans);
 
-    --radius-sm: 0.25rem;
-    --radius: 0.5rem;
-    --radius-lg: 0.75rem;
+    /* 2. Scales ---------------------------------------------------------- */
 
-    --header-height: 3.75rem;
+    /* Grey: the primary's hue, with almost none of its colour, so the
+       greys and the primary belong together. */
+    --gray-50: oklch(from var(--primary) 0.985 0.002 h);
+    --gray-100: oklch(from var(--primary) 0.965 0.003 h);
+    --gray-200: oklch(from var(--primary) 0.925 0.005 h);
+    --gray-300: oklch(from var(--primary) 0.87 0.008 h);
+    --gray-400: oklch(from var(--primary) 0.71 0.014 h);
+    --gray-500: oklch(from var(--primary) 0.53 0.016 h);
+    --gray-600: oklch(from var(--primary) 0.45 0.016 h);
+    --gray-700: oklch(from var(--primary) 0.375 0.014 h);
+    --gray-800: oklch(from var(--primary) 0.28 0.01 h);
+    --gray-900: oklch(from var(--primary) 0.21 0.008 h);
+    --gray-950: oklch(from var(--primary) 0.155 0.006 h);
+
+    /* Primary: its own hue and strength, at eleven fixed lightnesses. */
+    --primary-50: oklch(from var(--primary) 0.975 calc(c * 0.1) h);
+    --primary-100: oklch(from var(--primary) 0.945 calc(c * 0.2) h);
+    --primary-200: oklch(from var(--primary) 0.895 calc(c * 0.38) h);
+    --primary-300: oklch(from var(--primary) 0.82 calc(c * 0.58) h);
+    --primary-400: oklch(from var(--primary) 0.72 calc(c * 0.82) h);
+    --primary-500: oklch(from var(--primary) 0.62 c h);
+    --primary-600: oklch(from var(--primary) 0.53 c h);
+    --primary-700: oklch(from var(--primary) 0.46 calc(c * 0.95) h);
+    --primary-800: oklch(from var(--primary) 0.39 calc(c * 0.85) h);
+    --primary-900: oklch(from var(--primary) 0.32 calc(c * 0.7) h);
+    --primary-950: oklch(from var(--primary) 0.24 calc(c * 0.55) h);
+
+    /* Type: eight sizes, four weights, three line heights. */
+    --text-xs: 0.75rem;
+    --text-sm: 0.875rem;
+    --text-base: 1rem;
+    --text-lg: 1.125rem;
+    --text-xl: 1.25rem;
+    --text-2xl: 1.5rem;
+    --text-3xl: 1.875rem;
+    --text-4xl: 2.25rem;
+
+    --font-weight-normal: 400;
+    --font-weight-medium: 500;
+    --font-weight-semibold: 600;
+    --font-weight-bold: 700;
+
+    --leading-tight: 1.25;
+    --leading-normal: 1.5;
+    --leading-relaxed: 1.7;
+
+    --tracking-tight: -0.02em;
+
+    /* Space: steps of 4px, and two half steps, for the smallest gaps. */
+    --space-05: 0.125rem;
+    --space-1: 0.25rem;
+    --space-15: 0.375rem;
+    --space-2: 0.5rem;
+    --space-3: 0.75rem;
+    --space-4: 1rem;
+    --space-5: 1.25rem;
+    --space-6: 1.5rem;
+    --space-8: 2rem;
+    --space-10: 2.5rem;
+    --space-12: 3rem;
+    --space-16: 4rem;
+
+    /* Corners: sm for chips, md for controls, lg for blocks, xl for panels. */
+    --radius-sm: calc(var(--radius) * 0.5);
+    --radius-md: calc(var(--radius) * 0.75);
+    --radius-lg: var(--radius);
+    --radius-xl: calc(var(--radius) * 1.5);
+    --radius-full: calc(var(--radius) * 999);
+
+    /* Shadows: three heights, in one colour. */
+    --shadow-color: light-dark(oklch(from var(--primary) 0.25 0.03 h / 0.09), rgb(0 0 0 / 0.45));
+    --shadow-sm: 0 1px 2px var(--shadow-color);
+    --shadow-md: 0 2px 4px -1px var(--shadow-color), 0 6px 14px -2px var(--shadow-color);
+    --shadow-lg: 0 4px 10px -2px var(--shadow-color), 0 18px 36px -6px var(--shadow-color);
+
+    --duration: 150ms;
+    --ease: cubic-bezier(0.2, 0, 0, 1);
+
+    /* The page's frame. */
+    --header-height: 3.5rem;
     --sidebar-width: 17rem;
-    --toc-width: 13rem;
-    --content-width: 46rem;
+    --toc-width: 14rem;
+    --content-width: 45rem;
     --page-width: 90rem;
-    --gutter: 1.25rem;
+    --gutter: var(--space-5);
 
-    /* Syntax colours, after GitHub's light and dark themes: for Pygments'
-       classes, and GitHub's own, whichever `markdown.highlight` chooses. */
-    --syntax-comment: light-dark(#59636e, #9198a1);
-    --syntax-keyword: light-dark(#cf222e, #ff7b72);
-    --syntax-string: light-dark(#0a3069, #a5d6ff);
-    --syntax-constant: light-dark(#0550ae, #79c0ff);
-    --syntax-function: light-dark(#6639ba, #d2a8ff);
-    --syntax-tag: light-dark(#116329, #7ee787);
-    --syntax-variable: light-dark(#953800, #ffa657);
-    --syntax-inserted: light-dark(#116329, #aff5b4);
-    --syntax-inserted-bg: light-dark(#dafbe1, #033a16);
-    --syntax-deleted: light-dark(#82071e, #ffdcd7);
-    --syntax-deleted-bg: light-dark(#ffebe9, #67060c);
+    /* 3. Roles ----------------------------------------------------------- */
 
-    /* Alerts, in GitHub's colours. */
-    --note: light-dark(#0969da, #4493f8);
-    --note-bg: light-dark(rgb(9 105 218 / 0.06), rgb(68 147 248 / 0.1));
-    --tip: light-dark(#1a7f37, #3fb950);
-    --tip-bg: light-dark(rgb(26 127 55 / 0.06), rgb(63 185 80 / 0.1));
-    --important: light-dark(#8250df, #ab7df8);
-    --important-bg: light-dark(rgb(130 80 223 / 0.06), rgb(171 125 248 / 0.1));
-    --warning: light-dark(#8f5f00, #d29922);
-    --warning-bg: light-dark(rgb(143 95 0 / 0.07), rgb(210 153 34 / 0.1));
-    --caution: light-dark(#d1242f, #f85149);
-    --caution-bg: light-dark(rgb(209 36 47 / 0.06), rgb(248 81 73 / 0.1));
+    --color-bg: light-dark(#fff, var(--gray-950));
+    --color-bg-subtle: light-dark(var(--gray-50), var(--gray-900));
+    --color-bg-muted: light-dark(var(--gray-100), var(--gray-800));
+    --color-bg-raised: light-dark(#fff, var(--gray-900));
+    --color-header-bg: color-mix(in srgb, var(--color-bg) 85%, transparent);
+    --color-overlay: light-dark(oklch(from var(--primary) 0.2 0.02 h / 0.35), rgb(0 0 0 / 0.6));
+
+    --color-border: light-dark(var(--gray-200), var(--gray-800));
+    --color-border-strong: light-dark(var(--gray-300), var(--gray-700));
+
+    --color-heading: light-dark(var(--gray-950), var(--gray-50));
+    --color-text: light-dark(var(--gray-700), var(--gray-300));
+    --color-text-muted: light-dark(var(--gray-600), var(--gray-400));
+
+    /* The primary is never used as it's set, only at a lightness of the
+       theme's choosing, so whatever it is, it reads. */
+    --color-link: light-dark(var(--primary-600), var(--primary-300));
+    --color-link-hover: light-dark(var(--primary-700), var(--primary-200));
+    --color-accent: light-dark(var(--primary-500), var(--primary-400));
+    --color-primary-line: light-dark(var(--primary-200), var(--primary-800));
+    --color-selection: color-mix(in srgb, var(--primary-500) 25%, transparent);
+
+    /* Code: six hues at one lightness, so no token outweighs another. */
+    --color-code-bg: var(--color-bg-subtle);
+    --color-code-text: light-dark(var(--gray-800), var(--gray-200));
+    --syntax-comment: light-dark(var(--gray-500), var(--gray-400));
+    --syntax-keyword: light-dark(oklch(0.5 0.19 5), oklch(0.79 0.12 5));
+    --syntax-string: light-dark(oklch(0.48 0.12 152), oklch(0.8 0.13 152));
+    --syntax-constant: light-dark(oklch(0.5 0.16 255), oklch(0.79 0.11 250));
+    --syntax-function: light-dark(oklch(0.5 0.19 300), oklch(0.79 0.12 300));
+    --syntax-tag: light-dark(oklch(0.49 0.09 205), oklch(0.8 0.09 200));
+    --syntax-variable: light-dark(oklch(0.51 0.13 55), oklch(0.8 0.11 65));
+    --syntax-inserted: light-dark(oklch(0.42 0.11 152), oklch(0.86 0.12 152));
+    --syntax-inserted-bg: light-dark(oklch(0.95 0.05 152), oklch(0.3 0.06 152));
+    --syntax-deleted: light-dark(oklch(0.44 0.15 25), oklch(0.86 0.07 25));
+    --syntax-deleted-bg: light-dark(oklch(0.95 0.03 25), oklch(0.32 0.08 25));
+
+    --color-mark: light-dark(oklch(0.93 0.11 98), oklch(0.44 0.09 98));
+    /* A diagram is drawn for a light page, so it sits on a light card in
+       dark mode. */
+    --color-diagram-bg: light-dark(transparent, var(--gray-100));
   }
 
   :root[data-theme="light"] { color-scheme: light; }
   :root[data-theme="dark"] { color-scheme: dark; }
 
   @media (width >= 48rem) {
-    :root { --gutter: 2rem; }
+    :root { --gutter: var(--space-8); }
   }
 }
 
@@ -95,7 +194,7 @@
     -webkit-text-size-adjust: 100%;
     text-size-adjust: 100%;
     /* Keep what a link jumps to, like a heading, clear of the sticky header. */
-    scroll-padding-top: calc(var(--header-height) + 1.5rem);
+    scroll-padding-top: calc(var(--header-height) + var(--space-6));
   }
   @media (prefers-reduced-motion: no-preference) {
     html { scroll-behavior: smooth; }
@@ -103,24 +202,24 @@
 
   body {
     margin: 0;
-    font-family: var(--font);
-    font-size: 1rem;
-    line-height: 1.6;
-    color: var(--text);
-    background: var(--bg);
+    font-family: var(--font-sans);
+    font-size: var(--text-base);
+    line-height: var(--leading-normal);
+    color: var(--color-text);
+    background: var(--color-bg);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
 
-  a { color: var(--accent); }
-  a:hover { color: var(--accent-hover); }
+  a { color: var(--color-link); }
+  a:hover { color: var(--color-link-hover); }
 
   :focus-visible {
-    outline: 2px solid var(--accent);
+    outline: 2px solid var(--color-accent);
     outline-offset: 2px;
   }
 
-  ::selection { background: light-dark(rgb(124 58 237 / 0.18), rgb(167 139 250 / 0.32)); }
+  ::selection { background: var(--color-selection); }
 
   .icon {
     flex: none;
@@ -142,89 +241,65 @@
 
   .skip-link {
     position: fixed;
-    top: 0.75rem;
-    left: 0.75rem;
+    top: var(--space-3);
+    left: var(--space-3);
     z-index: 100;
-    padding: 0.5rem 1rem;
-    border-radius: var(--radius);
-    background: var(--bg);
+    padding: var(--space-2) var(--space-4);
+    border-radius: var(--radius-md);
+    background: var(--color-heading);
+    color: var(--color-bg);
     box-shadow: var(--shadow-lg);
-    font-weight: 600;
+    font-size: var(--text-sm);
+    font-weight: var(--font-weight-semibold);
+    text-decoration: none;
     translate: 0 -200%;
   }
+  .skip-link:hover { color: var(--color-bg); }
   .skip-link:focus { translate: none; }
 }
 
 @layer little.layout {
-  /* Header: the site's name, and its search, theme toggle, and repository. */
+  /* Header: the site's name, its search, and the buttons for light or dark
+     and the repository. From a laptop up, on a site with a nav, the name
+     has at least the nav's width, so the search lines up with the page. */
   .site-header {
     position: sticky;
     top: 0;
     z-index: 10;
     height: var(--header-height);
-    border-bottom: 1px solid var(--border);
-    background: var(--header-bg);
+    border-bottom: 1px solid var(--color-border);
+    background: var(--color-header-bg);
     backdrop-filter: saturate(180%) blur(12px);
   }
   .site-header-inner {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-3);
     height: 100%;
     max-width: var(--page-width);
     margin-inline: auto;
     padding-inline: var(--gutter);
   }
-  /* A name too long for the header wraps onto a second line, and is cut
-     short past that, so the buttons beside it stay on the screen. Padding
-     above or below it would show the top of a third line. */
-  .brand {
-    display: -webkit-box;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 2;
-    min-width: 0;
-    overflow: hidden;
-    color: var(--heading);
-    font-size: 1.0625rem;
-    font-weight: 700;
-    line-height: 1.3;
-    letter-spacing: -0.01em;
-    text-decoration: none;
-    text-wrap: balance;
-    overflow-wrap: anywhere;
-  }
-  .brand:hover { color: var(--heading); }
-  /* The site's name and its menu of versions, side by side, but on a phone,
-     where the menu goes below the name, so the name keeps the room the menu
-     would take, on one line. */
-  .brand-group {
+  .header-start {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-2);
     min-width: 0;
-  }
-  @media (width < 30rem) {
-    .brand-group {
-      flex-direction: column;
-      align-items: flex-start;
-      gap: 0.125rem;
-    }
-    .brand-group .brand {
-      display: block;
-      max-width: 100%;
-      white-space: nowrap;
-      text-overflow: ellipsis;
-    }
   }
   .header-actions {
     display: flex;
     align-items: center;
-    gap: 0.25rem;
+    gap: var(--space-1);
     margin-left: auto;
+  }
+  @media (width >= 60rem) {
+    body:has(.layout > .sidebar) .header-start {
+      min-width: calc(var(--sidebar-width) - var(--space-3));
+    }
   }
 
   /* The nav, the page, and its table of contents, side by side where
-     there's room for them. */
+     there's room for them. The footer is under the page, not the nav. */
   .layout {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
@@ -234,16 +309,17 @@
   main {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
-    gap: 3rem;
+    gap: var(--space-12);
     min-width: 0;
-    padding: 2rem var(--gutter) 4rem;
+    padding: var(--space-8) var(--gutter) var(--space-16);
   }
   .page {
     width: 100%;
     max-width: var(--content-width);
     min-width: 0;
-    margin-inline: auto;
   }
+  /* A site of one page has no nav, so its page is in the middle. */
+  .layout:not(:has(> .sidebar)) .page { margin-inline: auto; }
 
   /* Phones and tablets: the nav is a drawer, opened from the header. */
   @media (width < 60rem) {
@@ -254,16 +330,16 @@
       height: 100dvh;
       max-height: none;
       margin: 0;
-      padding: 0 1rem 2rem;
+      padding: 0 var(--gutter) var(--space-8);
       border: 0;
-      border-right: 1px solid var(--border);
-      background: var(--bg);
-      color: var(--text);
+      border-right: 1px solid var(--color-border);
+      background: var(--color-bg);
+      color: var(--color-text);
       box-shadow: var(--shadow-lg);
       overflow-y: auto;
       overscroll-behavior: contain;
     }
-    .sidebar::backdrop { background: rgb(0 0 0 / 0.4); }
+    .sidebar::backdrop { background: var(--color-overlay); }
     .sidebar-top {
       position: sticky;
       top: 0;
@@ -272,17 +348,16 @@
       align-items: center;
       justify-content: space-between;
       height: var(--header-height);
-      margin: 0 -1rem 0.5rem;
-      padding-inline: 1rem;
-      border-bottom: 1px solid var(--border);
-      background: var(--bg);
+      margin: 0 calc(-1 * var(--gutter)) var(--space-6);
+      padding-inline: var(--gutter);
+      border-bottom: 1px solid var(--color-border);
+      background: var(--color-bg);
     }
-    .sidebar-top .brand { padding-left: 0.75rem; }
 
     @media (prefers-reduced-motion: no-preference) {
       .sidebar[popover],
       .sidebar::backdrop {
-        transition: translate 0.2s ease-out, opacity 0.2s ease-out,
+        transition: translate 0.2s var(--ease), opacity 0.2s var(--ease),
           display 0.2s allow-discrete, overlay 0.2s allow-discrete;
       }
       .sidebar[popover]:not(:popover-open) { translate: -100% 0; }
@@ -300,21 +375,24 @@
     .sidebar[popover] {
       position: sticky;
       inset: var(--header-height) auto auto;
+      grid-row: 1 / span 2;
       display: block;
       width: auto;
       height: calc(100dvh - var(--header-height));
       margin: 0;
-      padding: 2rem 1rem 2rem var(--gutter);
+      padding: var(--space-8) var(--space-4) var(--space-8) var(--gutter);
       border: 0;
-      border-right: 1px solid var(--border);
+      border-right: 1px solid var(--color-border);
       background: none;
       color: inherit;
       overflow-y: auto;
       overscroll-behavior: contain;
       scrollbar-width: thin;
-      scrollbar-color: var(--border-strong) transparent;
+      scrollbar-color: var(--color-border-strong) transparent;
     }
     .sidebar-top { display: none; }
+    .layout:has(> .sidebar) > :is(main, .site-footer) { grid-column: 2; }
+    main { padding-top: var(--space-10); }
   }
 
   /* Wide screens: the table of contents is a column beside the page. A site
@@ -332,36 +410,82 @@
   }
 
   .site-footer {
-    padding: 2rem var(--gutter);
-    border-top: 1px solid var(--border);
-    color: var(--text-muted);
-    font-size: 0.875rem;
-    text-align: center;
+    margin-inline: var(--gutter);
+    padding-block: var(--space-6) var(--space-8);
+    border-top: 1px solid var(--color-border);
+    color: var(--color-text-muted);
+    font-size: var(--text-sm);
   }
   .site-footer p { margin: 0; }
+  .layout:not(:has(> .sidebar)) > .site-footer { text-align: center; }
 }
 
 @layer little.components {
+  /* The site's name. One too long for the header wraps onto a second line,
+     and is cut short past that, so the buttons beside it stay on the
+     screen. Padding above or below it would show the top of a third line. */
+  .brand {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    min-width: 0;
+    overflow: hidden;
+    color: var(--color-heading);
+    font-family: var(--font-heading);
+    font-size: var(--text-base);
+    font-weight: var(--font-weight-semibold);
+    /* A heading's, 1.25, would clip the ring of an "Å". */
+    line-height: 1.3;
+    letter-spacing: var(--tracking-tight);
+    text-decoration: none;
+    text-wrap: balance;
+    overflow-wrap: anywhere;
+  }
+  .brand:hover { color: var(--color-heading); }
+  /* The site's name and its menu of versions, side by side, but on a phone,
+     where the menu goes below the name, so the name keeps the room the menu
+     would take, on one line. */
+  .brand-group {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-width: 0;
+  }
+  @media (width < 30rem) {
+    .brand-group {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: var(--space-05);
+    }
+    .brand-group .brand {
+      display: block;
+      max-width: 100%;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+    }
+  }
+
   .icon-button {
     display: inline-grid;
     place-items: center;
     /* Beside a long name, in the header, it keeps its size. */
     flex-shrink: 0;
-    width: 2.5rem;
-    height: 2.5rem;
+    width: 2.25rem;
+    height: 2.25rem;
     padding: 0;
     /* Transparent, so it shows in forced colours. */
     border: 1px solid transparent;
-    border-radius: var(--radius);
+    border-radius: var(--radius-md);
     background: none;
-    color: var(--text-muted);
+    color: var(--color-text-muted);
     cursor: pointer;
+    transition: background var(--duration) var(--ease), color var(--duration) var(--ease);
   }
   .icon-button:hover {
-    background: var(--bg-muted);
-    color: var(--text);
+    background: var(--color-bg-muted);
+    color: var(--color-heading);
   }
-  .menu-button { margin-left: -0.5rem; }
+  .menu-button { margin-left: calc(-1 * var(--space-2)); }
   @media (width >= 60rem) {
     .menu-button { display: none; }
   }
@@ -377,25 +501,37 @@
     :root:not([data-theme="light"]) .theme-toggle .icon:last-child { display: block; }
   }
 
-  /* Pagefind's search button, as wide as a search box where there's room,
-     and an icon where there isn't. Pagefind's own selectors are as specific
-     as an ID, so restyling it needs !important. */
-  .site-header pagefind-modal-trigger {
-    display: block;
-    width: 15rem;
-    margin-right: 0.25rem;
+  /* Pagefind's search button, in line with the page: as wide as a search
+     box where there's room, and an icon where there isn't. Pagefind's
+     styles aren't in a layer, and reset every property of its own element,
+     so the theme sizes a box around it, a grid, which the element fills.
+     Its look is Pagefind's own variables, set here for the button alone.
+     Pagefind's selectors are as specific as an ID, so what its variables
+     don't reach needs !important. */
+  .header-search {
+    --pf-background: var(--color-bg-subtle);
+    --pf-border-focus: var(--color-border-strong);
+    --pf-border-radius: var(--radius-md);
+    --pf-hover: var(--color-bg);
+    --pf-input-height: 2.25rem;
+    display: grid;
+    flex: 0 1 20rem;
+    min-width: 0;
   }
   @media (width < 48rem) {
-    .site-header pagefind-modal-trigger { width: auto; margin-right: 0; }
+    .header-search {
+      flex: none;
+      margin-left: auto;
+    }
+    .header-search + .header-actions { margin-left: 0; }
     .site-header .pf-trigger-btn {
       justify-content: center !important;
-      width: 2.5rem !important;
-      height: 2.5rem !important;
+      width: 2.25rem !important;
       padding: 0 !important;
       border-color: transparent !important;
       background: none !important;
     }
-    .site-header .pf-trigger-btn:hover { background: var(--bg-muted) !important; }
+    .site-header .pf-trigger-btn:hover { background: var(--color-bg-muted) !important; }
     .site-header .pf-trigger-icon {
       width: 1.125rem !important;
       height: 1.125rem !important;
@@ -410,47 +546,48 @@
      it there, in the middle of the window. */
   .version-menu {
     flex-shrink: 0;
-    font-size: 0.875rem;
+    font-size: var(--text-xs);
   }
   .version-menu button {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    padding: 0.25rem 0.625rem;
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
+    gap: var(--space-15);
+    padding: var(--space-05) var(--space-2);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-full);
     background: none;
-    color: var(--text-muted);
+    color: var(--color-text-muted);
     font: inherit;
-    font-weight: 500;
-    line-height: 1.4;
+    font-weight: var(--font-weight-medium);
+    line-height: var(--leading-normal);
     white-space: nowrap;
     cursor: pointer;
     anchor-name: --version-menu;
   }
   .version-menu button::after {
     content: "";
-    width: 0.375rem;
-    height: 0.375rem;
+    width: 0.3125rem;
+    height: 0.3125rem;
     border-right: 1.5px solid;
     border-bottom: 1.5px solid;
     rotate: 45deg;
-    translate: 0 -0.125rem;
+    translate: 0 -0.0625rem;
   }
   .version-menu:has(:popover-open) button::after { rotate: 225deg; translate: 0 0.0625rem; }
   .version-menu button:hover {
-    background: var(--bg-muted);
-    color: var(--text);
+    border-color: var(--color-border-strong);
+    color: var(--color-heading);
   }
   .version-menu ul {
     min-width: 7rem;
-    max-height: calc(100dvh - var(--header-height) - 1rem);
+    max-height: calc(100dvh - var(--header-height) - var(--space-4));
     overflow-y: auto;
-    padding: 0.25rem;
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    background: var(--bg);
+    padding: var(--space-1);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    background: var(--color-bg-raised);
     box-shadow: var(--shadow-lg);
+    font-size: var(--text-sm);
     list-style: none;
   }
   @supports (position-area: bottom) {
@@ -458,96 +595,104 @@
       position-anchor: --version-menu;
       position-area: bottom span-right;
       min-width: max(anchor-size(width), 7rem);
-      margin: 0.375rem 0 0;
+      margin: var(--space-15) 0 0;
     }
   }
   .version-menu a {
     display: block;
-    padding: 0.375rem 0.625rem;
+    padding: var(--space-15) var(--space-3);
     border-radius: var(--radius-sm);
-    color: var(--text-muted);
+    color: var(--color-text);
     text-decoration: none;
     white-space: nowrap;
   }
-  .version-menu a:hover {
-    background: var(--bg-muted);
-    color: var(--text);
-  }
+  .version-menu a:hover { background: var(--color-bg-muted); }
   .version-menu a[aria-current] {
-    background: var(--accent-soft);
-    color: var(--accent);
-    font-weight: 600;
+    color: var(--color-link);
+    font-weight: var(--font-weight-medium);
   }
   /* Below the name, it's shorter, but still easy to tap. */
   @media (width < 30rem) {
     .version-menu button { min-height: 1.5rem; padding-block: 0; }
   }
   @media (prefers-reduced-motion: no-preference) {
-    .version-menu button::after { transition: rotate 0.15s ease-out, translate 0.15s ease-out; }
+    .version-menu button::after { transition: rotate var(--duration) var(--ease), translate var(--duration) var(--ease); }
+  }
+
+  /* What's coloured as an alert sets one colour, `--alert`, and its text,
+     background, and border are worked out from it, by one recipe: each kind
+     of alert in a page, and the note that names an old version. */
+  .markdown-alert,
+  .version-note {
+    --alert: var(--info);
+    --alert-text: light-dark(oklch(from var(--alert) 0.45 min(c, 0.17) h), oklch(from var(--alert) 0.82 min(c, 0.11) h));
+    --alert-bg: light-dark(oklch(from var(--alert) 0.975 calc(c * 0.13) h), oklch(from var(--alert) 0.225 calc(c * 0.22) h));
+    --alert-line: light-dark(oklch(from var(--alert) 0.9 calc(c * 0.4) h), oklch(from var(--alert) 0.33 calc(c * 0.4) h));
   }
 
   /* On each version but the one at the root of the site, a note above the
      page names it. */
   .version-note {
-    margin: 0 0 1.5rem;
-    padding: 0.625rem 1rem;
-    border: 1px solid var(--warning-bg);
-    border-left: 4px solid var(--warning);
-    border-radius: var(--radius);
-    background: var(--warning-bg);
-    font-size: 0.9375rem;
+    --alert: var(--warning);
+    margin: 0 0 var(--space-6);
+    padding: var(--space-3) var(--space-4);
+    border: 1px solid var(--alert-line);
+    border-radius: var(--radius-lg);
+    background: var(--alert-bg);
+    font-size: var(--text-sm);
   }
   .version-note a { white-space: nowrap; }
 
-  /* The site's nav: a group for each top-level folder, and a line down the
-     side of the pages in a folder within it. */
+  /* The site's nav. A page at its top level, and each folder's name, is a
+     heading. The pages in a folder hang from a rail, and a marker on the
+     rail shows the page this is, as in the table of contents. */
   .nav,
   .nav ul {
     margin: 0;
     padding: 0;
     list-style: none;
   }
-  /* A list, not :is(), whose specificity, a class's, would beat the room a
-     link leaves for its fold button, below. A long name breaks after each _
-     and ., where the template lets it, or else anywhere, not out of its row. */
+  /* A long name breaks after each _ and ., where the template lets it, or
+     else anywhere, not out of its row. */
   .nav a,
   .nav .nav-label {
     display: block;
-    padding: 0.375rem 0.75rem;
-    border-radius: var(--radius);
-    color: var(--text-muted);
-    font-size: 0.9375rem;
-    line-height: 1.4;
+    padding-block: var(--space-1);
+    color: var(--color-text-muted);
+    font-size: var(--text-sm);
+    line-height: var(--leading-normal);
     text-decoration: none;
     overflow-wrap: anywhere;
+    transition: color var(--duration) var(--ease), border-color var(--duration) var(--ease);
   }
-  .nav a:hover {
-    background: var(--bg-muted);
-    color: var(--text);
+  /* Under a finger, each row is taller. */
+  @media (pointer: coarse) {
+    .nav a,
+    .nav .nav-label { padding-block: var(--space-2); }
   }
+  .nav a:hover { color: var(--color-heading); }
   .nav a[aria-current="page"] {
-    background: var(--accent-soft);
-    color: var(--accent);
-    font-weight: 600;
+    color: var(--color-link);
+    font-weight: var(--font-weight-medium);
   }
+  .nav > li > :is(a, .nav-label) {
+    color: var(--color-heading);
+    font-weight: var(--font-weight-semibold);
+  }
+  .nav > li > a[aria-current="page"] { color: var(--color-link); }
   /* A group stands apart from what's above it, and so does a page at the
      nav's top level after one, so it doesn't look like the group's last. */
-  .nav > :is(.nav-group, .nav-group + li) { margin-top: 1.25rem; }
-  .nav > .nav-group > :is(a, .nav-label) {
-    margin-bottom: 0.125rem;
-    color: var(--heading);
-    font-size: 0.875rem;
-    font-weight: 650;
+  .nav > :is(.nav-group, .nav-group + li) { margin-top: var(--space-6); }
+  .nav > .nav-group > :is(a, .nav-label) { margin-bottom: var(--space-1); }
+  .nav ul { border-left: 1px solid var(--color-border); }
+  .nav ul :is(a, .nav-label) {
+    margin-left: -1px;
+    padding-left: var(--space-4);
+    border-left: 1px solid transparent;
   }
-  /* Line the text of the nav up with the site's name above it. */
-  @media (width >= 60rem) {
-    .sidebar .nav { margin-left: -0.75rem; }
-  }
-  .nav ul ul {
-    margin: 0.125rem 0 0.25rem 0.75rem;
-    padding-left: 0.5rem;
-    border-left: 1px solid var(--border);
-  }
+  .nav ul a:hover { border-left-color: var(--color-border-strong); }
+  .nav ul a[aria-current="page"] { border-left-color: var(--color-accent); }
+  .nav ul ul { margin: var(--space-1) 0 var(--space-1) var(--space-4); }
   /* A folder within a group folds up. One without a page of its own folds
      from its whole row; one with a page, from a button at the end of its
      link's row. Either has a chevron, pointing down when it's open. */
@@ -559,8 +704,8 @@
   .nav summary::after {
     content: "";
     flex: none;
-    width: 0.4375rem;
-    height: 0.4375rem;
+    width: 0.375rem;
+    height: 0.375rem;
     border-right: 1.5px solid;
     border-bottom: 1.5px solid;
     rotate: -45deg;
@@ -571,14 +716,11 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 0.5rem;
+    gap: var(--space-2);
   }
-  .nav summary:hover {
-    background: var(--bg-muted);
-    color: var(--text);
-  }
+  .nav summary:hover { color: var(--color-heading); }
   .nav li:has(> a + details) { position: relative; }
-  .nav a:has(+ details) { padding-right: 2.25rem; }
+  .nav a:has(+ details) { padding-right: var(--space-8); }
   .nav a + details > summary {
     position: absolute;
     top: 0;
@@ -586,23 +728,23 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 2rem;
-    height: calc(1lh + 0.75rem);
-    border-radius: var(--radius);
-    color: var(--text-muted);
-    font-size: 0.9375rem;
-    line-height: 1.4;
+    width: var(--space-8);
+    height: calc(1lh + var(--space-2));
+    border-radius: var(--radius-md);
+    color: var(--color-text-muted);
+    font-size: var(--text-sm);
+    line-height: var(--leading-normal);
   }
-  .nav a[aria-current="page"] + details > summary { color: var(--accent); }
+  .nav a[aria-current="page"] + details > summary { color: var(--color-link); }
   @media (prefers-reduced-motion: no-preference) {
-    .nav summary::after { transition: rotate 0.15s ease-out, translate 0.15s ease-out; }
+    .nav summary::after { transition: rotate var(--duration) var(--ease), translate var(--duration) var(--ease); }
   }
 
   /* The trail of folders above the page. */
   .breadcrumbs {
-    margin-bottom: 1rem;
-    color: var(--text-muted);
-    font-size: 0.875rem;
+    margin-bottom: var(--space-4);
+    color: var(--color-text-muted);
+    font-size: var(--text-sm);
     overflow-wrap: anywhere;
   }
   .breadcrumbs ol {
@@ -612,85 +754,93 @@
     padding: 0;
     list-style: none;
   }
-  /* A "›" between items. Its empty alt text keeps screen readers, which announce
-     a list, from reading it too; browsers without alt text use the first line. */
+  /* A "/" between items. Its empty alt text keeps screen readers, which
+     announce a list, from reading it too; browsers without alt text use the
+     first line. */
   .breadcrumbs li + li::before {
-    content: "\203A";
-    content: "\203A" / "";
-    margin: 0 0.5rem;
-    color: var(--border-strong);
+    content: "/";
+    content: "/" / "";
+    margin: 0 var(--space-2);
+    color: var(--color-border-strong);
   }
   .breadcrumbs a {
-    color: var(--text-muted);
+    color: var(--color-text-muted);
     text-decoration: none;
   }
-  .breadcrumbs a:hover { color: var(--accent); }
+  .breadcrumbs a:hover { color: var(--color-heading); }
+  .breadcrumbs [aria-current] { color: var(--color-text); }
 
-  /* The table of contents beside the page, which marks where the reader is. */
+  /* The table of contents beside the page: a rail, with a marker where the
+     reader is. */
   .toc {
     position: sticky;
-    top: calc(var(--header-height) + 2rem);
+    top: calc(var(--header-height) + var(--space-10));
     align-self: start;
-    max-height: calc(100dvh - var(--header-height) - 4rem);
+    max-height: calc(100dvh - var(--header-height) - var(--space-16));
     overflow-y: auto;
-    font-size: 0.875rem;
+    font-size: var(--text-sm);
     scrollbar-width: thin;
   }
   .toc-title {
-    margin: 0 0 0.75rem;
-    color: var(--heading);
-    font-size: 0.875rem;
-    font-weight: 650;
+    margin: 0 0 var(--space-3);
+    color: var(--color-heading);
+    font-family: var(--font-heading);
+    font-size: var(--text-sm);
+    font-weight: var(--font-weight-semibold);
   }
   .toc ul {
     margin: 0;
     padding: 0;
     list-style: none;
   }
-  .toc > ul { border-left: 1px solid var(--border); }
+  .toc > ul { border-left: 1px solid var(--color-border); }
   .toc a {
     display: block;
     margin-left: -1px;
-    padding: 0.3rem 0 0.3rem 0.875rem;
-    border-left: 2px solid transparent;
-    color: var(--text-muted);
-    line-height: 1.4;
+    padding: var(--space-1) 0 var(--space-1) var(--space-4);
+    border-left: 1px solid transparent;
+    color: var(--color-text-muted);
+    line-height: var(--leading-normal);
     text-decoration: none;
     overflow-wrap: anywhere;
+    transition: color var(--duration) var(--ease), border-color var(--duration) var(--ease);
   }
-  .toc ul ul a { padding-left: 1.75rem; }
-  .toc a:hover { color: var(--text); }
+  .toc ul ul a { padding-left: var(--space-8); }
+  .toc a:hover {
+    border-left-color: var(--color-border-strong);
+    color: var(--color-heading);
+  }
   .toc a[data-current] {
-    border-left-color: var(--accent);
-    color: var(--accent);
+    border-left-color: var(--color-accent);
+    color: var(--color-link);
+    font-weight: var(--font-weight-medium);
   }
 
   /* The table of contents folded above the page. */
   .toc-inline {
-    margin-bottom: 2rem;
-    border: 1px solid var(--border);
+    margin-bottom: var(--space-8);
+    border: 1px solid var(--color-border);
     border-radius: var(--radius-lg);
-    background: var(--bg-subtle);
-    font-size: 0.9375rem;
+    font-size: var(--text-sm);
   }
   .toc-inline summary {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 0.625rem 1rem;
-    color: var(--heading);
-    font-weight: 600;
+    padding: var(--space-2) var(--space-4);
+    color: var(--color-heading);
+    font-weight: var(--font-weight-medium);
     cursor: pointer;
     list-style: none;
   }
   .toc-inline summary::-webkit-details-marker { display: none; }
   .toc-inline summary::after {
     content: "";
-    width: 0.5rem;
-    height: 0.5rem;
-    margin-right: 0.25rem;
-    border-right: 2px solid var(--text-muted);
-    border-bottom: 2px solid var(--text-muted);
+    width: 0.375rem;
+    height: 0.375rem;
+    margin-right: var(--space-1);
+    border-right: 1.5px solid var(--color-text-muted);
+    border-bottom: 1.5px solid var(--color-text-muted);
     rotate: 45deg;
     translate: 0 -0.125rem;
   }
@@ -700,72 +850,78 @@
     padding: 0;
     list-style: none;
   }
-  .toc-inline nav > ul { padding: 0 1rem 0.75rem; }
-  .toc-inline ul ul { padding-left: 1rem; }
+  .toc-inline nav > ul {
+    padding: var(--space-2) var(--space-4) var(--space-3);
+    border-top: 1px solid var(--color-border);
+  }
+  .toc-inline ul ul { padding-left: var(--space-4); }
   .toc-inline a {
     display: block;
-    padding: 0.3rem 0;
-    color: var(--text-muted);
+    padding: var(--space-1) 0;
+    color: var(--color-text-muted);
     text-decoration: none;
     overflow-wrap: anywhere;
   }
-  .toc-inline a:hover { color: var(--accent); }
+  .toc-inline a:hover { color: var(--color-heading); }
 
   /* Links to edit and view the page's file in the site's repository. */
   .page-links {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.5rem 1.5rem;
-    margin-top: 4rem;
-    padding-top: 1.5rem;
-    border-top: 1px solid var(--border);
-    font-size: 0.875rem;
+    gap: var(--space-2) var(--space-5);
+    margin-top: var(--space-16);
+    padding-top: var(--space-5);
+    border-top: 1px solid var(--color-border);
+    font-size: var(--text-sm);
   }
   .page-links a {
     display: inline-flex;
     align-items: center;
-    gap: 0.375rem;
-    color: var(--text-muted);
+    gap: var(--space-15);
+    color: var(--color-text-muted);
     text-decoration: none;
   }
-  .page-links a:hover { color: var(--accent); }
+  .page-links a:hover { color: var(--color-heading); }
   .page-links .icon { width: 1rem; height: 1rem; }
 
   /* The previous and next pages. */
   .pager {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 1rem;
-    margin-top: 3rem;
+    gap: var(--space-4);
+    margin-top: var(--space-12);
   }
-  .page-links + .pager { margin-top: 1.5rem; }
+  .page-links + .pager { margin-top: var(--space-6); }
   .pager a {
     display: flex;
     flex-direction: column;
-    gap: 0.25rem;
-    padding: 0.875rem 1.125rem;
-    border: 1px solid var(--border);
+    gap: var(--space-05);
+    padding: var(--space-3) var(--space-4);
+    border: 1px solid var(--color-border);
     border-radius: var(--radius-lg);
-    color: var(--heading);
-    font-weight: 600;
+    color: var(--color-heading);
+    font-size: var(--text-sm);
+    font-weight: var(--font-weight-semibold);
     text-decoration: none;
     overflow-wrap: anywhere;
+    transition: border-color var(--duration) var(--ease), box-shadow var(--duration) var(--ease);
   }
   .pager a:hover {
-    border-color: var(--accent);
-    color: var(--accent);
+    border-color: var(--color-border-strong);
+    box-shadow: var(--shadow-sm);
   }
+  .pager a:hover .pager-title { color: var(--color-link); }
   .pager-label {
     display: inline-flex;
     align-items: center;
-    gap: 0.25rem;
-    color: var(--text-muted);
-    font-size: 0.8125rem;
-    font-weight: 400;
+    gap: var(--space-1);
+    color: var(--color-text-muted);
+    font-size: var(--text-xs);
+    font-weight: var(--font-weight-normal);
   }
-  .pager-label .icon { width: 1rem; height: 1rem; }
-  .pager-prev .pager-label { margin-left: -0.25rem; }
-  .pager-next .pager-label { margin-right: -0.25rem; }
+  .pager-label .icon { width: 0.875rem; height: 0.875rem; }
+  .pager-prev .pager-label { margin-left: calc(-1 * var(--space-05)); }
+  .pager-next .pager-label { margin-right: calc(-1 * var(--space-05)); }
   /* Keep "Next" on the right, even on the first page. */
   .pager-next {
     grid-column: 2;
@@ -781,19 +937,21 @@
   .code-block { position: relative; }
   .copy-button {
     position: absolute;
-    top: 0.5rem;
-    right: 0.5rem;
+    top: var(--space-2);
+    right: var(--space-2);
     width: 2rem;
     height: 2rem;
-    border-color: var(--border);
-    background: var(--code-bg);
+    border-color: var(--color-border);
+    background: var(--color-bg-raised);
     opacity: 0;
-    transition: opacity 0.15s;
+    transition: opacity var(--duration) var(--ease), color var(--duration) var(--ease);
   }
+  .copy-button:hover { background: var(--color-bg-raised); }
   .copy-button .icon { width: 1rem; height: 1rem; }
   .code-block:hover .copy-button,
   .copy-button:focus-visible,
   .copy-button[data-copied] { opacity: 1; }
+  .copy-button[data-copied] { color: var(--color-link); }
   @media (hover: none) {
     .copy-button { opacity: 1; }
   }
@@ -801,52 +959,51 @@
 
 @layer little.content {
   .content {
-    line-height: 1.7;
+    line-height: var(--leading-relaxed);
     overflow-wrap: break-word;
   }
   .content > :first-child { margin-top: 0; }
   .content > :last-child { margin-bottom: 0; }
 
   .content :is(h1, h2, h3, h4, h5, h6) {
-    color: var(--heading);
-    line-height: 1.25;
+    color: var(--color-heading);
+    font-family: var(--font-heading);
+    font-weight: var(--font-weight-semibold);
+    line-height: var(--leading-tight);
+    letter-spacing: var(--tracking-tight);
     text-wrap: balance;
   }
   .content h1 {
-    margin: 0 0 1rem;
-    font-size: clamp(2rem, 1.6rem + 1.2vw, 2.5rem);
-    font-weight: 750;
-    letter-spacing: -0.025em;
+    margin: 0 0 var(--space-4);
+    font-size: var(--text-3xl);
+    font-weight: var(--font-weight-bold);
   }
   .content h2 {
-    margin: 3rem 0 1rem;
-    font-size: 1.5rem;
-    font-weight: 700;
-    letter-spacing: -0.015em;
+    margin: var(--space-12) 0 var(--space-4);
+    font-size: var(--text-2xl);
   }
   .content h3 {
-    margin: 2.25rem 0 0.75rem;
-    font-size: 1.25rem;
-    font-weight: 650;
-    letter-spacing: -0.01em;
+    margin: var(--space-8) 0 var(--space-3);
+    font-size: var(--text-xl);
   }
   .content h4 {
-    margin: 2rem 0 0.5rem;
-    font-size: 1.0625rem;
-    font-weight: 650;
+    margin: var(--space-8) 0 var(--space-2);
+    font-size: var(--text-base);
+    letter-spacing: 0;
   }
   .content :is(h5, h6) {
-    margin: 1.75rem 0 0.5rem;
-    font-size: 1rem;
-    font-weight: 650;
+    margin: var(--space-6) 0 var(--space-2);
+    font-size: var(--text-sm);
+    letter-spacing: 0;
   }
   /* The page's opening paragraph, a little larger. */
   .content h1 + p {
-    color: var(--text-muted);
-    font-size: 1.125rem;
+    color: var(--color-text-muted);
+    font-size: var(--text-lg);
+    line-height: var(--leading-normal);
   }
   .content :is(p, ul, ol, dl, blockquote, pre, table, details, figure, .code-block, .table-scroll, .markdown-alert) {
-    margin-block: 1.25rem;
+    margin-block: var(--space-5);
   }
   .content .code-block > pre,
   .content .table-scroll > table { margin: 0; }
@@ -855,47 +1012,48 @@
      heading is hovered or the link has focus. Its label names it to screen
      readers, so they don't read the "#". */
   .content .anchor {
-    margin-left: 0.5rem;
-    color: var(--text-muted);
-    font-weight: 400;
+    margin-left: var(--space-2);
+    color: var(--color-border-strong);
+    font-weight: var(--font-weight-normal);
     text-decoration: none;
     opacity: 0;
+    transition: opacity var(--duration) var(--ease);
   }
   .content .anchor::before { content: "#"; }
   .content :is(h1, h2, h3, h4, h5, h6):hover .anchor,
   .content .anchor:focus-visible { opacity: 1; }
-  .content .anchor:hover { color: var(--accent); }
+  .content .anchor:hover { color: var(--color-link); }
 
   /* Links in the text are underlined, so they stand out by more than their
      colour. */
   .content a:not(.anchor) {
+    font-weight: var(--font-weight-medium);
     text-decoration-line: underline;
-    text-decoration-color: var(--accent-line);
+    text-decoration-color: var(--color-primary-line);
     text-decoration-thickness: 1px;
     text-underline-offset: 0.2em;
+    transition: text-decoration-color var(--duration) var(--ease);
   }
-  .content a:not(.anchor):hover {
-    text-decoration-color: currentColor;
-    text-decoration-thickness: 2px;
-  }
+  .content a:not(.anchor):hover { text-decoration-color: currentColor; }
   .content sup a { text-decoration: none; }
 
-  .content strong { color: var(--heading); font-weight: 650; }
+  .content strong { color: var(--color-heading); font-weight: var(--font-weight-semibold); }
 
-  .content :is(ul, ol) { padding-left: 1.5rem; }
-  .content li { margin-block: 0.375rem; }
-  .content li > :is(ul, ol) { margin-block: 0.375rem; }
-  .content li::marker { color: var(--text-muted); }
+  .content :is(ul, ol) { padding-left: var(--space-6); }
+  .content li { margin-block: var(--space-15); }
+  .content li > :is(ul, ol) { margin-block: var(--space-15); }
+  .content li::marker { color: var(--color-border-strong); }
+  .content ol > li::marker { color: var(--color-text-muted); }
   .content li:has(> input[type="checkbox"]:first-child) { list-style: none; }
   .content li > input[type="checkbox"]:first-child {
-    margin: 0 0.5rem 0 -1.5rem;
-    accent-color: var(--accent);
+    margin: 0 var(--space-2) 0 calc(-1 * var(--space-6));
+    accent-color: var(--color-accent);
   }
   .content dt {
-    color: var(--heading);
-    font-weight: 600;
+    color: var(--color-heading);
+    font-weight: var(--font-weight-semibold);
   }
-  .content dd { margin: 0.25rem 0 0.75rem 1.5rem; }
+  .content dd { margin: var(--space-1) 0 var(--space-3) var(--space-6); }
   /* A term or its definition can hold paragraphs, as a plugin for another
      format writes them, in HTML, whose margins would part the two. */
   .content :is(dt, dd) > :first-child { margin-top: 0; }
@@ -903,15 +1061,15 @@
 
   .content blockquote {
     margin-inline: 0;
-    padding-left: 1rem;
-    border-left: 3px solid var(--border-strong);
-    color: var(--text-muted);
+    padding-left: var(--space-4);
+    border-left: 2px solid var(--color-border-strong);
+    color: var(--color-text-muted);
   }
 
   .content hr {
-    margin-block: 2.5rem;
+    margin-block: var(--space-10);
     border: 0;
-    border-top: 1px solid var(--border);
+    border-top: 1px solid var(--color-border);
   }
 
   .content img {
@@ -922,37 +1080,40 @@
   .content mark {
     padding: 0 0.125em;
     border-radius: var(--radius-sm);
-    background: light-dark(#fff3b0, #5c4a00);
+    background: var(--color-mark);
     color: inherit;
   }
 
   .content kbd {
-    padding: 0.125em 0.375em;
-    border: 1px solid var(--border-strong);
+    padding: 0.125em 0.4em;
+    border: 1px solid var(--color-border-strong);
     border-bottom-width: 2px;
     border-radius: var(--radius-sm);
-    background: var(--bg-subtle);
+    background: var(--color-bg-subtle);
+    color: var(--color-heading);
     font-family: var(--font-mono);
     font-size: 0.8125em;
   }
 
   /* Code: inline, and in blocks. */
   .content code {
-    padding: 0.125em 0.375em;
+    padding: 0.125em 0.35em;
     border-radius: var(--radius-sm);
-    background: var(--inline-code-bg);
+    background: var(--color-bg-muted);
+    color: var(--color-code-text);
     font-family: var(--font-mono);
     font-size: 0.875em;
   }
+  .content a code { color: inherit; }
   .content pre {
-    padding: 1rem 1.25rem;
-    border: 1px solid var(--border);
+    padding: var(--space-4) var(--space-5);
+    border: 1px solid var(--color-border);
     border-radius: var(--radius-lg);
-    background: var(--code-bg);
-    color: var(--code-text);
+    background: var(--color-code-bg);
+    color: var(--color-code-text);
     font-family: var(--font-mono);
-    font-size: 0.875rem;
-    line-height: 1.65;
+    font-size: var(--text-sm);
+    line-height: var(--leading-relaxed);
     overflow-x: auto;
     tab-size: 4;
   }
@@ -960,6 +1121,7 @@
     padding: 0;
     border-radius: 0;
     background: none;
+    color: inherit;
     font-size: inherit;
   }
   /* On a phone, a code block runs from edge to edge, to fit more code. */
@@ -977,7 +1139,7 @@
      code. */
   .content pre:has(> code.language-output) {
     border-style: dashed;
-    background: var(--bg);
+    background: var(--color-bg);
   }
 
   /* Highlighted code: Pygments' classes, as little writes them. */
@@ -988,10 +1150,10 @@
   .highlight :is(.nf, .nc, .nd) { color: var(--syntax-function); }
   .highlight .nt { color: var(--syntax-tag); }
   .highlight :is(.na, .nl, .nn) { color: var(--syntax-variable); }
-  .highlight :is(.gh, .gu) { color: var(--syntax-constant); font-weight: 600; }
+  .highlight :is(.gh, .gu) { color: var(--syntax-constant); font-weight: var(--font-weight-semibold); }
   .highlight .gi { color: var(--syntax-inserted); background: var(--syntax-inserted-bg); }
   .highlight .gd { color: var(--syntax-deleted); background: var(--syntax-deleted-bg); }
-  .highlight .gs { font-weight: 600; }
+  .highlight .gs { font-weight: var(--font-weight-semibold); }
   .highlight .ge { font-style: italic; }
   /* ...and GitHub's. */
   .highlight .pl-c { color: var(--syntax-comment); font-style: italic; }
@@ -1001,62 +1163,52 @@
   .highlight :is(.pl-e, .pl-en) { color: var(--syntax-function); }
   .highlight .pl-ent { color: var(--syntax-tag); }
   .highlight .pl-v { color: var(--syntax-variable); }
-  .highlight :is(.pl-mh, .pl-mdr) { color: var(--syntax-constant); font-weight: 600; }
+  .highlight :is(.pl-mh, .pl-mdr) { color: var(--syntax-constant); font-weight: var(--font-weight-semibold); }
   .highlight .pl-mi1 { color: var(--syntax-inserted); background: var(--syntax-inserted-bg); }
   .highlight .pl-md { color: var(--syntax-deleted); background: var(--syntax-deleted-bg); }
-  .highlight .pl-mb { font-weight: 600; }
+  .highlight .pl-mb { font-weight: var(--font-weight-semibold); }
   .highlight .pl-mi { font-style: italic; }
 
-  /* Without the theme's script, a table is as wide as its columns, and
-     scrolls within the page when it's too wide for it, as on GitHub. */
+  /* A table is rows between hairlines, with no box around it, and its
+     first column in line with the text. Without the theme's script, it's as
+     wide as its columns, and scrolls within the page when it's too wide for
+     it, as on GitHub. */
   .content table {
     display: block;
     width: max-content;
     max-width: 100%;
     overflow-x: auto;
-    border: 1px solid var(--border);
-    border-radius: var(--radius-lg);
     border-collapse: collapse;
-    font-size: 0.9375rem;
-    line-height: 1.5;
+    font-size: var(--text-sm);
+    line-height: var(--leading-normal);
   }
   /* With it, a table is as wide as the page, from the first paint. A table
      that fills a width can't scroll, so the script puts each in a
-     `.table-scroll`, which scrolls, and takes over its frame, so nothing
-     moves. pandas' tables stay as wide as their columns, as in Jupyter. */
+     `.table-scroll`, which scrolls. pandas' tables stay as wide as their
+     columns, as in Jupyter. */
   .js .content table:not(.dataframe) {
     display: table;
     width: 100%;
     max-width: none;
-    /* Rounds its corners, as collapsed borders can't be, and clips its
-       headings' background to them. */
-    border-collapse: separate;
-    border-spacing: 0;
-    overflow: hidden;
   }
-  .content .table-scroll {
-    overflow-x: auto;
-    border: 1px solid var(--border);
-    border-radius: var(--radius-lg);
-  }
-  .content .table-scroll > table {
-    border: 0;
-    border-radius: 0;
-  }
+  .content .table-scroll { overflow-x: auto; }
   .content :is(th, td) {
-    padding: 0.625rem 0.875rem;
-    border-bottom: 1px solid var(--border);
+    padding: var(--space-3) var(--space-4);
+    border-bottom: 1px solid var(--color-border);
     vertical-align: top;
   }
+  .content :is(th, td):first-child { padding-left: 0; }
+  .content :is(th, td):last-child { padding-right: 0; }
   /* A column aligned in Markdown, with `:-:` or `--:`, gives each of its
      cells an `align`, which any `text-align` would override. */
   .content :is(th, td):not([align]) { text-align: left; }
   .content th {
-    background: var(--bg-subtle);
-    color: var(--heading);
-    font-weight: 600;
+    padding-block: var(--space-2);
+    border-bottom-color: var(--color-border-strong);
+    color: var(--color-heading);
+    font-weight: var(--font-weight-semibold);
+    white-space: nowrap;
   }
-  .content tbody tr:last-child > * { border-bottom: 0; }
   /* A table without headings, which Markdown can't write, has a row of
      empty ones, as a plugin for another format writes it: it's not shown. */
   .content thead tr:not(:has(th:not(:empty))) { display: none; }
@@ -1064,82 +1216,91 @@
      `<style>` aligns their headings. */
   .content .dataframe :is(th, td) { text-align: right; }
 
-  /* Alerts, like GitHub's: `> [!NOTE]` and the rest, each with its icon. */
+  /* Alerts, like GitHub's: `> [!NOTE]` and the rest, each with its icon.
+     Each kind sets one colour, `--alert`, which its text, background, and
+     border are worked out from, as the note that names an old version's
+     are. */
   .content .markdown-alert {
-    --alert: var(--note);
-    --alert-bg: var(--note-bg);
     --alert-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='12' cy='12' r='9'/%3E%3Cpath d='M12 11v5M12 8h.01'/%3E%3C/svg%3E");
-    padding: 0.875rem 1.125rem;
-    border: 1px solid var(--alert-bg);
-    border-left: 4px solid var(--alert);
-    border-radius: var(--radius);
+    padding: var(--space-3) var(--space-4);
+    border: 1px solid var(--alert-line);
+    border-radius: var(--radius-lg);
     background: var(--alert-bg);
+    font-size: var(--text-sm);
+    line-height: var(--leading-normal);
   }
+  .content .markdown-alert > * { margin-block: var(--space-2); }
   .content .markdown-alert > :first-child { margin-top: 0; }
   .content .markdown-alert > :last-child { margin-bottom: 0; }
   .content .markdown-alert-title {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    margin-bottom: 0.25rem;
-    color: var(--alert);
-    font-weight: 650;
+    gap: var(--space-2);
+    color: var(--alert-text);
+    font-weight: var(--font-weight-semibold);
   }
-  .content .markdown-alert-title + * { margin-top: 0.25rem; }
+  .content .markdown-alert-title + * { margin-top: var(--space-1); }
   .content .markdown-alert-title::before {
     content: "";
-    width: 1.125rem;
-    height: 1.125rem;
+    flex: none;
+    width: 1rem;
+    height: 1rem;
     background: currentColor;
     mask: var(--alert-icon) center / contain no-repeat;
   }
+  .content .markdown-alert code { background: color-mix(in srgb, var(--alert-text) 9%, transparent); }
   .content .markdown-alert-tip {
-    --alert: var(--tip);
-    --alert-bg: var(--tip-bg);
+    --alert: var(--success);
     --alert-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2.1h5c0-.9.4-1.6 1-2.1A6 6 0 0 0 12 3z'/%3E%3C/svg%3E");
   }
   .content .markdown-alert-important {
-    --alert: var(--important);
-    --alert-bg: var(--important-bg);
+    --alert: var(--primary);
     --alert-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 5a1 1 0 0 1 1-1h14a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H9l-5 4z'/%3E%3Cpath d='M12 8v4M12 14.5h.01'/%3E%3C/svg%3E");
   }
   .content .markdown-alert-warning {
     --alert: var(--warning);
-    --alert-bg: var(--warning-bg);
     --alert-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M10.3 4.2L2.6 18a2 2 0 0 0 1.7 3h15.4a2 2 0 0 0 1.7-3L13.7 4.2a2 2 0 0 0-3.4 0z'/%3E%3Cpath d='M12 9v4.5M12 17h.01'/%3E%3C/svg%3E");
   }
   .content .markdown-alert-caution {
-    --alert: var(--caution);
-    --alert-bg: var(--caution-bg);
+    --alert: var(--danger);
     --alert-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M8 3h8l5 5v8l-5 5H8l-5-5V8z'/%3E%3Cpath d='M12 8v4.5M12 16h.01'/%3E%3C/svg%3E");
   }
 
   .content details {
-    padding: 0.625rem 1rem;
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
+    padding: var(--space-3) var(--space-4);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    font-size: var(--text-sm);
+    line-height: var(--leading-normal);
   }
   .content summary {
-    color: var(--heading);
-    font-weight: 600;
+    color: var(--color-heading);
+    font-weight: var(--font-weight-medium);
     cursor: pointer;
   }
-  .content details[open] > summary { margin-bottom: 0.5rem; }
+  .content summary::marker { color: var(--color-text-muted); }
+  .content details[open] > summary { margin-bottom: var(--space-2); }
   .content details > :last-child { margin-bottom: 0; }
 
   .content .footnotes {
-    margin-top: 3rem;
-    padding-top: 1rem;
-    border-top: 1px solid var(--border);
-    color: var(--text-muted);
-    font-size: 0.875rem;
+    margin-top: var(--space-12);
+    padding-top: var(--space-4);
+    border-top: 1px solid var(--color-border);
+    color: var(--color-text-muted);
+    font-size: var(--text-sm);
+    line-height: var(--leading-normal);
+  }
+  /* The arrow back to the text is drawn as text, not as an emoji. */
+  .content .footnote-backref {
+    font-variant-emoji: text;
+    text-decoration: none;
   }
 
   /* A formula too wide for the page scrolls within it, like a wide table,
      where the browser can scroll one (Safari can't). It doesn't scroll up and
      down: the boxes of its glyphs can reach a few pixels past its own. */
   .content math[display="block"] {
-    margin-block: 1.5rem;
+    margin-block: var(--space-6);
     overflow-x: auto;
     overflow-y: hidden;
   }
@@ -1151,18 +1312,19 @@
     display: block;
     max-width: 100%;
     height: auto;
-    margin: 1.5rem auto;
-    padding: 1rem;
+    margin: var(--space-6) auto;
+    padding: var(--space-4);
     border-radius: var(--radius-lg);
-    background-color: var(--diagram-bg) !important;
+    background-color: var(--color-diagram-bg) !important;
   }
 
   /* The 404 page. */
   .content .error-code {
-    margin: 0 0 0.5rem;
-    color: var(--accent);
+    margin: 0 0 var(--space-2);
+    color: var(--color-link);
     font-family: var(--font-mono);
-    font-weight: 600;
+    font-size: var(--text-sm);
+    font-weight: var(--font-weight-semibold);
   }
 }
 
@@ -1172,10 +1334,10 @@
   @layer little.components {
     .nav a[aria-current="page"],
     .version-menu a[aria-current] { outline: 2px solid; }
-    /* A transparent border is forced to show, so the current heading's bar
-       would differ from the others only in colour. */
-    .toc a { border-left-color: Canvas; }
-    .toc a[data-current] { border-left-color: Highlight; }
+    .toc a,
+    .nav ul a { border-left-color: Canvas; }
+    .toc a[data-current],
+    .nav ul a[aria-current="page"] { border-left-color: Highlight; }
   }
   @layer little.content {
     .content .markdown-alert-title::before {
@@ -1205,7 +1367,7 @@
     .content :is(pre, .markdown-alert, table, svg) { break-inside: avoid; }
     .content a[href^="http"]::after {
       content: " (" attr(href) ")";
-      color: var(--text-muted);
+      color: var(--color-text-muted);
       font-size: 0.875em;
       overflow-wrap: anywhere;
     }
@@ -1215,21 +1377,21 @@
 /* Pagefind sets its colours on :root outside any layer, so the theme's must
    be outside one too, to come after them. */
 :root {
-  --pf-font: var(--font);
-  --pf-text: var(--text);
-  --pf-text-secondary: var(--text-muted);
-  --pf-text-muted: var(--text-muted);
-  --pf-background: var(--bg);
-  --pf-border: var(--border);
-  --pf-border-focus: var(--accent);
-  --pf-hover: var(--bg-muted);
-  --pf-mark: var(--accent);
-  --pf-skeleton: var(--bg-muted);
-  --pf-skeleton-shine: var(--bg-subtle);
-  --pf-scroll-shadow: light-dark(rgb(15 23 42 / 0.08), rgb(0 0 0 / 0.4));
+  --pf-font: var(--font-sans);
+  --pf-text: var(--color-text);
+  --pf-text-secondary: var(--color-text-muted);
+  --pf-text-muted: var(--color-text-muted);
+  --pf-background: var(--color-bg-raised);
+  --pf-border: var(--color-border);
+  --pf-border-focus: var(--color-accent);
+  --pf-hover: var(--color-bg-muted);
+  --pf-mark: var(--color-link);
+  --pf-skeleton: var(--color-bg-muted);
+  --pf-skeleton-shine: var(--color-bg-subtle);
+  --pf-scroll-shadow: var(--shadow-color);
   --pf-shadow-lg: var(--shadow-lg);
-  --pf-outline-focus: var(--accent);
-  --pf-border-radius: var(--radius);
-  --pf-input-height: 2.375rem;
-  --pf-modal-backdrop: light-dark(rgb(15 23 42 / 0.4), rgb(0 0 0 / 0.6));
+  --pf-outline-focus: var(--color-accent);
+  --pf-border-radius: var(--radius-lg);
+  --pf-input-height: 2.5rem;
+  --pf-modal-backdrop: var(--color-overlay);
 }

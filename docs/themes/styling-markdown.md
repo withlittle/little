@@ -94,7 +94,7 @@ your CSS: give diagrams your theme's colours and font with
 
 A diagram is as wide as it's drawn, but no wider than the page. The
 built-in theme centres each with
-`svg[id^="mermaid-"] { display: block; margin: 1.5rem auto; }`.
+`svg[id^="mermaid-"] { display: block; margin: var(--space-6) auto; }`.
 
 ## Loading a script a site needs
 

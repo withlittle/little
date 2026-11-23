@@ -1,6 +1,8 @@
 # 0038 — The built-in theme's page and tables
 
-- Status: accepted
+- Status: accepted; amended by
+  [0086](./0086-the-built-in-themes-design-system.md), whose tables have no
+  frame, and whose page starts beside the nav
 - Date: 2026-10-11
 - Amends: [0033](./0033-the-built-in-themes-design.md),
   [0034](./0034-the-built-in-themes-script.md)

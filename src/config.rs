@@ -897,6 +897,7 @@ fn settle(
     let versions = versions(&site, &plugins)?;
     let redirects = redirects(&site)?;
     error_page(&site)?;
+    colors(&site)?;
     Ok(Config {
         site,
         page,
@@ -1222,13 +1223,31 @@ fn mermaid(site: &Mapping) -> Result<serde_json::Value> {
             themes.join(", ")
         );
     }
-    if let Some(path) = empty_setting(settings, "site.theme.mermaid") {
+    none_empty(settings, "site.theme.mermaid")?;
+    serde_json::to_value(settings).context("reading `site.theme.mermaid`")
+}
+
+/// Check the colours a site's theme is to have, in the settings under
+/// `site.theme.colors`. They're the theme's to read, so little checks only
+/// for the one YAML leaves empty, as a colour like #6f42c1 is without
+/// quotes, which a theme couldn't tell from a colour that isn't set.
+fn colors(site: &Mapping) -> Result<()> {
+    match site.get("theme").and_then(|theme| theme.get("colors")) {
+        Some(Value::Mapping(settings)) => none_empty(settings, "site.theme.colors"),
+        _ => Ok(()),
+    }
+}
+
+/// Stop at a setting in `settings`, or in the settings within them, that's
+/// empty, naming it from `path`, and saying how a colour is written.
+fn none_empty(settings: &Mapping, path: &str) -> Result<()> {
+    if let Some(path) = empty_setting(settings, path) {
         bail!(
             "`{path}` is empty: put a colour in quotes, like \"#6f42c1\", or YAML reads it as \
              a comment"
         );
     }
-    serde_json::to_value(settings).context("reading `site.theme.mermaid`")
+    Ok(())
 }
 
 /// The first setting in `settings`, or in the settings within them, that's
@@ -3204,6 +3223,37 @@ mod tests {
             message.starts_with("`site.theme.mermaid.fontFamily` is empty: "),
             "{message}"
         );
+    }
+
+    #[test]
+    fn an_empty_colour_explains_itself() {
+        let (_tmp, site) = scratch(&[]);
+        let colors = |settings: &str| format!("site:\n  theme:\n    colors:{settings}\n");
+
+        // YAML reads a colour after `#` as a comment, leaving its setting
+        // empty, which the theme couldn't tell from one that isn't set.
+        let message = error(&site, &colors("\n      primary: #6f42c1"));
+        assert_eq!(
+            message,
+            "`site.theme.colors.primary` is empty: put a colour in quotes, like \"#6f42c1\", or \
+             YAML reads it as a comment"
+        );
+
+        // In quotes, it's the site's, over its theme's, colour by colour.
+        std::fs::write(
+            site.join(CONFIG_FILE),
+            colors("\n      primary: \"#6f42c1\""),
+        )
+        .unwrap();
+        let config = load(&site).unwrap();
+        assert_eq!(get(&config.site, "theme.colors.primary"), Some("#6f42c1"));
+        assert_eq!(get(&config.site, "theme.colors.info"), Some("#2f6fdb"));
+
+        // Anything else there is the theme's to read, as it's written.
+        for settings in [" teal", "\n      primary: 7"] {
+            std::fs::write(site.join(CONFIG_FILE), colors(settings)).unwrap();
+            load(&site).unwrap();
+        }
     }
 
     #[test]
