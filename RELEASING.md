@@ -1,166 +1,27 @@
 # Releasing
 
-How little, and its plugins, `pydoc`, `rustdoc`, `jsdoc`, `godoc`,
-`openapi`, `jupyter`, `asciidoc`, `orgmode`, and `restructuredtext`, are
-released.
-Each is released on its own, from a tag of its version: `v0.2.0` for
-little, and one that names the plugin too, like `pydoc-v0.2.0`, for a
-plugin. Pushing the tag to GitHub runs a workflow, which checks the tag,
-builds what it releases, and publishes it in a release of little's
-repository, with its [third-party notices](#third-party-notices), and notes
-that list what changed since its last release:
+little and each of its plugins are released on their own, by pushing a tag
+of the version: `v0.4.0` for little, or `pydoc-v0.2.0` for a plugin. The
+tag's workflow builds the release, and publishes it on GitHub, with notes
+that list what's changed. A release can't be undone, so only the
+maintainer pushes a tag.
 
-- [`release.yml`](./.github/workflows/release.yml), for little: its binary
-  for Linux, macOS, and Windows, on x64 and arm64, each in an archive, then
-  its crate, `little-docs`, on crates.io, as
-  [ADR 0055](./decisions/0055-releasing-little.md) says.
-- [`release-plugin.yml`](./.github/workflows/release-plugin.yml), for a
-  plugin: its `.wasm` file, as
-  [ADR 0052](./decisions/0052-releasing-plugins-from-tags.md) says.
+A release is four steps: see what's changed, raise the version in a pull
+request, tag `main`, and watch the run. They use
+[`gh`](https://cli.github.com) and [git-cliff](https://git-cliff.org), and
+settings that are made once, as
+[Before your first release](#before-your-first-release) says.
 
-How versions are numbered is in
-[ADR 0051](./decisions/0051-semantic-versioning-and-conventional-commits.md).
-
-A release can't be undone, so only the maintainer pushes a tag.
-
-## Before you release
-
-On the computer you release from, install the
-[GitHub CLI](https://cli.github.com), `gh`, which the steps below use, with
-`brew install gh`, then sign in with `gh auth login`: choose HTTPS, and
-**Yes** to "Authenticate Git with your GitHub credentials?", so `git push`
-can push a tag. GitHub doesn't take a password for Git, and GitHub
-Desktop's sign-in doesn't reach `git` in a terminal.
-
-Releases also rely on three settings outside the repository's files, set
-once, by hand:
-
-- **Release immutability**, in the repository's **Settings**, under
-  **Releases**: a published release's files can't be changed or deleted,
-  nor its tag moved or deleted, as ADR 0051 says a release never is, and
-  GitHub attests to each release, so anyone can check that a file came
-  from it. A release's title and notes can still be edited.
-- A trusted publisher, in `little-docs`'s **Settings** on crates.io, under
-  **Trusted Publishing**: the repository `withlittle/little`, the workflow
-  `release.yml`, and the environment `crates-io`. It gives **publish to
-  crates.io** a token for its run alone, so there's no API token to keep.
-- The `crates-io` environment, in the repository's **Settings**, under
-  **Environments**, which only tags like `v*` can use, so only a release
-  can ask crates.io for a token.
-
-## Releasing a plugin
-
-Release a new plugin as soon as the pull request that adds it is merged.
-Its page in the manual names its first release already, like
-`openapi-v0.1.0`. But the manual is published from `main`, so that URL
-leads nowhere until the release is out. Its `Cargo.toml` says 0.1.0,
-which hasn't been released, so a first release skips steps 1 and 2: tag
-`main`, as in [step 3](#3-tag-it-and-push-the-tag). Its notes say it's
-its first release, rather than list every change before it.
-
-### 1. See what's changed
-
-[git-cliff](https://git-cliff.org) lists a plugin's changes since its last
-release, as the release's notes will: the commits that changed its folder,
-`plugins/<plugin>/`, or the library it shares with others like it,
-`plugins/api_reference/`, for `pydoc`, `rustdoc`, `jsdoc`, `godoc`, and
-`openapi`, or `plugins/markup/`, for `asciidoc`, `orgmode`, and
-`restructuredtext`, of a type that's released, `feat`, `fix`, or `perf`,
-with those that break something first. Install it, with
-`cargo install --locked git-cliff` or `brew install git-cliff`, then, in
-the repository's root:
-
-```sh
-plugin=pydoc
-PLUGIN=$plugin git cliff --unreleased --tag-pattern "^$plugin-v" \
-  --include-path "plugins/$plugin/**" --include-path "plugins/api_reference/**"
-```
-
-For `asciidoc`, `orgmode`, or `restructuredtext`, give `plugins/markup/**`
-in its place, and for `jupyter`, which uses neither library, leave out its
-`--include-path`. It warns of the commits it skips, like merges, which
-aren't Conventional Commits; that's expected. With `--bumped-version`
-added, the same command prints the tag to release next: after a feature or
-a breaking change, it raises the minor version, from `pydoc-v0.1.4` to
-`pydoc-v0.2.0`, and after anything else, the patch, to `pydoc-v0.1.5`.
-With nothing to list, there's nothing to release, so it says so, and
-prints the last tag. Keep `--unreleased`: without it, it raises the patch
-even then.
-
-### 2. Raise its version, in a pull request
-
-On a branch from `main`:
-
-1. Raise `version` in `plugins/<plugin>/Cargo.toml`.
-2. Run its tests, `cargo test --manifest-path plugins/<plugin>/Cargo.toml`,
-   which updates its `Cargo.lock` to the new version too. CI builds with
-   `--locked`, as the release does, so if `Cargo.lock` isn't committed with
-   `Cargo.toml`, the pull request fails, before the release can.
-3. Change the URLs in its page in the manual, `docs/plugins/pydoc.md`,
-   `rustdoc.md`, `jsdoc.md`, `godoc.md`, `openapi.md`, `jupyter.ipynb`,
-   `asciidoc.adoc`, `org-mode.org`, or `restructuredtext.rst`, to the new
-   version, so the manual gives it.
-   `git grep -n "download/$plugin-v" docs/` finds them.
-4. Commit them as `chore(<plugin>): release <version>`, like
-   `chore(pydoc): release 0.2.0`, open a pull request, and merge it once CI
-   passes.
-
-### 3. Tag it, and push the tag
-
-Once the pull request is merged, check CI has passed on `main`, as the
-release doesn't run the tests again, then tag `main`:
-
-```sh
-git switch main
-git pull --ff-only
-gh run list --workflow ci.yml --branch main --limit 1
-git tag -a pydoc-v0.2.0 -m "pydoc 0.2.0"
-git push origin pydoc-v0.2.0
-```
-
-`-a` makes an annotated tag, which records who tagged it, and when. Push
-the tag by its name, not with `--tags`, which pushes every tag you have:
-GitHub runs no workflow at all for a push of more than three tags. To
-release more than one plugin, push each one's tag on its own.
-
-### 4. Watch it run
-
-The push starts **Release a plugin**, in the repository's **Actions** tab,
-or `gh run watch`, which asks which run to watch. Before it builds
-anything, it checks:
-
-- that the tag names a plugin and a version, `X.Y.Z`; pre-releases, like
-  `pydoc-v0.2.0-rc.1`, aren't supported;
-- that the commit it's on is on `main`;
-- that the plugin has no release of that version, not even a draft;
-- that the plugin's `Cargo.toml` has that version.
-
-Then it writes the notes, which its log shows, and the plugin's third-party
-notices, builds the `.wasm` file, as CI does, and publishes them, in a few
-minutes. Check the release on GitHub, or with:
-
-```sh
-gh release view pydoc-v0.2.0
-gh release verify pydoc-v0.2.0   # its attestation
-```
-
-Its notes say which version of `little:plugin` the plugin is built for, how
-to name it in `little.yml`, and what's changed; they can still be edited,
-on GitHub, though its files can't. A plugin's release isn't labelled
-"Latest", which is left for little's own.
+The records say why little is released this way:
+[0051](./decisions/0051-semantic-versioning-and-conventional-commits.md)
+and [0058](./decisions/0058-features-raise-the-minor-version.md), for how
+versions are numbered, [0055](./decisions/0055-releasing-little.md), for
+little's releases, and
+[0052](./decisions/0052-releasing-plugins-from-tags.md), for plugins'.
 
 ## Releasing little
 
-little is released as a plugin is, from a tag of its version alone, like
-`v0.2.0`, which runs [`release.yml`](./.github/workflows/release.yml).
-
 ### 1. See what's changed
-
-git-cliff lists little's changes since its last release, as for a plugin,
-from the commits that changed what's built into it: `src/`, `theme/`,
-`wit/`, `Cargo.toml`, or `Cargo.lock`. Changes to the manual aren't
-listed, nor to the plugins, which are released on their own. In the
-repository's root:
 
 ```sh
 git cliff --unreleased --tag-pattern '^v[0-9]' \
@@ -168,90 +29,215 @@ git cliff --unreleased --tag-pattern '^v[0-9]' \
   --include-path Cargo.toml --include-path Cargo.lock
 ```
 
-With `--bumped-version` added, it prints the tag to release next, like
-`v0.2.0`, as it does for a plugin.
+It lists what the release's notes will: each `feat`, `fix`, and `perf`
+commit since the last release that changed what's built into little, with
+those that break something first. Changes to the manual and the plugins
+aren't listed, and it warns of the commits it skips, like merges, which is
+expected.
 
-### 2. Raise its version, in a pull request
+Add `--bumped-version` to print the tag to release next, like `v0.4.0`: a
+feature or a breaking change raises the minor version, and anything else
+the patch. With nothing to release, it prints the last tag. Keep
+`--unreleased`, or it raises the patch even then.
+
+### 2. Raise the version, in a pull request
 
 On a branch from `main`:
 
 1. Raise `version` in `Cargo.toml`.
-2. Run `cargo test`, which updates `Cargo.lock` to the new version too.
-3. Change the URL of little's release in the manual to the new version, in
-   [Publishing](./docs/getting-started/publishing.md#publishing-on-github-pages),
-   so its workflow downloads it. `git grep -n 'releases/download/v' docs/`
+2. Run `cargo test`, which writes the new version into `Cargo.lock` too.
+3. Change the URL of little's release in the manual's
+   [Publishing](./docs/getting-started/publishing.md#publishing-on-github-pages)
+   page to the new version. `git grep -n 'releases/download/v' docs/`
    finds it.
-4. Commit them as `chore: release <version>`, like `chore: release 0.2.0`,
-   open a pull request, and merge it once CI passes.
+4. Commit them as `chore: release 0.4.0`, open a pull request, and merge it
+   once its checks pass.
 
-### 3. Tag it, and push the tag
+The pull request also builds little as a release does, for each system,
+without releasing it, so what would break the release fails here first.
 
-Once CI has passed on `main`, as for a plugin, tag it:
+### 3. Tag `main`, and push the tag
+
+The release doesn't run the tests again, so wait for CI to pass on `main`
+after the merge, then tag it:
 
 ```sh
 git switch main
 git pull --ff-only
-gh run list --workflow ci.yml --branch main --limit 1
-git tag -a v0.2.0 -m "little 0.2.0"
-git push origin v0.2.0
+gh run list --workflow ci.yml --branch main --limit 1   # completed, success
+git tag -a v0.4.0 -m "little 0.4.0"
+git push origin v0.4.0
 ```
+
+`-a` makes an annotated tag, which records who tagged it, and when. The
+push starts the release.
 
 ### 4. Watch it run
 
-The push starts **Release little**, which checks the tag as a plugin's is:
-that it's a version, `vX.Y.Z`; that its commit is on `main`; that it has no
-release; and that `Cargo.toml` has that version. Then it:
+```sh
+gh run watch   # choose "Release little"
+```
 
-- builds little for each of its six targets, each on a GitHub runner of
-  its own system, and checks each binary runs, by building a little site;
-- writes little's third-party notices, and packs each binary in an archive
-  with them, and `LICENSE`;
-- publishes the archives, with a `SHA256SUMS` of them, as the repository's
-  latest release, and attests where they were built;
-- publishes `little-docs` to crates.io, from the tag, once the release is
-  out, as cargo-binstall downloads its archives.
-
-It takes some 20 minutes. Check the release and the crate with:
+In some 20 minutes, [`release.yml`](./.github/workflows/release.yml)
+checks the tag against `main` and `Cargo.toml`, builds little for Linux,
+macOS, and Windows, on x64 and arm64, and publishes each in an archive, as
+the repository's latest release. Then it publishes little's crate,
+`little-docs`, on crates.io. Check both with:
 
 ```sh
-gh release view v0.2.0
-gh release verify v0.2.0
+gh release view v0.4.0
+gh release verify v0.4.0   # its attestation
 cargo info little-docs
 ```
 
-A pull request that changes `release.yml`, `Cargo.toml`, or `Cargo.lock`
-runs it too, but for the release and crates.io, so a change that would
-break a release breaks there first.
+## Releasing a plugin
+
+A plugin is released in the same four steps, from a tag that names it too,
+like `pydoc-v0.2.0`.
+
+### 1. See what's changed
+
+```sh
+plugin=pydoc
+PLUGIN=$plugin git cliff --unreleased --tag-pattern "^$plugin-v" \
+  --include-path "plugins/$plugin/**" --include-path "plugins/api_reference/**"
+```
+
+The second `--include-path` is the library the plugin shares with others
+like it:
+
+| Plugin | Its library |
+| ------ | ----------- |
+| `pydoc`, `rustdoc`, `jsdoc`, `godoc`, `openapi` | `plugins/api_reference/**` |
+| `asciidoc`, `orgmode`, `restructuredtext` | `plugins/markup/**` |
+| `jupyter` | none: leave the second `--include-path` out |
+
+It lists what the release's notes will: each `feat`, `fix`, and `perf`
+commit since the plugin's last release that changed either folder, with
+those that break something first. It warns of the commits it skips, like
+merges, which is expected.
+
+Add `--bumped-version` to print the tag to release next, like
+`pydoc-v0.2.0`: a feature or a breaking change raises the minor version,
+and anything else the patch. With nothing to release, it prints the last
+tag. Keep `--unreleased`, or it raises the patch even then.
+
+### 2. Raise the version, in a pull request
+
+On a branch from `main`:
+
+1. Raise `version` in `plugins/pydoc/Cargo.toml`.
+2. Run `cargo test --manifest-path plugins/pydoc/Cargo.toml`, which writes
+   the new version into the plugin's `Cargo.lock` too.
+3. Change the URLs in the plugin's page in the manual to the new version.
+   `git grep -n 'download/pydoc-v' docs/` finds them.
+4. Commit them as `chore(pydoc): release 0.2.0`, open a pull request, and
+   merge it once its checks pass.
+
+### 3. Tag `main`, and push the tag
+
+The release doesn't run the tests again, so wait for CI to pass on `main`
+after the merge, then tag it:
+
+```sh
+git switch main
+git pull --ff-only
+gh run list --workflow ci.yml --branch main --limit 1   # completed, success
+git tag -a pydoc-v0.2.0 -m "pydoc 0.2.0"
+git push origin pydoc-v0.2.0
+```
+
+Push each tag by its name, on its own, not with `--tags`, which pushes
+every tag you have: GitHub runs no workflow at all for a push of more than
+three tags.
+
+### 4. Watch it run
+
+```sh
+gh run watch   # choose "Release a plugin"
+```
+
+In a few minutes,
+[`release-plugin.yml`](./.github/workflows/release-plugin.yml) checks the
+tag against `main` and the plugin's `Cargo.toml`, builds its `.wasm` file,
+and publishes it, with its third-party notices. Check the release with:
+
+```sh
+gh release view pydoc-v0.2.0
+gh release verify pydoc-v0.2.0   # its attestation
+```
+
+Its notes say which version of `little:plugin` the plugin is built for,
+and how to name it in `little.yml`. A plugin's release isn't labelled
+"Latest", which is left for little's own.
+
+### A new plugin's first release
+
+Release a new plugin as soon as the pull request that adds it is merged:
+tag `main`, as in step 3, with the version its `Cargo.toml` has, `0.1.0`.
+There's nothing to do in steps 1 and 2. Its page in the manual, which is
+published from `main`, names that release already, so its URL leads
+nowhere until the release is out.
 
 ## When a release fails
 
-If the run fails before the release is published, nothing's published: a
-check that fails stops it before the build, and if the upload fails, gh
-deletes the release it was making. Its log says what went wrong.
+A run publishes nothing until its last steps: a check that fails stops it
+before it builds, and if an upload fails, gh deletes the release it was
+making. The run's log says what went wrong.
 
-- If it failed for a reason outside the repository, like the network,
-  re-run it, with **Re-run failed jobs** on its page.
-- If the version has a release already, it's a draft, as a published
-  release's tag can't be pushed again: one made by hand, or left by a run
-  that was cancelled. Delete it, on the releases page, and re-run the run.
-- Otherwise, fix what's wrong in a pull request, as in step 2. Then delete
+- **Something outside the repository, like the network:** re-run it, with
+  **Re-run failed jobs** on the run's page.
+- **"… is released already":** the version has a draft release, made by
+  hand, or left by a run that was cancelled. Delete the draft, on the
+  releases page, and re-run the run.
+- **Anything else:** fix it in a pull request, as in step 2. Then delete
   the tag, on GitHub and here, and tag `main` again, as in step 3:
 
   ```sh
-  git push origin --delete pydoc-v0.2.0   # or v0.2.0, for little
-  git tag -d pydoc-v0.2.0
+  git push origin --delete v0.4.0   # or pydoc-v0.2.0, for a plugin
+  git tag -d v0.4.0
   ```
 
-A tag whose release wasn't published can be deleted, as nothing was
-released from it; one whose release was published never is.
+  Only a tag whose release wasn't published can be deleted, as nothing
+  was released from it.
+- **Only "publish to crates.io":** little's release is out, but its crate
+  isn't. Re-run the job, which publishes the crate only if crates.io
+  doesn't have the version yet. If it fails for a reason in the
+  repository, fix it, and release the next patch version: a release can't
+  be changed, and a version on crates.io can only be yanked, with
+  `cargo yank`, so new projects don't pick it.
 
-little's crate is published after its release, so if only **publish to
-crates.io** fails, the release is out, but the crate isn't. Re-run the
-job: it checks whether crates.io has the version first, and publishes it
-only if it hasn't. If it fails for a reason in the repository, fix it, and
-release the next patch version, as the release can't be changed. Nor can a
-version on crates.io: one that's wrong there can only be yanked, with
-`cargo yank`, so new projects don't pick it.
+## Before your first release
+
+On the computer you release from, install the tools the steps use, and
+sign in to GitHub:
+
+```sh
+brew install gh git-cliff
+gh auth login
+```
+
+Choose HTTPS, and **Yes** to "Authenticate Git with your GitHub
+credentials?", so `git push` can push a tag: GitHub Desktop's sign-in
+doesn't reach `git` in a terminal. `cargo install --locked git-cliff`
+installs git-cliff too.
+
+Releases also rely on three settings outside the repository's files, made
+once, by hand:
+
+- **Release immutability**, in the repository's **Settings**, under
+  **Releases**: a published release's files can't be changed or deleted,
+  nor its tag moved or deleted, and GitHub attests to each release, so
+  anyone can check that a file came from it. A release's title and notes
+  can still be edited.
+- **A trusted publisher**, in `little-docs`'s **Settings** on crates.io,
+  under **Trusted Publishing**: the repository `withlittle/little`, the
+  workflow `release.yml`, and the environment `crates-io`. It gives
+  **publish to crates.io** a token for its run alone, so there's no API
+  token to keep.
+- **The `crates-io` environment**, in the repository's **Settings**, under
+  **Environments**, which only tags like `v*` can use, so only a release
+  can ask crates.io for a token.
 
 ## Third-party notices
 
