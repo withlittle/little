@@ -71,7 +71,11 @@ fn document(settings: &Settings) -> Result<Added, String> {
     }
     let mut seen = HashSet::new();
     warnings.retain(|warning| seen.insert(warning.clone()));
-    Ok(Added { pages, warnings })
+    Ok(Added {
+        pages,
+        others: Vec::new(),
+        warnings,
+    })
 }
 
 little_api_reference::plugin!(document);

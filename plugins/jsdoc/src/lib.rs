@@ -96,8 +96,8 @@ fn document(settings: &Settings) -> Added {
     let sources = sources.unwrap_or_default();
     if sources.is_empty() {
         return Added {
-            pages: Vec::new(),
             warnings,
+            ..Added::default()
         };
     }
     let modules: Vec<Module> = (sources.iter())
@@ -130,6 +130,7 @@ fn document(settings: &Settings) -> Added {
         pages: (0..layout.pages.len())
             .map(|page| pages.page(page))
             .collect(),
+        others: Vec::new(),
         warnings,
     };
     // The package's page is the first in its layout.

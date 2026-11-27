@@ -99,6 +99,7 @@ fn document(settings: &Settings) -> Added {
     };
     let mut added = Added {
         pages: (0..modules.len()).map(|index| pages.page(index)).collect(),
+        others: Vec::new(),
         warnings,
     };
     // The crate's page is the first, as the crate is the first module.
