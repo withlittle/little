@@ -123,6 +123,12 @@ impl Files {
         Files(files)
     }
 
+    /// Whether the document is one file: none of its `$ref`s leads to
+    /// another, whether or not that one can be read.
+    pub fn alone(&self) -> bool {
+        self.0.len() == 1
+    }
+
     /// The whole of `file`, which [`Files::load`] was given.
     pub fn root(&self, file: &str) -> Node<'_> {
         let (file, value) = self

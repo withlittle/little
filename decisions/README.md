@@ -96,3 +96,4 @@ made, and link to each other.
 - [0084 — Redirects from a folder](0084-redirects-from-a-folder.md)
 - [0085 — Each page in a file named for it](0085-each-page-in-a-file-named-for-it.md)
 - [0086 — The built-in theme's design system](0086-the-built-in-themes-design-system.md)
+- [0087 — Each page's file, copied beside it](0087-each-pages-file-copied-beside-it.md)

@@ -17,8 +17,13 @@ pub struct Document {
     pub file: String,
     /// Its page's path, from the source's folder, like `openapi.md`.
     pub page: String,
+    /// Where it's published, beside its page: its own path there, like
+    /// `openapi.yaml`.
+    pub beside: String,
     /// What it holds.
     pub value: Value,
+    /// Its file, byte for byte.
+    pub bytes: Vec<u8>,
 }
 
 /// What the file at `path` holds, as JSON, if its extension is `.json`, or
@@ -51,17 +56,25 @@ pub fn find(
         for (path, stem) in paths {
             // As a `$ref` back to it leads, from another file.
             let file = normalize(&join(folder, &path));
-            let Some(value) = read_document(&file, warnings) else {
+            let Some((value, bytes)) = read_document(&file, warnings) else {
                 continue;
             };
             let page = join(url, &format!("{stem}.md"));
+            let beside = join(url, &path);
             if let Some(other) = documents.get(&page) {
                 return Err(format!(
                     "`{}` and `{file}` would both be the page `{page}`: rename or move one",
                     other.file
                 ));
             }
-            documents.insert(page.clone(), Document { file, page, value });
+            let document = Document {
+                file,
+                page: page.clone(),
+                beside,
+                value,
+                bytes,
+            };
+            documents.insert(page, document);
         }
     }
     if documents.is_empty() && !searched.is_empty() {
@@ -119,10 +132,11 @@ fn stem(name: &str) -> Option<&str> {
     (known && !stem.is_empty()).then_some(stem)
 }
 
-/// What `file` holds, if it's an OpenAPI 3 document, with an `openapi`
-/// like `3.1.0`; else none, warning of a document of another version, or
-/// of a file that mentions `openapi` or `swagger` but can't be read.
-fn read_document(file: &str, warnings: &mut Vec<String>) -> Option<Value> {
+/// What `file` holds, and its bytes, if it's an OpenAPI 3 document, with
+/// an `openapi` like `3.1.0`; else none, warning of a document of another
+/// version, or of a file that mentions `openapi` or `swagger` but can't be
+/// read.
+fn read_document(file: &str, warnings: &mut Vec<String>) -> Option<(Value, Vec<u8>)> {
     let bytes = std::fs::read(file)
         .map_err(|error| warnings.push(format!("can't read `{file}`: {error}")))
         .ok()?;
@@ -139,7 +153,7 @@ fn read_document(file: &str, warnings: &mut Vec<String>) -> Option<Value> {
         _ => None,
     };
     match (version("openapi"), version("swagger")) {
-        (Some(version), _) if version == "3" || version.starts_with("3.") => Some(value),
+        (Some(version), _) if version == "3" || version.starts_with("3.") => Some((value, bytes)),
         (Some(version), _) => {
             warnings.push(format!(
                 "`{file}` is in OpenAPI {version}, but it reads only OpenAPI 3, like `3.1.0`"

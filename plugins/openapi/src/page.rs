@@ -60,8 +60,9 @@ const METHODS: [&str; 9] = [
 ];
 
 /// The Markdown of the page of the document in `file`, and what to warn
-/// of.
-pub fn write(files: &Files, file: &str) -> (String, Vec<String>) {
+/// of. Its frontmatter names `source`, the URL the document is published
+/// at, if it is, as the page's source.
+pub fn write(files: &Files, file: &str, source: Option<&str>) -> (String, Vec<String>) {
     let root = files.root(file);
     let names = schema::names(files, root);
     // A link to a heading needs the id comrak gives it, which depends on
@@ -79,10 +80,18 @@ pub fn write(files: &Files, file: &str) -> (String, Vec<String>) {
     let mut writer = Writer::new(files, root, names, Some(ids));
     writer.page(file);
     let mut page = format!("{}\n", writer.out.trim_end());
+    // A string in JSON is one in YAML too, so each reads back as it is.
+    let mut frontmatter = String::new();
     if let Some(summary) = root.get("info").and_then(|info| info.text("summary")) {
-        // A string in JSON is one in YAML too, so it reads back as it is.
         let description = Value::from(collapse(summary));
-        page = format!("---\ndescription: {description}\n---\n\n{page}");
+        frontmatter.push_str(&format!("description: {description}\n"));
+    }
+    if let Some(source) = source {
+        let url = Value::from(source);
+        frontmatter.push_str(&format!("source:\n  url: {url}\n"));
+    }
+    if !frontmatter.is_empty() {
+        page = format!("---\n{frontmatter}---\n\n{page}");
     }
     (page, writer.warnings)
 }

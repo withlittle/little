@@ -5,7 +5,9 @@
   `site.built`, the time of the build, in place of `site.year`, and by
   [0086](./0086-the-built-in-themes-design-system.md), which has one colour
   for each of `site.theme.colors`, not a light and a dark, and adds
-  `site.theme.radius`
+  `site.theme.radius`, and by
+  [0087](./0087-each-pages-file-copied-beside-it.md), which gives every
+  page a `source`, on in little's `little.yml`, like its other groups
 - Date: 2026-11-18
 - Amends: [0002](./0002-theme-structure.md),
   [0003](./0003-choosing-and-layering-themes.md),

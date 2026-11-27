@@ -11,8 +11,8 @@ page's Markdown, in `src/markdown.rs`, so their pages look alike.
 `openapi` writes its own, as a document isn't code, but with helpers from
 `src/markdown.rs`, like `table`.
 It also reads the settings they have alike, like `title` and `url`, in
-`src/settings.rs`, and holds the pages each adds, with their paths and the
-links between them, in `src/pages.rs`. Its `plugin!` macro, in
+`src/settings.rs`, and holds the pages each adds, and any other file, with
+their paths and the links between them, in `src/pages.rs`. Its `plugin!` macro, in
 `src/lib.rs`, is their glue to little's
 [`wit/plugin.wit`](../../wit/plugin.wit). They read a definition's code,
 and the lines of its docs, with `src/text.rs`. Their tests share the

@@ -118,3 +118,8 @@ build uses the same little until you change it to a newer
 [release](https://github.com/withlittle/little/releases). For a site in
 its own folder, like `website/`, run `little -C website build --strict`,
 and upload `website/dist`.
+
+If you publish from a branch instead, put an empty `.nojekyll` file at its
+root. Without one, GitHub Pages builds the branch with Jekyll, which makes
+a page of its own from each
+[page's file](../writing/pages-and-files.md#a-pages-file).

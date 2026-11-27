@@ -1,24 +1,29 @@
 //! The pages a plugin adds, their paths, and the links between them.
 
-/// What a plugin adds: each page's path and Markdown, and what it warns
-/// of.
+/// What a plugin adds: each page's path and Markdown, any other file, like
+/// the one a page is made from, and what it warns of.
 #[derive(Debug, Default)]
 pub struct Added {
     /// Each page's path, from the source's folder, and its Markdown.
     pub pages: Vec<(String, String)>,
+    /// Each other file's path, from the source's folder, and what it holds.
+    pub others: Vec<(String, Vec<u8>)>,
     /// What it warns of.
     pub warnings: Vec<String>,
 }
 
 impl Added {
-    /// Each page's path and contents, as the plugin's `files` hook adds it,
-    /// once `warn` has warned of what it warns of.
-    pub fn files(self, warn: impl Fn(&str)) -> Vec<(String, Vec<u8>)> {
+    /// Each file's path and contents, as the plugin's `files` hook adds it
+    /// to a source that has the files at `source`, once `warn` has warned
+    /// of what it warns of. A file that isn't a page is added only where
+    /// the source has none: there, the site's own is the one published.
+    pub fn files(self, source: &[String], warn: impl Fn(&str)) -> Vec<(String, Vec<u8>)> {
         self.warnings.iter().for_each(|warning| warn(warning));
         let pages = self.pages.into_iter();
-        pages
-            .map(|(path, markdown)| (path, markdown.into_bytes()))
-            .collect()
+        let pages = pages.map(|(path, markdown)| (path, markdown.into_bytes()));
+        let others = self.others.into_iter();
+        let others = others.filter(|(path, _)| !source.contains(path));
+        pages.chain(others).collect()
     }
 }
 
@@ -90,6 +95,31 @@ pub fn link(from: &str, to: &str, id: Option<&str>) -> String {
 mod tests {
     use super::*;
     use crate::testing::folder_with;
+
+    #[test]
+    fn a_file_that_isnt_a_page_is_added_only_where_the_source_has_none() {
+        let added = Added {
+            pages: vec![("api/pets.md".into(), "# Pets\n".into())],
+            others: vec![
+                ("api/pets.yaml".into(), b"openapi: 3.1.0\n".to_vec()),
+                ("api/events.yaml".into(), b"asyncapi: 3.0.0\n".to_vec()),
+            ],
+            warnings: vec!["a warning".into()],
+        };
+        // The source has one of the files, and a file where the page goes,
+        // which is for little to stop the build over.
+        let source = ["api/events.yaml".to_string(), "api/pets.md".to_string()];
+        let warned = std::cell::RefCell::new(Vec::new());
+        let warn = |warning: &str| warned.borrow_mut().push(warning.to_string());
+        assert_eq!(
+            added.files(&source, warn),
+            [
+                ("api/pets.md".to_string(), b"# Pets\n".to_vec()),
+                ("api/pets.yaml".to_string(), b"openapi: 3.1.0\n".to_vec()),
+            ]
+        );
+        assert_eq!(*warned.borrow(), ["a warning"]);
+    }
 
     #[test]
     fn a_name_in_the_sources_folder_is_alone() {

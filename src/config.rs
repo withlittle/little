@@ -446,6 +446,8 @@ pub struct PageSettings {
     /// Whether it links to its file in the site's repository, from
     /// `repository.enabled`.
     pub repository: bool,
+    /// Whether its file is copied beside it, from `source.enabled`.
+    pub source: bool,
     /// Whether search indexes it, from `search.enabled`, if it's set: left
     /// unset, `site.search.exclude` says.
     pub search: Option<bool>,
@@ -497,6 +499,7 @@ impl PageSettings {
             previous: enabled(page, prefix, "previous")?,
             next: enabled(page, prefix, "next")?,
             repository: enabled(page, prefix, "repository")?,
+            source: enabled(page, prefix, "source")?,
             search,
         })
     }
@@ -2136,6 +2139,7 @@ mod tests {
                previous:\n    enabled: true\n  \
                next:\n    enabled: true\n  \
                repository:\n    enabled: true\n  \
+               source:\n    enabled: true\n  \
                author: Company\n  \
                layout: wide\n"
         );
@@ -2398,6 +2402,7 @@ mod tests {
             previous: true,
             next: true,
             repository: true,
+            source: true,
             search: None,
         }
     }
@@ -2444,7 +2449,15 @@ mod tests {
     #[test]
     fn bad_page_groups_explain_themselves() {
         let (_tmp, site) = scratch(&[]);
-        for group in ["outline", "breadcrumb", "previous", "next", "repository"] {
+        let groups = [
+            "outline",
+            "breadcrumb",
+            "previous",
+            "next",
+            "repository",
+            "source",
+        ];
+        for group in groups {
             // A value where its settings go, like `false`, isn't them.
             for value in [" false", " true", " [items]"] {
                 let message = error(&site, &format!("page:\n  {group}:{value}\n"));
@@ -3724,7 +3737,14 @@ mod tests {
         // to set, and a site's.
         let settings = PageSettings::read(&page, "page.").unwrap();
         assert_eq!(settings, every_page(2..=6));
-        let groups = ["outline", "breadcrumb", "previous", "next", "repository"];
+        let groups = [
+            "outline",
+            "breadcrumb",
+            "previous",
+            "next",
+            "repository",
+            "source",
+        ];
         assert_eq!(Vec::from_iter(page.keys()), groups);
     }
 

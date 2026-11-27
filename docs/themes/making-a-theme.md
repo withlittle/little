@@ -258,6 +258,26 @@ any of your own, like `released`, for the theme to show. little sets its
 `url`, and its `root`, which is true only for the version at `/`, so
 `page.versions | selectattr("root") | first` is that one.
 
+## A page's file
+
+`page.source.url` is where little copies
+[the page's file](../writing/pages-and-files.md#a-pages-file), for a theme
+to link to. For a page written in Markdown, that's the page as Markdown,
+which the built-in theme offers in its `<head>`, for whatever reads it
+better than HTML:
+
+```html
+{% if page.source.url and page.source.url is endingwith(".md") %}
+<link rel="alternate" type="text/markdown" href="{{ page.source.url | safe }}">
+{% endif %}
+```
+
+Test for it first: the 404 page has none, nor has a redirect, a page whose
+`source` is off, or most pages a plugin adds. A page in another format has
+its own file, like a notebook's `.ipynb`, or the OpenAPI document a page is
+made from. The URL already has the path of the site's `url`, so write it
+with `safe`.
+
 ## When a page last changed
 
 `page.modified` is when the page last changed, and `page.created` when it

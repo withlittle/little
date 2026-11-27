@@ -67,12 +67,12 @@ macro_rules! plugin {
             }
 
             impl files::Guest for Plugin {
-                fn files(_: Vec<String>) -> Result<Changes, String> {
+                fn files(source: Vec<String>) -> Result<Changes, String> {
                     let document: fn(&Settings) -> Result<$crate::pages::Added, String> =
                         $document;
                     let settings = SETTINGS.lock().unwrap();
                     let added = document(settings.as_ref().expect("little calls `setup` first"))?;
-                    let add = added.files(warn).into_iter();
+                    let add = added.files(&source, warn).into_iter();
                     Ok(Changes {
                         add: add
                             .map(|(path, contents)| File { path, contents })

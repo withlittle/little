@@ -124,8 +124,8 @@ fn document(settings: &Settings) -> Result<Added, String> {
     let folders = folders.unwrap_or_default();
     if folders.is_empty() {
         return Ok(Added {
-            pages: Vec::new(),
             warnings,
+            ..Added::default()
         });
     }
     let packages: Vec<Package> = (folders.iter())
@@ -166,6 +166,7 @@ fn document(settings: &Settings) -> Result<Added, String> {
         pages: (0..layout.pages.len())
             .map(|page| pages.page(page))
             .collect(),
+        others: Vec::new(),
         warnings,
     };
     // The module's page is the first in its layout.

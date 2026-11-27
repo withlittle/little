@@ -1,6 +1,8 @@
 # 0069 — A plugin for OpenAPI
 
-- Status: accepted
+- Status: accepted; amended by
+  [0087](./0087-each-pages-file-copied-beside-it.md), which has it add
+  each document beside its page, as the page's source
 - Date: 2026-11-06
 - Amends: [0051](./0051-semantic-versioning-and-conventional-commits.md)
 

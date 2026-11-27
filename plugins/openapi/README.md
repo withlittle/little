@@ -4,7 +4,8 @@ A [plugin](../../docs/plugins/using-plugins.md) for little that adds the
 reference of an HTTP API to a site: a page for each OpenAPI 3 document, in
 JSON or YAML, in the folders it reads, with how a client authenticates,
 each operation, under its tags, and each schema, as Redoc and Swagger UI
-show them, but in the site's theme, with no script. It reads JSON with
+show them, but in the site's theme, with no script. It publishes the
+document too, beside its page, as the page's source. It reads JSON with
 serde_json, and YAML with
 [yaml-rust2](https://github.com/Ethiraric/yaml-rust2), as YAML 1.2, and
 follows each `$ref` to another file, so it needs no Node, and a site

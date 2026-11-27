@@ -55,6 +55,10 @@
   <title>{% block title %}{{ page.title }} · {{ site.name }}{% endblock %}</title>
   {% set description = page.description or site.description %}
   {% if description %}<meta name="description" content="{{ description }}">{% endif %}
+  {# page.source.url is the page's own file, copied beside it: for a page
+     written in Markdown, the page as Markdown, for whatever reads that
+     better than HTML. #}
+  {% if page.source.url and page.source.url is endingwith(".md") %}<link rel="alternate" type="text/markdown" href="{{ page.source.url | safe }}">{% endif %}
   {# Before anything is drawn, so a page opens in the colours the reader
      chose, if they chose any; without a script, it follows the system's. #}
   <script>

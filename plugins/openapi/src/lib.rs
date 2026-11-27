@@ -1,5 +1,6 @@
 //! A little plugin that adds a page of reference for each HTTP API in an
-//! OpenAPI 3 document, in JSON or YAML, in the folders it reads.
+//! OpenAPI 3 document, in JSON or YAML, in the folders it reads, and the
+//! document itself, beside its page, as the page's source.
 
 // Built for anything but WebAssembly, the plugin is only its tests.
 #![cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
@@ -57,21 +58,34 @@ impl Settings {
     }
 }
 
-/// A page for each OpenAPI 3 document in the folders `settings` reads; or
-/// why there are none.
+/// A page for each OpenAPI 3 document in the folders `settings` reads, and
+/// the document itself, beside its page; or why there are none.
 fn document(settings: &Settings) -> Result<Added, String> {
     let mut warnings = Vec::new();
     let documents = files::find(&settings.read, &settings.url, &mut warnings)?;
     let mut pages = Vec::new();
+    let mut others = Vec::new();
     for document in documents {
         let files = Files::load(&document.file, document.value);
-        let (markdown, page_warnings) = page::write(&files, &document.file);
+        // A page made from one file has that file as its source, which the
+        // page names, by where it's published: beside the page. One whose
+        // `$ref`s lead to other files is made from more than one, so it has
+        // none.
+        let source = files.alone().then(|| format!("/{}", document.beside));
+        let (markdown, page_warnings) = page::write(&files, &document.file, source.as_deref());
         warnings.extend(page_warnings);
         pages.push((document.page, markdown));
+        if source.is_some() {
+            others.push((document.beside, document.bytes));
+        }
     }
     let mut seen = HashSet::new();
     warnings.retain(|warning| seen.insert(warning.clone()));
-    Ok(Added { pages, warnings })
+    Ok(Added {
+        pages,
+        others,
+        warnings,
+    })
 }
 
 little_api_reference::plugin!(document);

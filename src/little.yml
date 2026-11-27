@@ -163,6 +163,12 @@ page:
   repository:
     enabled: true
 
+  # The page's file, like `guide/install.md`, copied to the site as it's
+  # written, beside the page, with its `url` for the theme to link to. A page
+  # a plugin adds has no file, so it has none.
+  source:
+    enabled: true
+
   # `search.enabled`, whether search indexes the page, has no default: it's
   # `false` for a page `site.search.exclude` leaves out, unless a page sets
   # its own.

@@ -15,6 +15,12 @@
 //! the folder's `index.html`, at `/guide/`. A page can't be beside a folder
 //! of its name, as a host can't tell `/guide` from `/guide/`.
 //!
+//! The file a page is read from, its source, is copied to its own path
+//! too, as it's written, like any other file in the source, so beside the
+//! page, at `/guide/install.md`, which the theme gets as `page.source.url`.
+//! A page a plugin adds has no file, so has none, unless its own settings
+//! name one.
+//!
 //! Each of the site's `redirects` is a page too, at the URL it's from, in a
 //! folder there, so a host finds it with or without the URL's `/`, which
 //! the theme writes, to send its reader on to where the redirect leads. A
@@ -36,6 +42,7 @@
 use anyhow::{Context, Result, bail};
 use minijinja::value::Serde;
 use minijinja::{Value as MjValue, context};
+use percent_encoding::percent_decode_str;
 use serde::{Deserialize, Serialize};
 use serde_yaml::{Mapping, Value};
 use std::borrow::Cow;
@@ -147,6 +154,8 @@ struct PageData<'a> {
     next: Option<Link<'a>>,
     /// Where to view and to edit the page's file in the site's repository.
     repository: FileLinks<'a>,
+    /// Where the page's file is copied to, in the site.
+    source: Copied<'a>,
     /// Where a redirect leads.
     #[serde(skip_serializing_if = "Option::is_none")]
     redirect: Option<Target<'a>>,
@@ -176,6 +185,7 @@ impl<'a> PageData<'a> {
                 source_url: None,
                 edit_url: None,
             },
+            source: Copied { url: None },
             redirect: None,
         }
     }
@@ -202,6 +212,16 @@ struct FileLinks<'a> {
     source_url: Option<&'a str>,
     #[serde(skip_serializing_if = "Option::is_none")]
     edit_url: Option<&'a str>,
+}
+
+/// Where a page's file is copied to, in the site: what a template sees as
+/// `page.source`, beside its settings.
+#[derive(Serialize)]
+struct Copied<'a> {
+    /// The copy's URL, with the path of the site's `url`, like
+    /// `/my-project/guide/install.md`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    url: Option<&'a str>,
 }
 
 /// Where a redirect leads: what a template sees as `page.redirect`.
@@ -1041,6 +1061,8 @@ fn read_source(
     // as it is.
     let mut documents = Vec::new();
     let mut files = Vec::new();
+    // The plugin that adds each file a plugin adds, by the file's path.
+    let mut added_by: HashMap<String, String> = HashMap::new();
     for (path, found) in found {
         let (rel, origin, contents, added) = match found {
             Found::OnDisk(file) => {
@@ -1054,6 +1076,7 @@ fn read_source(
                     Some(checkout) => format!("plugin `{plugin}`'s {path} at {}", checkout.git_ref),
                     None => format!("plugin `{plugin}`'s {path}"),
                 };
+                added_by.insert(path.clone(), plugin);
                 (PathBuf::from(path), origin, contents, true)
             }
         };
@@ -1128,6 +1151,9 @@ fn read_source(
     let mut pages = Vec::new();
     for (rel, origin, added, text, format) in documents {
         let file = slashed(&source_in_site.join(&rel));
+        // A page's file is copied as it's written, so it's kept if a
+        // plugin's `source` hook can make something else of it.
+        let written = plugins.changes_source().then(|| text.clone());
         let text = plugins.source(&file, &origin, text);
         let folder = folder_url(&rel);
         let rendered = match format {
@@ -1182,8 +1208,37 @@ fn read_source(
         let destination = &place.destination;
         let mut page = page_from(rel, origin, added, rendered, every_page, destination)?;
         page.dates = dated.copied();
+        // The file a page is read from is its source, which is copied to
+        // the same path in the site, as any other file in the source is. A
+        // page a plugin adds has no file: what the plugin gives is made
+        // from something else.
+        if page.wants.source && !page.added {
+            files.push(StaticFile {
+                path: page.rel.clone(),
+                contents: written.unwrap_or(text).into_bytes(),
+                origin: page.origin.clone(),
+            });
+        }
         pages.push(page);
     }
+
+    // A page a plugin adds names the one file it's made from, if there's
+    // one, as its `source.url`. Where the plugin adds that file too, it's
+    // the page's source, as the file little reads a page from is that
+    // page's: left out, unless a page that names it has its `source` on.
+    let mut named: HashMap<String, bool> = HashMap::new();
+    for page in pages.iter().filter(|page| page.added) {
+        let url = (page.settings.get("source"))
+            .and_then(|source| source.get("url"))
+            .and_then(Value::as_str);
+        let plugin = added_by.get(&slashed(&page.rel));
+        let file = (url.into_iter().flat_map(files_at))
+            .find(|file| plugin.is_some() && added_by.get(file) == plugin);
+        if let Some(file) = file {
+            *named.entry(file).or_default() |= page.wants.source;
+        }
+    }
+    files.retain(|file| named.get(&slashed(&file.path)) != Some(&false));
 
     // Deterministic output order (nav has its own ordering), and so a
     // deterministic error for files that would be the same page.
@@ -1378,6 +1433,11 @@ fn finish(
         let file_urls = (in_repo.as_ref())
             .filter(|_| !page.added && wants.repository)
             .and_then(|in_repo| in_repo.repo.file_urls(&in_repo.folder.join(&page.rel)));
+        // Its file is copied to its own path in the version's folder (see
+        // `read_source`), so its URL has the version's path, even where one
+        // of the theme's files, which versions share, has that path too.
+        let copied = (wants.source && !page.added)
+            .then(|| format!("{}{}", place.url.path, file_url(&page.rel)));
         let in_versions = versions.map(|versions| versions.at(Some(&page.url)));
         let created = (page.dates.map(|dates| timestamp(dates.created))).transpose()?;
         let modified = (page.dates.map(|dates| timestamp(dates.modified))).transpose()?;
@@ -1405,6 +1465,9 @@ fn finish(
                 edit_url: (file_urls.as_ref())
                     .filter(|_| editable)
                     .map(|urls| urls.edit.as_str()),
+            },
+            source: Copied {
+                url: copied.as_deref(),
             },
             redirect: None,
         };
@@ -1925,7 +1988,9 @@ fn page_value(
     for key in ["source_url", "edit_url"] {
         link(within(settings.get_mut("repository"), key), url);
     }
-    for group in ["previous", "next"] {
+    // A URL the settings write for the page's file gets the path, too:
+    // the one little works out has it already.
+    for group in ["previous", "next", "source"] {
         link(within(settings.get_mut(group), "url"), url);
     }
     for group in ["breadcrumb", "outline"] {
@@ -1959,6 +2024,9 @@ fn page_value(
     {
         repository.shift_remove("source_url");
         repository.shift_remove("edit_url");
+    }
+    if let (false, Some(Value::Mapping(source))) = (wants.source, page.get_mut("source")) {
+        source.shift_remove("url");
     }
     Ok(page)
 }
@@ -2214,6 +2282,17 @@ fn folder_url(rel: &Path) -> String {
 /// `/assets/style.css` for `assets/style.css`.
 fn file_url(rel: &Path) -> String {
     format!("/{}", slashed(rel))
+}
+
+/// The path of the file at `url`, from the root of its version, like
+/// `api/openapi.yaml` for `/api/openapi.yaml`, as it's written, and with
+/// what's encoded in it decoded, as a file's name can have a `%` of its
+/// own. None for a URL that isn't from the root.
+fn files_at(url: &str) -> impl Iterator<Item = String> {
+    let path = url.split(['?', '#']).next().unwrap_or_default();
+    let path = path.strip_prefix('/').filter(|path| !path.starts_with('/'));
+    let decoded = path.map(|path| percent_decode_str(path).decode_utf8_lossy().into_owned());
+    path.map(str::to_string).into_iter().chain(decoded)
 }
 
 /// `path`, with `/` between its parts, as plugins' hooks get it, like
@@ -2697,6 +2776,7 @@ mod tests {
                 previous: true,
                 next: true,
                 repository: true,
+                source: true,
                 search: None,
             },
             html: String::new(),
@@ -3656,8 +3736,11 @@ mod tests {
         let built = [
             MARKER_FILE,
             ".nojekyll",
+            "README.md",
+            "guide/README.md",
             "guide/index.html",
             "guide/install.html",
+            "guide/install.md",
             "index.html",
         ];
         assert_eq!(files_in(&dist), built);
@@ -3686,7 +3769,13 @@ mod tests {
 
         build(&site).unwrap();
 
-        let built = [MARKER_FILE, "ISSUE_TEMPLATE/bug.html", "index.html"];
+        let built = [
+            MARKER_FILE,
+            "ISSUE_TEMPLATE/bug.html",
+            "ISSUE_TEMPLATE/bug.md",
+            "README.md",
+            "index.html",
+        ];
         assert_eq!(files_in(&dist), built);
         assert_eq!(read("index.html"), "Home");
 
@@ -3700,6 +3789,7 @@ mod tests {
 
         let built = [
             MARKER_FILE,
+            "README.md",
             "index.html",
             "little.yml",
             "theme/_templates/default.html",
@@ -3767,14 +3857,16 @@ mod tests {
 
         build(&site).unwrap();
 
-        // To the same path, beside the pages.
+        // To the same path, beside the pages, and each page's own file.
         let dist = site.join("dist");
         let built = [
             MARKER_FILE,
+            "README.md",
             "assets/style.css",
             "assets/theme.js",
             "guide/images/step 1.png",
             "guide/install.html",
+            "guide/install.md",
             "guide/videos/demo.mp4",
             "index.html",
             "logo.svg",
@@ -3805,6 +3897,7 @@ mod tests {
         let dist = site.join("dist");
         let built = [
             MARKER_FILE,
+            "README.md",
             "assets/style.css",
             "examples/_mixins.scss",
             "examples/button.scss",
@@ -3845,7 +3938,7 @@ mod tests {
             fs::write(site.join("little.yml"), site_cfg).unwrap();
             build(&site).unwrap();
             build(&site).unwrap();
-            let built = [MARKER_FILE, "index.html", "logo.svg"];
+            let built = [MARKER_FILE, "README.md", "index.html", "logo.svg"];
             let files = files_in(&site.join("docs/_build"));
             assert_eq!(files, built, "{destination}");
         }
@@ -3936,18 +4029,22 @@ mod tests {
         ]);
         let built = build(&site).unwrap();
 
-        // Each is built into its page, as a Markdown file is, and isn't
-        // copied.
+        // Each is built into its page, as a Markdown file is, and its file
+        // is copied beside it, as a Markdown file's is.
         let dist = site.join("dist");
         let files = [
             MARKER_FILE,
+            "README.md",
+            "data/README.test",
             "data/index.html",
             "data/notes.TEST",
             "guide/analysis.html",
+            "guide/analysis.test",
             "index.html",
         ];
         assert_eq!(files_in(&dist), files);
         let read = |path: &str| fs::read_to_string(dist.join(path)).unwrap();
+        assert_eq!(read("data/README.test"), data);
         let analysis = read("guide/analysis.html");
         assert!(analysis.starts_with("The analysis\n<h1"), "{analysis}");
         assert!(analysis.contains("<a href=\"/\">Home</a>"), "{analysis}");
@@ -4257,15 +4354,19 @@ mod tests {
         assert!(!dist.join("old").exists());
 
         // `destination` adds a file, knowing the path of every file the
-        // build writes, and it's noted as the plugin's.
+        // build writes, and it's noted as the plugin's. The home page's
+        // file is among them, copied as it's written, whatever `source`
+        // made of its text. The page `files` added has no file to copy.
         let files = read("files.txt");
         let paths: Vec<_> = files.lines().collect();
-        assert_eq!(paths[..2], ["added.html", "index.html"], "{files}");
+        let first = ["README.md", "added.html", "index.html"];
+        assert_eq!(paths[..3], first, "{files}");
         assert!(paths.contains(&"pagefind/pagefind.js"), "{files}");
         assert!(
-            paths[2..].iter().all(|path| path.starts_with("pagefind/")),
+            paths[3..].iter().all(|path| path.starts_with("pagefind/")),
             "{files}"
         );
+        assert_eq!(read("README.md"), "# Home\n\nHello, world.\n");
         assert_eq!(
             built.origins[Path::new("files.txt")],
             "plugin `test`'s files.txt"
@@ -4394,7 +4495,7 @@ mod tests {
         let read = |path: &str| fs::read_to_string(dist.join(path)).unwrap();
         // The first page has no `previous`, and the last no `next`. Each
         // other group is on every page.
-        let groups = "outline repository search title type url";
+        let groups = "outline repository search source title type url";
         assert_eq!(
             read("index.html"),
             format!("home with default.html: breadcrumb children content next {groups}")
@@ -4402,19 +4503,19 @@ mod tests {
         assert_eq!(
             read("guide/index.html"),
             "section with section.html: breadcrumb children content description next \
-             outline previous repository search title type url"
+             outline previous repository search source title type url"
         );
         assert_eq!(
             read("guide/install.html"),
             "page with default.html: breadcrumb content outline previous repository search \
-             title type url"
+             source title type url"
         );
         // A folder without a README gets no page of its own.
         assert!(!dist.join("api/index.html").exists());
         assert_eq!(
             read("api/reference.html"),
             "page with default.html: breadcrumb content next outline previous repository \
-             search title type url"
+             search source title type url"
         );
         // A 404 page has no content of its own, but a title and a
         // description, from `site.error`, and each group, for its template.
@@ -4548,8 +4649,8 @@ mod tests {
         // and every page's settings.
         let redirect = |from: &str, to: &str| {
             format!(
-                "redirect: author breadcrumb outline redirect repository search type url = \
-                 {from} to {to}, by Site, False"
+                "redirect: author breadcrumb outline redirect repository search source type url \
+                 = {from} to {to}, by Site, False"
             )
         };
         let install = "/proj/guide/install#from-source (Installing)";
@@ -4802,10 +4903,11 @@ mod tests {
                 "widgets/deep/that/index.html",
                 "widgets/index.html",
                 "widgets/kept.html",
+                "widgets/kept.md",
                 "widgets/this/index.html",
             ]
         );
-        assert_eq!(redirected("toolshed"), ["toolshed.html"]);
+        assert_eq!(redirected("toolshed"), ["toolshed.html", "toolshed.md"]);
         let this = Path::new("widgets/this/index.html");
         assert_eq!(built.urls[this], "/widgets/this");
         assert_eq!(built.origins[this], "the redirect from /widgets/this");
@@ -4859,10 +4961,14 @@ mod tests {
 
         // `default.html` has nothing to send a reader on with, so the build
         // warns, once, and writes none.
-        assert_eq!(
-            files_in(&site.join("dist")),
-            [".little-build", "guide.html", "index.html"]
-        );
+        let built_files = [
+            ".little-build",
+            "README.md",
+            "guide.html",
+            "guide.md",
+            "index.html",
+        ];
+        assert_eq!(files_in(&site.join("dist")), built_files);
         assert_eq!(
             warnings_of(&built),
             [
@@ -4964,7 +5070,7 @@ mod tests {
             serde_json::json!([{ "to": "/", "from": ["/old"] }])
         );
         assert_eq!(read("old/index.html"), "Hooked: to /docs/ at /docs/old");
-        assert_eq!(read("files.txt"), "index.html\nold/index.html");
+        assert_eq!(read("files.txt"), "README.md\nindex.html\nold/index.html");
         assert!(built.warnings.is_empty(), "{:?}", built.warnings);
     }
 
@@ -5342,6 +5448,237 @@ mod tests {
     }
 
     #[test]
+    fn each_pages_file_is_copied_beside_it() {
+        // A theme that links to each page's file.
+        let template = "{{ page.source.url | safe }}";
+        let site_cfg = format!("{IN_THEME}  url: https://example.com/little\n");
+        // As it's written: its frontmatter, its line endings, and what its
+        // page doesn't show.
+        let install = "---\ntitle: Install\nreviewed: no\n---\n# Install\r\n\n[//]: # (A note)\n";
+        let (_tmp, site) = scratch(&[
+            ("little.yml", &site_cfg),
+            ("docs/README.md", "# Home\n"),
+            ("docs/guide/README.md", "# Guide\n"),
+            ("docs/guide/install.md", install),
+            (
+                "docs/guide/private.md",
+                "---\nsource:\n  enabled: false\n  url: /mine.md\n---\n# Private\n",
+            ),
+            (
+                "docs/guide/elsewhere.md",
+                "---\nsource:\n  url: /files/elsewhere.txt\n---\n# Elsewhere\n",
+            ),
+            ("theme/_templates/default.html", template),
+            ("theme/_templates/404.html", template),
+        ]);
+        let dist = site.join("dist");
+        let read = |path: &str| fs::read_to_string(dist.join(path)).unwrap();
+        let copies = || -> Vec<String> {
+            let copied = |file: &String| file.ends_with(".md");
+            files_in(&dist).into_iter().filter(copied).collect()
+        };
+
+        // To its path in the source, as any other file is, so beside its
+        // page: at the page's URL with `.md`, or, for a folder's own page,
+        // in the folder. Its URL has the site's path.
+        build(&site).unwrap();
+        let copied = [
+            "README.md",
+            "guide/README.md",
+            "guide/elsewhere.md",
+            "guide/install.md",
+        ];
+        assert_eq!(copies(), copied);
+        assert_eq!(read("guide/install.md"), install);
+        assert_eq!(read("guide/install.html"), "/little/guide/install.md");
+        assert_eq!(read("guide/index.html"), "/little/guide/README.md");
+        assert_eq!(read("index.html"), "/little/README.md");
+        // A page's own settings have the last word on what its theme gets,
+        // and a URL they write gets the site's path. Its `enabled` leaves
+        // its file out, and its URL, whatever else it sets. The 404 page
+        // isn't built from a file.
+        assert_eq!(read("guide/elsewhere.html"), "/little/files/elsewhere.txt");
+        assert_eq!(read("guide/private.html"), "");
+        assert_eq!(read(NOT_FOUND_FILE), "");
+
+        // A site turns it off for every page, and a page back on for itself.
+        let site_cfg = format!("{site_cfg}page:\n  source:\n    enabled: false\n");
+        fs::write(site.join("little.yml"), site_cfg).unwrap();
+        let private = site.join(native("docs/guide/private.md"));
+        fs::write(private, "---\nsource:\n  enabled: true\n---\n# Private\n").unwrap();
+        build(&site).unwrap();
+        assert_eq!(copies(), ["guide/private.md"]);
+        assert_eq!(read("guide/private.html"), "/little/guide/private.md");
+        assert_eq!(read("guide/install.html"), "");
+    }
+
+    #[test]
+    fn a_plugins_page_has_only_the_source_it_names() {
+        // A page with nothing to say of what it's made from, and three that
+        // name the file they're made from: one the plugin adds too, one of
+        // the site's own, and one another plugin adds.
+        let page = |name: &str, url: &str| {
+            serde_json::json!({
+                "path": format!("api/{name}.md"),
+                "text": format!("---\nsource:\n  url: {url}\n---\n# Made from a file\n"),
+            })
+        };
+        let wasm = crate::plugin::tests::test_plugin();
+        let api = serde_json::json!({
+            "wasm": wasm,
+            "files": { "add": [
+                { "path": "api/modules.md", "text": "# Modules\n" },
+                page("petstore", "/api/pet%20store.yaml"),
+                { "path": "api/pet store.yaml", "text": "openapi: 3.1.0\n" },
+                page("events", "/api/events.yaml"),
+                page("shared", "/shared.yaml"),
+                { "path": "api/logo.svg", "text": "<svg/>" },
+            ] },
+        });
+        // Each renders a language of its own, as two can't render one.
+        let other = serde_json::json!({
+            "wasm": wasm,
+            "languages": ["other"],
+            "files": { "add": [{ "path": "shared.yaml", "text": "shared: true\n" }] },
+        });
+        let site_cfg = format!(
+            "{IN_THEME}  url: https://example.com/little\n  plugins:\n    api: {api}\n    \
+             other: {other}\n"
+        );
+        let (_tmp, site) = scratch(&[
+            ("little.yml", &site_cfg),
+            ("docs/README.md", "# Home\n"),
+            ("docs/api/events.yaml", "asyncapi: 3.0.0\n"),
+            (
+                "theme/_templates/default.html",
+                "{{ page.source.url | safe }}",
+            ),
+        ]);
+        build(&site).unwrap();
+        let dist = site.join("dist");
+        let read = |path: &str| fs::read_to_string(dist.join(path)).unwrap();
+        let added = || -> Vec<String> {
+            let page = |file: &String| file.ends_with(".html");
+            files_in(&dist)
+                .into_iter()
+                .filter(|file| !page(file))
+                .collect()
+        };
+
+        // The Markdown a plugin gives for a page is made from something
+        // else, so it isn't the page's source, and isn't copied.
+        assert_eq!(read("api/modules.html"), "");
+        // A page made from one file says so in its frontmatter, as any
+        // page's settings have the last word on what its theme gets.
+        assert_eq!(read("api/petstore.html"), "/little/api/pet%20store.yaml");
+        assert_eq!(read("api/pet store.yaml"), "openapi: 3.1.0\n");
+        assert_eq!(read("api/events.html"), "/little/api/events.yaml");
+        assert_eq!(read("api/shared.html"), "/little/shared.yaml");
+        let files = [
+            MARKER_FILE,
+            "README.md",
+            "api/events.yaml",
+            "api/logo.svg",
+            "api/pet store.yaml",
+            "shared.yaml",
+        ];
+        assert_eq!(added(), files);
+
+        // With its `source` off, a page has no URL, and the file it names
+        // is left out, if its plugin added it: that's the page's source, as
+        // the home page's file is its own. The site's own file stays, as
+        // any file in the source does, and so do another plugin's, and one
+        // no page names.
+        let off = format!("{site_cfg}page:\n  source:\n    enabled: false\n");
+        fs::write(site.join("little.yml"), off).unwrap();
+        build(&site).unwrap();
+        for page in ["petstore", "events", "shared"] {
+            assert_eq!(read(&format!("api/{page}.html")), "", "{page}");
+        }
+        let files = [
+            MARKER_FILE,
+            "api/events.yaml",
+            "api/logo.svg",
+            "shared.yaml",
+        ];
+        assert_eq!(added(), files);
+    }
+
+    #[test]
+    fn a_versions_pages_files_are_copied_from_its_ref() {
+        let site_cfg = format!(
+            "{IN_THEME}  url: https://example.com/proj\n  versions:\n    \
+             - {{ title: \"2.0\", url: / }}\n    - {{ title: \"1.4\", url: /1.4, ref: v1.4 }}\n"
+        );
+        let (_tmp, site) = versioned_site(
+            &[
+                ("docs/README.md", "# Old home\n"),
+                ("docs/old.md", "# Old\n"),
+            ],
+            &[
+                ("little.yml", &site_cfg),
+                ("docs/README.md", "# Home\n"),
+                (
+                    "theme/_templates/default.html",
+                    "{{ page.source.url | safe }}",
+                ),
+                // One of the theme's files, which every version shares at
+                // the root of the site, where a version's page has its own.
+                ("theme/_static/old.md", "The theme's\n"),
+            ],
+        );
+        build(&site).unwrap();
+        let dist = site.join("dist");
+        let read = |path: &str| fs::read_to_string(dist.join(path)).unwrap();
+
+        // Each version has its pages' files as they are at its ref, in its
+        // own folder, at URLs under its own path.
+        assert_eq!(read("index.html"), "/proj/README.md");
+        assert_eq!(read("README.md"), "# Home\n");
+        assert_eq!(read("1.4/index.html"), "/proj/1.4/README.md");
+        assert_eq!(read("1.4/README.md"), "# Old home\n");
+        assert_eq!(read("1.4/old.html"), "/proj/1.4/old.md");
+        assert_eq!(read("1.4/old.md"), "# Old\n");
+        assert_eq!(read("old.md"), "The theme's\n");
+    }
+
+    #[test]
+    fn the_builtin_theme_links_to_a_pages_markdown() {
+        let (_tmp, site) = scratch(&[
+            (
+                "little.yml",
+                &format!(
+                    "site:\n  url: https://example.com/little\n  plugins:\n    test:\n      \
+                     wasm: {}\n      extensions: [test]\n",
+                    crate::plugin::tests::test_plugin().display()
+                ),
+            ),
+            ("docs/README.md", "# Home\n"),
+            (
+                "docs/guide.md",
+                "---\nsource:\n  enabled: false\n---\n# Guide\n",
+            ),
+            ("docs/analysis.test", "[{ \"markdown\": \"# Analysis\" }]"),
+        ]);
+        build(&site).unwrap();
+        let read = |path: &str| fs::read_to_string(site.join("dist").join(path)).unwrap();
+
+        // In its head, as an alternate to the page, for a page written in
+        // Markdown, whose file is copied.
+        let alternate = "<link rel=\"alternate\" type=\"text/markdown\"";
+        let home = read("index.html");
+        let link = format!("{alternate} href=\"/little/README.md\">");
+        assert!(home.contains(&link), "{home}");
+        // A page whose file isn't copied has none, nor has one in another
+        // format, whose file isn't Markdown, nor the 404 page.
+        for page in ["guide.html", "analysis.html", NOT_FOUND_FILE] {
+            let html = read(page);
+            assert!(!html.contains("rel=\"alternate\""), "{page}: {html}");
+        }
+        assert!(site.join("dist/analysis.test").is_file());
+    }
+
+    #[test]
     fn a_site_gets_its_repositorys_owner_and_name() {
         let repository = |settings: &str| format!("{IN_THEME}  repository:\n{settings}");
         let (_tmp, site) = scratch(&[
@@ -5515,7 +5852,15 @@ mod tests {
 
         // A value where a group's settings go, like `false`, stops the
         // build, naming the page.
-        for group in ["outline", "breadcrumb", "previous", "next", "repository"] {
+        let groups = [
+            "outline",
+            "breadcrumb",
+            "previous",
+            "next",
+            "repository",
+            "source",
+        ];
+        for group in groups {
             let message = format!("{:#}", guide(&format!("{group}: false\n")).unwrap_err());
             let expected = format!(
                 "rendering {}: `{group}` must be its settings, like `enabled: false`",
@@ -6233,13 +6578,15 @@ mod tests {
             let built = check(&rebuild(&site, &built).unwrap(), "after files move");
 
             // The config changes, and so the theme's files, and the
-            // redirects go.
+            // redirects go, and each page's own file with them.
             let config = format!(
                 "site:\n  name: Renamed\n  navigation:\n    prune: {nav_prune}\n  \
-                 search:\n    enabled: false\n"
+                 search:\n    enabled: false\npage:\n  source:\n    enabled: false\n"
             );
             write(&site, &[("little.yml", &config)]);
+            assert!(dist.join("guide/install.md").is_file());
             check(&rebuild(&site, &built).unwrap(), "after the config changes");
+            assert!(!dist.join("guide/install.md").exists());
         }
     }
 
@@ -6256,7 +6603,14 @@ mod tests {
             ("theme/_templates/default.html", template),
         ]);
         let dist = site.join("dist");
-        let files = ["index.html", "guide.html", "about.html", "logo.svg"];
+        let files = [
+            "index.html",
+            "guide.html",
+            "about.html",
+            "logo.svg",
+            "guide.md",
+            "about.md",
+        ];
         // Each file that's left as it was, of those a build writes, found by
         // writing over them all first.
         let left = |last: &Built| {
@@ -6275,31 +6629,38 @@ mod tests {
         let (built, unwritten) = left(&built);
         assert_eq!(unwritten, files);
 
-        // A page whose text changes is rendered again, alone.
+        // A page whose text changes is rendered again, alone, and its file
+        // copied again.
         write(&site, &[("docs/guide.md", "# Guide\n\nSecond.\n")]);
         let (built, unwritten) = left(&built);
-        assert_eq!(unwritten, ["index.html", "about.html", "logo.svg"]);
+        let others = ["index.html", "about.html", "logo.svg", "about.md"];
+        assert_eq!(unwritten, others);
         let guide = fs::read_to_string(dist.join("guide.html")).unwrap();
         assert!(guide.contains("<p>Second.</p>"), "{guide}");
+        let copied = fs::read_to_string(dist.join("guide.md")).unwrap();
+        assert_eq!(copied, "# Guide\n\nSecond.\n");
 
         // Its title is in the nav, so in every page.
         write(&site, &[("docs/guide.md", "# Guiding\n\nSecond.\n")]);
         let (built, unwritten) = left(&built);
-        assert_eq!(unwritten, ["logo.svg"]);
+        assert_eq!(unwritten, ["logo.svg", "about.md"]);
 
-        // So is the theme's template, but a file is only itself.
+        // So is the theme's template, but a file is only itself, and so is
+        // a page's own.
         let theme = site.join("theme/_templates/default.html");
         fs::write(&theme, "{{ page.title }}").unwrap();
         fs::write(site.join("docs/logo.svg"), "<svg></svg>").unwrap();
         let (built, unwritten) = left(&built);
-        assert_eq!(unwritten, [""; 0]);
+        assert_eq!(unwritten, ["guide.md", "about.md"]);
         assert_eq!(fs::read(dist.join("logo.svg")).unwrap(), b"<svg></svg>");
 
-        // A page that's gone from the source goes, with its folder, and one
-        // that's gone from the destination is written again.
+        // A page that's gone from the source goes, with its file and its
+        // folder, and one that's gone from the destination is written again.
         fs::remove_file(site.join("docs/about.md")).unwrap();
         let built = rebuild(&site, &built).unwrap();
         assert!(!dist.join("about").exists());
+        assert!(!dist.join("about.html").exists());
+        assert!(!dist.join("about.md").exists());
         fs::remove_file(dist.join("guide.html")).unwrap();
         let built = rebuild(&site, &built).unwrap();
         assert_eq!(
@@ -6907,7 +7268,15 @@ mod tests {
         let old = Path::new("1.4/old.html");
         assert_eq!(built.origins[old], "v1.4:docs/old.md");
         assert_eq!(built.urls[old], "/1.4/old");
-        let from_refs = ["1.4/index.html", "1.4/guide/index.html", "1.4/old.html"];
+        // Each page's file is copied beside it, as it was at the ref.
+        let from_refs = [
+            "1.4/index.html",
+            "1.4/README.md",
+            "1.4/guide/index.html",
+            "1.4/guide/README.md",
+            "1.4/old.html",
+            "1.4/old.md",
+        ];
         let from_refs: HashSet<_> = from_refs.into_iter().map(PathBuf::from).collect();
         assert_eq!(built.from_refs, from_refs);
 
