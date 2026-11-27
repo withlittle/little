@@ -49,6 +49,37 @@ file, and this page shows it with `images/pretty-urls.svg`.
 A file at the same path as one of the theme's replaces it, so
 `docs/assets/style.css` replaces the built-in theme's stylesheet.
 
+## A page's file
+
+little copies each page's file to the site too, as you wrote it, beside
+the page:
+
+```text
+docs/guide/install.md  # → /guide/install, and /guide/install.md
+docs/guide/README.md   # → /guide/, and /guide/README.md
+```
+
+A reader, or an AI agent, can then read a page as Markdown, at its URL
+with `.md` at the end, and follow the links between your files as in
+`docs/`. A page in [another format](#pages-and-urls) has its own file
+there, like `/analysis.ipynb`, and a page a
+[plugin adds](../plugins/using-plugins.md#pages-and-files) has none.
+
+The file is published whole, with its frontmatter, and what its page
+doesn't show, like a comment. To keep every page's file out of the site,
+set `source.enabled` to `false`, under `page`:
+
+```yaml
+# little.yml
+page:
+  source:
+    enabled: false
+```
+
+A page's [frontmatter](frontmatter.md#frontmatter-wins) can turn its own
+off, or back on. [A page's file](../themes/making-a-theme.md#a-pages-file)
+says how a theme links to it.
+
 ## Hidden files
 
 little leaves out each file or folder whose name starts with `.`, with

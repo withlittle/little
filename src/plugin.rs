@@ -572,6 +572,12 @@ impl Plugins {
         extensions
     }
 
+    /// Whether a plugin has a `source` hook, which changes each page's text
+    /// as it's read.
+    pub fn changes_source(&self) -> bool {
+        (self.plugins.iter()).any(|plugin| plugin.pre.exports.source.is_some())
+    }
+
     /// Whether a plugin has an `html` hook, which changes each page as the
     /// theme renders it.
     pub fn changes_html(&self) -> bool {

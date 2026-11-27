@@ -67,6 +67,7 @@ outline:
 | `previous` | link to the [page before it](navigation.md#previous-and-next-pages) |
 | `next` | link to the page after it |
 | `repository` | links to [view and edit its file](../getting-started/configuring.md#choosing-the-sites-repository) |
+| `source` | [file](pages-and-files.md#a-pages-file), copied beside it |
 
 Frontmatter has the last word on what the theme gets as `page`, even over
 what little works out, so you can change it, too:

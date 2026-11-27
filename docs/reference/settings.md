@@ -89,4 +89,5 @@ any of them:
 | `breadcrumb.enabled` | `true` | whether it has [breadcrumbs](../writing/navigation.md#breadcrumbs) |
 | `previous.enabled`, `next.enabled` | `true` | whether it links to the [pages before and after it](../writing/navigation.md#previous-and-next-pages) |
 | `repository.enabled` | `true` | whether it links to [its file](../getting-started/configuring.md#choosing-the-sites-repository) in the site's repository |
+| `source.enabled` | `true` | whether [its file](../writing/pages-and-files.md#a-pages-file) is copied beside it |
 | `search.enabled` | `false` under a URL in `site.search.exclude`, else `true` | whether [search](../writing/search.md#leaving-pages-out) indexes it |

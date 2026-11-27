@@ -41,15 +41,17 @@ both work.
 | `page.previous`, `page.next` | The [pages before and after](../writing/navigation.md#previous-and-next-pages) this one in the nav, each `{ title, url }`. The first page has no `page.previous`, and the last no `page.next` |
 | `page.repository.source_url` | Where to view the page's file in the site's [repository](../getting-started/configuring.md#choosing-the-sites-repository), on github.com or gitlab.com, like `https://github.com/withlittle/little/blob/main/docs/getting-started/install.md`; from a version's `ref`, at its commit |
 | `page.repository.edit_url` | Where to edit it there, like `https://github.com/withlittle/little/edit/main/docs/getting-started/install.md`; none from a version's `ref` |
+| `page.source.url` | Where [the page's file](../writing/pages-and-files.md#a-pages-file) is copied to, like `/guide/install.md`, for a theme to [link to](../themes/making-a-theme.md#a-pages-file); none for a page a plugin adds |
 | `page.search.enabled` | Whether [search](../writing/search.md#leaving-pages-out) indexes the page, on a site with search on: `false` for one that's left out |
 | `page.versions` | Each entry in `site.versions`, with the `url` of this page in that version, else of its home page, for a [menu of versions](../themes/making-a-theme.md#a-menu-of-versions) |
 | `page.redirect.url`, `page.redirect.title` | [Redirects](../themes/making-a-theme.md#redirects) only: where it leads, and the title of the page there, if it's one of the site's |
 | `page.<key>` | Every other key in the page's [frontmatter](../writing/frontmatter.md), or under [`page`](../writing/frontmatter.md#for-every-page) in a `little.yml`, as written, like `page.description` |
 
-`page.outline`, `page.breadcrumb`, `page.repository`, and `page.search` are
-on every page, so `{% if page.outline.items %}` works anywhere. A page that
+`page.outline`, `page.breadcrumb`, `page.repository`, `page.source`, and
+`page.search` are on every page, so `{% if page.outline.items %}` works
+anywhere. A page that
 [turns one off](../writing/frontmatter.md#frontmatter-wins), with its
-`enabled`, has no `items` in it, or neither URL, and no `page.previous` or
+`enabled`, has no `items` in it, or no URL, and no `page.previous` or
 `page.next`, so a theme shows what it's given.
 
 A 404 page has `page.type`, `page.url`, `/404.html`, and what's under `page`

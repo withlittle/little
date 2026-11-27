@@ -7,7 +7,10 @@
   `config` both groups, `site` and `page`, and names what it can't change
   by where it is now, like `site.serve`, and by
   [0083](./0083-redirects-from-old-urls.md), which calls `page` and `html`
-  for each redirect, as for the 404 page
+  for each redirect, as for the 404 page, and by
+  [0087](./0087-each-pages-file-copied-beside-it.md), which copies a page's
+  file as it's written, whatever `source` gives back, and gives
+  `destination` its path
 - Date: 2026-10-15
 - Amends: [0019](./0019-site-search.md),
   [0029](./0029-plugins-that-render-code-blocks.md),

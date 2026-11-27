@@ -2,7 +2,9 @@
 
 - Status: accepted; amended by
   [0071](./0071-ordering-and-naming-the-manuals-plugin-pages.md), which
-  names the manual's page on notebooks `docs/plugins/jupyter.ipynb`
+  names the manual's page on notebooks `docs/plugins/jupyter.ipynb`, and
+  by [0087](./0087-each-pages-file-copied-beside-it.md), which copies a
+  file a plugin reads beside its page, as a Markdown file is
 - Date: 2026-10-22
 - Amends: [0024](./0024-jupyter-notebooks.md),
   [0029](./0029-plugins-that-render-code-blocks.md),

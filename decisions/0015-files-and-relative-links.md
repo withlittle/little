@@ -1,7 +1,9 @@
 # 0015 — Images and other files are published, and relative links work as on GitHub
 
 - Status: accepted; amended by [0017](./0017-links-to-pages-files.md),
-  which leads a link to a page's file, like `install.md`, to the page
+  which leads a link to a page's file, like `install.md`, to the page, and
+  by [0087](./0087-each-pages-file-copied-beside-it.md), which copies each
+  page's own file too
 - Date: 2026-10-01
 - Amends: [0014](./0014-site-url-and-its-path.md)
 

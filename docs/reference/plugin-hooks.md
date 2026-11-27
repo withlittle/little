@@ -129,6 +129,13 @@ page, like each module's in an [API reference](../plugins/pydoc.md), and
 any other file is copied. A file that's copied, even an `.html` file,
 reaches no hook after this one but `destination`.
 
+A page it adds has no file of its own, so little copies none
+[beside it](../writing/pages-and-files.md#a-pages-file), and it has no
+`page.source.url`. If the page is made from one file, like an OpenAPI
+document, name that file's URL in the page's frontmatter, as
+`source: { url: /api/openapi.yaml }`, and add the file too, unless the
+site publishes it already.
+
 A path is relative, with `/` between its parts. None of them is empty, `.`,
 or `..`, and it has no `\` or `:`, which mean something else on Windows. A
 file can be added where there's one only if the hook removes that one. As
@@ -147,7 +154,9 @@ like `docs/guide/install.md`, and its text: Markdown, with its frontmatter,
 or the text of a file a [`formats`](#formats) hook reads, like a notebook's
 JSON. It gives back the text the page is built from, frontmatter and all.
 Line numbers in warnings about the page count the lines of the text it
-gives back.
+gives back. The page's
+[file is copied](../writing/pages-and-files.md#a-pages-file) as it's
+written, not as the hook leaves it.
 
 ## formats
 
@@ -298,10 +307,10 @@ destination: func(paths: list<string>) -> result<list<file>, string>;
 
 Called once, after every page is put in the theme, before the site is
 written, with the path of each file the build writes, from the destination,
-like `guide/install.html`, sorted: the site's pages, its other files,
-the theme's static files, and search's. It gives back files to add, like a
-`sitemap.xml` or a `robots.txt`, at paths as for [`files`](#files), but not
-where there's a file or a folder, or in a file.
+like `guide/install.html`, sorted: the site's pages, their own files, its
+other files, the theme's static files, and search's. It gives back files
+to add, like a `sitemap.xml` or a `robots.txt`, at paths as for
+[`files`](#files), but not where there's a file or a folder, or in a file.
 
 ## Versions
 
