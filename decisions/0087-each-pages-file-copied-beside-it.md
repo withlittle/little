@@ -5,6 +5,7 @@
 - Amends: [0015](./0015-files-and-relative-links.md),
   [0046](./0046-plugin-hooks.md),
   [0060](./0060-other-formats-in-plugins.md),
+  [0069](./0069-a-plugin-for-openapi.md),
   [0080](./0080-settings-in-groups-under-site-and-page.md)
 
 ## Context
@@ -41,6 +42,10 @@ working out little's URLs again.
 - **Who knows that file:** little, which sees only what a plugin gives it,
   and can't tell a page made from one document from one made from a
   package of code; or the plugin.
+- **Which documents `openapi` names:** only one the site publishes
+  already, in its source, though a plugin isn't told where the source is,
+  and the documents of an API are mostly beside its code; or each, which
+  it then publishes itself, beside its page.
 - **Who leaves out a file a plugin adds as a page's source, with
   `source` off:** the plugin, which isn't given a site's settings in a
   version from a ref; a setting of the plugin's own, a second switch to
@@ -81,6 +86,13 @@ working out little's URLs again.
   page that names it has its `source` on, so the one setting covers every
   page's source. A file of the site's own that a page names stays, as any
   file in the source does, and so does one another plugin adds.
+- `openapi` adds each document beside its page, by its own name, like
+  `api/openapi.yaml` beside `api/openapi.md`, at `/api/openapi.yaml`, and
+  its page names it, wherever its folder is: a document outside the source
+  is published, which it wasn't. Where the source has a file at that path,
+  as for a document that's in it, the plugin adds none, and the site's own
+  is the one published. A document whose `$ref`s lead to other files is
+  made from more than one, so its page has no source.
 - The built-in theme links to a page's file in its `<head>`, as
   `<link rel="alternate" type="text/markdown">`, if it ends in `.md`.
 - The names stay as they are: `site.source` and
@@ -99,8 +111,12 @@ working out little's URLs again.
   stops the build, so little's minor version rises.
 - A destination has a file more for each page, and a plugin's
   `destination` hook is given each.
-- An API reference a plugin adds has no Markdown to read, until its plugin
-  names a source for it.
+- An OpenAPI document outside a site's source is published, with what its
+  page doesn't show, like its `x-` extensions and its comments, unless the
+  site turns `source` off. One in the source is published either way, as
+  any file there is.
+- An API reference made from code has no source, as its pages aren't each
+  made from one file, and no Markdown to read.
 - GitHub Pages builds a branch with Jekyll, which makes a page of its own
   from each `.md` file, unless the branch has a `.nojekyll` file. The
   manual's workflow publishes with GitHub Actions, which doesn't.

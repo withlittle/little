@@ -143,6 +143,83 @@ fn each_openapi_3_document_in_the_folders_it_reads_is_a_page() {
 }
 
 #[test]
+fn a_document_of_one_file_is_published_beside_its_page_as_its_source() {
+    let titled = |title: &str, rest: &str| {
+        format!("openapi: 3.1.0\ninfo: {{title: {title}, version: '1'}}\n{rest}")
+    };
+    let schema =
+        |reference: &str| format!("components:\n  schemas:\n    Pet: {{$ref: '{reference}'}}\n");
+    // Its bytes are kept, like the mark at its start.
+    let marked = format!("\u{feff}{EMPTY}");
+    let summed = r#"{"openapi": "3.1.0", "info": {"title": "Pets", "version": "1", "summary": "Pets, to buy."}}"#;
+    let web = titled("Web", &schema("https://example.com/schemas.yaml#/Pet"));
+    let split = titled("Split", &schema("./gone.yaml#/Pet"));
+    let (added, _) = built(
+        "sourced",
+        &[
+            ("a.yaml", &marked),
+            ("pet store.json", summed),
+            ("v2/c.YML", EMPTY),
+            ("web.yaml", &web),
+            ("split.yaml", &split),
+            ("zoo.json", ZOO),
+            ("schemas/pet.json", PET),
+            ("tree.json", TREE),
+        ],
+    );
+    let pages = [
+        "api/a.md",
+        "api/pet store.md",
+        "api/split.md",
+        "api/v2/c.md",
+        "api/web.md",
+        "api/zoo.md",
+    ];
+    assert_eq!(paths(&added), pages);
+
+    // Each is beside its page, by its own name, as it's written, and its
+    // page names it, from the root of the site, after its description. A
+    // `$ref` to a URL leads to no file.
+    let beside: Vec<(&str, &[u8])> = (added.others.iter())
+        .map(|(path, bytes)| (path.as_str(), bytes.as_slice()))
+        .collect();
+    let published: [(&str, &[u8]); 4] = [
+        ("api/a.yaml", marked.as_bytes()),
+        ("api/pet store.json", summed.as_bytes()),
+        ("api/v2/c.YML", EMPTY.as_bytes()),
+        ("api/web.yaml", web.as_bytes()),
+    ];
+    assert_eq!(beside, published);
+    let starts = |page: &str, start: &str| {
+        let markdown = markdown(&added, page);
+        assert!(markdown.starts_with(start), "{page}: {markdown}");
+    };
+    starts(
+        "api/a.md",
+        "---\nsource:\n  url: \"/api/a.yaml\"\n---\n\n# Empty\n",
+    );
+    starts(
+        "api/pet store.md",
+        "---\ndescription: \"Pets, to buy.\"\nsource:\n  url: \"/api/pet store.json\"\n---\n\n# Pets\n",
+    );
+    starts(
+        "api/v2/c.md",
+        "---\nsource:\n  url: \"/api/v2/c.YML\"\n---\n\n",
+    );
+    starts(
+        "api/web.md",
+        "---\nsource:\n  url: \"/api/web.yaml\"\n---\n\n# Web\n",
+    );
+    // One whose `$ref`s lead to other files is made from more than one,
+    // whether or not each is there, so it has no source.
+    starts("api/split.md", "# Split\n");
+    starts(
+        "api/zoo.md",
+        "---\ndescription: \"A zoo's animals, and news of them.\"\n---\n\n# Zoo\n",
+    );
+}
+
+#[test]
 fn it_reads_only_openapi_3() {
     let (added, root) = built(
         "versions",

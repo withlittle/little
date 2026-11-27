@@ -272,10 +272,11 @@ better than HTML:
 {% endif %}
 ```
 
-Test for it first: a page a plugin adds has none, nor has the 404 page, a
-redirect, or a page whose `source` is off. A page in another format has its
-own file, like a notebook's `.ipynb`. The URL already has the path of the
-site's `url`, so write it with `safe`.
+Test for it first: the 404 page has none, nor has a redirect, a page whose
+`source` is off, or most pages a plugin adds. A page in another format has
+its own file, like a notebook's `.ipynb`, or the OpenAPI document a page is
+made from. The URL already has the path of the site's `url`, so write it
+with `safe`.
 
 ## When a page last changed
 

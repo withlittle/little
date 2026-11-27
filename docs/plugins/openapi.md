@@ -45,8 +45,14 @@ but one in Swagger 2.0 or another version of OpenAPI, or one that mentions
 Each document is a page, at its path in `read`, without its extension, in
 `url`. For the example above, `api/openapi.yaml` is the page
 `api/openapi.md`, at `/api/openapi`, and `api/v2/openapi.yaml` is at
-`/api/v2/openapi`. A document in the source, like `docs/api/openapi.yaml`,
-is copied too, as any file is, so readers can download it.
+`/api/v2/openapi`.
+
+The document is published too, beside its page, at `/api/openapi.yaml`, as
+[the page's file](../writing/pages-and-files.md#a-pages-file), so a reader,
+or an AI agent, can have the document itself. One whose `$ref`s lead to
+other files isn't, as one file isn't all of it. Turning `source` off, under
+`page`, leaves each out, but for a document in `docs/`, which is published
+as any file there is.
 
 Two folders in `read` with documents of the same name, like
 `api/v1/openapi.yaml` and `api/v2/openapi.yaml`, with

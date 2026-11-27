@@ -62,8 +62,10 @@ docs/guide/README.md   # → /guide/, and /guide/README.md
 A reader, or an AI agent, can then read a page as Markdown, at its URL
 with `.md` at the end, and follow the links between your files as in
 `docs/`. A page in [another format](#pages-and-urls) has its own file
-there, like `/analysis.ipynb`, and a page a
-[plugin adds](../plugins/using-plugins.md#pages-and-files) has none.
+there, like `/analysis.ipynb`. A page a
+[plugin adds](../plugins/using-plugins.md#pages-and-files) has none, unless
+its plugin gives it one, as [`openapi`](../plugins/openapi.md#its-pages)
+does each OpenAPI document.
 
 The file is published whole, with its frontmatter, and what its page
 doesn't show, like a comment. To keep every page's file out of the site,
