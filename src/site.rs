@@ -42,6 +42,7 @@
 use anyhow::{Context, Result, bail};
 use minijinja::value::Serde;
 use minijinja::{Value as MjValue, context};
+use percent_encoding::percent_decode_str;
 use serde::{Deserialize, Serialize};
 use serde_yaml::{Mapping, Value};
 use std::borrow::Cow;
@@ -1060,6 +1061,8 @@ fn read_source(
     // as it is.
     let mut documents = Vec::new();
     let mut files = Vec::new();
+    // The plugin that adds each file a plugin adds, by the file's path.
+    let mut added_by: HashMap<String, String> = HashMap::new();
     for (path, found) in found {
         let (rel, origin, contents, added) = match found {
             Found::OnDisk(file) => {
@@ -1073,6 +1076,7 @@ fn read_source(
                     Some(checkout) => format!("plugin `{plugin}`'s {path} at {}", checkout.git_ref),
                     None => format!("plugin `{plugin}`'s {path}"),
                 };
+                added_by.insert(path.clone(), plugin);
                 (PathBuf::from(path), origin, contents, true)
             }
         };
@@ -1217,6 +1221,24 @@ fn read_source(
         }
         pages.push(page);
     }
+
+    // A page a plugin adds names the one file it's made from, if there's
+    // one, as its `source.url`. Where the plugin adds that file too, it's
+    // the page's source, as the file little reads a page from is that
+    // page's: left out, unless a page that names it has its `source` on.
+    let mut named: HashMap<String, bool> = HashMap::new();
+    for page in pages.iter().filter(|page| page.added) {
+        let url = (page.settings.get("source"))
+            .and_then(|source| source.get("url"))
+            .and_then(Value::as_str);
+        let plugin = added_by.get(&slashed(&page.rel));
+        let file = (url.into_iter().flat_map(files_at))
+            .find(|file| plugin.is_some() && added_by.get(file) == plugin);
+        if let Some(file) = file {
+            *named.entry(file).or_default() |= page.wants.source;
+        }
+    }
+    files.retain(|file| named.get(&slashed(&file.path)) != Some(&false));
 
     // Deterministic output order (nav has its own ordering), and so a
     // deterministic error for files that would be the same page.
@@ -2260,6 +2282,17 @@ fn folder_url(rel: &Path) -> String {
 /// `/assets/style.css` for `assets/style.css`.
 fn file_url(rel: &Path) -> String {
     format!("/{}", slashed(rel))
+}
+
+/// The path of the file at `url`, from the root of its version, like
+/// `api/openapi.yaml` for `/api/openapi.yaml`, as it's written, and with
+/// what's encoded in it decoded, as a file's name can have a `%` of its
+/// own. None for a URL that isn't from the root.
+fn files_at(url: &str) -> impl Iterator<Item = String> {
+    let path = url.split(['?', '#']).next().unwrap_or_default();
+    let path = path.strip_prefix('/').filter(|path| !path.starts_with('/'));
+    let decoded = path.map(|path| percent_decode_str(path).decode_utf8_lossy().into_owned());
+    path.map(str::to_string).into_iter().chain(decoded)
 }
 
 /// `path`, with `/` between its parts, as plugins' hooks get it, like
@@ -5481,20 +5514,41 @@ mod tests {
 
     #[test]
     fn a_plugins_page_has_only_the_source_it_names() {
-        // A page with nothing to say of what it's made from, and one that
-        // names the file it's made from, which the plugin adds too.
-        let pages = serde_json::json!([
-            { "path": "api/modules.md", "text": "# Modules\n" },
-            {
-                "path": "api/petstore.md",
-                "text": "---\nsource:\n  url: /api/petstore.yaml\n---\n# Petstore\n",
-            },
-            { "path": "api/petstore.yaml", "text": "openapi: 3.1.0\n" },
-        ]);
-        let site_cfg = format!("{IN_THEME}  url: https://example.com/little\n");
+        // A page with nothing to say of what it's made from, and three that
+        // name the file they're made from: one the plugin adds too, one of
+        // the site's own, and one another plugin adds.
+        let page = |name: &str, url: &str| {
+            serde_json::json!({
+                "path": format!("api/{name}.md"),
+                "text": format!("---\nsource:\n  url: {url}\n---\n# Made from a file\n"),
+            })
+        };
+        let wasm = crate::plugin::tests::test_plugin();
+        let api = serde_json::json!({
+            "wasm": wasm,
+            "files": { "add": [
+                { "path": "api/modules.md", "text": "# Modules\n" },
+                page("petstore", "/api/pet%20store.yaml"),
+                { "path": "api/pet store.yaml", "text": "openapi: 3.1.0\n" },
+                page("events", "/api/events.yaml"),
+                page("shared", "/shared.yaml"),
+                { "path": "api/logo.svg", "text": "<svg/>" },
+            ] },
+        });
+        // Each renders a language of its own, as two can't render one.
+        let other = serde_json::json!({
+            "wasm": wasm,
+            "languages": ["other"],
+            "files": { "add": [{ "path": "shared.yaml", "text": "shared: true\n" }] },
+        });
+        let site_cfg = format!(
+            "{IN_THEME}  url: https://example.com/little\n  plugins:\n    api: {api}\n    \
+             other: {other}\n"
+        );
         let (_tmp, site) = scratch(&[
-            ("little.yml", &adding_files(&site_cfg, pages, None)),
+            ("little.yml", &site_cfg),
             ("docs/README.md", "# Home\n"),
+            ("docs/api/events.yaml", "asyncapi: 3.0.0\n"),
             (
                 "theme/_templates/default.html",
                 "{{ page.source.url | safe }}",
@@ -5503,16 +5557,51 @@ mod tests {
         build(&site).unwrap();
         let dist = site.join("dist");
         let read = |path: &str| fs::read_to_string(dist.join(path)).unwrap();
+        let added = || -> Vec<String> {
+            let page = |file: &String| file.ends_with(".html");
+            files_in(&dist)
+                .into_iter()
+                .filter(|file| !page(file))
+                .collect()
+        };
 
         // The Markdown a plugin gives for a page is made from something
         // else, so it isn't the page's source, and isn't copied.
         assert_eq!(read("api/modules.html"), "");
-        assert!(!dist.join("api/modules.md").exists());
         // A page made from one file says so in its frontmatter, as any
         // page's settings have the last word on what its theme gets.
-        assert_eq!(read("api/petstore.html"), "/little/api/petstore.yaml");
-        assert_eq!(read("api/petstore.yaml"), "openapi: 3.1.0\n");
-        assert!(!dist.join("api/petstore.md").exists());
+        assert_eq!(read("api/petstore.html"), "/little/api/pet%20store.yaml");
+        assert_eq!(read("api/pet store.yaml"), "openapi: 3.1.0\n");
+        assert_eq!(read("api/events.html"), "/little/api/events.yaml");
+        assert_eq!(read("api/shared.html"), "/little/shared.yaml");
+        let files = [
+            MARKER_FILE,
+            "README.md",
+            "api/events.yaml",
+            "api/logo.svg",
+            "api/pet store.yaml",
+            "shared.yaml",
+        ];
+        assert_eq!(added(), files);
+
+        // With its `source` off, a page has no URL, and the file it names
+        // is left out, if its plugin added it: that's the page's source, as
+        // the home page's file is its own. The site's own file stays, as
+        // any file in the source does, and so do another plugin's, and one
+        // no page names.
+        let off = format!("{site_cfg}page:\n  source:\n    enabled: false\n");
+        fs::write(site.join("little.yml"), off).unwrap();
+        build(&site).unwrap();
+        for page in ["petstore", "events", "shared"] {
+            assert_eq!(read(&format!("api/{page}.html")), "", "{page}");
+        }
+        let files = [
+            MARKER_FILE,
+            "api/events.yaml",
+            "api/logo.svg",
+            "shared.yaml",
+        ];
+        assert_eq!(added(), files);
     }
 
     #[test]

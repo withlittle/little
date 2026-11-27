@@ -41,6 +41,10 @@ working out little's URLs again.
 - **Who knows that file:** little, which sees only what a plugin gives it,
   and can't tell a page made from one document from one made from a
   package of code; or the plugin.
+- **Who leaves out a file a plugin adds as a page's source, with
+  `source` off:** the plugin, which isn't given a site's settings in a
+  version from a ref; a setting of the plugin's own, a second switch to
+  forget; or little, which knows each page's settings.
 - **On or off:** off, until a site asks; on in the built-in theme, as
   search is, though a file is worth reading whatever the theme; or on in
   little, as each of a page's other groups is.
@@ -71,9 +75,12 @@ working out little's URLs again.
 - A page's settings have the last word on what its theme gets, as for any
   group, so a `source.url` they write is what the theme gets, with the
   site's path. That's how a plugin names the one file its page is made
-  from, in the frontmatter of the page it adds. Whether to publish a file
-  from a folder it reads is each plugin's to choose, in a change of its
-  own.
+  from, in the frontmatter of the page it adds.
+- Where the plugin adds that file too, it's the page's source, as the file
+  little reads a page from is that page's. little leaves it out unless a
+  page that names it has its `source` on, so the one setting covers every
+  page's source. A file of the site's own that a page names stays, as any
+  file in the source does, and so does one another plugin adds.
 - The built-in theme links to a page's file in its `<head>`, as
   `<link rel="alternate" type="text/markdown">`, if it ends in `.md`.
 - The names stay as they are: `site.source` and

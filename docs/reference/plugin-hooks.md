@@ -134,7 +134,8 @@ A page it adds has no file of its own, so little copies none
 `page.source.url`. If the page is made from one file, like an OpenAPI
 document, name that file's URL in the page's frontmatter, as
 `source: { url: /api/openapi.yaml }`, and add the file too, unless the
-site publishes it already.
+site publishes it already. A file the hook adds for a page that names it
+is left out if the page's `source` is off, as a page's own file is.
 
 A path is relative, with `/` between its parts. None of them is empty, `.`,
 or `..`, and it has no `\` or `:`, which mean something else on Windows. A
