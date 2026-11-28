@@ -16,6 +16,7 @@ on:
       - "asciidoc-v*"
       - "orgmode-v*"
       - "restructuredtext-v*"
+      - "sitemap-v*"
 
 env:
   CARGO_TERM_COLOR: always
@@ -38,7 +39,7 @@ jobs:
 
       - name: Read the plugin and version from the tag
         run: |
-          pattern='^(pydoc|rustdoc|jsdoc|godoc|openapi|jupyter|asciidoc|orgmode|restructuredtext)-v((0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*))$'
+          pattern='^(pydoc|rustdoc|jsdoc|godoc|openapi|jupyter|asciidoc|orgmode|restructuredtext|sitemap)-v((0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*))$'
           if [[ ! $GITHUB_REF_NAME =~ $pattern ]]; then
             echo "::error::$GITHUB_REF_NAME isn't a plugin's name and version, like pydoc-v0.1.0"
             exit 1
@@ -98,6 +99,7 @@ jobs:
             asciidoc) page=asciidoc.adoc ;;
             orgmode) page=org-mode.org ;;
             restructuredtext) page=restructuredtext.rst ;;
+            sitemap) page=sitemap.md ;;
           esac
           # The plugin's tag before this one, if it has one. Its changes are
           # those in its own folder, and in the library it shares with others

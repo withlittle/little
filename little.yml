@@ -17,11 +17,11 @@ site:
   # The plugins that read the pages in other formats, each written in the
   # format it describes: jupyter, for docs/plugins/jupyter.ipynb,
   # asciidoc, for asciidoc.adoc, orgmode, for org-mode.org, and
-  # restructuredtext, for restructuredtext.rst. Build each before the
-  # manual, with:
+  # restructuredtext, for restructuredtext.rst. Then sitemap, which writes
+  # the manual's sitemap.xml. Build each before the manual, with:
   #   cargo build --release --target wasm32-wasip2 --manifest-path plugins/jupyter/Cargo.toml
-  # and the same for plugins/asciidoc, plugins/orgmode, and
-  # plugins/restructuredtext.
+  # and the same for plugins/asciidoc, plugins/orgmode,
+  # plugins/restructuredtext, and plugins/sitemap.
   plugins:
     jupyter:
       wasm: ./plugins/jupyter/target/wasm32-wasip2/release/little_jupyter.wasm
@@ -31,6 +31,8 @@ site:
       wasm: ./plugins/orgmode/target/wasm32-wasip2/release/little_orgmode.wasm
     restructuredtext:
       wasm: ./plugins/restructuredtext/target/wasm32-wasip2/release/little_restructuredtext.wasm
+    sitemap:
+      wasm: ./plugins/sitemap/target/wasm32-wasip2/release/little_sitemap.wasm
 
   # The manual's pages in the order to read them, rather than by title. A
   # page that isn't listed isn't in the nav, so list each new one.
@@ -65,6 +67,7 @@ site:
         children:
           - { title: Using plugins, url: /plugins/using-plugins }
           - { title: Writing plugins, url: /plugins/writing-plugins }
+          - { title: Sitemap, url: /plugins/sitemap }
           - { title: Jupyter notebooks, url: /plugins/jupyter }
           - { title: AsciiDoc, url: /plugins/asciidoc }
           - { title: Org mode, url: /plugins/org-mode }

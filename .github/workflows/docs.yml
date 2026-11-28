@@ -31,13 +31,17 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
         with:
+          # Every commit: little reads when each page last changed from the
+          # repository's history, which the manual's sitemap gives.
+          fetch-depth: 0
           persist-credentials: false
 
       - name: Install stable Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
           # For the jupyter, asciidoc, orgmode, and restructuredtext plugins,
-          # which read the pages written in their formats.
+          # which read the pages written in their formats, and the sitemap
+          # plugin, which writes the manual's sitemap.
           targets: wasm32-wasip2
 
       - name: Cache cargo build artifacts
@@ -49,11 +53,12 @@ jobs:
             plugins/asciidoc
             plugins/orgmode
             plugins/restructuredtext
+            plugins/sitemap
 
       # Each into its own target/, where little.yml looks for it.
       - name: Build the plugins
         run: |
-          for p in jupyter asciidoc orgmode restructuredtext; do
+          for p in jupyter asciidoc orgmode restructuredtext sitemap; do
             cargo build --release --locked --target wasm32-wasip2 --manifest-path plugins/$p/Cargo.toml
           done
 

@@ -61,6 +61,7 @@ little's own plugins add:
 - the reference of an [HTTP API](openapi.md), from its OpenAPI document
 - pages from [Jupyter notebooks](jupyter.ipynb), [AsciiDoc](asciidoc.adoc),
   [Org mode](org-mode.org), or [reStructuredText](restructuredtext.rst)
+- a [sitemap](sitemap.md) of your site's pages, for search engines
 
 Each one's page gives the URL of its `.wasm` file. Its releases, among
 [little's](https://github.com/withlittle/little/releases), list what
