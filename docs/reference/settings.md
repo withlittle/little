@@ -31,7 +31,8 @@ any of them:
 
 | Key | Default | Chooses… |
 | --- | ------- | -------- |
-| `source` | `./docs` | the folder a site is [built from](../getting-started/configuring.md#choosing-folders) |
+| `source.directory` | `./docs` | the folder a site is [built from](../getting-started/configuring.md#choosing-folders) |
+| `source.exclude` | none | the paths of the files there it [leaves out](../writing/pages-and-files.md#leaving-files-out), each with those under it |
 | `destination` | `./dist` | the folder a site is [built into](../getting-started/configuring.md#choosing-folders) |
 | `theme.source` | none, for the built-in theme | the [theme](../themes/choosing-a-theme.md) a site is built with, by its folder, or its archive's URL, or the one a theme [builds on](../themes/choosing-a-theme.md#building-on-another-theme) |
 | `theme.enabled` | `true`, for a site; none, for a theme | in a theme, `true` [builds on](../themes/choosing-a-theme.md#building-on-another-theme) the built-in theme |

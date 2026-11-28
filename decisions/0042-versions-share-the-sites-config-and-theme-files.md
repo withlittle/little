@@ -6,7 +6,10 @@
   stops the build on any other setting of little's there, and by
   [0080](./0080-settings-in-groups-under-site-and-page.md), under which
   only `site.source` and `site.navigation.items` count, of a ref's
-  `little.yml`
+  `little.yml`, and by
+  [0088](./0088-leaving-files-out-of-the-source.md), which makes a
+  version's `source` a group, as the site's is, that goes over the one at
+  its ref, setting by setting
 - Date: 2026-10-14
 - Amends: [0014](./0014-site-url-and-its-path.md),
   [0040](./0040-versions-from-git-refs.md)

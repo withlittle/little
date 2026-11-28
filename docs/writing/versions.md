@@ -31,7 +31,7 @@ List versions in the order the menu should show them. Each has:
 | `title` | what the menu shows, like `1.4` or `2.0 (Alpha)` |
 | `url` | where it's published, from the root of the site, like `/1.4` |
 | `ref` | the git tag, branch, or commit it's built from, like `v1.4` |
-| `source` | the folder its pages were in at `ref`, if they've moved since |
+| `source.directory` | the folder its pages were in at `ref`, if they've moved since |
 
 - One version must be at `/`. It needn't be the latest.
 - Leave out `ref` on one version to build it from your files as they are,
@@ -54,8 +54,10 @@ plugins, and settings, so an old release gets today's look and fixes. Only
 these come from its `ref`, which little reads with git, leaving your files
 alone:
 
-- Its pages and their files, from the `source` its entry sets, else the
-  one in the `little.yml` at the ref, else the site's.
+- Its pages and their files, from the `source` in the `little.yml` at the
+  ref, else the site's, with what its entry sets over either. So it
+  [leaves out](pages-and-files.md#leaving-files-out) the files its own
+  `source.exclude` lists.
 - Its nav, from the `little.yml` at the ref, else built from its pages,
   unless you [set its own](#a-versions-own-nav-and-plugins).
 - The folders its plugins read, so an old release's

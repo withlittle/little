@@ -76,9 +76,10 @@ interface files {
     }
 
     /// Called once, with the path of each file in the source folder, but
-    /// hidden ones, from it, like `guide/install.md`, sorted. Gives back the
-    /// files to add, and those to leave out: a file can be added where one
-    /// is only if that one's left out. An error stops the build.
+    /// hidden ones, and those `site.source.exclude` leaves out, from it,
+    /// like `guide/install.md`, sorted. Gives back the files to add, and
+    /// those to leave out: a file can be added where one is only if that
+    /// one's left out. An error stops the build.
     files: func(paths: list<string>) -> result<changes, string>;
 }
 

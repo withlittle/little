@@ -82,13 +82,39 @@ A page's [frontmatter](frontmatter.md#frontmatter-wins) can turn its own
 off, or back on. [A page's file](../themes/making-a-theme.md#a-pages-file)
 says how a theme links to it.
 
-## Hidden files
+## Leaving files out
 
-little leaves out each file or folder whose name starts with `.`, with
+To leave files out of your site, list their paths in `source.exclude`, from
+the root of `docs/`. Each leaves out its file, or its folder and everything
+in it:
+
+```yaml
+# little.yml
+site:
+  source:
+    exclude:
+      - /guide/old.md  # the page, and its file
+      - /drafts/       # everything in drafts/
+```
+
+`/drafts` and `/drafts/` are the same: both leave out `drafts/plan.md`, but
+not `drafts.md`. A file left out isn't built or copied, so a link to it is
+[broken](links-and-images.md#checking-links), and `little serve` doesn't
+rebuild when you save it.
+
+little warns of a path in `exclude` that leaves nothing out, as a mistyped
+one publishes the file you meant. Paths match as they're written, so
+`/Drafts/` doesn't leave out `drafts/`. On a site with
+[versions](versions.md), each version leaves out what its own `exclude`
+lists, and little warns of a path only if it leaves nothing out in every
+version that lists it.
+
+### Hidden files
+
+little also leaves out each file or folder whose name starts with `.`, with
 everything in it, like a `.drafts/` folder or Jupyter's
-`.ipynb_checkpoints/`, and `little serve` doesn't rebuild when you save
-one. Only names inside the source folder count, so the source folder
-itself can be hidden, like `./.github`.
+`.ipynb_checkpoints/`. Only names inside the source folder count, so the
+source folder itself can be hidden, like `./.github`.
 
 ## Redirects
 

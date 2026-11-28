@@ -65,18 +65,20 @@ square corners.
 ## Choosing folders
 
 little builds a site from `docs/` into `dist/`. To use other folders, set
-`source` and `destination`, relative to the folder with `little.yml`, or
-absolute:
+`source.directory` and `destination`, relative to the folder with
+`little.yml`, or absolute:
 
 ```yaml
 # little.yml
 site:
-  source: ./content
+  source:
+    directory: ./content
   destination: ./public
 ```
 
 Each build replaces everything in the destination, so keep only builds
-there.
+there. To keep some of the source's files out of your site, see
+[Leaving files out](../writing/pages-and-files.md#leaving-files-out).
 
 ## Choosing the site's repository
 

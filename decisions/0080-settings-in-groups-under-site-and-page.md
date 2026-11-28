@@ -7,7 +7,10 @@
   for each of `site.theme.colors`, not a light and a dark, and adds
   `site.theme.radius`, and by
   [0087](./0087-each-pages-file-copied-beside-it.md), which gives every
-  page a `source`, on in little's `little.yml`, like its other groups
+  page a `source`, on in little's `little.yml`, like its other groups, and
+  by [0088](./0088-leaving-files-out-of-the-source.md), which makes
+  `site.source` a group, of the `directory` a site is built from, and the
+  paths it leaves out
 - Date: 2026-11-18
 - Amends: [0002](./0002-theme-structure.md),
   [0003](./0003-choosing-and-layering-themes.md),

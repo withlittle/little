@@ -10,7 +10,9 @@
   for each redirect, as for the 404 page, and by
   [0087](./0087-each-pages-file-copied-beside-it.md), which copies a page's
   file as it's written, whatever `source` gives back, and gives
-  `destination` its path
+  `destination` its path, and by
+  [0088](./0088-leaving-files-out-of-the-source.md), which gives `files`
+  none of the files `site.source.exclude` leaves out
 - Date: 2026-10-15
 - Amends: [0019](./0019-site-search.md),
   [0029](./0029-plugins-that-render-code-blocks.md),

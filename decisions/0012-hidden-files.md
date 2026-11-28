@@ -1,6 +1,8 @@
 # 0012 — Hidden files and folders are left out
 
-- Status: accepted
+- Status: accepted; amended by
+  [0088](./0088-leaving-files-out-of-the-source.md), which leaves out
+  the files `site.source.exclude` lists, too
 - Date: 2026-10-01
 
 ## Context

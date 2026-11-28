@@ -97,3 +97,4 @@ made, and link to each other.
 - [0085 — Each page in a file named for it](0085-each-page-in-a-file-named-for-it.md)
 - [0086 — The built-in theme's design system](0086-the-built-in-themes-design-system.md)
 - [0087 — Each page's file, copied beside it](0087-each-pages-file-copied-beside-it.md)
+- [0088 — Leaving files out of the source](0088-leaving-files-out-of-the-source.md)
