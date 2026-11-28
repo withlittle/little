@@ -240,6 +240,9 @@ componentize-py -d plugin.wit -d links.wit -w my:links/links componentize app -o
   reference with the [`files`](../reference/plugin-hooks.md#files) hook,
   and `jupyter`, `asciidoc`, `orgmode`, and `restructuredtext` read other
   formats with the [`formats`](../reference/plugin-hooks.md#formats) hook.
+  `sitemap` notes each page with the
+  [`page`](../reference/plugin-hooks.md#page) hook, for the file it adds
+  with [`destination`](../reference/plugin-hooks.md#destination).
 - A hook little adds raises the last number of `little:plugin`'s version,
   as `formats` made it 0.2.1, so a plugin built for 0.2.0 keeps working. A
   change that breaks plugins would make it 0.3.0, and each plugin would

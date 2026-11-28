@@ -9,7 +9,8 @@
   by [0063](./0063-a-plugin-for-restructuredtext.md), which adds
   `restructuredtext`, and by
   [0064](./0064-a-plugin-for-gos-doc-comments.md), which adds `godoc`,
-  and by [0069](./0069-a-plugin-for-openapi.md), which adds `openapi`
+  and by [0069](./0069-a-plugin-for-openapi.md), which adds `openapi`,
+  and by [0090](./0090-a-plugin-for-sitemaps.md), which adds `sitemap`
 - Date: 2026-10-17
 
 ## Context

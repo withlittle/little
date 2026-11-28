@@ -52,6 +52,11 @@ site:
     description: This page has moved, or never was.
 ```
 
+## A sitemap
+
+For search engines, the [`sitemap`](../plugins/sitemap.md) plugin writes a
+`sitemap.xml` of your site's pages.
+
 ## Checking it first
 
 ```sh

@@ -42,10 +42,11 @@ install little without Rust.
   Rust, Python, or another language, that hooks into each step of a build.
   little's own plugins add API references for [Python](plugins/pydoc.md),
   [Rust](plugins/rustdoc.md), [JavaScript](plugins/jsdoc.md),
-  [Go](plugins/godoc.md), and [OpenAPI](plugins/openapi.md), and read
+  [Go](plugins/godoc.md), and [OpenAPI](plugins/openapi.md), read
   [Jupyter notebooks](plugins/jupyter.ipynb),
   [AsciiDoc](plugins/asciidoc.adoc), [Org mode](plugins/org-mode.org), and
-  [reStructuredText](plugins/restructuredtext.rst).
+  [reStructuredText](plugins/restructuredtext.rst), and write a
+  [sitemap](plugins/sitemap.md).
 
 ## This manual
 

@@ -1,6 +1,8 @@
 # 0071 — Ordering and naming the manual's plugin pages
 
-- Status: accepted
+- Status: accepted; amended by
+  [0090](./0090-a-plugin-for-sitemaps.md), which lists "Sitemap",
+  `sitemap.md`, after "Writing plugins", before the pages on formats
 - Date: 2026-11-07
 - Amends: [0047](./0047-naming-api-reference-plugins.md),
   [0060](./0060-other-formats-in-plugins.md)

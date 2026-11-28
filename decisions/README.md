@@ -99,3 +99,4 @@ made, and link to each other.
 - [0087 — Each page's file, copied beside it](0087-each-pages-file-copied-beside-it.md)
 - [0088 — Leaving files out of the source](0088-leaving-files-out-of-the-source.md)
 - [0089 — A page's `view` and `edit` links to its repository](0089-a-pages-view-and-edit-links.md)
+- [0090 — A plugin for sitemaps](0090-a-plugin-for-sitemaps.md)
