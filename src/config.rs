@@ -81,10 +81,11 @@
 //! group's `enabled` turns off (see [`PageSettings`]): `outline`, its table
 //! of contents, whose `depth` holds the levels of heading it lists, from
 //! `min` to `max`, each from 1 for `#` to 6; `breadcrumb`, what's above it
-//! in the nav; `previous` and `next`, the pages beside it there; and
-//! `repository`, the links to its file in the site's repository. A page's
-//! `search` holds `enabled`, whether search indexes it, whatever
-//! `site.search`'s `exclude` says.
+//! in the nav; `previous` and `next`, the pages beside it there; `source`,
+//! its file, copied beside it; and, in `repository`, `view` and `edit`, the
+//! links to its file in the site's repository. A page's `search` holds
+//! `enabled`, whether search indexes it, whatever `site.search`'s `exclude`
+//! says.
 
 use anyhow::{Context, Result, anyhow, bail};
 use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, percent_decode_str, utf8_percent_encode};
@@ -353,7 +354,7 @@ pub struct Repo {
 /// Where to view a file in a site's repository, and where to edit it.
 #[derive(Debug, PartialEq, Eq)]
 pub struct FileUrls {
-    pub source: String,
+    pub view: String,
     pub edit: String,
 }
 
@@ -371,7 +372,7 @@ impl Repo {
     /// `docs/guide/install.md`, on its branch. little knows only GitHub's and
     /// GitLab's addresses, so a repository anywhere else has none.
     pub fn file_urls(&self, path: &Path) -> Option<FileUrls> {
-        let (source, edit) = match url::Url::parse(&self.url).ok()?.host_str()? {
+        let (view, edit) = match url::Url::parse(&self.url).ok()?.host_str()? {
             "github.com" => ("blob", "edit"),
             "gitlab.com" => ("-/blob", "-/edit"),
             _ => return None,
@@ -386,7 +387,7 @@ impl Repo {
             .collect();
         let rest = parts.join("/");
         Some(FileUrls {
-            source: format!("{}/{source}/{rest}", self.url),
+            view: format!("{}/{view}/{rest}", self.url),
             edit: format!("{}/{edit}/{rest}", self.url),
         })
     }
@@ -452,9 +453,12 @@ pub struct PageSettings {
     pub previous: bool,
     /// Whether it links to the page after it, from `next.enabled`.
     pub next: bool,
-    /// Whether it links to its file in the site's repository, from
-    /// `repository.enabled`.
-    pub repository: bool,
+    /// Whether it links to where its file is viewed in the site's
+    /// repository, from `repository.view.enabled`.
+    pub view: bool,
+    /// Whether it links to where its file is edited there, from
+    /// `repository.edit.enabled`.
+    pub edit: bool,
     /// Whether its file is copied beside it, from `source.enabled`.
     pub source: bool,
     /// Whether search indexes it, from `search.enabled`, if it's set: left
@@ -501,13 +505,22 @@ impl PageSettings {
             },
             Some(_) => bail!("`{prefix}search` must be its settings, like `enabled: false`"),
         };
+        // Each of its links to the site's repository has a group of its own.
+        let repository = match page.get("repository") {
+            Some(Value::Mapping(links)) => links,
+            _ => bail!(
+                "`{prefix}repository` must be its settings, like `edit: {{ enabled: false }}`"
+            ),
+        };
+        let within = format!("{prefix}repository.");
         Ok(PageSettings {
             outline: enabled(page, prefix, "outline")?,
             depths: min..=max,
             breadcrumb: enabled(page, prefix, "breadcrumb")?,
             previous: enabled(page, prefix, "previous")?,
             next: enabled(page, prefix, "next")?,
-            repository: enabled(page, prefix, "repository")?,
+            view: enabled(repository, &within, "view")?,
+            edit: enabled(repository, &within, "edit")?,
             source: enabled(page, prefix, "source")?,
             search,
         })
@@ -2201,7 +2214,7 @@ mod tests {
                breadcrumb:\n    enabled: true\n  \
                previous:\n    enabled: true\n  \
                next:\n    enabled: true\n  \
-               repository:\n    enabled: true\n  \
+               repository:\n    view:\n      enabled: true\n    edit:\n      enabled: true\n  \
                source:\n    enabled: true\n  \
                author: Company\n  \
                layout: wide\n"
@@ -2546,7 +2559,8 @@ mod tests {
             breadcrumb: true,
             previous: true,
             next: true,
-            repository: true,
+            view: true,
+            edit: true,
             source: true,
             search: None,
         }
@@ -2586,6 +2600,13 @@ mod tests {
             ..every_page(1..=6)
         };
         assert_eq!(settings(&site_cfg), sited);
+        // Each of a page's links to its repository is turned off on its own.
+        let site_cfg = format!("{IN_THEME}page:\n  repository:\n    edit:\n      enabled: false\n");
+        let unedited = PageSettings {
+            edit: false,
+            ..themed.clone()
+        };
+        assert_eq!(settings(&site_cfg), unedited);
         // A group left blank is ignored, as any key under `page` is.
         let site_cfg = format!("{IN_THEME}page:\n  breadcrumb:\n  search:\n");
         assert_eq!(settings(&site_cfg), themed);
@@ -2594,14 +2615,7 @@ mod tests {
     #[test]
     fn bad_page_groups_explain_themselves() {
         let (_tmp, site) = scratch(&[]);
-        let groups = [
-            "outline",
-            "breadcrumb",
-            "previous",
-            "next",
-            "repository",
-            "source",
-        ];
+        let groups = ["outline", "breadcrumb", "previous", "next", "source"];
         for group in groups {
             // A value where its settings go, like `false`, isn't them.
             for value in [" false", " true", " [items]"] {
@@ -2617,6 +2631,33 @@ mod tests {
                 assert_eq!(
                     error(&site, &site_cfg),
                     format!("`page.{group}.enabled` must be `true` or `false`")
+                );
+            }
+        }
+
+        // Each of a page's links to its file in the site's repository has a
+        // group of its own, in `repository`.
+        for value in [" false", " true", " [view]"] {
+            let message = error(&site, &format!("page:\n  repository:{value}\n"));
+            assert_eq!(
+                message,
+                "`page.repository` must be its settings, like `edit: { enabled: false }`"
+            );
+        }
+        for link in ["view", "edit"] {
+            for value in [" false", " true", " [url]", ""] {
+                let site_cfg = format!("page:\n  repository:\n    {link}:{value}\n");
+                assert_eq!(
+                    error(&site, &site_cfg),
+                    format!("`page.repository.{link}` must be its settings, like `enabled: false`")
+                );
+            }
+            for value in [" yes", " \"true\"", " 1", ""] {
+                let site_cfg =
+                    format!("page:\n  repository:\n    {link}:\n      enabled:{value}\n");
+                assert_eq!(
+                    error(&site, &site_cfg),
+                    format!("`page.repository.{link}.enabled` must be `true` or `false`")
                 );
             }
         }
@@ -3719,7 +3760,7 @@ mod tests {
         };
         let urls = |repo: &Repo, path: &str| {
             let urls = repo.file_urls(Path::new(path))?;
-            Some([urls.source, urls.edit])
+            Some([urls.view, urls.edit])
         };
 
         let github = repo("https://github.com/withlittle/little", "main");
@@ -3742,9 +3783,9 @@ mod tests {
 
         // Each part of the branch and path is encoded, so no name can break
         // the URL.
-        let [source, _] = urls(&repo(github.url.as_str(), "fix#1"), "docs/my café.md").unwrap();
+        let [view, _] = urls(&repo(github.url.as_str(), "fix#1"), "docs/my café.md").unwrap();
         assert_eq!(
-            source,
+            view,
             "https://github.com/withlittle/little/blob/fix%231/docs/my%20caf%C3%A9.md"
         );
 

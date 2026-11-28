@@ -5,7 +5,10 @@
   `repo` and `branch` to `site.repository.url` and
   `site.repository.branch`, works out `site.repository.owner` and
   `site.repository.name`, and moves a page's links to `page.repository`,
-  which its `enabled` turns off
+  which its `enabled` turns off, and by
+  [0089](./0089-a-pages-view-and-edit-links.md), which gives each link a
+  group there, `view` and `edit`, with its `url` and an `enabled` of its
+  own
 - Date: 2026-10-03
 
 ## Context

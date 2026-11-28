@@ -98,3 +98,4 @@ made, and link to each other.
 - [0086 — The built-in theme's design system](0086-the-built-in-themes-design-system.md)
 - [0087 — Each page's file, copied beside it](0087-each-pages-file-copied-beside-it.md)
 - [0088 — Leaving files out of the source](0088-leaving-files-out-of-the-source.md)
+- [0089 — A page's `view` and `edit` links to its repository](0089-a-pages-view-and-edit-links.md)

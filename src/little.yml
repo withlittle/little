@@ -165,9 +165,13 @@ page:
   next:
     enabled: true
 
-  # Where to view and to edit the page's file in `site.repository`.
+  # The links to the page's file in `site.repository`: where to `view` it
+  # there, and where to `edit` it, each with its `url`.
   repository:
-    enabled: true
+    view:
+      enabled: true
+    edit:
+      enabled: true
 
   # The page's file, like `guide/install.md`, copied to the site as it's
   # written, beside the page, with its `url` for the theme to link to. A page

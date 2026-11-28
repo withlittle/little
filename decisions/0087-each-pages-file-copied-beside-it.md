@@ -2,7 +2,9 @@
 
 - Status: accepted; amended by
   [0088](./0088-leaving-files-out-of-the-source.md), which keeps
-  `site.source` by its name, as a group
+  `site.source` by its name, as a group, and by
+  [0089](./0089-a-pages-view-and-edit-links.md), which renames
+  `page.repository.source_url` to `page.repository.view.url`
 - Date: 2026-11-27
 - Amends: [0015](./0015-files-and-relative-links.md),
   [0046](./0046-plugin-hooks.md),

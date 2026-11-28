@@ -155,7 +155,7 @@ struct PageData<'a> {
     /// Where to view and to edit the page's file in the site's repository.
     repository: FileLinks<'a>,
     /// Where the page's file is copied to, in the site.
-    source: Copied<'a>,
+    source: FileUrl<'a>,
     /// Where a redirect leads.
     #[serde(skip_serializing_if = "Option::is_none")]
     redirect: Option<Target<'a>>,
@@ -182,10 +182,10 @@ impl<'a> PageData<'a> {
             previous: None,
             next: None,
             repository: FileLinks {
-                source_url: None,
-                edit_url: None,
+                view: FileUrl { url: None },
+                edit: FileUrl { url: None },
             },
-            source: Copied { url: None },
+            source: FileUrl { url: None },
             redirect: None,
         }
     }
@@ -204,22 +204,24 @@ struct Items<T> {
     items: T,
 }
 
-/// Where to view and to edit a page's file in the site's repository: what a
-/// template sees as `page.repository`, beside its settings.
+/// A page's links to its file in the site's repository: what a template
+/// sees as `page.repository`. Each is always there, for its settings, so a
+/// template can read `page.repository.edit.url` on any page.
 #[derive(Serialize)]
 struct FileLinks<'a> {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    source_url: Option<&'a str>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    edit_url: Option<&'a str>,
+    /// Where to view the file there, like
+    /// `https://github.com/withlittle/little/blob/main/docs/guide/install.md`.
+    view: FileUrl<'a>,
+    /// Where to edit it there.
+    edit: FileUrl<'a>,
 }
 
-/// Where a page's file is copied to, in the site: what a template sees as
-/// `page.source`, beside its settings.
+/// Where a page's file is, if little knows: what a template sees as
+/// `page.source`, for where it's copied to in the site, with the path of
+/// the site's `url`, like `/my-project/guide/install.md`, and as each of
+/// `page.repository`'s links, each beside its settings.
 #[derive(Serialize)]
-struct Copied<'a> {
-    /// The copy's URL, with the path of the site's `url`, like
-    /// `/my-project/guide/install.md`.
+struct FileUrl<'a> {
     #[serde(skip_serializing_if = "Option::is_none")]
     url: Option<&'a str>,
 }
@@ -1476,7 +1478,7 @@ fn finish(
             .unwrap_or_default();
         // A page a plugin adds has no file in the site's repository.
         let file_urls = (in_repo.as_ref())
-            .filter(|_| !page.added && wants.repository)
+            .filter(|_| !page.added)
             .and_then(|in_repo| in_repo.repo.file_urls(&in_repo.folder.join(&page.rel)));
         // Its file is copied to its own path in the version's folder (see
         // `read_source`), so its URL has the version's path, even where one
@@ -1506,12 +1508,18 @@ fn finish(
             previous: previous.filter(|_| wants.previous),
             next: next.filter(|_| wants.next),
             repository: FileLinks {
-                source_url: file_urls.as_ref().map(|urls| urls.source.as_str()),
-                edit_url: (file_urls.as_ref())
-                    .filter(|_| editable)
-                    .map(|urls| urls.edit.as_str()),
+                view: FileUrl {
+                    url: (file_urls.as_ref())
+                        .filter(|_| wants.view)
+                        .map(|urls| urls.view.as_str()),
+                },
+                edit: FileUrl {
+                    url: (file_urls.as_ref())
+                        .filter(|_| wants.edit && editable)
+                        .map(|urls| urls.edit.as_str()),
+                },
             },
-            source: Copied {
+            source: FileUrl {
                 url: copied.as_deref(),
             },
             redirect: None,
@@ -2030,8 +2038,9 @@ fn page_value(
     link(within(page.get_mut("redirect"), "url"), url);
     let mut settings = settings.clone();
     link(settings.get_mut("url"), url);
-    for key in ["source_url", "edit_url"] {
-        link(within(settings.get_mut("repository"), key), url);
+    for name in ["view", "edit"] {
+        let named = within(settings.get_mut("repository"), name);
+        link(within(named, "url"), url);
     }
     // A URL the settings write for the page's file gets the path, too:
     // the one little works out has it already.
@@ -2064,11 +2073,11 @@ fn page_value(
             page.shift_remove(group);
         }
     }
-    if let (false, Some(Value::Mapping(repository))) =
-        (wants.repository, page.get_mut("repository"))
-    {
-        repository.shift_remove("source_url");
-        repository.shift_remove("edit_url");
+    for (name, on) in [("view", wants.view), ("edit", wants.edit)] {
+        let named = within(page.get_mut("repository"), name);
+        if let (false, Some(Value::Mapping(named))) = (on, named) {
+            named.shift_remove("url");
+        }
     }
     if let (false, Some(Value::Mapping(source))) = (wants.source, page.get_mut("source")) {
         source.shift_remove("url");
@@ -2835,7 +2844,8 @@ mod tests {
                 breadcrumb: true,
                 previous: true,
                 next: true,
-                repository: true,
+                view: true,
+                edit: true,
                 source: true,
                 search: None,
             },
@@ -4365,7 +4375,7 @@ mod tests {
             ),
             (
                 "theme/_templates/default.html",
-                "{{ page.title }} | {{ 'source_url' in page.repository }} | \
+                "{{ page.title }} | {{ 'url' in page.repository.view }} | \
                      {{ page.breadcrumb.items | map(attribute='title') | join(', ') }} | \
                      {{ page.previous.title if page.previous }} | {{ page.next.title if page.next }}\n\
                      {{ page.content | safe }}",
@@ -5491,8 +5501,8 @@ mod tests {
     #[test]
     fn each_page_links_to_its_file_in_the_repo() {
         let template = "{{ site.repository.url | safe }} \
-                        | {% if page.repository.source_url %}{{ page.repository.source_url | safe }}{% endif %} \
-                        | {% if page.repository.edit_url %}{{ page.repository.edit_url | safe }}{% endif %}";
+                        | {% if page.repository.view.url %}{{ page.repository.view.url | safe }}{% endif %} \
+                        | {% if page.repository.edit.url %}{{ page.repository.edit.url | safe }}{% endif %}";
         let repo = "https://github.com/withlittle/little";
         let site_cfg = format!(
             "{IN_THEME}  url: https://withlittle.github.io/little\n  \
@@ -5505,11 +5515,16 @@ mod tests {
             ("site/docs/guide/install.md", "# Install\n"),
             (
                 "site/docs/guide/reference.md",
-                "---\nrepository:\n  source_url: /api/\n---\n# Reference\n",
+                "---\nrepository:\n  view:\n    url: /api/\n---\n# Reference\n",
             ),
             (
                 "site/docs/guide/generated.md",
-                "---\nrepository:\n  enabled: false\n  source_url: /api/\n---\n# Generated\n",
+                "---\nrepository:\n  view:\n    enabled: false\n    url: /api/\n  \
+                 edit:\n    enabled: false\n---\n# Generated\n",
+            ),
+            (
+                "site/docs/guide/mirrored.md",
+                "---\nrepository:\n  edit:\n    enabled: false\n---\n# Mirrored\n",
             ),
             ("site/theme/_templates/default.html", template),
             ("site/theme/_templates/404.html", template),
@@ -5526,13 +5541,18 @@ mod tests {
             links("main/site/docs/guide/install.md")
         );
         // A page's frontmatter has the last word, and a link from the root of
-        // the site gets its path. `repository.enabled` turns both links off,
-        // whatever else it sets. The 404 page isn't built from a file.
+        // the site gets its path. Each link's `enabled` turns it off,
+        // whatever else it sets, and leaves the other. The 404 page isn't
+        // built from a file.
         assert_eq!(
             read("guide/reference.html"),
             format!("{repo} | /little/api/ | {repo}/edit/main/site/docs/guide/reference.md")
         );
         assert_eq!(read("guide/generated.html"), format!("{repo} |  | "));
+        assert_eq!(
+            read("guide/mirrored.html"),
+            format!("{repo} | {repo}/blob/main/site/docs/guide/mirrored.md | ")
+        );
         assert_eq!(read(NOT_FOUND_FILE), format!("{repo} |  | "));
 
         // In a worktree, `.git` is a file. A site can link to another branch.
@@ -5572,7 +5592,12 @@ mod tests {
             ("docs/README.md", "# Home\n"),
             (
                 "docs/guide.md",
-                "---\nrepository:\n  enabled: false\n---\n# Guide\n",
+                "---\nrepository:\n  view:\n    enabled: false\n  edit:\n    enabled: false\n\
+                 ---\n# Guide\n",
+            ),
+            (
+                "docs/mirrored.md",
+                "---\nrepository:\n  edit:\n    enabled: false\n---\n# Mirrored\n",
             ),
         ]);
 
@@ -5591,10 +5616,15 @@ mod tests {
         ] {
             assert!(home.contains(&link), "{link} in {home}");
         }
-        // A page can turn its links off, and the 404 page has neither.
+        // A page can turn its links off, or one of them, and the 404 page
+        // has neither.
         let guide = read("guide.html");
         assert!(!guide.contains("Edit this page"), "{guide}");
         assert!(!guide.contains("View source of this page"), "{guide}");
+        let mirrored = read("mirrored.html");
+        assert!(!mirrored.contains("Edit this page"), "{mirrored}");
+        let view = format!(r#"<a href="{repo}/blob/main/docs/mirrored.md">"#);
+        assert!(mirrored.contains(&view), "{mirrored}");
         let not_found = read(NOT_FOUND_FILE);
         assert!(not_found.contains(&repo_link), "{not_found}");
         assert!(
@@ -5962,8 +5992,8 @@ mod tests {
                         | {{ page.breadcrumb.items | map(attribute='title') | join(', ') }} \
                         | {{ page.previous.title if page.previous }} \
                         | {{ page.next.title if page.next }} \
-                        | {{ page.repository.source_url | safe }} \
-                        {{ page.repository.edit_url | safe }}";
+                        | {{ page.repository.view.url | safe }} \
+                        {{ page.repository.edit.url | safe }}";
         let repo = "https://github.com/withlittle/little";
         let (_tmp, site) = scratch(&[
             (".git/HEAD", "ref: refs/heads/main\n"),
@@ -5986,7 +6016,8 @@ mod tests {
             build(&site).map(|_| fs::read_to_string(site.join("dist/guide/index.html")).unwrap())
         };
         let file = "main/docs/guide/README.md";
-        let links = format!("{repo}/blob/{file} {repo}/edit/{file}");
+        let (view, edit) = (format!("{repo}/blob/{file}"), format!("{repo}/edit/{file}"));
+        let links = format!("{view} {edit}");
 
         // Each is on, as little sets it.
         assert_eq!(
@@ -5996,37 +6027,58 @@ mod tests {
         // Each group's `enabled` turns its own off, whatever the theme.
         let off = "outline:\n  enabled: false\nbreadcrumb:\n  enabled: false\n\
                    previous:\n  enabled: false\nnext:\n  enabled: false\n\
-                   repository:\n  enabled: false\n";
+                   repository:\n  view:\n    enabled: false\n  edit:\n    enabled: false\n";
         assert_eq!(guide(off).unwrap(), " |  |  |  |  ");
         for (group, shown) in [
             ("outline", format!(" | Home | Home | Usage | {links}")),
             ("breadcrumb", format!("Setup |  | Home | Usage | {links}")),
             ("previous", format!("Setup | Home |  | Usage | {links}")),
             ("next", format!("Setup | Home | Home |  | {links}")),
-            ("repository", "Setup | Home | Home | Usage |  ".to_string()),
         ] {
             let frontmatter = format!("{group}:\n  enabled: false\n");
             assert_eq!(guide(&frontmatter).unwrap(), shown, "{group}");
         }
+        // Each of its links to the site's repository has an `enabled` of
+        // its own, in `repository`.
+        for (link, shown) in [
+            ("view", format!("Setup | Home | Home | Usage |  {edit}")),
+            ("edit", format!("Setup | Home | Home | Usage | {view} ")),
+        ] {
+            let frontmatter = format!("repository:\n  {link}:\n    enabled: false\n");
+            assert_eq!(guide(&frontmatter).unwrap(), shown, "{link}");
+        }
         // What it turns off, it can't give the theme itself, either.
         let off = "outline:\n  enabled: false\n  items: [{ title: Mine, url: \"#mine\" }]\n\
-                   previous:\n  enabled: false\n  title: Mine\n";
-        assert_eq!(guide(off).unwrap(), format!(" | Home |  | Usage | {links}"));
+                   previous:\n  enabled: false\n  title: Mine\n\
+                   repository:\n  edit:\n    enabled: false\n    url: https://example.com/edit\n";
+        assert_eq!(guide(off).unwrap(), format!(" | Home |  | Usage | {view} "));
 
         // A value where a group's settings go, like `false`, stops the
         // build, naming the page.
-        let groups = [
-            "outline",
-            "breadcrumb",
-            "previous",
-            "next",
-            "repository",
-            "source",
-        ];
+        let groups = ["outline", "breadcrumb", "previous", "next", "source"];
         for group in groups {
             let message = format!("{:#}", guide(&format!("{group}: false\n")).unwrap_err());
             let expected = format!(
                 "rendering {}: `{group}` must be its settings, like `enabled: false`",
+                page.display()
+            );
+            assert_eq!(message, expected);
+        }
+        for (frontmatter, group, like) in [
+            (
+                "repository: false\n",
+                "repository",
+                "edit: { enabled: false }",
+            ),
+            (
+                "repository:\n  view: false\n",
+                "repository.view",
+                "enabled: false",
+            ),
+        ] {
+            let message = format!("{:#}", guide(frontmatter).unwrap_err());
+            let expected = format!(
+                "rendering {}: `{group}` must be its settings, like `{like}`",
                 page.display()
             );
             assert_eq!(message, expected);
@@ -7328,8 +7380,8 @@ mod tests {
         let template = "{{ site.name }} {{ site.version }} \
                         | {% for v in site.versions %}{{ v.title }}{{ '*' if v.root }} {{ v.url | safe }} {% endfor %}\
                         | {% for v in page.versions %}{{ v.title }}{{ '*' if v.root }} {{ v.url | safe }} {% endfor %}\
-                        | {{ page.repository.source_url | safe if page.repository.source_url }} \
-                        | {{ page.repository.edit_url | safe if page.repository.edit_url }}\n{{ page.content | safe }}";
+                        | {{ page.repository.view.url | safe if page.repository.view.url }} \
+                        | {{ page.repository.edit.url | safe if page.repository.edit.url }}\n{{ page.content | safe }}";
         let site_cfg = |versions: &str| {
             format!(
                 "{IN_THEME}  name: New\n  url: https://example.com/proj\n  \

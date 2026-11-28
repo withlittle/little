@@ -96,6 +96,18 @@ The built-in theme links to it in its header. On github.com or gitlab.com,
 it also links to view and edit each page's file, on the `main` branch,
 unless you set another beside the `url`, like `branch: trunk`.
 
-A page's [frontmatter](../writing/frontmatter.md#frontmatter-wins) can
-change these links, or remove them, with `repository: { enabled: false }`,
-on a page that's generated from something else.
+Each link has a switch of its own, `repository.view` and
+`repository.edit`, under `page`. To link only to where a page's file is
+viewed, turn `edit` off:
+
+```yaml
+# little.yml
+page:
+  repository:
+    edit:
+      enabled: false
+```
+
+A page's [frontmatter](../writing/frontmatter.md#frontmatter-wins) can turn
+its own links off, or change a link's `url`, on a page that's generated
+from something else.
