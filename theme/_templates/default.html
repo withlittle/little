@@ -239,14 +239,14 @@
           {% block content %}{{ page.content | safe }}{% endblock %}
         </article>
 
-        {# page.repository's edit_url and source_url are where to edit and
-           view the page's file in the site's repository, if it's on GitHub
-           or GitLab. #}
+        {# page.repository's edit and view each have the url of where to
+           edit, or to view, the page's file in the site's repository, if
+           it's on GitHub or GitLab, and the page has that link on. #}
         {% set file = page.repository %}
-        {% if file.edit_url or file.source_url %}
+        {% if file.edit.url or file.view.url %}
         <div class="page-links">
-          {% if file.edit_url %}<a href="{{ file.edit_url | safe }}">{{ icon("edit") }}<span>Edit this page</span></a>{% endif %}
-          {% if file.source_url %}<a href="{{ file.source_url | safe }}">{{ icon("source") }}<span>View source of this page</span></a>{% endif %}
+          {% if file.edit.url %}<a href="{{ file.edit.url | safe }}">{{ icon("edit") }}<span>Edit this page</span></a>{% endif %}
+          {% if file.view.url %}<a href="{{ file.view.url | safe }}">{{ icon("source") }}<span>View source of this page</span></a>{% endif %}
         </div>
         {% endif %}
 

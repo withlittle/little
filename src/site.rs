@@ -155,7 +155,7 @@ struct PageData<'a> {
     /// Where to view and to edit the page's file in the site's repository.
     repository: FileLinks<'a>,
     /// Where the page's file is copied to, in the site.
-    source: Copied<'a>,
+    source: FileUrl<'a>,
     /// Where a redirect leads.
     #[serde(skip_serializing_if = "Option::is_none")]
     redirect: Option<Target<'a>>,
@@ -182,10 +182,10 @@ impl<'a> PageData<'a> {
             previous: None,
             next: None,
             repository: FileLinks {
-                source_url: None,
-                edit_url: None,
+                view: FileUrl { url: None },
+                edit: FileUrl { url: None },
             },
-            source: Copied { url: None },
+            source: FileUrl { url: None },
             redirect: None,
         }
     }
@@ -204,22 +204,24 @@ struct Items<T> {
     items: T,
 }
 
-/// Where to view and to edit a page's file in the site's repository: what a
-/// template sees as `page.repository`, beside its settings.
+/// A page's links to its file in the site's repository: what a template
+/// sees as `page.repository`. Each is always there, for its settings, so a
+/// template can read `page.repository.edit.url` on any page.
 #[derive(Serialize)]
 struct FileLinks<'a> {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    source_url: Option<&'a str>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    edit_url: Option<&'a str>,
+    /// Where to view the file there, like
+    /// `https://github.com/withlittle/little/blob/main/docs/guide/install.md`.
+    view: FileUrl<'a>,
+    /// Where to edit it there.
+    edit: FileUrl<'a>,
 }
 
-/// Where a page's file is copied to, in the site: what a template sees as
-/// `page.source`, beside its settings.
+/// Where a page's file is, if little knows: what a template sees as
+/// `page.source`, for where it's copied to in the site, with the path of
+/// the site's `url`, like `/my-project/guide/install.md`, and as each of
+/// `page.repository`'s links, each beside its settings.
 #[derive(Serialize)]
-struct Copied<'a> {
-    /// The copy's URL, with the path of the site's `url`, like
-    /// `/my-project/guide/install.md`.
+struct FileUrl<'a> {
     #[serde(skip_serializing_if = "Option::is_none")]
     url: Option<&'a str>,
 }
@@ -315,7 +317,8 @@ pub struct Built {
     /// aren't checked.
     pub repo: Option<Repo>,
     /// What it warns of, as it happened: each URL in `site.search.exclude`
-    /// that matches no page, each formula in its pages that couldn't be
+    /// that matches no page, each path in `site.source.exclude` that leaves
+    /// out no file, each formula in its pages that couldn't be
     /// rendered, so is shown as its TeX, each diagram that couldn't be drawn,
     /// so is shown as code, each code block a plugin couldn't render, so is
     /// left as it was, what each plugin warned of, and each of its hooks
@@ -472,6 +475,9 @@ struct Source {
     repo: Option<Repo>,
     /// What it indexes for search.
     search: config::Search,
+    /// Each path its `source.exclude` lists, as it's written, and whether
+    /// it left out a file or a folder.
+    excluded: Vec<(String, bool)>,
     /// Whether each page's nav lists what's in a folder only if the page is
     /// in it.
     nav_prune: bool,
@@ -831,6 +837,24 @@ fn build_after(
             });
         }
     }
+    // So is a path in a version's `source.exclude` that leaves nothing out,
+    // in any version that lists it: the file it meant is published.
+    let mut excluded: Vec<(&str, bool)> = Vec::new();
+    for (listed, left_out) in sources.iter().flat_map(|source| &source.excluded) {
+        match excluded.iter_mut().find(|(path, _)| path == listed) {
+            Some((_, any)) => *any |= *left_out,
+            None => excluded.push((listed, *left_out)),
+        }
+    }
+    for (listed, _) in excluded.iter().filter(|(_, left_out)| !left_out) {
+        built.warnings.push(Warning {
+            kind: "path(s) in `site.source.exclude` that leave out no file",
+            message: format!(
+                "`site.source.exclude` lists {listed}, but the source has no file at that path, \
+                 or under it, to leave out"
+            ),
+        });
+    }
     // Every version is in the one theme, which writes redirects or doesn't.
     let redirects = &config.redirects;
     let writes_redirects =
@@ -1026,20 +1050,41 @@ fn read_source(
         bail!("there's no source folder at {}", describe(source_dir));
     }
 
-    // Walk every file in the source folder but hidden ones, without walking
-    // hidden folders, or the destination, which can be inside it, as it
-    // would be at a git ref, had it been committed. The source folder itself
-    // (depth 0) can be hidden.
+    // Walk every file in the source folder but hidden ones, and those its
+    // `exclude` leaves out, without walking a folder that's either, or the
+    // destination, which can be inside it, as it would be at a git ref, had
+    // it been committed. The source folder itself (depth 0) can be hidden.
     let destination = match &checkout {
         None => destination_in(source_dir, &config.destination_dir),
         Some(checkout) => (config.destination_dir.strip_prefix(site_dir).ok())
             .and_then(|rel| destination_in(source_dir, &checkout.site_dir().join(rel))),
     };
+    let mut excluded: Vec<(String, bool)> = (config.source_exclude.iter())
+        .map(|listed| (listed.clone(), false))
+        .collect();
     let mut found = BTreeMap::new();
     let entries = WalkDir::new(source_dir).into_iter().filter_entry(|entry| {
-        entry.depth() == 0
-            || !(is_hidden(Path::new(entry.file_name()))
-                || destination.as_deref() == Some(entry.path()))
+        if entry.depth() == 0 {
+            return true;
+        }
+        let hidden = is_hidden(Path::new(entry.file_name()));
+        if hidden || destination.as_deref() == Some(entry.path()) {
+            return false;
+        }
+        // Each path that leaves it out has left something out, not only the
+        // first of them.
+        let Ok(rel) = entry.path().strip_prefix(source_dir) else {
+            return true;
+        };
+        let path = from_source_root(rel);
+        let mut kept = true;
+        for (listed, left_out) in &mut excluded {
+            if config::leaves_out(listed, &path) {
+                *left_out = true;
+                kept = false;
+            }
+        }
+        kept
     });
     for entry in entries.filter_map(Result::ok) {
         let path = entry.path();
@@ -1252,6 +1297,7 @@ fn read_source(
         page_settings: config.page_settings.clone(),
         repo: config.repo.clone(),
         search: config.search.clone(),
+        excluded,
         nav_prune: config.nav_prune,
         redirects: config.redirects.clone(),
         theme,
@@ -1288,6 +1334,7 @@ fn finish(
         page_settings: every_page_wants,
         repo,
         search,
+        excluded: _,
         nav_prune,
         redirects,
         theme,
@@ -1431,7 +1478,7 @@ fn finish(
             .unwrap_or_default();
         // A page a plugin adds has no file in the site's repository.
         let file_urls = (in_repo.as_ref())
-            .filter(|_| !page.added && wants.repository)
+            .filter(|_| !page.added)
             .and_then(|in_repo| in_repo.repo.file_urls(&in_repo.folder.join(&page.rel)));
         // Its file is copied to its own path in the version's folder (see
         // `read_source`), so its URL has the version's path, even where one
@@ -1461,12 +1508,18 @@ fn finish(
             previous: previous.filter(|_| wants.previous),
             next: next.filter(|_| wants.next),
             repository: FileLinks {
-                source_url: file_urls.as_ref().map(|urls| urls.source.as_str()),
-                edit_url: (file_urls.as_ref())
-                    .filter(|_| editable)
-                    .map(|urls| urls.edit.as_str()),
+                view: FileUrl {
+                    url: (file_urls.as_ref())
+                        .filter(|_| wants.view)
+                        .map(|urls| urls.view.as_str()),
+                },
+                edit: FileUrl {
+                    url: (file_urls.as_ref())
+                        .filter(|_| wants.edit && editable)
+                        .map(|urls| urls.edit.as_str()),
+                },
             },
-            source: Copied {
+            source: FileUrl {
                 url: copied.as_deref(),
             },
             redirect: None,
@@ -1985,8 +2038,9 @@ fn page_value(
     link(within(page.get_mut("redirect"), "url"), url);
     let mut settings = settings.clone();
     link(settings.get_mut("url"), url);
-    for key in ["source_url", "edit_url"] {
-        link(within(settings.get_mut("repository"), key), url);
+    for name in ["view", "edit"] {
+        let named = within(settings.get_mut("repository"), name);
+        link(within(named, "url"), url);
     }
     // A URL the settings write for the page's file gets the path, too:
     // the one little works out has it already.
@@ -2019,11 +2073,11 @@ fn page_value(
             page.shift_remove(group);
         }
     }
-    if let (false, Some(Value::Mapping(repository))) =
-        (wants.repository, page.get_mut("repository"))
-    {
-        repository.shift_remove("source_url");
-        repository.shift_remove("edit_url");
+    for (name, on) in [("view", wants.view), ("edit", wants.edit)] {
+        let named = within(page.get_mut("repository"), name);
+        if let (false, Some(Value::Mapping(named))) = (on, named) {
+            named.shift_remove("url");
+        }
     }
     if let (false, Some(Value::Mapping(source))) = (wants.source, page.get_mut("source")) {
         source.shift_remove("url");
@@ -2229,6 +2283,21 @@ pub fn is_hidden(rel: &Path) -> bool {
     rel.components().any(|component| {
         matches!(component, Component::Normal(name) if name.as_encoded_bytes().starts_with(b"."))
     })
+}
+
+/// Does `exclude`, a `site.source.exclude`, leave out the file or folder at
+/// `rel`, a path in the source folder? One of its paths is the file's, or
+/// that of a folder it's in.
+pub fn is_excluded(rel: &Path, exclude: &[String]) -> bool {
+    let path = from_source_root(rel);
+    (exclude.iter()).any(|listed| config::leaves_out(listed, &path))
+}
+
+/// The file or folder at `rel`, a path in the source folder, as
+/// `site.source.exclude` names it: from the root of the folder, with `/`
+/// between its parts, like `/guide/install.md`.
+fn from_source_root(rel: &Path) -> String {
+    format!("/{}", slashed(rel))
 }
 
 /// Is this file a directory's home page? `README.md` is the documentation
@@ -2775,7 +2844,8 @@ mod tests {
                 breadcrumb: true,
                 previous: true,
                 next: true,
-                repository: true,
+                view: true,
+                edit: true,
                 source: true,
                 search: None,
             },
@@ -3683,7 +3753,7 @@ mod tests {
         let (_tmp, site) = scratch(&[
             (
                 "little.yml",
-                "site:\n  theme:\n    source: ./theme\n  source: ./content\n  \
+                "site:\n  theme:\n    source: ./theme\n  source:\n    directory: ./content\n  \
                  destination: ./public\n",
             ),
             ("content/README.md", "# Home\n"),
@@ -3754,7 +3824,7 @@ mod tests {
         let (_tmp, root) = scratch(&[
             (
                 ".site/little.yml",
-                "site:\n  theme:\n    source: ./theme\n  source: ./.github\n",
+                "site:\n  theme:\n    source: ./theme\n  source:\n    directory: ./.github\n",
             ),
             (".site/README.md", "# Site\n"),
             (".site/.github/README.md", "# Home\n"),
@@ -3783,7 +3853,7 @@ mod tests {
         // `.little/` isn't a page. Everything else is published, its config
         // and theme too, but for the destination, which a build never copies
         // into itself.
-        let site_cfg = format!("{IN_THEME}  source: .\n");
+        let site_cfg = format!("{IN_THEME}  source:\n    directory: .\n");
         fs::write(site.join("little.yml"), site_cfg).unwrap();
         build(&site).unwrap();
 
@@ -3796,6 +3866,109 @@ mod tests {
         ];
         assert_eq!(files_in(&dist), built);
         assert_eq!(read("index.html"), "Site");
+
+        // Its `exclude` leaves the rest out.
+        let site_cfg =
+            format!("{IN_THEME}  source:\n    directory: .\n    exclude: [/little.yml, /theme/]\n");
+        fs::write(site.join("little.yml"), site_cfg).unwrap();
+        build(&site).unwrap();
+        assert_eq!(files_in(&dist), [MARKER_FILE, "README.md", "index.html"]);
+    }
+
+    #[test]
+    fn the_files_a_source_excludes_are_left_out() {
+        let site_cfg = format!(
+            "{IN_THEME}  source:\n    exclude:\n      - /drafts/\n      - /guide/old.md\n      \
+             - /images/plan.png\n      - /notes\n"
+        );
+        let (_tmp, site) = scratch(&[
+            ("little.yml", &site_cfg),
+            ("docs/README.md", "# Home\n"),
+            ("docs/drafts/README.md", "# Drafts\n"),
+            ("docs/drafts/2026/plan.md", "# Plan\n"),
+            ("docs/drafts/sketch.png", "png"),
+            ("docs/drafts.md", "# About drafts\n"),
+            ("docs/guide/README.md", "# Guide\n[Old](old.md)\n"),
+            ("docs/guide/old.md", "# Old\n"),
+            ("docs/guide/old.md.txt", "kept\n"),
+            ("docs/guide/install.md", "# Install\n"),
+            ("docs/images/plan.png", "png"),
+            ("docs/images/logo.png", "png"),
+            ("docs/notes/today.md", "# Today\n"),
+            (
+                "theme/_templates/default.html",
+                "{% macro list(items) %}{% for item in items %}\
+                     [{{ item.title }}{% if item.children %} {{ list(item.children) }}{% endif %}]\
+                     {% endfor %}{% endmacro %}{{ list(site.navigation.items) }}",
+            ),
+        ]);
+
+        let built = build(&site).unwrap();
+
+        // They aren't pages or copied, nor is a page's own file, so they
+        // aren't in the nav either: a file at each path, and all that's in
+        // a folder there, with the `/` at its end or without. A file whose
+        // path only starts as one does stays.
+        let dist = site.join("dist");
+        let kept = [
+            MARKER_FILE,
+            "README.md",
+            "drafts.html",
+            "drafts.md",
+            "guide/README.md",
+            "guide/index.html",
+            "guide/install.html",
+            "guide/install.md",
+            "guide/old.md.txt",
+            "images/logo.png",
+            "index.html",
+        ];
+        assert_eq!(files_in(&dist), kept);
+        let home = fs::read_to_string(dist.join("index.html")).unwrap();
+        assert_eq!(home, "[Home][About drafts][Guide [Install]]");
+        // Each left something out, so there's nothing to warn of.
+        assert_eq!(warnings_of(&built), Vec::<String>::new());
+    }
+
+    #[test]
+    fn a_path_a_source_excludes_that_leaves_nothing_out_is_warned_of() {
+        let site_cfg = format!(
+            "{IN_THEME}  source:\n    \
+             exclude: [/drafts/, /Guide/, /typo.md, /.hidden/, /drafts/wip.md]\n"
+        );
+        let (_tmp, site) = scratch(&[
+            ("little.yml", &site_cfg),
+            ("docs/README.md", "# Home\n"),
+            ("docs/drafts/wip.md", "# WIP\n"),
+            ("docs/guide/README.md", "# Guide\n"),
+            ("docs/.hidden/secret.md", "# Secret\n"),
+            ("theme/_templates/default.html", "{{ page.title }}"),
+        ]);
+
+        let built = build(&site).unwrap();
+
+        // A path is matched as it's written, so `/Guide/` leaves `guide/`
+        // in, and one that leaves nothing out may be a typo: there's no
+        // file there, or it's left out already, as a hidden one is, or one
+        // in a folder that's listed.
+        let dist = site.join("dist");
+        assert!(dist.join("guide/index.html").is_file());
+        assert!(!dist.join("drafts").exists());
+        let warning = |path: &str| {
+            format!(
+                "`site.source.exclude` lists {path}, but the source has no file at that path, \
+                 or under it, to leave out"
+            )
+        };
+        assert_eq!(
+            warnings_of(&built),
+            [
+                warning("/Guide/"),
+                warning("/typo.md"),
+                warning("/.hidden/"),
+                warning("/drafts/wip.md"),
+            ]
+        );
     }
 
     #[test]
@@ -4202,7 +4375,7 @@ mod tests {
             ),
             (
                 "theme/_templates/default.html",
-                "{{ page.title }} | {{ 'source_url' in page.repository }} | \
+                "{{ page.title }} | {{ 'url' in page.repository.view }} | \
                      {{ page.breadcrumb.items | map(attribute='title') | join(', ') }} | \
                      {{ page.previous.title if page.previous }} | {{ page.next.title if page.next }}\n\
                      {{ page.content | safe }}",
@@ -5328,8 +5501,8 @@ mod tests {
     #[test]
     fn each_page_links_to_its_file_in_the_repo() {
         let template = "{{ site.repository.url | safe }} \
-                        | {% if page.repository.source_url %}{{ page.repository.source_url | safe }}{% endif %} \
-                        | {% if page.repository.edit_url %}{{ page.repository.edit_url | safe }}{% endif %}";
+                        | {% if page.repository.view.url %}{{ page.repository.view.url | safe }}{% endif %} \
+                        | {% if page.repository.edit.url %}{{ page.repository.edit.url | safe }}{% endif %}";
         let repo = "https://github.com/withlittle/little";
         let site_cfg = format!(
             "{IN_THEME}  url: https://withlittle.github.io/little\n  \
@@ -5342,11 +5515,16 @@ mod tests {
             ("site/docs/guide/install.md", "# Install\n"),
             (
                 "site/docs/guide/reference.md",
-                "---\nrepository:\n  source_url: /api/\n---\n# Reference\n",
+                "---\nrepository:\n  view:\n    url: /api/\n---\n# Reference\n",
             ),
             (
                 "site/docs/guide/generated.md",
-                "---\nrepository:\n  enabled: false\n  source_url: /api/\n---\n# Generated\n",
+                "---\nrepository:\n  view:\n    enabled: false\n    url: /api/\n  \
+                 edit:\n    enabled: false\n---\n# Generated\n",
+            ),
+            (
+                "site/docs/guide/mirrored.md",
+                "---\nrepository:\n  edit:\n    enabled: false\n---\n# Mirrored\n",
             ),
             ("site/theme/_templates/default.html", template),
             ("site/theme/_templates/404.html", template),
@@ -5363,13 +5541,18 @@ mod tests {
             links("main/site/docs/guide/install.md")
         );
         // A page's frontmatter has the last word, and a link from the root of
-        // the site gets its path. `repository.enabled` turns both links off,
-        // whatever else it sets. The 404 page isn't built from a file.
+        // the site gets its path. Each link's `enabled` turns it off,
+        // whatever else it sets, and leaves the other. The 404 page isn't
+        // built from a file.
         assert_eq!(
             read("guide/reference.html"),
             format!("{repo} | /little/api/ | {repo}/edit/main/site/docs/guide/reference.md")
         );
         assert_eq!(read("guide/generated.html"), format!("{repo} |  | "));
+        assert_eq!(
+            read("guide/mirrored.html"),
+            format!("{repo} | {repo}/blob/main/site/docs/guide/mirrored.md | ")
+        );
         assert_eq!(read(NOT_FOUND_FILE), format!("{repo} |  | "));
 
         // In a worktree, `.git` is a file. A site can link to another branch.
@@ -5409,7 +5592,12 @@ mod tests {
             ("docs/README.md", "# Home\n"),
             (
                 "docs/guide.md",
-                "---\nrepository:\n  enabled: false\n---\n# Guide\n",
+                "---\nrepository:\n  view:\n    enabled: false\n  edit:\n    enabled: false\n\
+                 ---\n# Guide\n",
+            ),
+            (
+                "docs/mirrored.md",
+                "---\nrepository:\n  edit:\n    enabled: false\n---\n# Mirrored\n",
             ),
         ]);
 
@@ -5428,10 +5616,15 @@ mod tests {
         ] {
             assert!(home.contains(&link), "{link} in {home}");
         }
-        // A page can turn its links off, and the 404 page has neither.
+        // A page can turn its links off, or one of them, and the 404 page
+        // has neither.
         let guide = read("guide.html");
         assert!(!guide.contains("Edit this page"), "{guide}");
         assert!(!guide.contains("View source of this page"), "{guide}");
+        let mirrored = read("mirrored.html");
+        assert!(!mirrored.contains("Edit this page"), "{mirrored}");
+        let view = format!(r#"<a href="{repo}/blob/main/docs/mirrored.md">"#);
+        assert!(mirrored.contains(&view), "{mirrored}");
         let not_found = read(NOT_FOUND_FILE);
         assert!(not_found.contains(&repo_link), "{not_found}");
         assert!(
@@ -5799,8 +5992,8 @@ mod tests {
                         | {{ page.breadcrumb.items | map(attribute='title') | join(', ') }} \
                         | {{ page.previous.title if page.previous }} \
                         | {{ page.next.title if page.next }} \
-                        | {{ page.repository.source_url | safe }} \
-                        {{ page.repository.edit_url | safe }}";
+                        | {{ page.repository.view.url | safe }} \
+                        {{ page.repository.edit.url | safe }}";
         let repo = "https://github.com/withlittle/little";
         let (_tmp, site) = scratch(&[
             (".git/HEAD", "ref: refs/heads/main\n"),
@@ -5823,7 +6016,8 @@ mod tests {
             build(&site).map(|_| fs::read_to_string(site.join("dist/guide/index.html")).unwrap())
         };
         let file = "main/docs/guide/README.md";
-        let links = format!("{repo}/blob/{file} {repo}/edit/{file}");
+        let (view, edit) = (format!("{repo}/blob/{file}"), format!("{repo}/edit/{file}"));
+        let links = format!("{view} {edit}");
 
         // Each is on, as little sets it.
         assert_eq!(
@@ -5833,37 +6027,58 @@ mod tests {
         // Each group's `enabled` turns its own off, whatever the theme.
         let off = "outline:\n  enabled: false\nbreadcrumb:\n  enabled: false\n\
                    previous:\n  enabled: false\nnext:\n  enabled: false\n\
-                   repository:\n  enabled: false\n";
+                   repository:\n  view:\n    enabled: false\n  edit:\n    enabled: false\n";
         assert_eq!(guide(off).unwrap(), " |  |  |  |  ");
         for (group, shown) in [
             ("outline", format!(" | Home | Home | Usage | {links}")),
             ("breadcrumb", format!("Setup |  | Home | Usage | {links}")),
             ("previous", format!("Setup | Home |  | Usage | {links}")),
             ("next", format!("Setup | Home | Home |  | {links}")),
-            ("repository", "Setup | Home | Home | Usage |  ".to_string()),
         ] {
             let frontmatter = format!("{group}:\n  enabled: false\n");
             assert_eq!(guide(&frontmatter).unwrap(), shown, "{group}");
         }
+        // Each of its links to the site's repository has an `enabled` of
+        // its own, in `repository`.
+        for (link, shown) in [
+            ("view", format!("Setup | Home | Home | Usage |  {edit}")),
+            ("edit", format!("Setup | Home | Home | Usage | {view} ")),
+        ] {
+            let frontmatter = format!("repository:\n  {link}:\n    enabled: false\n");
+            assert_eq!(guide(&frontmatter).unwrap(), shown, "{link}");
+        }
         // What it turns off, it can't give the theme itself, either.
         let off = "outline:\n  enabled: false\n  items: [{ title: Mine, url: \"#mine\" }]\n\
-                   previous:\n  enabled: false\n  title: Mine\n";
-        assert_eq!(guide(off).unwrap(), format!(" | Home |  | Usage | {links}"));
+                   previous:\n  enabled: false\n  title: Mine\n\
+                   repository:\n  edit:\n    enabled: false\n    url: https://example.com/edit\n";
+        assert_eq!(guide(off).unwrap(), format!(" | Home |  | Usage | {view} "));
 
         // A value where a group's settings go, like `false`, stops the
         // build, naming the page.
-        let groups = [
-            "outline",
-            "breadcrumb",
-            "previous",
-            "next",
-            "repository",
-            "source",
-        ];
+        let groups = ["outline", "breadcrumb", "previous", "next", "source"];
         for group in groups {
             let message = format!("{:#}", guide(&format!("{group}: false\n")).unwrap_err());
             let expected = format!(
                 "rendering {}: `{group}` must be its settings, like `enabled: false`",
+                page.display()
+            );
+            assert_eq!(message, expected);
+        }
+        for (frontmatter, group, like) in [
+            (
+                "repository: false\n",
+                "repository",
+                "edit: { enabled: false }",
+            ),
+            (
+                "repository:\n  view: false\n",
+                "repository.view",
+                "enabled: false",
+            ),
+        ] {
+            let message = format!("{:#}", guide(frontmatter).unwrap_err());
+            let expected = format!(
+                "rendering {}: `{group}` must be its settings, like `{like}`",
                 page.display()
             );
             assert_eq!(message, expected);
@@ -7165,8 +7380,8 @@ mod tests {
         let template = "{{ site.name }} {{ site.version }} \
                         | {% for v in site.versions %}{{ v.title }}{{ '*' if v.root }} {{ v.url | safe }} {% endfor %}\
                         | {% for v in page.versions %}{{ v.title }}{{ '*' if v.root }} {{ v.url | safe }} {% endfor %}\
-                        | {{ page.repository.source_url | safe if page.repository.source_url }} \
-                        | {{ page.repository.edit_url | safe if page.repository.edit_url }}\n{{ page.content | safe }}";
+                        | {{ page.repository.view.url | safe if page.repository.view.url }} \
+                        | {{ page.repository.edit.url | safe if page.repository.edit.url }}\n{{ page.content | safe }}";
         let site_cfg = |versions: &str| {
             format!(
                 "{IN_THEME}  name: New\n  url: https://example.com/proj\n  \
@@ -7339,7 +7554,8 @@ mod tests {
         use git::tests::{commit_all, git_in};
         let site_cfg = |version: &str| {
             format!(
-                "{IN_THEME}  name: New\n  source: ./content\n  url: https://example.com/proj\n  \
+                "{IN_THEME}  name: New\n  source:\n    directory: ./content\n  \
+                 url: https://example.com/proj\n  \
                  versions:\n    - {{ title: \"2.0\", url: / }}\n    \
                  - {{ title: \"1.4\", url: /1.4, {version} }}\n"
             )
@@ -7391,7 +7607,7 @@ mod tests {
 
         // Its `source` can name another folder, and a file of its own at the
         // path of one of the theme's is its own, as the site's is.
-        let moved = site_cfg("ref: v1.4, source: ./documentation");
+        let moved = site_cfg("ref: v1.4, source: { directory: ./documentation }");
         fs::write(site.join("little.yml"), moved).unwrap();
         build(&site).unwrap();
         assert_eq!(
@@ -7403,7 +7619,7 @@ mod tests {
 
         // Of a little.yml at the ref, its `site.source` and
         // `site.navigation.items` count, but no other setting.
-        let own = "site:\n  name: Old\n  source: ./documentation\n  \
+        let own = "site:\n  name: Old\n  source:\n    directory: ./documentation\n  \
                    navigation:\n    items:\n      - { title: Docs, url: / }\n";
         fs::write(site.join("little.yml"), own).unwrap();
         fs::create_dir_all(site.join("documentation")).unwrap();
@@ -7479,6 +7695,69 @@ mod tests {
             warnings_of(&built),
             ["`site.search.exclude` lists /gone/, but there's no page at that URL, or under it"]
         );
+    }
+
+    #[test]
+    fn each_version_leaves_out_what_its_own_source_excludes() {
+        // The site's `source.exclude`, and what's beside version 1.4's
+        // `ref` in its entry.
+        let site_cfg = |exclude: &str, own: &str| {
+            format!(
+                "{IN_THEME}  source:\n    exclude: {exclude}\n  \
+                 versions:\n    - {{ title: \"2.0\", url: / }}\n    \
+                 - {{ title: \"1.4\", url: /1.4, ref: v1.4{own} }}\n"
+            )
+        };
+        let (_tmp, site) = versioned_site(
+            &[
+                (
+                    "little.yml",
+                    "site:\n  source:\n    exclude: [/drafts/, /gone.md]\n",
+                ),
+                ("docs/README.md", "# Home\n"),
+                ("docs/drafts/wip.md", "# WIP\n"),
+                ("docs/notes/old.md", "# Old notes\n"),
+            ],
+            &[
+                ("little.yml", &site_cfg("[/notes/, /typo/]", "")),
+                ("docs/README.md", "# Home\n"),
+                ("docs/drafts/wip.md", "# WIP\n"),
+                ("docs/notes/new.md", "# New notes\n"),
+                ("theme/_templates/default.html", "{{ page.title }}"),
+            ],
+        );
+        let dist = site.join("dist");
+        let warning = |path: &str| {
+            format!(
+                "`site.source.exclude` lists {path}, but the source has no file at that path, \
+                 or under it, to leave out"
+            )
+        };
+
+        // Each version leaves out what its own little.yml lists: 2.0 its
+        // notes, and 1.4, by the one at its ref, its drafts.
+        let built = build(&site).unwrap();
+        assert!(dist.join("drafts/wip.html").is_file());
+        assert!(!dist.join("notes").exists());
+        assert!(dist.join("1.4/notes/old.html").is_file());
+        assert!(!dist.join("1.4/drafts").exists());
+        assert_eq!(
+            warnings_of(&built),
+            [warning("/typo/"), warning("/gone.md")]
+        );
+
+        // Its entry's `source` goes over the one at its ref, so it lists its
+        // own. A path is warned of once, and only if it leaves nothing out in
+        // every version that lists it: 2.0 has no `notes/old.md`, but 1.4
+        // has.
+        let own = ", source: { exclude: [/notes/old.md, /typo/] }";
+        let site_cfg = site_cfg("[/notes/old.md, /typo/]", own);
+        fs::write(site.join("little.yml"), site_cfg).unwrap();
+        let built = build(&site).unwrap();
+        assert!(dist.join("notes/new.html").is_file());
+        assert!(dist.join("1.4/drafts/wip.html").is_file());
+        assert!(!dist.join("1.4/notes").exists());
+        assert_eq!(warnings_of(&built), [warning("/typo/")]);
     }
 
     #[test]
@@ -7752,7 +8031,11 @@ mod tests {
             )
         );
         // As does a version that can't be built, as it was.
-        fs::write(site.join("little.yml"), "site: { source: content }\n").unwrap();
+        fs::write(
+            site.join("little.yml"),
+            "site: { source: { directory: content } }\n",
+        )
+        .unwrap();
         commit_all(&site);
         git_in(&site, &["tag", "v1.3"]);
         fs::write(site.join("little.yml"), site_cfg("ref: v1.3")).unwrap();
@@ -7764,7 +8047,7 @@ mod tests {
              v1.3"
         );
         // ...which its `source` can name.
-        let fixed = site_cfg("ref: v1.3, source: ./docs");
+        let fixed = site_cfg("ref: v1.3, source: { directory: ./docs }");
         fs::write(site.join("little.yml"), fixed).unwrap();
         build(&site).unwrap();
         assert!(site.join("dist/1.4/index.html").is_file());

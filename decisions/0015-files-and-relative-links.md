@@ -3,7 +3,9 @@
 - Status: accepted; amended by [0017](./0017-links-to-pages-files.md),
   which leads a link to a page's file, like `install.md`, to the page, and
   by [0087](./0087-each-pages-file-copied-beside-it.md), which copies each
-  page's own file too
+  page's own file too, and by
+  [0088](./0088-leaving-files-out-of-the-source.md), which leaves out
+  the files `site.source.exclude` lists
 - Date: 2026-10-01
 - Amends: [0014](./0014-site-url-and-its-path.md)
 

@@ -1777,7 +1777,7 @@ pub(crate) mod tests {
              object: invalid type: sequence, expected a YAML mapping at line 1 column 0"
         );
         assert_eq!(
-            error(json!({ "merge": { "site": { "source": "./elsewhere" } } })),
+            error(json!({ "merge": { "site": { "source": { "directory": "./elsewhere" } } } })),
             "plugin `test`'s `config` hook changes `site.source`, but plugins can't change \
              `site.theme.enabled`, `site.theme.source`, `site.plugins`, `site.source`, \
              `site.destination`, or `site.serve`"

@@ -66,7 +66,8 @@ outline:
 | `breadcrumb` | [breadcrumbs](navigation.md#breadcrumbs) |
 | `previous` | link to the [page before it](navigation.md#previous-and-next-pages) |
 | `next` | link to the page after it |
-| `repository` | links to [view and edit its file](../getting-started/configuring.md#choosing-the-sites-repository) |
+| `repository.view` | link to [view its file](../getting-started/configuring.md#choosing-the-sites-repository) in the site's repository |
+| `repository.edit` | link to edit it there |
 | `source` | [file](pages-and-files.md#a-pages-file), copied beside it |
 
 Frontmatter has the last word on what the theme gets as `page`, even over

@@ -174,9 +174,9 @@ struct Sources {
     tx: Sender<notify::Result<Event>>,
     /// The site's config, which chooses the folders below.
     _config: RecommendedWatcher,
-    /// The source folder, and the folder of each theme in the chain that
-    /// isn't built in or downloaded.
-    source: Option<(Watched, RecommendedWatcher)>,
+    /// The source folder, with the paths it leaves out, and the folder of
+    /// each theme in the chain that isn't built in or downloaded.
+    source: Option<((Watched, Vec<String>), RecommendedWatcher)>,
     themes: Vec<(Watched, RecommendedWatcher)>,
     /// The file of each plugin that isn't downloaded, and each folder a
     /// plugin reads.
@@ -206,18 +206,22 @@ impl Sources {
         let Ok(cfg) = config::load(site_dir) else {
             return Ok(());
         };
-        let source = (cfg.source_dir, cfg.destination_dir.clone());
+        // The source is watched afresh when what it leaves out changes, too.
+        let folders = (cfg.source_dir, cfg.destination_dir.clone());
+        let source = (folders, cfg.source_exclude);
         let moved = self
             .source
             .as_ref()
             .is_none_or(|(watched, _)| *watched != source);
-        if moved && source.0.is_dir() {
-            let watcher = watch_folder(&source.0, &source.1, true, self.tx.clone())?;
+        let ((dir, destination), exclude) = &source;
+        if moved && dir.is_dir() {
+            let left_out = Some(exclude.clone());
+            let watcher = watch_folder(dir, destination, left_out, self.tx.clone())?;
             self.source = Some((source, watcher));
         }
         let tx = &self.tx;
         let folder =
-            |(dir, destination): &Watched| watch_folder(dir, destination, false, tx.clone());
+            |(dir, destination): &Watched| watch_folder(dir, destination, None, tx.clone());
         // The built-in theme is in the binary, and a downloaded theme never
         // changes, so only the folders of the other themes are watched.
         let themes = (cfg.themes.iter())
@@ -291,13 +295,14 @@ fn watch_file(
 /// Watch a folder a build reads: the source, or a theme's folder, its
 /// optional config included. Either can hold the destination (`docs/_build`,
 /// or a theme's demo site that sets `theme: ..`), so the build's own output is
-/// ignored, or each build would trigger the next. With `skip_hidden`, as for
-/// the source, hidden files are ignored too, as a build leaves them out; a
-/// theme copies its hidden static files, so they count.
+/// ignored, or each build would trigger the next. For the source, `left_out`
+/// is its `site.source.exclude`, and the files a build leaves out are
+/// ignored too: hidden ones, and those it lists. A theme copies its hidden
+/// static files, so they count.
 fn watch_folder(
     dir: &Path,
     destination: &Path,
-    skip_hidden: bool,
+    left_out: Option<Vec<String>>,
     tx: Sender<notify::Result<Event>>,
 ) -> notify::Result<RecommendedWatcher> {
     // Real paths on both sides: some platforms (macOS) report events by them.
@@ -311,7 +316,7 @@ fn watch_folder(
         if !res.as_ref().is_ok_and(|event| {
             event.kind.is_access()
                 || is_output(event, &destination)
-                || (skip_hidden && is_hidden_in(event, &root))
+                || (left_out.as_ref()).is_some_and(|exclude| is_left_out_in(event, &root, exclude))
         }) {
             let _ = tx.send(res);
         }
@@ -358,15 +363,16 @@ fn is_output(event: &Event, destination: &Path) -> bool {
         })
 }
 
-/// Does this event only touch hidden files in the source folder `source`?
-/// A file saved by renaming a hidden one over it, as some editors do, isn't
-/// hidden, so that event still counts.
-fn is_hidden_in(event: &Event, source: &Path) -> bool {
+/// Does this event only touch files in the source folder `source` that a
+/// build leaves out: hidden ones, and those `exclude`, its
+/// `site.source.exclude`, lists? A file saved by renaming a hidden one over
+/// it, as some editors do, isn't left out, so that event still counts.
+fn is_left_out_in(event: &Event, source: &Path, exclude: &[String]) -> bool {
     !event.paths.is_empty()
-        && event
-            .paths
-            .iter()
-            .all(|path| path.strip_prefix(source).is_ok_and(site::is_hidden))
+        && event.paths.iter().all(|path| {
+            (path.strip_prefix(source))
+                .is_ok_and(|rel| site::is_hidden(rel) || site::is_excluded(rel, exclude))
+        })
 }
 
 /// Does this event, in a watched file's folder, change the file named `name`?
@@ -719,7 +725,7 @@ mod tests {
     }
 
     #[test]
-    fn only_hidden_files_in_the_source_are_ignored() {
+    fn only_the_files_a_build_leaves_out_of_the_source_are_ignored() {
         let source = Path::new("/site/.github");
         let event = |paths: &[&str]| {
             let mut event = Event::new(notify::EventKind::Any);
@@ -728,17 +734,33 @@ mod tests {
             }
             event
         };
+        let left_out = |paths: &[&str]| is_left_out_in(&event(paths), source, &[]);
 
         // A build leaves out hidden files and what's in hidden folders.
-        assert!(is_hidden_in(&event(&[".install.md.swp"]), source));
-        assert!(is_hidden_in(&event(&[".drafts/wip.md"]), source));
+        assert!(left_out(&[".install.md.swp"]));
+        assert!(left_out(&[".drafts/wip.md"]));
         // Only names inside the source count, so it can be hidden itself.
-        assert!(!is_hidden_in(&event(&["README.md"]), source));
+        assert!(!left_out(&["README.md"]));
         // A hidden file renamed over a page changes the page.
-        assert!(!is_hidden_in(
-            &event(&[".README.md.tmp", "README.md"]),
-            source
-        ));
+        assert!(!left_out(&[".README.md.tmp", "README.md"]));
+
+        // And the files `site.source.exclude` lists, with what's under each.
+        let exclude = ["/drafts/".to_string(), "/guide/old.md".to_string()];
+        let left_out = |paths: &[&str]| is_left_out_in(&event(paths), source, &exclude);
+        for path in [
+            "drafts",
+            "drafts/wip.md",
+            "drafts/2026/plan.md",
+            "guide/old.md",
+        ] {
+            assert!(left_out(&[path]), "{path}");
+        }
+        assert!(left_out(&["drafts/wip.md", ".drafts/wip.md.swp"]));
+        for path in ["drafts.md", "guide/old.md.txt", "guide/new.md", "guide"] {
+            assert!(!left_out(&[path]), "{path}");
+        }
+        // One moved out of a folder that's left out is a new file.
+        assert!(!left_out(&["drafts/wip.md", "wip.md"]));
     }
 
     #[test]
@@ -959,7 +981,7 @@ mod tests {
         std::fs::write(site_dir.join("pages/README.md"), "# Home\n").unwrap();
         assert_follows(
             &site_dir,
-            "site:\n  theme:\n    source: ./theme\n  source: ./pages\n",
+            "site:\n  theme:\n    source: ./theme\n  source:\n    directory: ./pages\n",
             "docs/README.md",
             "pages/README.md",
         );
@@ -988,7 +1010,7 @@ mod tests {
         std::fs::write(site_dir.join(".docs/README.md"), "# Home\n").unwrap();
         assert_follows(
             &site_dir,
-            "site:\n  theme:\n    source: ./theme\n  source: ./.docs\n",
+            "site:\n  theme:\n    source: ./theme\n  source:\n    directory: ./.docs\n",
             "docs/README.md",
             ".docs/README.md",
         );

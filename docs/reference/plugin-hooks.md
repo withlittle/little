@@ -116,7 +116,9 @@ files: func(paths: list<string>) -> result<changes, string>;
 ```
 
 Called once, before any file is read, with the path of each file in the
-source folder, from there, like `guide/install.md`, sorted, but not
+source folder, from there, like `guide/install.md`, sorted, but not the
+ones the site
+[leaves out](../writing/pages-and-files.md#leaving-files-out), or
 [hidden](../writing/pages-and-files.md#hidden-files) ones. It gets their
 paths, not what's in them: to read one, the plugin needs its folder in
 [`read`](../plugins/using-plugins.md#the-sandbox).

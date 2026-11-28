@@ -19,8 +19,10 @@
 //! and `themeVariables`, which each diagram little draws starts from: little
 //! sets none, so a theme can choose how diagrams look, and a site change it.
 //!
-//! `source` and `destination` name the folders a site is built from and
-//! into. Any level can set them, but they're always relative to the site.
+//! `source` holds the `directory` a site is built from, and `exclude`, the
+//! paths of the files there it leaves out, each with the files under it.
+//! `destination` names the folder it's built into. Any level can set either
+//! folder, but they're always relative to the site.
 //!
 
 //! `navigation` holds the site's nav, as `items`, if it sets one (see
@@ -79,10 +81,11 @@
 //! group's `enabled` turns off (see [`PageSettings`]): `outline`, its table
 //! of contents, whose `depth` holds the levels of heading it lists, from
 //! `min` to `max`, each from 1 for `#` to 6; `breadcrumb`, what's above it
-//! in the nav; `previous` and `next`, the pages beside it there; and
-//! `repository`, the links to its file in the site's repository. A page's
-//! `search` holds `enabled`, whether search indexes it, whatever
-//! `site.search`'s `exclude` says.
+//! in the nav; `previous` and `next`, the pages beside it there; `source`,
+//! its file, copied beside it; and, in `repository`, `view` and `edit`, the
+//! links to its file in the site's repository. A page's `search` holds
+//! `enabled`, whether search indexes it, whatever `site.search`'s `exclude`
+//! says.
 
 use anyhow::{Context, Result, anyhow, bail};
 use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, percent_decode_str, utf8_percent_encode};
@@ -112,8 +115,13 @@ pub struct Config {
     /// The theme the site chose, then each theme it builds on in turn. Empty
     /// for a site whose `site.theme.enabled` is `false`.
     pub themes: Vec<Location>,
-    /// The folder of Markdown files, and other files, the site is built from.
+    /// The folder of Markdown files, and other files, the site is built
+    /// from, from `site.source.directory`.
     pub source_dir: PathBuf,
+    /// The paths of the files there it leaves out, each with the files under
+    /// it, from `site.source.exclude`, as they're written, from the root of
+    /// the folder, like `/drafts/`.
+    pub source_exclude: Vec<String>,
     /// The folder the site is built into, which every build wipes.
     pub destination_dir: PathBuf,
     /// What `page` says of what little works out for every page, unless a
@@ -164,9 +172,10 @@ pub struct Version {
     /// The git ref it's built from, like `v1.4`, or none, for the site's
     /// files as they are.
     pub git_ref: Option<String>,
-    /// The folder its pages are in at its ref, from the site's folder there,
-    /// like `./documentation`, if its `source` names one.
-    pub source: Option<String>,
+    /// Its own `source`, if its entry sets one: settings that go over the
+    /// `site.source` it would have, like `directory: ./documentation`, the
+    /// folder its pages are in at its ref, from the site's folder there.
+    pub source: Option<Mapping>,
     /// Its nav, if its entry sets one, as `navigation.items`, with each URL
     /// from its home, like the site's.
     pub nav: Option<Value>,
@@ -345,7 +354,7 @@ pub struct Repo {
 /// Where to view a file in a site's repository, and where to edit it.
 #[derive(Debug, PartialEq, Eq)]
 pub struct FileUrls {
-    pub source: String,
+    pub view: String,
     pub edit: String,
 }
 
@@ -363,7 +372,7 @@ impl Repo {
     /// `docs/guide/install.md`, on its branch. little knows only GitHub's and
     /// GitLab's addresses, so a repository anywhere else has none.
     pub fn file_urls(&self, path: &Path) -> Option<FileUrls> {
-        let (source, edit) = match url::Url::parse(&self.url).ok()?.host_str()? {
+        let (view, edit) = match url::Url::parse(&self.url).ok()?.host_str()? {
             "github.com" => ("blob", "edit"),
             "gitlab.com" => ("-/blob", "-/edit"),
             _ => return None,
@@ -378,7 +387,7 @@ impl Repo {
             .collect();
         let rest = parts.join("/");
         Some(FileUrls {
-            source: format!("{}/{source}/{rest}", self.url),
+            view: format!("{}/{view}/{rest}", self.url),
             edit: format!("{}/{edit}/{rest}", self.url),
         })
     }
@@ -421,7 +430,8 @@ impl Search {
 /// Whether `entry`, a URL in `site.search.exclude`, leaves out the page at
 /// `url`: the page at its URL, with or without the `/` at its end, as
 /// `guide.md` and `guide/README.md` would be the same page, and every page
-/// under it.
+/// under it. A path in `site.source.exclude` leaves out a file the same way:
+/// the file or folder at its path, and every file under it.
 pub fn leaves_out(entry: &str, url: &str) -> bool {
     let (entry, url) = (entry.trim_end_matches('/'), url.trim_end_matches('/'));
     (url.strip_prefix(entry)).is_some_and(|rest| rest.is_empty() || rest.starts_with('/'))
@@ -443,9 +453,12 @@ pub struct PageSettings {
     pub previous: bool,
     /// Whether it links to the page after it, from `next.enabled`.
     pub next: bool,
-    /// Whether it links to its file in the site's repository, from
-    /// `repository.enabled`.
-    pub repository: bool,
+    /// Whether it links to where its file is viewed in the site's
+    /// repository, from `repository.view.enabled`.
+    pub view: bool,
+    /// Whether it links to where its file is edited there, from
+    /// `repository.edit.enabled`.
+    pub edit: bool,
     /// Whether its file is copied beside it, from `source.enabled`.
     pub source: bool,
     /// Whether search indexes it, from `search.enabled`, if it's set: left
@@ -492,13 +505,22 @@ impl PageSettings {
             },
             Some(_) => bail!("`{prefix}search` must be its settings, like `enabled: false`"),
         };
+        // Each of its links to the site's repository has a group of its own.
+        let repository = match page.get("repository") {
+            Some(Value::Mapping(links)) => links,
+            _ => bail!(
+                "`{prefix}repository` must be its settings, like `edit: {{ enabled: false }}`"
+            ),
+        };
+        let within = format!("{prefix}repository.");
         Ok(PageSettings {
             outline: enabled(page, prefix, "outline")?,
             depths: min..=max,
             breadcrumb: enabled(page, prefix, "breadcrumb")?,
             previous: enabled(page, prefix, "previous")?,
             next: enabled(page, prefix, "next")?,
-            repository: enabled(page, prefix, "repository")?,
+            view: enabled(repository, &within, "view")?,
+            edit: enabled(repository, &within, "edit")?,
             source: enabled(page, prefix, "source")?,
             search,
         })
@@ -773,8 +795,8 @@ impl Config {
     /// as the site's own would. Nothing else in that little.yml counts, so
     /// it isn't checked. Without one, it's from before the site was built
     /// with little, so its pages are in the site's `source`. Its entry's
-    /// `source` and `navigation.items` win over both, and its `plugins` go
-    /// over the site's.
+    /// `source` goes over either, setting by setting, its `navigation.items`
+    /// win over both, and its `plugins` go over the site's.
     pub fn for_version(&self, version: &Version, site_dir: &Path, file: &str) -> Result<Config> {
         let own = site_dir.join(CONFIG_FILE);
         let mut theirs = self.beneath.clone();
@@ -786,10 +808,13 @@ impl Config {
         } else {
             self.site.get("source")
         };
-        let source = match &version.source {
-            Some(source) => Some(Value::from(source.as_str())),
-            None => source.cloned(),
-        };
+        let mut source = source.cloned();
+        if let Some(own) = &version.source {
+            match &mut source {
+                Some(Value::Mapping(source)) => merge(source, own.clone()),
+                _ => source = Some(Value::Mapping(own.clone())),
+            }
+        }
         let nav = (version.nav.as_ref())
             .or_else(|| theirs.get("navigation")?.get("items"))
             .cloned();
@@ -811,8 +836,10 @@ impl Config {
             let plugins = Value::Mapping(version.plugins.clone());
             merge(&mut site, Mapping::from_iter([("plugins".into(), plugins)]));
         }
+        let (source_dir, source_exclude) = source_files(site_dir, &site)?;
         Ok(Config {
-            source_dir: folder(site_dir, &site, "source")?,
+            source_dir,
+            source_exclude,
             plugins: plugins(&site, site_dir)?,
             site,
             ..self.clone()
@@ -886,8 +913,8 @@ fn settle(
     beneath: Mapping,
     themes: Vec<Location>,
 ) -> Result<Config> {
-    let source_dir = folder(site_dir, &site, "source")?;
-    let destination_dir = folder(site_dir, &site, "destination")?;
+    let (source_dir, source_exclude) = source_files(site_dir, &site)?;
+    let destination_dir = destination(site_dir, &site)?;
     let page_settings = PageSettings::read(&page, "page.")?;
     let nav_prune = nav_prune(&site)?;
     let host = host(&site)?;
@@ -906,6 +933,7 @@ fn settle(
         page,
         themes,
         source_dir,
+        source_exclude,
         destination_dir,
         page_settings,
         nav_prune,
@@ -1002,12 +1030,58 @@ fn locate(source: &str, dir: &Path, file: &str, site_dir: &Path) -> Result<Locat
     Ok(Location::Folder(folder))
 }
 
-/// The folder a setting names. It's relative to the site even when a theme
-/// sets it: it's the site that's built.
-fn folder(site_dir: &Path, site: &Mapping, key: &str) -> Result<PathBuf> {
-    match site.get(key) {
+/// The files a site is built from, from `site.source`: the folder they're
+/// in, its `directory`, and the paths it leaves out, its `exclude`, as
+/// they're written. The folder is relative to the site even when a theme
+/// sets it: it's the site that's built. A setting it hasn't, like
+/// `excludes`, which would leave nothing out, is an error, as for
+/// `site.search`.
+fn source_files(site_dir: &Path, site: &Mapping) -> Result<(PathBuf, Vec<String>)> {
+    let like = "like `directory: ./docs`, or `exclude: [/drafts/]`";
+    let settings = group(site, "source", like)?;
+    if let Some(key) =
+        (settings.keys()).find(|key| !matches!(key.as_str(), Some("directory" | "exclude")))
+    {
+        bail!(
+            "`site.source` has no setting `{}`: its settings are `directory` and `exclude`",
+            written(key)
+        );
+    }
+    let directory = match settings.get("directory") {
+        Some(Value::String(path)) => resolve(site_dir, path),
+        _ => bail!("`site.source.directory` must be the path to a folder"),
+    };
+    let paths = match settings.get("exclude") {
+        None | Some(Value::Null) => return Ok((directory, Vec::new())),
+        Some(Value::Sequence(paths)) => paths,
+        Some(_) => {
+            bail!("`site.source.exclude` must be a list of paths, like `[/drafts/, /guide/old.md]`")
+        }
+    };
+    // `/` alone would leave out the whole source.
+    let exclude = (paths.iter())
+        .map(|path| match path {
+            Value::String(path)
+                if path.starts_with('/') && !path.trim_end_matches('/').is_empty() =>
+            {
+                Ok(path.clone())
+            }
+            _ => bail!(
+                "`site.source.exclude` lists `{}`, but each must be the path of a file or a \
+                 folder in the source, from its root, like `/guide/old.md` or `/drafts/`",
+                written(path)
+            ),
+        })
+        .collect::<Result<_>>()?;
+    Ok((directory, exclude))
+}
+
+/// The folder a site is built into, from `site.destination`. Like the
+/// source's, it's relative to the site even when a theme sets it.
+fn destination(site_dir: &Path, site: &Mapping) -> Result<PathBuf> {
+    match site.get("destination") {
         Some(Value::String(path)) => Ok(resolve(site_dir, path)),
-        _ => bail!("`site.{key}` must be the path to a folder"),
+        _ => bail!("`site.destination` must be the path to a folder"),
     }
 }
 
@@ -1503,12 +1577,14 @@ fn versions(site: &Mapping, sites_plugins: &[Plugin]) -> Result<Vec<Version>> {
             );
         }
         // A blank `source:`, `navigation:`, or `plugins:` is as good as none.
+        // Its `source` is read with the `site.source` it goes over, once
+        // that's known, at its ref.
         let source = match entry.get("source") {
             None | Some(Value::Null) => None,
-            Some(Value::String(source)) => Some(source.clone()),
+            Some(Value::Mapping(source)) => Some(source.clone()).filter(|own| !own.is_empty()),
             Some(_) => bail!(
-                "version `{title}`'s `source` must be the path to the folder its pages are in \
-                 at its `ref`, like `./docs`"
+                "version `{title}`'s `source` must be its settings, like \
+                 `directory: ./docs`, for the folder its pages are in at its `ref`"
             ),
         };
         // Its nav, in `navigation.items`, as the site's is. One that isn't a
@@ -2121,7 +2197,7 @@ mod tests {
         assert_eq!(
             serde_yaml::to_string(&groups).unwrap(),
             "site:\n  \
-               source: ./docs\n  \
+               source:\n    directory: ./docs\n    exclude: []\n  \
                destination: ./dist\n  \
                theme:\n    enabled: true\n    fonts:\n      body: Inter\n    source: ./company\n  \
                navigation:\n    prune: false\n  \
@@ -2138,7 +2214,7 @@ mod tests {
                breadcrumb:\n    enabled: true\n  \
                previous:\n    enabled: true\n  \
                next:\n    enabled: true\n  \
-               repository:\n    enabled: true\n  \
+               repository:\n    view:\n      enabled: true\n    edit:\n      enabled: true\n  \
                source:\n    enabled: true\n  \
                author: Company\n  \
                layout: wide\n"
@@ -2357,12 +2433,12 @@ mod tests {
         assert_eq!(folders("", ""), (site.join("docs"), site.join("dist")));
 
         // A theme can set them, but they're still relative to the site...
-        let theme = "site:\n  source: content\n  destination: ./public\n";
+        let theme = "site:\n  source:\n    directory: content\n  destination: ./public\n";
         let expected = (site.join("content"), site.join("public"));
         assert_eq!(folders(theme, ""), expected);
 
         // ...and the site has the last word, of course.
-        let site_cfg = "  source: ../shared/docs\n";
+        let site_cfg = "  source:\n    directory: ../shared/docs\n";
         let expected = (site.join("../shared/docs"), site.join("public"));
         assert_eq!(folders(theme, site_cfg), expected);
 
@@ -2375,21 +2451,103 @@ mod tests {
     #[test]
     fn bad_folders_explain_themselves() {
         let (_tmp, site) = scratch(&[]);
-        for key in ["source", "destination"] {
-            // A list, or no value at all, isn't a path.
-            for value in [" [a, b]", ""] {
-                let message = error(&site, &format!("site:\n  {key}:{value}\n"));
-                assert_eq!(
-                    message,
-                    format!("`site.{key}` must be the path to a folder")
-                );
-            }
+        // A list, or no value at all, isn't a path.
+        for value in [" [a, b]", ""] {
+            let message = error(&site, &format!("site:\n  source:\n    directory:{value}\n"));
+            assert_eq!(
+                message,
+                "`site.source.directory` must be the path to a folder"
+            );
+            let message = error(&site, &format!("site:\n  destination:{value}\n"));
+            assert_eq!(message, "`site.destination` must be the path to a folder");
         }
 
         // Whether the source is there is for the build to say: the config
         // doesn't read it.
-        std::fs::write(site.join(CONFIG_FILE), "site: { source: ./missing }\n").unwrap();
+        let site_cfg = "site: { source: { directory: ./missing } }\n";
+        std::fs::write(site.join(CONFIG_FILE), site_cfg).unwrap();
         assert!(load(&site).is_ok());
+    }
+
+    #[test]
+    fn a_source_leaves_out_the_paths_it_excludes() {
+        let (_tmp, site) = scratch(&[]);
+        // `settings` go under the site's `source`.
+        let excluded = |settings: &str| {
+            std::fs::write(
+                site.join(CONFIG_FILE),
+                format!("site:\n  source:\n{settings}"),
+            )
+            .unwrap();
+            load(&site).unwrap().source_exclude
+        };
+
+        // little leaves nothing out, and nor does an `exclude` left blank.
+        std::fs::write(site.join(CONFIG_FILE), "").unwrap();
+        assert_eq!(load(&site).unwrap().source_exclude, [""; 0]);
+        assert_eq!(excluded("    exclude:\n"), [""; 0]);
+        // Each path is from the root of the source, as it's written, with
+        // the `/` at the end of a folder's or without it.
+        assert_eq!(
+            excluded("    exclude: [/drafts/, /guide/old.md, /notes]\n"),
+            ["/drafts/", "/guide/old.md", "/notes"]
+        );
+        // A list replaces the one beneath it, as any does, and the folder
+        // beside it stays.
+        let theme_cfg = "site:\n  source:\n    directory: ./content\n    exclude: [/drafts/]\n";
+        let (_tmp, site) = scratch(&[
+            ("theme/_templates/default.html", ""),
+            ("theme/little.yml", theme_cfg),
+        ]);
+        let site_cfg = format!("{IN_THEME}  source:\n    exclude: [/notes/]\n");
+        std::fs::write(site.join(CONFIG_FILE), site_cfg).unwrap();
+        let cfg = load(&site).unwrap();
+        assert_eq!(cfg.source_dir, site.join("content"));
+        assert_eq!(cfg.source_exclude, ["/notes/"]);
+    }
+
+    #[test]
+    fn a_bad_source_explains_itself() {
+        let (_tmp, site) = scratch(&[]);
+        // Anything but settings, or nothing, where its settings go.
+        for value in [" true", " [content]", " content", ""] {
+            let message = error(&site, &format!("site:\n  source:{value}\n"));
+            assert_eq!(
+                message,
+                "`site.source` must be its settings, like `directory: ./docs`, or \
+                 `exclude: [/drafts/]`",
+                "{value}"
+            );
+        }
+        // A setting it hasn't would leave nothing out.
+        let message = error(&site, "site:\n  source:\n    excludes: [/drafts/]\n");
+        assert_eq!(
+            message,
+            "`site.source` has no setting `excludes`: its settings are `directory` and `exclude`"
+        );
+
+        let list = "`site.source.exclude` must be a list of paths, like \
+                    `[/drafts/, /guide/old.md]`";
+        for value in ["/drafts/", "true", "{ drafts: true }"] {
+            let message = error(&site, &format!("site:\n  source:\n    exclude: {value}\n"));
+            assert_eq!(message, list, "{value}");
+        }
+        // Each is a path from the root of the source, and `/` alone would
+        // leave out all of it.
+        for value in ["drafts/", "./drafts", "/", "//", "1", "true", "[/drafts/]"] {
+            let message = error(
+                &site,
+                &format!("site:\n  source:\n    exclude: [{value}]\n"),
+            );
+            assert!(
+                message.starts_with("`site.source.exclude` lists `")
+                    && message.ends_with(
+                        ", but each must be the path of a file or a folder in the source, from \
+                         its root, like `/guide/old.md` or `/drafts/`"
+                    ),
+                "{value}: {message}"
+            );
+        }
     }
 
     /// little's own settings for every page, but for the levels of heading
@@ -2401,7 +2559,8 @@ mod tests {
             breadcrumb: true,
             previous: true,
             next: true,
-            repository: true,
+            view: true,
+            edit: true,
             source: true,
             search: None,
         }
@@ -2441,6 +2600,13 @@ mod tests {
             ..every_page(1..=6)
         };
         assert_eq!(settings(&site_cfg), sited);
+        // Each of a page's links to its repository is turned off on its own.
+        let site_cfg = format!("{IN_THEME}page:\n  repository:\n    edit:\n      enabled: false\n");
+        let unedited = PageSettings {
+            edit: false,
+            ..themed.clone()
+        };
+        assert_eq!(settings(&site_cfg), unedited);
         // A group left blank is ignored, as any key under `page` is.
         let site_cfg = format!("{IN_THEME}page:\n  breadcrumb:\n  search:\n");
         assert_eq!(settings(&site_cfg), themed);
@@ -2449,14 +2615,7 @@ mod tests {
     #[test]
     fn bad_page_groups_explain_themselves() {
         let (_tmp, site) = scratch(&[]);
-        let groups = [
-            "outline",
-            "breadcrumb",
-            "previous",
-            "next",
-            "repository",
-            "source",
-        ];
+        let groups = ["outline", "breadcrumb", "previous", "next", "source"];
         for group in groups {
             // A value where its settings go, like `false`, isn't them.
             for value in [" false", " true", " [items]"] {
@@ -2472,6 +2631,33 @@ mod tests {
                 assert_eq!(
                     error(&site, &site_cfg),
                     format!("`page.{group}.enabled` must be `true` or `false`")
+                );
+            }
+        }
+
+        // Each of a page's links to its file in the site's repository has a
+        // group of its own, in `repository`.
+        for value in [" false", " true", " [view]"] {
+            let message = error(&site, &format!("page:\n  repository:{value}\n"));
+            assert_eq!(
+                message,
+                "`page.repository` must be its settings, like `edit: { enabled: false }`"
+            );
+        }
+        for link in ["view", "edit"] {
+            for value in [" false", " true", " [url]", ""] {
+                let site_cfg = format!("page:\n  repository:\n    {link}:{value}\n");
+                assert_eq!(
+                    error(&site, &site_cfg),
+                    format!("`page.repository.{link}` must be its settings, like `enabled: false`")
+                );
+            }
+            for value in [" yes", " \"true\"", " 1", ""] {
+                let site_cfg =
+                    format!("page:\n  repository:\n    {link}:\n      enabled:{value}\n");
+                assert_eq!(
+                    error(&site, &site_cfg),
+                    format!("`page.repository.{link}.enabled` must be `true` or `false`")
                 );
             }
         }
@@ -3574,7 +3760,7 @@ mod tests {
         };
         let urls = |repo: &Repo, path: &str| {
             let urls = repo.file_urls(Path::new(path))?;
-            Some([urls.source, urls.edit])
+            Some([urls.view, urls.edit])
         };
 
         let github = repo("https://github.com/withlittle/little", "main");
@@ -3597,9 +3783,9 @@ mod tests {
 
         // Each part of the branch and path is encoded, so no name can break
         // the URL.
-        let [source, _] = urls(&repo(github.url.as_str(), "fix#1"), "docs/my café.md").unwrap();
+        let [view, _] = urls(&repo(github.url.as_str(), "fix#1"), "docs/my café.md").unwrap();
         assert_eq!(
-            source,
+            view,
             "https://github.com/withlittle/little/blob/fix%231/docs/my%20caf%C3%A9.md"
         );
 
@@ -3652,7 +3838,7 @@ mod tests {
 
         // Settings are keys and values: a list or a single value would replace
         // them all.
-        for site_cfg in ["- site: { source: ./docs }\n", "My Docs\n"] {
+        for site_cfg in ["- site: { name: My Docs }\n", "My Docs\n"] {
             let message = error(&site, site_cfg);
             assert!(message.starts_with(&parsing), "{message}");
             assert!(message.contains("expected a YAML mapping"), "{message}");
@@ -3701,7 +3887,10 @@ mod tests {
     #[test]
     fn little_defaults_only_its_own_settings() {
         let Level { site, page } = builtin_defaults();
-        assert_eq!(get(&site, "source"), Some("./docs"));
+        assert_eq!(get(&site, "source.directory"), Some("./docs"));
+        // It leaves out none of a source's files, but hidden ones.
+        let none = Value::Sequence(Vec::new());
+        assert_eq!(value(&site, "source.exclude"), Some(&none));
         assert_eq!(get(&site, "destination"), Some("./dist"));
         let number = |path: &str| value(&site, path).and_then(Value::as_u64);
         assert_eq!(value(&site, "theme.enabled"), Some(&true.into()));
@@ -4006,13 +4195,16 @@ mod tests {
                 version("c", "/versions/10", Some("v10")),
             ]
         );
-        // A version from a ref can name the folder its pages are in there,
-        // and a blank `source` is none.
-        let settings = "versions:\n  - { title: a, url: / }\n  \
-                        - { title: b, url: /b, ref: v1, source: ./documentation }\n  \
+        // A version from a ref can have a `source` of its own, like the
+        // folder its pages are in there, and a blank one is none.
+        let settings = "versions:\n  - { title: a, url: /, source: {} }\n  \
+                        - title: b\n    url: /b\n    ref: v1\n    \
+                        source: { directory: ./documentation, exclude: [/drafts/] }\n  \
                         - { title: c, url: /c, ref: v0, source: }\n";
         let mut b = version("b", "/b", Some("v1"));
-        b.source = Some("./documentation".into());
+        b.source = serde_yaml::from_str("{ directory: ./documentation, exclude: [/drafts/] }")
+            .map(Some)
+            .unwrap();
         assert_eq!(
             versions(settings),
             [version("a", "", None), b, version("c", "/c", Some("v0"))]
@@ -4164,12 +4356,12 @@ mod tests {
             ),
             (
                 "versions:\n  - { title: a, url: /, ref: v1, source: [./docs] }\n",
-                "version `a`'s `source` must be the path to the folder its pages are in at its \
-                 `ref`, like `./docs`"
+                "version `a`'s `source` must be its settings, like `directory: ./docs`, for \
+                 the folder its pages are in at its `ref`"
                     .to_string(),
             ),
             (
-                "versions:\n  - { title: a, url: /, source: ./documentation }\n",
+                "versions:\n  - { title: a, url: /, source: { directory: ./documentation } }\n",
                 "version `a` sets `source` but has no `ref`, so it's built from the site's files \
                  as they are: set the site's `source` instead"
                     .to_string(),
@@ -4279,7 +4471,7 @@ mod tests {
         // Settings that would stop the build, were they the site's, aren't
         // read, nor is anything beside its `site`.
         let old_cfg = "site:\n  theme: ./elsewhere\n  name: Old\n  url: https://old.example.com\n  \
-                       source: ./src\n  versions: []\n  \
+                       source:\n    directory: ./src\n    exclude: [/drafts/]\n  versions: []\n  \
                        navigation:\n    items: [{ title: Old, url: / }]\n    prune: 1\n  \
                        search: true\n  plugins: [./cal.wasm]\n\
                        author: Old\npage:\n  outline: false\n";
@@ -4291,7 +4483,8 @@ mod tests {
         let site_cfg = format!(
             "{IN_THEME}  name: New\n  url: https://example.com/docs\n  \
              repository:\n    url: https://github.com/example/docs\n  destination: ./public\n  \
-             source: ./content\n  navigation:\n    items: [{{ title: New, url: / }}]\n  \
+             source:\n    directory: ./content\n    exclude: [/notes/]\n  \
+             navigation:\n    items: [{{ title: New, url: / }}]\n  \
              plugins:\n    ann:\n      wasm: ./ann.wasm\n      read: ./lib\n  \
              versions:\n    - {{ title: \"2.0\", url: / }}\n    \
              - {{ title: \"1.4\", url: /1.4, ref: v1.4 }}\n\
@@ -4306,7 +4499,8 @@ mod tests {
 
         // Its little.yml chooses its pages and its nav, as the site's would.
         assert_eq!(version.source_dir, old.join("src"));
-        assert_eq!(get(&version.site, "source"), Some("./src"));
+        assert_eq!(version.source_exclude, ["/drafts/"]);
+        assert_eq!(get(&version.site, "source.directory"), Some("./src"));
         let nav: Value = serde_yaml::from_str("[{ title: Old, url: / }]").unwrap();
         assert_eq!(value(&version.site, "navigation.items"), Some(&nav));
         // But the rest is the site's, with plugins that read their folders
@@ -4348,7 +4542,8 @@ mod tests {
         std::fs::write(old.join(CONFIG_FILE), "site: { name: Old }\n").unwrap();
         let version = config.for_version(&v14, &old, file).unwrap();
         assert_eq!(version.source_dir, old.join("docs"));
-        assert_eq!(get(&version.site, "source"), Some("./docs"));
+        assert_eq!(version.source_exclude, [""; 0]);
+        assert_eq!(get(&version.site, "source.directory"), Some("./docs"));
         assert_eq!(value(&version.site, "navigation.items"), None);
         assert_eq!(get(&version.site, "name"), Some("New"));
 
@@ -4357,18 +4552,29 @@ mod tests {
         std::fs::remove_file(old.join(CONFIG_FILE)).unwrap();
         let version = config.for_version(&v14, &old, file).unwrap();
         assert_eq!(version.source_dir, old.join("content"));
-        assert_eq!(get(&version.site, "source"), Some("./content"));
+        assert_eq!(version.source_exclude, ["/notes/"]);
+        assert_eq!(get(&version.site, "source.directory"), Some("./content"));
         assert_eq!(value(&version.site, "navigation.items"), None);
 
-        // Its entry's `source` wins, with or without one.
-        v14.source = Some("./documentation".into());
+        // Its entry's `source` goes over either, setting by setting.
+        v14.source = serde_yaml::from_str("{ directory: ./documentation }")
+            .map(Some)
+            .unwrap();
         let version = config.for_version(&v14, &old, file).unwrap();
         assert_eq!(version.source_dir, old.join("documentation"));
-        assert_eq!(get(&version.site, "source"), Some("./documentation"));
+        assert_eq!(version.source_exclude, ["/notes/"]);
+        let directory = get(&version.site, "source.directory");
+        assert_eq!(directory, Some("./documentation"));
         std::fs::write(old.join(CONFIG_FILE), old_cfg).unwrap();
         let version = config.for_version(&v14, &old, file).unwrap();
         assert_eq!(version.source_dir, old.join("documentation"));
+        assert_eq!(version.source_exclude, ["/drafts/"]);
         assert_eq!(value(&version.site, "navigation.items"), Some(&nav));
+        let mut listed = v14.clone();
+        listed.source = serde_yaml::from_str("{ exclude: [] }").map(Some).unwrap();
+        let version = config.for_version(&listed, &old, file).unwrap();
+        assert_eq!(version.source_dir, old.join("src"));
+        assert_eq!(version.source_exclude, [""; 0]);
 
         // As does its nav, and its `plugins` go over the site's, setting by
         // setting, reading their folders at the ref, or turn one off.
@@ -4406,6 +4612,15 @@ mod tests {
         assert!(
             message.starts_with("parsing v1.4:old/little.yml: "),
             "{message}"
+        );
+        // Its `source` is checked as the site's is, with its entry's over it.
+        let old_cfg = "site:\n  source:\n    directory: [./src]\n";
+        std::fs::write(old.join(CONFIG_FILE), old_cfg).unwrap();
+        v14.source = serde_yaml::from_str("{ exclude: [] }").map(Some).unwrap();
+        let message = format!("{:#}", config.for_version(&v14, &old, file).unwrap_err());
+        assert_eq!(
+            message,
+            "`site.source.directory` must be the path to a folder"
         );
     }
 
@@ -4479,6 +4694,15 @@ mod tests {
         assert_eq!(
             changed.unwrap_err(),
             format!("changes `site.plugins`, {fixed}")
+        );
+        // Nor what the source leaves out, beside the folder it's in.
+        let changed = hook(&|site, _| {
+            let source = settings("{ directory: ./docs, exclude: [/drafts/] }");
+            site.insert("source".into(), source);
+        });
+        assert_eq!(
+            changed.unwrap_err(),
+            format!("changes `site.source`, {fixed}")
         );
         // How the site looks is a plugin's to change, beside the theme it's
         // in.
