@@ -110,7 +110,7 @@ like it:
 | ------ | ----------- |
 | `pydoc`, `rustdoc`, `jsdoc`, `godoc`, `openapi` | `plugins/api_reference/**` |
 | `asciidoc`, `orgmode`, `restructuredtext` | `plugins/markup/**` |
-| `jupyter` | none: leave the second `--include-path` out |
+| `jupyter`, `sitemap` | none: leave the second `--include-path` out |
 
 It lists what the release's notes will: each `feat`, `fix`, and `perf`
 commit since the plugin's last release that changed either folder, with
@@ -251,7 +251,7 @@ there. To write them yourself, install cargo-about 0.9.2, with
 `cargo install --locked cargo-about@0.9.2`, then, in the repository's root:
 
 ```sh
-scripts/notices.sh pydoc target/notices/pydoc.md   # or little, rustdoc, jsdoc, godoc, openapi, jupyter, asciidoc, orgmode, or restructuredtext
+scripts/notices.sh pydoc target/notices/pydoc.md   # or little, rustdoc, jsdoc, godoc, openapi, jupyter, asciidoc, orgmode, restructuredtext, or sitemap
 ```
 
 Each one's `about.toml`, beside its `Cargo.toml`, accepts the licences its
